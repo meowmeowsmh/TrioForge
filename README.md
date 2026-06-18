@@ -15,10 +15,10 @@ A full-featured, multi-conversation chat interface for Ollama with:
 Download from [ollama.com](https://ollama.com)
 
 Pull a model:
+
 ```bash
 ollama pull vaultbox/qwen3.5-uncensored:9b
 
-```bash
 .
 ├── app.py                  # Main application
 ├── requirements.txt        # Python dependencies
@@ -26,11 +26,10 @@ ollama pull vaultbox/qwen3.5-uncensored:9b
 ├── cert_store/             # SSL certificates (auto‑created)
 └── json_configuration/     # Conversations and model config (auto‑created)
 
-## 🔄 How to Update
+# 🔄 How to Update
+git pull # to update to check any changes
 
-The next thing you need to do is :
-```bash
+#The next thing you need to do is :
 git clone https://github.com/meowmeowsmh/ollama-chat-interface.git # you first intiating the pulling please support through star 
-git pull # to update to check any changes 
 pip install -r requirements.txt  # if dependencies changed
 python app.py # run the code 
