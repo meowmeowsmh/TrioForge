@@ -17,3 +17,11 @@ Download from [ollama.com](https://ollama.com)
 Pull a model:
 ```bash
 ollama pull vaultbox/qwen3.5-uncensored:9b
+
+```bash
+.
+├── app.py                  # Main application
+├── requirements.txt        # Python dependencies
+├── setup_cert.bat          # One‑click HTTPS setup for Windows
+├── cert_store/             # SSL certificates (auto‑created)
+└── json_configuration/     # Conversations and model config (auto‑created)
