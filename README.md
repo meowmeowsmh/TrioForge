@@ -25,3 +25,12 @@ ollama pull vaultbox/qwen3.5-uncensored:9b
 ├── setup_cert.bat          # One‑click HTTPS setup for Windows
 ├── cert_store/             # SSL certificates (auto‑created)
 └── json_configuration/     # Conversations and model config (auto‑created)
+
+## 🔄 How to Update
+
+The next thing you need to do is :
+```bash
+git clone https://github.com/meowmeowsmh/ollama-chat-interface.git # you first intiating the pulling please support through star 
+git pull # to update to check any changes 
+pip install -r requirements.txt  # if dependencies changed
+python app.py # run the code 
