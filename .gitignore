@@ -1,0 +1,46 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+
+# Virtual environment
+venv/
+env/
+.venv/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Your app data (conversations, model config)
+json_configuration/
+*.json
+
+# SSL certificates – don't commit your private keys!
+cert_store/
+*.pem
+*.crt
+*.key
+*.csr
+
+# Local config files – if any
+*.local
+*.sample
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log files
+*.log
