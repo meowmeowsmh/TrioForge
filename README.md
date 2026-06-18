@@ -14,17 +14,18 @@ A full-featured, multi-conversation chat interface for Ollama with:
 ### 1. Install Ollama
 Download from [ollama.com](https://ollama.com)
 
-Pull a model:
-
-```bash
-ollama pull vaultbox/qwen3.5-uncensored:9b
-
+directory should looks like this which everything is almost will do itself
 .
 ├── app.py                  # Main application
 ├── requirements.txt        # Python dependencies
 ├── setup_cert.bat          # One‑click HTTPS setup for Windows
 ├── cert_store/             # SSL certificates (auto‑created)
 └── json_configuration/     # Conversations and model config (auto‑created)
+
+Pull a model:
+
+```bash
+ollama pull vaultbox/qwen3.5-uncensored:9b
 
 # 🔄 How to Update
 git pull # to update to check any changes
