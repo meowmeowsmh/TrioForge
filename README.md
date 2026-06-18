@@ -7,7 +7,7 @@ A full-featured, multi-conversation chat interface for Ollama with:
 - 🎤 **Voice input** – Speech-to-text in the browser
 - 📎 **File/Image upload** – Attach images, PDFs, text files
 - 💾 **Live resource monitor** – Shows RAM & VRAM usage ensure your crashing rate to be low.
-- 🔒 **HTTPS** – Self-signed certificate for local use
+- 🔒 **HTTPS** – bat self-setup
 
 ## 🚀 Quick Start
 
