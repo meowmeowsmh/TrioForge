@@ -13,7 +13,7 @@ A full-featured, multi-conversation chat interface for Ollama with:
 
 ### 1. Install Ollama
 Download from [ollama.com](https://ollama.com)
-
+'''bash
 directory should looks like this which everything is almost will do itself
 .
 ├── app.py                  # Main application
