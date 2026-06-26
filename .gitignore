@@ -1,46 +1,19 @@
 # Python cache
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-*.log
+
+# Local user data (EVERYONE keeps their own)
+json_configuration/conversations.json
+json_configuration/model_config.json
+
+# SSL certificates (each user generates their own, or uses HTTP fallback)
+cert_store/
 
 # Virtual environment
 venv/
-env/
-.venv/
-.env/
+.env
 
-# IDE
+# IDE junk
 .vscode/
 .idea/
 *.swp
-*.swo
-
-# Your app data (conversations, model config)
-json_configuration/
-*.json
-
-# SSL certificates – don't commit your private keys!
-cert_store/
-*.pem
-*.crt
-*.key
-*.csr
-
-# Local config files – if any
-*.local
-*.sample
-
-# OS junk
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Log files
-*.log
