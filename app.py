@@ -1054,7 +1054,23 @@ if __name__ == '__main__':
     print("="*50)
     print(f"  Default model : {DEFAULT_MODEL}")
     print(f"  Current model : {current_model}")
-    print(f"  URL           : https://localhost:5000")
     print(f"  Storage       : {CONVERSATIONS_FILE}")
     print("="*50 + "\n")
-    app.run(host='127.0.0.1', port=5000, debug=True, ssl_context=('cert_store/localhost+1.pem', 'cert_store/localhost+1-key.pem'))
+
+    # ---- Auto-detect SSL certs ----
+    cert_file = 'cert_store/localhost+1.pem'
+    key_file = 'cert_store/localhost+1-key.pem'
+
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        ssl_context = (cert_file, key_file)
+        print("🔒 Running with HTTPS (SSL enabled)")
+        url = "https://localhost:5000"
+    else:
+        ssl_context = None
+        print("⚠️  Running with HTTP (SSL certs not found – this is fine for local use)")
+        url = "http://localhost:5000"
+
+    print(f"🌐 Open your browser at: {url}")
+    print("="*50 + "\n")
+
+    app.run(host='127.0.0.1', port=5000, debug=True, ssl_context=ssl_context)
