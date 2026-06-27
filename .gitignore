@@ -9,6 +9,9 @@ json_configuration/model_config.json
 # SSL certificates (each user generates their own, or uses HTTP fallback)
 cert_store/
 
+# mkcert executable (downloaded automatically)
+mkcert.exe
+
 # Virtual environment
 venv/
 .env
