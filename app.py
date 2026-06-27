@@ -8,6 +8,9 @@ import uuid
 import psutil
 import subprocess
 import re
+import urllib.request
+import platform
+import sys
 
 # ── NVIDIA GPU support (optional) ──
 try:
@@ -34,6 +37,66 @@ except ImportError:
 # ── Ensure the json_configuration folder exists ──
 os.makedirs(os.path.dirname(CONVERSATIONS_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
+
+# ── Create empty JSON files if they don't exist ──
+if not os.path.exists(CONVERSATIONS_FILE):
+    with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f, ensure_ascii=False, indent=2)
+    print(f"✅ Created {CONVERSATIONS_FILE}")
+
+if not os.path.exists(MODEL_CONFIG_FILE):
+    with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
+    print(f"✅ Created {MODEL_CONFIG_FILE}")
+
+# ── Auto‑SSL certificate generation ──
+def ensure_certificates():
+    """Generate SSL certificates using mkcert if they don't exist."""
+    cert_dir = 'cert_store'
+    cert_file = os.path.join(cert_dir, 'localhost+1.pem')
+    key_file = os.path.join(cert_dir, 'localhost+1-key.pem')
+
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        return True
+
+    print("🔑 Certificates not found. Auto‑generating...")
+    os.makedirs(cert_dir, exist_ok=True)
+
+    # Only Windows auto‑download for now (others can install mkcert manually)
+    if platform.system() != "Windows":
+        print("⚠️  Auto‑cert generation is only supported on Windows.")
+        print("   Install mkcert manually or run with HTTP.")
+        return False
+
+    mkcert_exe = "mkcert.exe"
+    if not os.path.exists(mkcert_exe):
+        print("📥 Downloading mkcert...")
+        url = "https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-windows-amd64.exe"
+        try:
+            urllib.request.urlretrieve(url, mkcert_exe)
+            print("✅ mkcert downloaded")
+        except Exception as e:
+            print(f"❌ Failed to download mkcert: {e}")
+            return False
+
+    try:
+        print("🔐 Installing Local Certificate Authority...")
+        subprocess.run([mkcert_exe, "-install"], check=True, capture_output=True)
+
+        print("📜 Generating certificates...")
+        subprocess.run([mkcert_exe, "localhost", "127.0.0.1"], check=True)
+
+        # Move generated files to cert_store
+        if os.path.exists("localhost+1.pem"):
+            os.rename("localhost+1.pem", cert_file)
+        if os.path.exists("localhost+1-key.pem"):
+            os.rename("localhost+1-key.pem", key_file)
+
+        print("✅ Certificates generated successfully!")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Certificate generation failed: {e.stderr.decode() if e.stderr else ''}")
+        return False
 
 # ── Model persistence ──
 def load_model_config():
@@ -1057,7 +1120,7 @@ if __name__ == '__main__':
     print(f"  Storage       : {CONVERSATIONS_FILE}")
     print("="*50 + "\n")
 
-    # ---- Auto-detect SSL certs ----
+    # ── Auto‑generate certificates if missing ──
     cert_file = 'cert_store/localhost+1.pem'
     key_file = 'cert_store/localhost+1-key.pem'
 
@@ -1066,9 +1129,15 @@ if __name__ == '__main__':
         print("🔒 Running with HTTPS (SSL enabled)")
         url = "https://localhost:5000"
     else:
-        ssl_context = None
-        print("⚠️  Running with HTTP (SSL certs not found – this is fine for local use)")
-        url = "http://localhost:5000"
+        # Try to auto‑generate
+        if ensure_certificates():
+            ssl_context = (cert_file, key_file)
+            print("🔒 Running with HTTPS (SSL enabled)")
+            url = "https://localhost:5000"
+        else:
+            ssl_context = None
+            print("⚠️  Running with HTTP (SSL unavailable)")
+            url = "http://localhost:5000"
 
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
