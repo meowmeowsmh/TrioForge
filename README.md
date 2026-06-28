@@ -39,3 +39,6 @@
 # Download from: https://ollama.com
 # Then pull a model:
 ollama pull vaultbox/qwen3.5-uncensored:9b
+
+### something ain't working 
+if user tried to run the model from huggingfaces it might not worked because vpn does not matter due to goverment restricting the hugging interface despite you log in due to the hacker news penetration into huggingfaces

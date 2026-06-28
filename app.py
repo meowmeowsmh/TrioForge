@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
+from flask import send_from_directory
 import requests
 import base64
 import os
@@ -11,6 +12,16 @@ import re
 import urllib.request
 import platform
 import sys
+
+# ── Import the provider classes ──
+from llm_providers import (
+    LLMProvider,
+    OllamaProvider,
+    LlamaCppProvider,
+    HuggingFaceProvider,
+    GroqProvider,
+    model_supports_vision,
+)
 
 # ── NVIDIA GPU support (optional) ──
 try:
@@ -51,7 +62,6 @@ if not os.path.exists(MODEL_CONFIG_FILE):
 
 # ── Auto‑SSL certificate generation ──
 def ensure_certificates():
-    """Generate SSL certificates using mkcert if they don't exist."""
     cert_dir = 'cert_store'
     cert_file = os.path.join(cert_dir, 'localhost+1.pem')
     key_file = os.path.join(cert_dir, 'localhost+1-key.pem')
@@ -62,7 +72,6 @@ def ensure_certificates():
     print("🔑 Certificates not found. Auto‑generating...")
     os.makedirs(cert_dir, exist_ok=True)
 
-    # Only Windows auto‑download for now (others can install mkcert manually)
     if platform.system() != "Windows":
         print("⚠️  Auto‑cert generation is only supported on Windows.")
         print("   Install mkcert manually or run with HTTP.")
@@ -86,7 +95,6 @@ def ensure_certificates():
         print("📜 Generating certificates...")
         subprocess.run([mkcert_exe, "localhost", "127.0.0.1"], check=True)
 
-        # Move generated files to cert_store
         if os.path.exists("localhost+1.pem"):
             os.rename("localhost+1.pem", cert_file)
         if os.path.exists("localhost+1-key.pem"):
@@ -116,17 +124,29 @@ def save_model_config(model):
 current_model = load_model_config()
 
 # ── Conversation storage ──
-def load_conversations():
+_conversations_cache: dict = {}
+_cache_loaded: bool = False
+
+def _ensure_cache():
+    global _conversations_cache, _cache_loaded
+    if _cache_loaded:
+        return
     if os.path.exists(CONVERSATIONS_FILE):
         try:
             with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                _conversations_cache = json.load(f)
         except Exception as e:
             print(f"⚠️ Error loading conversations: {e}")
-            return {}
-    return {}
+            _conversations_cache = {}
+    _cache_loaded = True
+
+def load_conversations():
+    _ensure_cache()
+    return _conversations_cache
 
 def save_conversations(convs):
+    global _conversations_cache
+    _conversations_cache = convs
     try:
         with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(convs, f, ensure_ascii=False, indent=2)
@@ -136,25 +156,30 @@ def save_conversations(convs):
         raise
 
 def create_conversation(title=None):
-    convs = load_conversations()
+    _ensure_cache()
     cid = str(uuid.uuid4())
-    convs[cid] = {
+    orders = [c.get('order', 0) for c in _conversations_cache.values()]
+    max_order = max(orders) if orders else 0
+    new_order = max_order + 1
+
+    _conversations_cache[cid] = {
         "id": cid,
         "title": title or "New Chat",
         "created": datetime.now().isoformat(),
-        "messages": []
+        "messages": [],
+        "order": new_order
     }
-    save_conversations(convs)
-    print(f"🆕 Created conversation {cid}")
+    save_conversations(_conversations_cache)
+    print(f"🆕 Created conversation {cid} with order {new_order}")
     return cid
 
 def get_conversation(cid):
-    convs = load_conversations()
-    return convs.get(cid)
+    _ensure_cache()
+    return _conversations_cache.get(cid)
 
 def add_message(cid, role, text, images=None, files=None, ts=None):
-    convs = load_conversations()
-    if cid not in convs:
+    _ensure_cache()
+    if cid not in _conversations_cache:
         print(f"❌ add_message: conversation {cid} not found")
         return False
     if images is None:
@@ -164,296 +189,746 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
     if ts is None:
         ts = datetime.now().strftime("%H:%M")
     file_meta = [{"name": f["name"], "mime": f.get("mime", "application/octet-stream")} for f in files]
-    convs[cid]["messages"].append({
+    image_meta = [{"name": img.get("name", "image")} for img in images]
+    _conversations_cache[cid]["messages"].append({
         "role": role,
         "text": text,
-        "images": images,
+        "images": image_meta,
         "files": file_meta,
         "ts": ts
     })
-    if role == "user" and len(convs[cid]["messages"]) == 1:
-        convs[cid]["title"] = text[:40] + ("..." if len(text) > 40 else "")
-    save_conversations(convs)
-    print(f"📝 Added {role} message to {cid} (now {len(convs[cid]['messages'])} messages)")
+    if role == "user" and len(_conversations_cache[cid]["messages"]) == 1:
+        _conversations_cache[cid]["title"] = text[:40] + ("..." if len(text) > 40 else "")
+    save_conversations(_conversations_cache)
+    print(f"📝 Added {role} message to {cid} (now {len(_conversations_cache[cid]['messages'])} messages)")
     return True
 
 def delete_conversation(cid):
-    convs = load_conversations()
-    if cid in convs:
-        del convs[cid]
-        save_conversations(convs)
+    _ensure_cache()
+    if cid in _conversations_cache:
+        del _conversations_cache[cid]
+        save_conversations(_conversations_cache)
         return True
     return False
 
-# ── Build HTML (with resource display) ──
+# ── C/C++ comment stripper ──────────────────────────────────────
+def strip_c_comments(text: str) -> str:
+    text = re.sub(r'//.*', '', text)
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+    text = '\n'.join(line for line in text.splitlines() if line.strip())
+    return text
+
+# ── Vision fallback (llava description) ──
+def describe_image_with_llava(image_b64: str) -> str:
+    vision_model = "llava:7b"
+    vision_prompt = (
+        "Describe this image in detail. "
+        "Include objects, colors, layout, text, and any notable features."
+    )
+    payload = {
+        "model": vision_model,
+        "prompt": vision_prompt,
+        "images": [image_b64],
+        "stream": False,
+        "options": {"temperature": 0.3}
+    }
+    try:
+        resp = requests.post("http://127.0.0.1:11434/api/generate",
+                             json=payload, timeout=60)
+        resp.raise_for_status()
+        return resp.json().get("response", "")
+    except Exception as e:
+        print(f"⚠️ llava fallback failed: {e}")
+        return ""
+
+# ── Ollama command detection & execution ────────────────────────
+def is_ollama_command(text: str) -> bool:
+    return text.strip().lower().startswith("ollama ")
+
+def execute_ollama_command_sync(text: str) -> str:
+    parts = text.strip().split()
+    if len(parts) < 2:
+        return "❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ..."
+    cmd = parts[1].lower()
+    args = parts[2:]
+
+    try:
+        if cmd == 'list':
+            r = requests.get("http://127.0.0.1:11434/api/tags", timeout=5)
+            r.raise_for_status()
+            models = r.json().get('models', [])
+            return "📦 Installed models:\n" + "\n".join(m['name'] for m in models)
+
+        elif cmd == 'ps':
+            result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5)
+            return result.stdout or result.stderr
+
+        elif cmd == 'show':
+            if not args:
+                return "❌ Usage: ollama show <model>"
+            model = args[0]
+            r = requests.post("http://127.0.0.1:11434/api/show", json={"name": model}, timeout=10)
+            r.raise_for_status()
+            return json.dumps(r.json(), indent=2)
+
+        elif cmd in ('rm', 'delete'):
+            if not args:
+                return "❌ Usage: ollama rm <model>"
+            model = args[0]
+            r = requests.delete("http://127.0.0.1:11434/api/delete", json={"name": model}, timeout=10)
+            r.raise_for_status()
+            return f"✅ Model '{model}' deleted."
+
+        elif cmd == 'stop':
+            if not args:
+                return "❌ Usage: ollama stop <model>"
+            model = args[0]
+            subprocess.run(['ollama', 'stop', model], capture_output=True, text=True, timeout=10)
+            return f"✅ Model '{model}' stopped (unloaded from memory)."
+
+        elif cmd == 'pull':
+            if not args:
+                return "❌ Usage: ollama pull <model>"
+            model = args[0]
+            r = requests.post("http://127.0.0.1:11434/api/pull", json={"name": model}, stream=True, timeout=600)
+            r.raise_for_status()
+            last_status = ""
+            for line in r.iter_lines():
+                if line:
+                    chunk = json.loads(line)
+                    if 'status' in chunk:
+                        last_status = chunk['status']
+                    if 'error' in chunk:
+                        return f"❌ Error pulling '{model}': {chunk['error']}"
+            return f"✅ Model '{model}' pulled successfully.\nLast status: {last_status}"
+
+        elif cmd == 'push':
+            return "❌ Push command requires authentication and is not supported in this interface."
+
+        else:
+            return f"❌ Unknown command: {cmd}"
+
+    except Exception as e:
+        return f"❌ Command failed: {str(e)}"
+
+def handle_ollama_command_stream(conv_id: str, user_message: str,
+                                 images: list, files: list):
+    parts = user_message.strip().split()
+    if len(parts) < 2:
+        yield f"data: {json.dumps({'token': '❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ...'})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'full_response': 'Invalid command.'})}\n\n"
+        return
+
+    cmd = parts[1].lower()
+    args = parts[2:]
+    full_response = ""
+
+    try:
+        if cmd == 'pull':
+            if not args:
+                full_response = "❌ Usage: ollama pull <model>"
+                yield f"data: {json.dumps({'token': full_response})}\n\n"
+            else:
+                model = args[0]
+                r = requests.post("http://127.0.0.1:11434/api/pull",
+                                  json={"name": model}, stream=True, timeout=600)
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        status = chunk.get('status', '')
+                        if status:
+                            full_response += status + "\n"
+                            yield f"data: {json.dumps({'token': status + '\n'})}\n\n"
+                        if 'error' in chunk:
+                            err = '❌ ' + chunk['error']
+                            full_response += err
+                            yield f"data: {json.dumps({'token': err})}\n\n"
+                final = f"\n✅ Model '{model}' pulled successfully."
+                full_response += final
+                yield f"data: {json.dumps({'token': final})}\n\n"
+
+        else:
+            output = execute_ollama_command_sync(user_message)
+            full_response = output
+            for line in output.splitlines():
+                yield f"data: {json.dumps({'token': line + '\n'})}\n\n"
+
+        yield f"data: {json.dumps({'done': True, 'full_response': full_response})}\n\n"
+
+    except Exception as e:
+        err = f"❌ Command failed: {e}"
+        yield f"data: {json.dumps({'error': err})}\n\n"
+
+    ts = datetime.now().strftime("%H:%M")
+    if conv_id:
+        add_message(conv_id, "user", user_message, images, files, ts)
+        add_message(conv_id, "bot", full_response, [], [], ts)
+
+# ── Build HTML (with search and sidebar toggle) ────────────────
 def build_html(model_name):
     return r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>Qwen Chat · Multi‑Conversation</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { height:100%; font-family:'Segoe UI',sans-serif; background:#0a0c10; color:#e6edf3; }
-.app { display:flex; height:100%; }
+html, body {
+    height:100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: #0a0a0f;
+    color: #e1e4e8;
+    overflow: hidden;
+}
 
-/* ─── SIDEBAR ─── */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at 20% 50%, #1a1a2e 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, #16213e 0%, transparent 50%);
+    animation: bgMove 20s ease infinite;
+    z-index: -1;
+}
+@keyframes bgMove {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.app {
+    display:flex; height:100%;
+    backdrop-filter: blur(2px);
+}
+
+/* ── Sidebar ─────────────────────────────────── */
 .sidebar {
-    width:260px; background:#161b22; border-right:1px solid #30363d;
+    width: 280px;
+    background: rgba(18, 18, 26, 0.85);
+    backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255,255,255,0.05);
     display:flex; flex-direction:column; flex-shrink:0;
+    box-shadow: 0 0 20px rgba(0,0,0,0.4);
+    transition: width 0.25s ease, margin 0.25s ease;
+    overflow: hidden;
+}
+.sidebar.hidden {
+    width: 0;
+    margin: 0;
+    border: none;
+    overflow: hidden;
+    padding: 0;
 }
 .sidebar-header {
-    padding:16px 16px 8px; border-bottom:1px solid #30363d;
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
 }
-.sidebar-header h2 { font-size:16px; font-weight:600; color:#58a6ff; }
+.sidebar-header h2 {
+    font-size: 17px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #58a6ff, #3fb950);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
 .new-chat-btn {
-    background:#1f6feb; color:white; border:none; border-radius:8px;
-    padding:6px 14px; font-size:13px; font-weight:600; cursor:pointer;
-    margin-left:auto; white-space:nowrap;
+    background: linear-gradient(135deg, #1f6feb, #388bfd);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: auto;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(31,111,235,0.4);
+    transition: all 0.2s;
 }
-.new-chat-btn:hover { background:#388bfd; }
-.conv-list {
-    flex:1; overflow-y:auto; padding:8px 0;
-}
-.conv-list::-webkit-scrollbar { width:4px; }
-.conv-list::-webkit-scrollbar-thumb { background:#30363d; border-radius:2px; }
-.conv-item {
-    display:flex; align-items:center; padding:8px 16px; cursor:pointer;
-    border-left:3px solid transparent; transition:0.15s;
-    gap:8px;
-}
-.conv-item:hover { background:#1c2333; }
-.conv-item.active { background:#1c2333; border-left-color:#58a6ff; }
-.conv-item .title {
-    flex:1; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    color:#e6edf3;
-}
-.conv-item .del {
-    background:transparent; border:none; color:#f85149; font-size:16px;
-    cursor:pointer; opacity:0.4; padding:0 4px;
-}
-.conv-item .del:hover { opacity:1; }
-.conv-item .time {
-    font-size:11px; color:#8b949e; margin-right:6px; white-space:nowrap;
-}
-.sidebar-footer {
-    padding:12px 16px; border-top:1px solid #30363d; font-size:12px; color:#8b949e;
-    text-align:center;
+.new-chat-btn:hover {
+    box-shadow: 0 6px 16px rgba(31,111,235,0.6);
+    transform: translateY(-1px);
 }
 
-/* ─── MAIN CHAT ─── */
+/* Search bar */
+.search-box {
+    padding: 8px 16px;
+}
+.search-box input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(13,17,23,0.7);
+    color: #e6edf3;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.search-box input:focus {
+    border-color: #58a6ff;
+}
+.search-box input::placeholder {
+    color: #8b949e;
+}
+
+.conv-list {
+    flex:1; overflow-y:auto; padding: 8px;
+}
+.conv-list::-webkit-scrollbar { width: 4px; }
+.conv-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.no-results {
+    padding: 20px 12px;
+    text-align: center;
+    color: #8b949e;
+    font-size: 14px;
+}
+
+.group-heading {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8b949e;
+    padding: 12px 12px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-top: 8px;
+}
+.group-heading:first-of-type { margin-top: 0; }
+
+.conv-item {
+    display:flex; align-items:center; padding: 8px 12px; cursor:grab;
+    border-radius: 10px; margin-bottom: 2px; transition: background 0.2s;
+    gap: 6px;
+    background: transparent;
+    user-select: none;
+}
+.conv-item:hover { background: rgba(255,255,255,0.05); }
+.conv-item.active {
+    background: rgba(31,111,235,0.15);
+    border: 1px solid rgba(31,111,235,0.3);
+}
+.conv-item.dragging { opacity: 0.4; }
+.conv-item.drag-over { border: 2px dashed #58a6ff; }
+
+.conv-item .title {
+    flex:1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: #c9d1d9;
+}
+.conv-item.active .title { color: white; }
+
+.conv-item .rename-btn {
+    background: transparent; border: none; color: #8b949e; font-size: 13px;
+    cursor: pointer; opacity: 0.4; padding: 0 4px; transition: opacity 0.2s;
+}
+.conv-item .rename-btn:hover { opacity: 1; color: #58a6ff; }
+
+.conv-item .del {
+    background: transparent; border: none; color: #f85149; font-size: 16px;
+    cursor: pointer; opacity: 0.4; padding: 0 4px; transition: opacity 0.2s;
+}
+.conv-item .del:hover { opacity: 1; }
+
+.conv-item .time {
+    font-size: 11px; color: #8b949e; margin-right: 4px; white-space: nowrap;
+}
+
+.sidebar-footer {
+    padding: 12px 16px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    font-size: 12px;
+    color: #8b949e;
+    text-align: center;
+    backdrop-filter: blur(10px);
+}
+
+/* ── Main content ────────────────────────────── */
 .main {
     flex:1; display:flex; flex-direction:column; min-width:0;
+    background: rgba(10,10,15,0.7);
+    backdrop-filter: blur(10px);
 }
 .top-bar {
-    background:#161b22; border-bottom:1px solid #30363d;
-    padding:12px 24px; display:flex; align-items:center; justify-content:space-between;
-    flex-shrink:0;
-    gap:12px;
-    flex-wrap:wrap;
+    background: rgba(22, 27, 34, 0.7);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding: 12px 24px;
+    display:flex; align-items:center; justify-content:space-between;
+    flex-shrink:0; gap:12px; flex-wrap:wrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
-.top-bar .left {
-    display:flex; align-items:center; gap:12px;
-}
+.top-bar .left { display:flex; align-items:center; gap:12px; }
 .top-bar h1 {
-    font-size:18px; background:linear-gradient(135deg,#58a6ff,#3fb950);
-    -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:700;
+    font-size: 19px;
+    background: linear-gradient(135deg, #58a6ff, #a371f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
 }
-.top-bar .right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-.model-select {
-    background:#0d1117; border:1px solid #30363d; border-radius:8px;
-    color:#e6edf3; padding:4px 8px; font-size:13px; outline:none;
-    max-width:200px;
-}
-.model-select:focus { border-color:#58a6ff; }
-.clear-btn {
-    background:#21262d; border:1px solid #30363d; color:#f85149;
-    border-radius:8px; padding:4px 12px; font-size:12px; cursor:pointer;
-}
-.clear-btn:hover { background:#2d1117; }
+.top-bar .right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 
-/* ─── SEARCH TOGGLE LABEL ─── */
+/* ── Updated Sidebar Toggle Button ──── */
+.sidebar-toggle {
+    background: transparent;
+    border: none;
+    color: #8b949e;
+    cursor: pointer;
+    padding: 6px;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    outline: none;
+}
+.sidebar-toggle:hover { color: #58a6ff; background: rgba(255,255,255,0.05); }
+
+.model-select, .provider-select, .api-key-input {
+    background: rgba(13, 17, 23, 0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    color: #e6edf3;
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    backdrop-filter: blur(5px);
+}
+.model-select:focus, .provider-select:focus, .api-key-input:focus {
+    border-color: #58a6ff;
+}
+.api-key-input { display:none; }
+.clear-btn {
+    background: rgba(33,38,45,0.7);
+    border: 1px solid rgba(248,81,73,0.3);
+    color: #f85149;
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+}
+.clear-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
+
+.vision-badge {
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    background: rgba(63,185,80,0.15);
+    border: 1px solid rgba(63,185,80,0.4);
+    color: #3fb950;
+    display: none;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+}
+.vision-badge.visible { display:inline-block; }
+
 .search-label {
-    color:#8b949e;
-    font-size:13px;
-    display:flex;
-    align-items:center;
-    gap:4px;
-    cursor:pointer;
-    user-select:none;
+    color: #8b949e;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
 }
 .search-label input[type="checkbox"] {
-    width:16px;
-    height:16px;
-    accent-color:#1f6feb;
-    cursor:pointer;
+    width: 16px; height: 16px;
+    accent-color: #1f6feb;
+    cursor: pointer;
 }
 
+/* ── Chat area ────────────────────────────────── */
 .chat-area {
-    flex:1; overflow-y:auto; padding:24px 40px;
-    display:flex; flex-direction:column; gap:16px;
+    flex:1; overflow-y:auto; padding: 24px 40px;
+    display:flex; flex-direction:column; gap: 16px;
+    will-change: transform;
 }
-.chat-area::-webkit-scrollbar { width:6px; }
-.chat-area::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+.chat-area::-webkit-scrollbar { width: 6px; }
+.chat-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 
 .msg {
-    padding:12px 18px; border-radius:14px; max-width:80%;
-    line-height:1.6; font-size:15px; white-space:pre-wrap; word-wrap:break-word;
+    padding: 14px 20px;
+    border-radius: 16px;
+    max-width: 75%;
+    line-height: 1.65;
+    font-size: 15px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    animation: fadeIn 0.3s ease;
 }
-.msg.user { align-self:flex-end; background:#1f6feb; color:white; }
-.msg.bot  { align-self:flex-start; background:#1c2333; border:1px solid #30363d; }
-.msg .ts  { font-size:10px; opacity:0.5; margin-top:6px; }
-.msg img  { max-width:240px; max-height:240px; border-radius:8px; display:block; margin-bottom:8px; border:1px solid #30363d; }
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.msg.user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #1f6feb, #388bfd);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+.msg.bot {
+    align-self: flex-start;
+    background: rgba(28, 35, 51, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-bottom-left-radius: 4px;
+}
+.msg .ts {
+    font-size: 10px;
+    opacity: 0.5;
+    margin-top: 8px;
+    text-align: right;
+}
+.msg img {
+    max-width: 240px; max-height: 240px;
+    border-radius: 12px; display: block; margin-bottom: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
 .msg .file-chip {
-    display:inline-flex; align-items:center; gap:6px;
-    background:#0d1117; border:1px solid #30363d; border-radius:8px;
-    padding:4px 10px; font-size:13px; margin-bottom:6px;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(13,17,23,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 13px;
+    margin-bottom: 8px;
+    backdrop-filter: blur(5px);
 }
 
+/* ── Attachments ─────────────────────────────── */
 .attachments {
-    display:flex; flex-wrap:wrap; gap:8px;
-    padding:0 40px 8px; background:#161b22;
+    display:flex; flex-wrap:wrap; gap: 8px;
+    padding: 0 40px 10px;
+    background: transparent;
 }
 .att-thumb {
     position:relative; display:inline-flex; align-items:center;
-    background:#0d1117; border:1px solid #30363d; border-radius:8px;
-    padding:4px 8px; gap:6px; font-size:12px; color:#8b949e;
+    background: rgba(13,17,23,0.7);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 6px 10px; gap: 8px; font-size: 12px; color: #8b949e;
+    backdrop-filter: blur(5px);
 }
-.att-thumb img { height:44px; border-radius:6px; }
+.att-thumb img { height: 44px; border-radius: 8px; }
 .att-thumb .remove {
-    background:#f85149; color:white; border:none; border-radius:50%;
-    width:16px; height:16px; font-size:11px; cursor:pointer;
-    line-height:16px; text-align:center; flex-shrink:0;
+    background: #f85149; color: white; border: none; border-radius: 50%;
+    width: 18px; height: 18px; font-size: 11px; cursor: pointer;
+    line-height: 18px; text-align: center; flex-shrink: 0;
 }
 
+/* ── Input bar ────────────────────────────────── */
 .input-bar {
-    background:#161b22; border-top:1px solid #30363d;
-    padding:12px 40px 16px; display:flex; gap:10px;
-    align-items:flex-end; flex-shrink:0;
+    background: rgba(22, 27, 34, 0.7);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding: 14px 40px 18px;
+    display: flex; gap: 10px;
+    align-items: flex-end; flex-shrink: 0;
 }
-.attach-btn {
-    background:#21262d; border:1px solid #30363d; color:#8b949e;
-    border-radius:10px; width:44px; height:44px; font-size:20px;
-    cursor:pointer; display:flex; align-items:center; justify-content:center;
-    flex-shrink:0; transition:color 0.2s;
+.attach-btn, .record-btn, .voice-toggle {
+    background: rgba(33,38,45,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 12px;
+    width: 46px; height: 46px;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
 }
-.attach-btn:hover { color:#58a6ff; border-color:#58a6ff; }
+.attach-btn:hover, .record-btn:hover, .voice-toggle:hover {
+    color: #58a6ff;
+    border-color: #58a6ff;
+    background: rgba(88,166,255,0.1);
+}
+.voice-toggle.active {
+    color: #3fb950;
+    border-color: #3fb950;
+    background: rgba(63,185,80,0.15);
+}
+#stopSpeakBtn {
+    color: #f85149;
+    display: none;
+}
+#stopSpeakBtn:hover {
+    border-color: #f85149;
+    background: rgba(248,81,73,0.15);
+}
 #msgInput {
-    flex:1; background:#0d1117; border:1px solid #30363d;
-    border-radius:10px; color:#e6edf3; font-size:15px;
-    padding:10px 14px; resize:none; font-family:inherit;
-    min-height:44px; max-height:120px; outline:none;
+    flex:1;
+    background: rgba(13, 17, 23, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    color: #e6edf3;
+    font-size: 15px;
+    padding: 12px 16px;
+    resize: none;
+    font-family: inherit;
+    min-height: 46px;
+    max-height: 140px;
+    height: 46px;
+    overflow-y: hidden;
+    outline: none;
+    transition: border-color 0.2s;
+    will-change: height;
 }
-#msgInput:focus { border-color:#58a6ff; }
+#msgInput:focus { border-color: #58a6ff; }
 #sendBtn {
-    background:#1f6feb; color:white; border:none; border-radius:10px;
-    padding:10px 24px; font-size:15px; font-weight:600;
-    cursor:pointer; height:44px; white-space:nowrap; flex-shrink:0;
+    background: linear-gradient(135deg, #1f6feb, #388bfd);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    padding: 0 28px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    height: 46px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(31,111,235,0.4);
+    transition: all 0.2s;
 }
-#sendBtn:hover { background:#388bfd; }
-#sendBtn:disabled { opacity:0.5; cursor:not-allowed; }
+#sendBtn:hover { box-shadow: 0 6px 16px rgba(31,111,235,0.6); transform: translateY(-1px); }
+#sendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ─── Status bar with resource monitor ─── */
+/* ── Status bar ───────────────────────────────── */
 #statusBar {
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    padding:6px 40px;
-    background:#161b22;
-    border-top:1px solid #30363d;
-    font-size:12px;
-    color:#8b949e;
-    flex-shrink:0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 40px;
+    background: rgba(22, 27, 34, 0.6);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    font-size: 12px;
+    color: #8b949e;
+    flex-shrink: 0;
 }
 #resourceDisplay {
-    font-family:monospace;
-    font-size:11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    background: rgba(13,17,23,0.6);
+    padding: 2px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.05);
 }
 
-/* ─── Voice Record Button ─── */
-.record-btn {
-    background:#21262d;
-    border:1px solid #30363d;
-    color:#8b949e;
-    border-radius:10px;
-    width:44px;
-    height:44px;
-    font-size:20px;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex-shrink:0;
-    transition: color 0.2s, background 0.2s, transform 0.2s;
-}
-.record-btn:hover {
-    color:#58a6ff;
-    border-color:#58a6ff;
-}
+/* ── Voice recording animation ───────────────── */
 .record-btn.recording {
-    background:#f85149;
-    color:white;
-    border-color:#f85149;
-    animation: pulse 1s infinite;
+    background: #f85149;
+    color: white;
+    border-color: #f85149;
+    animation: pulse 1.2s infinite;
 }
 @keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.1); }
-    100% { transform: scale(1); }
+    0% { box-shadow: 0 0 0 0 rgba(248,81,73,0.5); }
+    70% { box-shadow: 0 0 0 10px rgba(248,81,73,0); }
+    100% { box-shadow: 0 0 0 0 rgba(248,81,73,0); }
 }
-.record-btn:disabled {
-    opacity:0.5;
-    cursor:not-allowed;
+
+.thinking-dots::after {
+    content: '';
+    animation: dots 1.4s infinite;
 }
+@keyframes dots {
+    0%   { content: ''; }
+    25%  { content: '.'; }
+    50%  { content: '..'; }
+    75%  { content: '...'; }
+    100% { content: ''; }
+}
+
+#scrollBottomBtn {
+    position: fixed;
+    bottom: 100px;
+    right: 20px;
+    display: none;
+    z-index: 10;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    background: #1f6feb;
+    color: #fff;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: transform 0.2s;
+}
+#scrollBottomBtn:hover { transform: scale(1.05); }
 </style>
 </head>
 <body>
 <div class="app">
-
-  <!-- SIDEBAR -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <h2>💬 Chats</h2>
       <button class="new-chat-btn" onclick="newChat()">+ New</button>
     </div>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="🔍 Search chats... (title & messages)" oninput="searchChats()">
+    </div>
     <div class="conv-list" id="convList"></div>
-    <div class="sidebar-footer">Conversations are saved</div>
+    <div class="sidebar-footer">Drag to reorder · ✏️ to rename</div>
   </div>
 
-  <!-- MAIN -->
   <div class="main">
     <div class="top-bar">
       <div class="left">
-        <h1>🧠 Ollama Custom Chat</h1>
+        <!-- UPDATED: Replaced plain hamburger "☰" with the SVG icon -->
+        <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="9" y1="3" x2="9" y2="21"></line>
+          </svg>
+        </button>
+        <h1>🧠 Trio-llama Custom Chat</h1>
       </div>
       <div class="right">
-        <!-- SEARCH TOGGLE -->
         <label class="search-label">
           <input type="checkbox" id="searchToggle" checked> 🌐 Search
         </label>
+        <select id="providerSelect" class="provider-select">
+          <option value="ollama">Ollama</option>
+          <option value="llamacpp">llama.cpp</option>
+          <option value="huggingface">Hugging Face</option>
+          <option value="groq">Groq</option>
+        </select>
+        <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
         <select id="modelSelect" class="model-select" title="Select model"></select>
+        <span id="visionBadge" class="vision-badge">👁 Vision</span>
         <button class="clear-btn" onclick="clearAllChats()">🗑 Clear All</button>
       </div>
     </div>
 
     <div class="chat-area" id="chatArea">
-      <div class="msg bot">👋 Hello! Select or create a chat from the sidebar.</div>
+      <div class="msg bot">👋 Hello! Select or create a chat from the sidebar.
+      <br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>
     </div>
 
     <div class="attachments" id="attachments"></div>
 
     <div class="input-bar">
       <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
-      <input type="file" id="fileInput" accept="image/*,.pdf,.txt,.md,.py,.js,.csv,.json" multiple style="display:none"/>
+      <input type="file" id="fileInput" accept="image/*,.pdf,.txt,.md,.py,.js,.csv,.json,.c,.cpp,.h,.hpp" multiple style="display:none"/>
       <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
-      <!-- Voice Record Button -->
       <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
+      <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
+      <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
       <button id="sendBtn">Send</button>
     </div>
 
-    <!-- Status bar with resource monitor -->
     <div id="statusBar">
       <span id="status">✅ Ready</span>
       <span id="resourceDisplay">💾 RAM: -- | 🎮 VRAM: --</span>
@@ -461,7 +936,10 @@ html, body { height:100%; font-family:'Segoe UI',sans-serif; background:#0a0c10;
   </div>
 </div>
 
+<button id="scrollBottomBtn" title="Scroll to bottom">↓</button>
+
 <script>
+/* ─── JavaScript ────────────────────────────── */
 var chatArea    = document.getElementById('chatArea');
 var msgInput    = document.getElementById('msgInput');
 var sendBtn     = document.getElementById('sendBtn');
@@ -470,76 +948,272 @@ var fileInput   = document.getElementById('fileInput');
 var attachments = document.getElementById('attachments');
 var convList    = document.getElementById('convList');
 var modelSelect = document.getElementById('modelSelect');
+var providerSelect = document.getElementById('providerSelect');
+var apiKeyInput = document.getElementById('apiKeyInput');
+var visionBadge = document.getElementById('visionBadge');
 var busy        = false;
 var currentConv = null;
 var pending     = [];
+var conversations = [];
+var searchQuery = '';
 
-// ── Load models ──
-function loadModels() {
-    fetch('/models')
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                status.textContent = '⚠️ ' + data.error;
-                return;
-            }
-            var current = modelSelect.value;
-            modelSelect.innerHTML = '';
-            data.forEach(m => {
-                var opt = document.createElement('option');
-                opt.value = m;
-                opt.textContent = m;
-                modelSelect.appendChild(opt);
-            });
-            if (current && data.includes(current)) {
-                modelSelect.value = current;
-            } else {
-                fetch('/current_model')
-                    .then(r => r.json())
-                    .then(res => {
-                        if (res.model && data.includes(res.model)) {
-                            modelSelect.value = res.model;
-                        } else if (data.length > 0) {
-                            modelSelect.value = data[0];
-                        }
-                    });
-            }
-        })
-        .catch(err => {
-            status.textContent = '⚠️ Could not load models: ' + err;
-        });
+// ── Sidebar toggle ─────────────────────────────
+var sidebar = document.getElementById('sidebar');
+var sidebarVisible = localStorage.getItem('sidebarVisible') !== 'false'; // default true
+
+function toggleSidebar() {
+    sidebarVisible = !sidebarVisible;
+    localStorage.setItem('sidebarVisible', sidebarVisible);
+    sidebar.classList.toggle('hidden', !sidebarVisible);
 }
 
-// ── Model change ──
-modelSelect.addEventListener('change', function() {
-    var model = this.value;
-    if (!model) return;
-    fetch('/set_model', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({model: model})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.ok) {
-            status.textContent = '✅ Model switched to ' + model;
-        } else {
-            status.textContent = '❌ ' + (data.error || 'Failed to set model');
-        }
-    })
-    .catch(err => {
-        status.textContent = '❌ Error setting model: ' + err;
-    });
+// Restore sidebar state
+if (!sidebarVisible) sidebar.classList.add('hidden');
+
+// ── Scroll button ───────────────────────────────
+var scrollBtn = document.getElementById('scrollBottomBtn');
+
+chatArea.addEventListener('scroll', function() {
+    var threshold = 80;
+    var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
+    scrollBtn.style.display = atBottom ? 'none' : 'block';
 });
 
-// ── Load conversations ──
+scrollBtn.addEventListener('click', function() {
+    chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.altKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+    }
+});
+
+function scrollToBottomIfNeeded() {
+    var threshold = 80;
+    var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
+    if (atBottom) chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+// ─── Voice Output (TTS) ─────────────────────────
+var voiceEnabled = false;
+var speaking = false;
+var currentUtterance = null;
+
+const speakToggleBtn = document.getElementById('speakToggleBtn');
+const stopSpeakBtn = document.getElementById('stopSpeakBtn');
+
+if (!('speechSynthesis' in window)) {
+    speakToggleBtn.style.display = 'none';
+    console.warn('⚠️ Speech synthesis not supported.');
+}
+
+function toggleVoice() {
+    voiceEnabled = !voiceEnabled;
+    if (voiceEnabled) {
+        speakToggleBtn.classList.add('active');
+        speakToggleBtn.textContent = '🔊';
+        status.textContent = '🔊 Voice output ON';
+    } else {
+        speakToggleBtn.classList.remove('active');
+        speakToggleBtn.textContent = '🔇';
+        status.textContent = '🔇 Voice output OFF';
+        stopSpeaking();
+    }
+}
+
+function stopSpeaking() {
+    if (currentUtterance && speaking) {
+        window.speechSynthesis.cancel();
+        speaking = false;
+        stopSpeakBtn.style.display = 'none';
+    }
+}
+
+function speakText(text) {
+    if (!voiceEnabled || !text) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.onstart = () => {
+        speaking = true;
+        stopSpeakBtn.style.display = 'flex';
+        status.textContent = '🔊 Speaking...';
+    };
+    utterance.onend = () => {
+        speaking = false;
+        stopSpeakBtn.style.display = 'none';
+        status.textContent = voiceEnabled ? '🔊 Voice output ON (idle)' : '✅ Done';
+    };
+    utterance.onerror = (e) => {
+        console.warn('TTS error:', e.error);
+        speaking = false;
+        stopSpeakBtn.style.display = 'none';
+    };
+    currentUtterance = utterance;
+    window.speechSynthesis.speak(utterance);
+}
+
+// ── API Key helpers ─────────────────────────────
+function saveApiKey(provider, key) {
+    if (key && key.trim()) localStorage.setItem('api_key_' + provider, key.trim());
+    else localStorage.removeItem('api_key_' + provider);
+}
+function loadApiKey(provider) {
+    return localStorage.getItem('api_key_' + provider) || '';
+}
+
+// ── Vision badge ────────────────────────────────
+function updateVisionBadge() {
+    var provider = providerSelect.value;
+    var model = modelSelect.value;
+    if (!model) { visionBadge.classList.remove('visible'); return; }
+    var apiKey = apiKeyInput.value;
+    fetch('/check_vision?provider=' + encodeURIComponent(provider)
+          + '&model=' + encodeURIComponent(model)
+          + '&api_key=' + encodeURIComponent(apiKey))
+        .then(r => r.json())
+        .then(data => {
+            if (data.vision) visionBadge.classList.add('visible');
+            else visionBadge.classList.remove('visible');
+        })
+        .catch(() => visionBadge.classList.remove('visible'));
+}
+
+// ── Load models ─────────────────────────────────
+function loadModels() {
+    var provider = providerSelect.value;
+    var apiKey = apiKeyInput.value;
+    fetch('/providers/models?provider=' + encodeURIComponent(provider) + '&api_key=' + encodeURIComponent(apiKey))
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
+            var current = modelSelect.value;
+            modelSelect.innerHTML = '';
+            if (data.models && data.models.length) {
+                data.models.forEach(m => {
+                    var opt = document.createElement('option');
+                    opt.value = m; opt.textContent = m;
+                    modelSelect.appendChild(opt);
+                });
+                modelSelect.value = (current && data.models.includes(current)) ? current : data.models[0];
+            } else {
+                var opt = document.createElement('option');
+                opt.value = ''; opt.textContent = 'No models found';
+                modelSelect.appendChild(opt);
+            }
+            updateVisionBadge();
+        })
+        .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
+}
+
+// Provider change
+providerSelect.addEventListener('change', function() {
+    var provider = this.value;
+    var keyInput = document.getElementById('apiKeyInput');
+    if (provider === 'groq' || provider === 'huggingface') {
+        keyInput.style.display = 'inline-block';
+        keyInput.placeholder = provider === 'groq' ? 'Enter Groq API Key' : 'Enter HF Token (optional)';
+        keyInput.value = loadApiKey(provider);
+    } else {
+        keyInput.style.display = 'none';
+    }
+    loadModels();
+});
+apiKeyInput.addEventListener('blur', function() {
+    var provider = providerSelect.value;
+    if (provider === 'groq' || provider === 'huggingface') saveApiKey(provider, this.value);
+});
+modelSelect.addEventListener('change', function() {
+    updateVisionBadge();
+    if (providerSelect.value === 'ollama') {
+        fetch('/set_model', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({model: this.value})
+        })
+        .then(r => r.json())
+        .then(data => {
+            status.textContent = data.ok ? '✅ Model switched to ' + this.value : '❌ ' + (data.error || 'Failed');
+        })
+        .catch(err => { status.textContent = '❌ Error: ' + err; });
+    } else {
+        status.textContent = '✅ Model selected: ' + this.value;
+    }
+});
+
+// ── Date grouping helpers ──────────────────────
+function getDateGroup(dateStr) {
+    var now = new Date();
+    var date = new Date(dateStr);
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    var weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - today.getDay());
+    var lastWeekStart = new Date(weekStart);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+
+    var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (d.getTime() === today.getTime()) return 'Today';
+    if (d.getTime() === yesterday.getTime()) return 'Yesterday';
+    if (d >= weekStart) return 'This Week';
+    if (d >= lastWeekStart) return 'Last Week';
+    return 'Older';
+}
+
+// ── Search ──────────────────────────────────────
+var searchTimeout = null;
+
+function searchChats() {
+    var input = document.getElementById('searchInput');
+    var query = input.value.trim();
+    searchQuery = query;
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(function() {
+        if (query.length === 0) {
+            // Show all chats
+            renderConvList(conversations);
+            return;
+        }
+        fetch('/conversations/search?q=' + encodeURIComponent(query))
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    status.textContent = '⚠️ ' + data.error;
+                    return;
+                }
+                // data is an array of conversation objects that match
+                renderConvList(data);
+            })
+            .catch(err => {
+                status.textContent = '⚠️ Search error: ' + err;
+            });
+    }, 300);
+}
+
+// ── Conversations ──────────────────────────────
 function loadConversations() {
     fetch('/conversations')
         .then(r => r.json())
         .then(data => {
-            renderConvList(data);
+            conversations = data;
+            // If search query is active, re-apply search
+            var query = document.getElementById('searchInput').value.trim();
+            if (query.length > 0) {
+                searchChats();
+            } else {
+                renderConvList(conversations);
+            }
             if (data.length > 0) {
-                selectConversation(data[0].id);
+                if (!currentConv || !data.find(c => c.id === currentConv)) {
+                    selectConversation(data[0].id);
+                } else {
+                    selectConversation(currentConv);
+                }
             } else {
                 newChat();
             }
@@ -547,58 +1221,197 @@ function loadConversations() {
 }
 
 function renderConvList(convs) {
-    convList.innerHTML = '';
+    if (!convs || convs.length === 0) {
+        convList.innerHTML = '<div class="no-results">🔍 No chats found</div>';
+        return;
+    }
+    // Group by date
+    var groups = {};
     convs.forEach(conv => {
-        const div = document.createElement('div');
-        div.className = 'conv-item' + (conv.id === currentConv ? ' active' : '');
-        div.dataset.id = conv.id;
+        var group = getDateGroup(conv.created);
+        if (!groups[group]) groups[group] = [];
+        groups[group].push(conv);
+    });
 
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'title';
-        titleSpan.textContent = conv.title || 'Untitled';
-        div.appendChild(titleSpan);
+    var groupOrder = ['Today', 'Yesterday', 'This Week', 'Last Week', 'Older'];
+    convList.innerHTML = '';
+    groupOrder.forEach(groupName => {
+        if (groups[groupName] && groups[groupName].length) {
+            var heading = document.createElement('div');
+            heading.className = 'group-heading';
+            heading.textContent = groupName;
+            convList.appendChild(heading);
+            groups[groupName].forEach(conv => {
+                var div = document.createElement('div');
+                div.className = 'conv-item' + (conv.id === currentConv ? ' active' : '');
+                div.dataset.id = conv.id;
+                div.draggable = true;
 
-        const timeSpan = document.createElement('span');
-        timeSpan.className = 'time';
-        const d = new Date(conv.created);
-        timeSpan.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        div.appendChild(timeSpan);
+                var titleSpan = document.createElement('span');
+                titleSpan.className = 'title';
+                titleSpan.textContent = conv.title || 'Untitled';
+                div.appendChild(titleSpan);
 
-        const delBtn = document.createElement('button');
-        delBtn.className = 'del';
-        delBtn.textContent = '×';
-        delBtn.title = 'Delete this chat';
-        delBtn.onclick = (e) => { e.stopPropagation(); deleteChat(conv.id); };
-        div.appendChild(delBtn);
+                var renameBtn = document.createElement('button');
+                renameBtn.className = 'rename-btn';
+                renameBtn.textContent = '✏️';
+                renameBtn.title = 'Rename this chat';
+                renameBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    renameChat(conv.id);
+                };
+                div.appendChild(renameBtn);
 
-        div.addEventListener('click', () => selectConversation(conv.id));
-        convList.appendChild(div);
+                var timeSpan = document.createElement('span');
+                timeSpan.className = 'time';
+                var d = new Date(conv.created);
+                timeSpan.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                div.appendChild(timeSpan);
+
+                var delBtn = document.createElement('button');
+                delBtn.className = 'del';
+                delBtn.textContent = '×';
+                delBtn.title = 'Delete this chat';
+                delBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    deleteChat(conv.id);
+                };
+                div.appendChild(delBtn);
+
+                div.addEventListener('dragstart', handleDragStart);
+                div.addEventListener('dragend', handleDragEnd);
+                div.addEventListener('dragover', handleDragOver);
+                div.addEventListener('drop', handleDrop);
+
+                div.addEventListener('click', function() {
+                    selectConversation(conv.id);
+                });
+
+                convList.appendChild(div);
+            });
+        }
     });
 }
 
+// ── Drag and drop ──────────────────────────────
+var dragSrcId = null;
+
+function handleDragStart(e) {
+    dragSrcId = this.dataset.id;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', this.dataset.id);
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+    document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('drag-over'));
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('drag-over'));
+    this.classList.add('drag-over');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    this.classList.remove('drag-over');
+    var targetId = this.dataset.id;
+    if (dragSrcId === targetId) return;
+
+    var srcIndex = conversations.findIndex(c => c.id === dragSrcId);
+    var targetIndex = conversations.findIndex(c => c.id === targetId);
+    if (srcIndex === -1 || targetIndex === -1) return;
+
+    var moved = conversations.splice(srcIndex, 1)[0];
+    conversations.splice(targetIndex, 0, moved);
+
+    var newOrder = {};
+    conversations.forEach((c, idx) => {
+        newOrder[c.id] = idx;
+    });
+
+    fetch('/conversations/reorder', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({order: newOrder})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            conversations.forEach(c => c.order = newOrder[c.id]);
+            // Re-render with current search query
+            var query = document.getElementById('searchInput').value.trim();
+            if (query.length > 0) searchChats();
+            else renderConvList(conversations);
+            status.textContent = '✅ Order updated';
+        } else {
+            status.textContent = '❌ Failed to reorder';
+        }
+    })
+    .catch(err => {
+        status.textContent = '❌ Error: ' + err;
+    });
+}
+
+// ── Rename chat ─────────────────────────────────
+function renameChat(id) {
+    var conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+    var newTitle = prompt('Rename chat:', conv.title);
+    if (newTitle === null || newTitle.trim() === '') return;
+    newTitle = newTitle.trim();
+
+    fetch('/conversations/' + id + '/rename', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title: newTitle})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            conv.title = newTitle;
+            var query = document.getElementById('searchInput').value.trim();
+            if (query.length > 0) searchChats();
+            else renderConvList(conversations);
+            status.textContent = '✅ Renamed to "' + newTitle + '"';
+        } else {
+            status.textContent = '❌ Rename failed';
+        }
+    })
+    .catch(err => {
+        status.textContent = '❌ Error: ' + err;
+    });
+}
+
+// ── Select conversation ────────────────────────
 function selectConversation(id) {
     if (id === currentConv) return;
     currentConv = id;
-    document.querySelectorAll('.conv-item').forEach(el => {
-        el.classList.toggle('active', el.dataset.id === id);
-    });
+    document.querySelectorAll('.conv-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
+
     fetch('/conversations/' + id + '/messages')
         .then(r => r.json())
         .then(messages => {
             chatArea.innerHTML = '';
             if (messages.length === 0) {
-                chatArea.innerHTML = '<div class="msg bot">💬 No messages yet. Say something!</div>';
+                chatArea.innerHTML = '<div class="msg bot">💬 No messages yet. Say something!<br>You can also type <code>ollama pull &lt;model&gt;</code>, etc.</div>';
             } else {
                 messages.forEach(msg => renderMsg(msg.role, msg));
             }
-            chatArea.scrollTop = chatArea.scrollHeight;
+            scrollToBottomIfNeeded();
         });
 }
 
 function newChat() {
     fetch('/conversations', { method: 'POST' })
         .then(r => r.json())
-        .then(data => {
+        .then(() => {
+            // Clear search input when creating a new chat
+            document.getElementById('searchInput').value = '';
+            searchQuery = '';
             loadConversations();
         });
 }
@@ -622,10 +1435,10 @@ function clearAllChats() {
         });
 }
 
+// ── Message rendering ──────────────────────────
 function renderMsg(role, entry) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
-
     if (entry.images && entry.images.length) {
         entry.images.forEach(im => {
             var img = document.createElement('img');
@@ -645,17 +1458,16 @@ function renderMsg(role, entry) {
     body.className = 'body';
     body.textContent = entry.text || '';
     div.appendChild(body);
-
     var ts = document.createElement('div');
     ts.className = 'ts';
     ts.textContent = entry.ts || '';
     div.appendChild(ts);
-
     chatArea.appendChild(div);
-    chatArea.scrollTop = chatArea.scrollHeight;
+    scrollToBottomIfNeeded();
     return div;
 }
 
+// Attachments
 fileInput.addEventListener('change', function() {
     var files = Array.from(fileInput.files);
     files.forEach(function(file) {
@@ -664,7 +1476,6 @@ fileInput.addEventListener('change', function() {
             var b64 = ev.target.result.split(',')[1];
             var isImage = file.type.startsWith('image/');
             pending.push({ type: isImage ? 'image' : 'file', name: file.name, b64: b64, mime: file.type });
-
             var thumb = document.createElement('div');
             thumb.className = 'att-thumb';
             if (isImage) {
@@ -690,12 +1501,12 @@ fileInput.addEventListener('change', function() {
     fileInput.value = '';
 });
 
+// Input handling
 msgInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
 });
 msgInput.addEventListener('input', function() {
-    msgInput.style.height = 'auto';
-    msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
+    this.style.height = Math.min(this.scrollHeight, 140) + 'px';
 });
 sendBtn.addEventListener('click', doSend);
 
@@ -729,66 +1540,118 @@ function actuallySend(text) {
     renderMsg('user', userEntry);
 
     msgInput.value = '';
-    msgInput.style.height = 'auto';
+    msgInput.style.height = '46px';
     pending = [];
     attachments.innerHTML = '';
 
     var botDiv = renderMsg('bot', { role:'bot', text:'⏳ Thinking...', ts:'' });
+    botDiv.querySelector('.body').classList.add('thinking-dots');
     busy = true;
     sendBtn.disabled = true;
-    status.textContent = '⏳ Waiting for Ollama...';
+    status.textContent = '⏳ Generating...';
 
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/chat', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.timeout = 180000;
+    var searchEnabled = document.getElementById('searchToggle').checked;
+    var provider = providerSelect.value;
+    var model = modelSelect.value;
+    var apiKey = apiKeyInput.value;
+    if (provider === 'groq' || provider === 'huggingface') saveApiKey(provider, apiKey);
 
-    xhr.onload = function() {
-        busy = false;
-        sendBtn.disabled = false;
-        if (xhr.status === 200) {
-            try {
-                var data = JSON.parse(xhr.responseText);
+    var endpoint = (provider === 'ollama') ? '/chat_stream' : '/chat';
+
+    fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            conversation_id: currentConv,
+            message: text,
+            images: images.map(i => ({ b64: i.b64, name: i.name })),
+            files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime })),
+            search: searchEnabled,
+            provider: provider,
+            model: model,
+            api_key: apiKey
+        })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('text/event-stream')) {
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder();
+            var fullText = '';
+            function readStream() {
+                reader.read().then(({done, value}) => {
+                    if (done) { finishStream(fullText, botDiv); return; }
+                    var chunk = decoder.decode(value, {stream: true});
+                    var lines = chunk.split('\n');
+                    for (var line of lines) {
+                        if (line.startsWith('data: ')) {
+                            var jsonStr = line.substring(6);
+                            try {
+                                var data = JSON.parse(jsonStr);
+                                if (data.token) {
+                                    fullText += data.token;
+                                    botDiv.querySelector('.body').classList.remove('thinking-dots');
+                                    botDiv.querySelector('.body').textContent = fullText;
+                                    scrollToBottomIfNeeded();
+                                }
+                                if (data.error) {
+                                    botDiv.querySelector('.body').classList.remove('thinking-dots');
+                                    botDiv.querySelector('.body').textContent = '❌ ' + data.error;
+                                    status.textContent = '❌ ' + data.error;
+                                    busy = false; sendBtn.disabled = false;
+                                    return;
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                    readStream();
+                });
+            }
+            readStream();
+        } else {
+            response.json().then(data => {
                 if (data.error) {
+                    botDiv.querySelector('.body').classList.remove('thinking-dots');
                     botDiv.querySelector('.body').textContent = '❌ ' + data.error;
                     status.textContent = '❌ ' + data.error;
                 } else {
-                    var botEntry = { role:'bot', text: data.response || '(no response)', ts: new Date().toLocaleTimeString() };
-                    botDiv.querySelector('.body').textContent = botEntry.text;
-                    botDiv.querySelector('.ts').textContent  = botEntry.ts;
+                    var text = data.response || '(no response)';
+                    botDiv.querySelector('.body').classList.remove('thinking-dots');
+                    botDiv.querySelector('.body').textContent = text;
+                    botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                     status.textContent = '✅ Done';
                     loadConversations();
+                    speakText(text);
                 }
-            } catch(e) {
-                botDiv.querySelector('.body').textContent = '❌ Parse error';
-                status.textContent = '❌ Parse error';
-            }
-        } else {
-            botDiv.querySelector('.body').textContent = '❌ Server error: ' + xhr.status;
-            status.textContent = '❌ HTTP ' + xhr.status;
+                busy = false; sendBtn.disabled = false;
+            });
         }
-        chatArea.scrollTop = chatArea.scrollHeight;
-    };
-    xhr.onerror   = function() { busy=false; sendBtn.disabled=false; botDiv.querySelector('.body').textContent='❌ Network error'; status.textContent='❌ Network error'; };
-    xhr.ontimeout = function() { busy=false; sendBtn.disabled=false; botDiv.querySelector('.body').textContent='❌ Timed out'; status.textContent='❌ Timeout'; };
-
-    // ── READ SEARCH TOGGLE STATE ──
-    var searchEnabled = document.getElementById('searchToggle').checked;
-
-    xhr.send(JSON.stringify({
-        conversation_id: currentConv,
-        message: text,
-        images: images.map(i => ({ b64: i.b64, name: i.name })),
-        files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime })),
-        search: searchEnabled
-    }));
+    })
+    .catch(err => {
+        botDiv.querySelector('.body').classList.remove('thinking-dots');
+        botDiv.querySelector('.body').textContent = '❌ ' + err.message;
+        status.textContent = '❌ ' + err.message;
+        busy = false; sendBtn.disabled = false;
+    });
 }
 
-// ─── VOICE RECORDING ──────────────────────────────────────────────
+function finishStream(fullText, botDiv) {
+    botDiv.querySelector('.body').classList.remove('thinking-dots');
+    botDiv.querySelector('.body').textContent = fullText || '(empty response)';
+    botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
+    status.textContent = '✅ Done';
+    busy = false;
+    sendBtn.disabled = false;
+    scrollToBottomIfNeeded();
+    speakText(fullText);
+    loadConversations();
+}
+
+// ── Voice recording ────────────────────────────
 var recordBtn = document.getElementById('recordBtn');
 var recognition = null;
 var isRecording = false;
-
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognition = new SpeechRecognition();
@@ -796,58 +1659,38 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-
     recognition.onresult = function(event) {
         var transcript = '';
         for (var i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-                transcript += event.results[i][0].transcript;
-            } else {
-                var interim = event.results[i][0].transcript;
-                msgInput.value = interim;
-                msgInput.style.height = 'auto';
-                msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
+            if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
+            else {
+                msgInput.value = event.results[i][0].transcript;
+                msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
                 status.textContent = '🎤 Listening... (interim)';
             }
         }
         if (transcript) {
             msgInput.value = transcript;
-            msgInput.style.height = 'auto';
-            msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
-            status.textContent = '✅ Voice recognized! Press Send or speak again.';
+            msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
+            status.textContent = '✅ Voice recognized!';
         }
     };
-
     recognition.onend = function() {
         isRecording = false;
         recordBtn.classList.remove('recording');
         recordBtn.textContent = '🎤';
-        if (msgInput.value.trim() === '') {
-            status.textContent = '⏹️ Recording stopped (no input)';
-        } else {
-            status.textContent = '✅ Voice input ready. Press Send to chat.';
-        }
+        if (msgInput.value.trim() === '') status.textContent = '⏹️ Recording stopped (no input)';
+        else status.textContent = '✅ Voice input ready.';
     };
-
     recognition.onerror = function(event) {
-        console.error('Speech recognition error:', event.error);
         isRecording = false;
         recordBtn.classList.remove('recording');
         recordBtn.textContent = '🎤';
-        var errorMessages = {
-            'not-allowed': '❌ Microphone access denied. Please allow microphone permissions.',
-            'no-speech': '⏹️ No speech detected. Try again.',
-            'audio-capture': '❌ No microphone found. Please connect a microphone.',
-            'network': '❌ Network error. Check your connection.'
-        };
-        status.textContent = errorMessages[event.error] || '❌ Speech error: ' + event.error;
+        var errors = { 'not-allowed': '❌ Microphone access denied.', 'no-speech': '⏹️ No speech detected.', 'audio-capture': '❌ No microphone found.', 'network': '❌ Network error.' };
+        status.textContent = errors[event.error] || '❌ Speech error: ' + event.error;
     };
-
     recordBtn.addEventListener('click', function() {
-        if (isRecording) {
-            recognition.stop();
-            return;
-        }
+        if (isRecording) { recognition.stop(); return; }
         try {
             recognition.start();
             isRecording = true;
@@ -855,43 +1698,42 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             recordBtn.textContent = '⏹';
             msgInput.value = '';
             status.textContent = '🎤 Listening... Speak now.';
-        } catch (e) {
-            console.error('Failed to start recording:', e);
-            status.textContent = '❌ Failed to start recording: ' + e.message;
-        }
+        } catch (e) { status.textContent = '❌ Failed to start recording: ' + e.message; }
     });
-
-    console.log('🎤 Voice recording is ready!');
 } else {
     recordBtn.style.display = 'none';
-    console.warn('⚠️ Speech recognition not supported in this browser.');
-    status.textContent = '⚠️ Voice recording not supported. Use Chrome or Edge.';
+    status.textContent = '⚠️ Voice recording not supported.';
 }
-// ─── END VOICE RECORDING ──────────────────────────────────────────
 
-// ─── RESOURCE MONITOR (RAM / VRAM) ──────────────────────────────
+// Resource monitor
+var resourceIntervalId = null;
+
 function updateResources() {
     fetch('/resources')
         .then(r => r.json())
         .then(data => {
-            const display = document.getElementById('resourceDisplay');
-            if (data.error) {
-                display.textContent = '⚠️ ' + data.error;
-                return;
-            }
-            let ramText = data.ram_used !== null ? `${data.ram_used.toFixed(1)}GB` : '--';
-            let vramText = data.vram_used !== null ? `${data.vram_used.toFixed(1)}GB` : '--';
-            display.textContent = `💾 RAM: ${ramText} | 🎮 VRAM: ${vramText}`;
+            var disp = document.getElementById('resourceDisplay');
+            if (!disp) return;
+            if (data.error) { disp.textContent = '⚠️ ' + data.error; return; }
+            let ram = data.ram_used !== null ? data.ram_used.toFixed(1) + 'GB' : '--';
+            let vram = data.vram_used !== null ? data.vram_used.toFixed(1) + 'GB' : '--';
+            disp.textContent = `💾 RAM: ${ram} | 🎮 VRAM: ${vram}`;
         })
-        .catch(err => {
-            console.log('Resource update failed:', err);
-        });
+        .catch(err => console.log('Resource update failed:', err));
 }
 
-// Update every 5 seconds
-setInterval(updateResources, 5000);
+window.addEventListener('beforeunload', function() {
+    if (resourceIntervalId) { clearInterval(resourceIntervalId); resourceIntervalId = null; }
+    navigator.sendBeacon('/unload_model');
+});
+
+resourceIntervalId = setInterval(updateResources, 5000);
 
 window.addEventListener('load', function() {
+    var provider = providerSelect.value;
+    if (provider === 'groq' || provider === 'huggingface') {
+        apiKeyInput.value = loadApiKey(provider);
+    }
     loadModels();
     loadConversations();
     msgInput.focus();
@@ -903,52 +1745,100 @@ window.addEventListener('load', function() {
 
 # ── Routes ──────────────────────────────────────────────────────
 
+@app.route('/unload_model', methods=['POST'])
+def unload_model():
+    try:
+        requests.post(
+            "http://127.0.0.1:11434/api/generate",
+            json={"model": current_model, "prompt": "", "keep_alive": 0},
+            timeout=3
+        )
+        print(f"🧹 Unloaded '{current_model}' from Ollama RAM")
+    except Exception as e:
+        print(f"⚠️ Could not unload model: {e}")
+    return '', 204
+
+providers = {
+    "ollama": OllamaProvider(model=current_model),
+    "llamacpp": LlamaCppProvider(),
+    "huggingface": HuggingFaceProvider(),
+    "groq": GroqProvider(),
+}
+
+@app.route('/image/<path:filename>')
+def serve_image(filename):
+    return send_from_directory('image', filename)
+
 @app.route('/')
 def index():
     return build_html(current_model)
 
 @app.route('/resources', methods=['GET'])
 def get_resources():
-    """Return current RAM and VRAM usage (display only, with fallback)."""
     try:
         ram = psutil.virtual_memory()
         ram_used_gb = (ram.total - ram.available) / (1024**3)
-
-        # Try NVML first
         vram_used_gb = None
+
         if NVML_AVAILABLE:
             try:
                 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                 info = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 vram_used_gb = info.used / (1024**3)
-            except Exception as e:
-                print(f"⚠️ NVML query failed: {e}")
+            except Exception:
+                pass
 
-        # Fallback: parse nvidia-smi if NVML failed or not available
         if vram_used_gb is None:
             try:
-                result = subprocess.run(
-                    ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
+                output = subprocess.check_output(
+                    ['rocm-smi', '--showmeminfo', 'vram'],
+                    text=True, timeout=5, stderr=subprocess.DEVNULL
                 )
-                if result.returncode == 0:
-                    vram_mb = float(result.stdout.strip().split('\n')[0])
-                    vram_used_gb = vram_mb / 1024
-                    print(f"✅ VRAM from nvidia-smi: {vram_used_gb:.2f}GB")
-            except Exception as e:
-                print(f"⚠️ nvidia-smi fallback failed: {e}")
+                match = re.search(r'Used\s+(\d+)\s+MB', output)
+                if match:
+                    vram_used_gb = float(match.group(1)) / 1024
+            except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+                pass
+
+        if vram_used_gb is None and platform.system() == "Darwin":
+            vram_used_gb = ram_used_gb
 
         return jsonify({
             'ram_used': ram_used_gb,
             'vram_used': vram_used_gb,
             'ram_total': ram.total / (1024**3)
         })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ── Model endpoints ──
+@app.route('/check_vision', methods=['GET'])
+def check_vision():
+    provider_name = request.args.get('provider', 'ollama')
+    model = request.args.get('model', '')
+
+    if provider_name == 'ollama' and model:
+        try:
+            resp = requests.post(
+                "http://127.0.0.1:11434/api/show",
+                json={"name": model}, timeout=5
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                details = data.get("details", {})
+                caps = details.get("capabilities", [])
+                if "vision" in caps:
+                    return jsonify({"vision": True})
+                family = details.get("family", "").lower()
+                vision_families = VISION_MODELS["ollama"]
+                has_vision = any(kw in family for kw in vision_families)
+                return jsonify({"vision": has_vision})
+        except Exception:
+            pass
+    
+    has_vision = model_supports_vision(provider_name, model)
+    return jsonify({"vision": has_vision})
+
 @app.route('/models', methods=['GET'])
 def get_models():
     try:
@@ -959,6 +1849,22 @@ def get_models():
         return jsonify(models)
     except requests.exceptions.ConnectionError:
         return jsonify({'error': 'Cannot connect to Ollama'}), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/providers/models', methods=['GET'])
+def get_provider_models():
+    provider_name = request.args.get('provider', 'ollama')
+    api_key = request.args.get('api_key', None)
+    provider = providers.get(provider_name)
+    if not provider:
+        return jsonify({'error': 'Unknown provider'}), 400
+    try:
+        if provider_name == 'groq' and api_key:
+            models = provider.list_models(api_key=api_key)
+        else:
+            models = provider.list_models()
+        return jsonify({'models': models})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -983,14 +1889,19 @@ def set_model():
         pass
     current_model = model
     save_model_config(model)
+    providers["ollama"].model = model
     return jsonify({'ok': True, 'model': model})
 
-# ── Conversations API ──
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
     convs = load_conversations()
-    sorted_list = sorted(convs.values(), key=lambda c: c.get('created', ''), reverse=True)
-    result = [{"id": c["id"], "title": c.get("title", "Untitled"), "created": c.get("created", "")} for c in sorted_list]
+    sorted_list = sorted(convs.values(), key=lambda c: (c.get('order', 0), c.get('created', '')))
+    result = [{
+        "id": c["id"],
+        "title": c.get("title", "Untitled"),
+        "created": c.get("created", ""),
+        "order": c.get("order", 0)
+    } for c in sorted_list]
     return jsonify(result)
 
 @app.route('/conversations', methods=['POST'])
@@ -1015,7 +1926,66 @@ def clear_all():
     save_conversations({})
     return jsonify({"ok": True})
 
-# ── Chat endpoint ──
+# ── New: rename ──────────────────────────────────
+@app.route('/conversations/<cid>/rename', methods=['PUT'])
+def rename_conversation(cid):
+    data = request.get_json()
+    new_title = data.get('title', '').strip()
+    if not new_title:
+        return jsonify({'error': 'Title cannot be empty'}), 400
+    convs = load_conversations()
+    if cid not in convs:
+        return jsonify({'error': 'Conversation not found'}), 404
+    convs[cid]['title'] = new_title
+    save_conversations(convs)
+    return jsonify({'ok': True})
+
+# ── New: reorder ─────────────────────────────────
+@app.route('/conversations/reorder', methods=['POST'])
+def reorder_conversations():
+    data = request.get_json()
+    order_map = data.get('order')
+    if not order_map or not isinstance(order_map, dict):
+        return jsonify({'error': 'Invalid order data'}), 400
+
+    convs = load_conversations()
+    for cid, new_order in order_map.items():
+        if cid in convs:
+            convs[cid]['order'] = int(new_order)
+    save_conversations(convs)
+    return jsonify({'ok': True})
+
+# ── New: search conversations ────────────────────
+@app.route('/conversations/search', methods=['GET'])
+def search_conversations():
+    query = request.args.get('q', '').strip().lower()
+    if not query:
+        return jsonify([])  # return empty if no query, but frontend handles empty differently
+
+    convs = load_conversations()
+    results = []
+    for cid, conv in convs.items():
+        # Search in title
+        title_match = query in conv.get('title', '').lower()
+        # Search in messages
+        msg_match = False
+        for msg in conv.get('messages', []):
+            text = msg.get('text', '').lower()
+            if query in text:
+                msg_match = True
+                break
+        if title_match or msg_match:
+            results.append({
+                "id": conv["id"],
+                "title": conv.get("title", "Untitled"),
+                "created": conv.get("created", ""),
+                "order": conv.get("order", 0)
+            })
+    # Sort by order
+    results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
+    return jsonify(results)
+
+# ── Original Chat endpoint ──
 @app.route('/chat', methods=['POST'])
 def chat():
     global current_model
@@ -1026,92 +1996,214 @@ def chat():
         files = data.get('files', [])
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
-
-        print(f"📩 Received chat request: conv_id={conv_id}, search={search_enabled}, message='{user_message[:30]}...'")
+        provider_name = data.get('provider', 'ollama')
+        model = data.get('model', None)
+        api_key = data.get('api_key', None)
 
         if not user_message and not images and not files:
             return jsonify({'error': 'Nothing to send'}), 400
 
         if not conv_id:
-            print("🆕 No conv_id, creating new conversation")
             conv_id = create_conversation()
         else:
             conv = get_conversation(conv_id)
             if conv is None:
-                print(f"❌ Conversation {conv_id} not found")
                 return jsonify({'error': 'Conversation not found'}), 404
-            else:
-                print(f"✅ Found conversation {conv_id} with {len(conv.get('messages', []))} messages")
 
-        # ── SEARCH ENGINE (only if enabled) ──
+        if is_ollama_command(user_message):
+            output = execute_ollama_command_sync(user_message)
+            ts = datetime.now().strftime("%H:%M")
+            add_message(conv_id, "user", user_message, [], [], ts)
+            add_message(conv_id, "bot", output, [], [], ts)
+            return jsonify({'response': output})
+
         search_context = ""
         if SEARCH_AVAILABLE and search_enabled and user_message.strip():
             try:
-                print(f"🌐 Searching DuckDuckGo for: {user_message[:50]}...")
                 with DDGS() as ddgs:
                     results = ddgs.text(user_message, max_results=3)
                     snippets = [r['body'] for r in results if 'body' in r]
                     if snippets:
                         search_context = " ".join(snippets[:3])
-                        print(f"✅ Found {len(snippets)} search results.")
-                    else:
-                        print("⚠️ No search results found.")
             except Exception as e:
                 print(f"❌ Search error: {e}")
 
-        # ── Build the prompt ──
         if search_context:
-            final_prompt = f"Web search results for '{user_message}':\n{search_context}\n\nBased on these results, answer the user's question: {user_message}"
+            final_prompt = (
+                f"Web search results for '{user_message}':\n{search_context}\n\n"
+                f"Based on these results, answer the user's question: {user_message}"
+            )
         else:
             final_prompt = user_message
 
-        # ── Attach files ──
         for f in files:
             try:
                 raw = base64.b64decode(f['b64']).decode('utf-8', errors='replace')
-                final_prompt += f"\n\n--- File: {f['name']} ---\n{raw[:4000]}"
+                if f['name'].lower().endswith(('.c', '.cpp', '.h', '.hpp')):
+                    raw = strip_c_comments(raw)
+                final_prompt += f"\n\n--- File: {f['name']} ---\n{raw[:8000]}"
             except:
-                final_prompt += f"\n\n[Attached file: {f['name']} — binary, cannot read as text]"
+                final_prompt += f"\n\n[Attached file: {f['name']} — binary]"
 
-        # ── Ollama payload ──
-        payload = {
-            "model": current_model,
-            "prompt": final_prompt,
-            "stream": False,
-            "keep_alive": 0,
-            "options": {"temperature": 0.7, "num_predict": 2048, "num_ctx": 16384}
-        }
+        provider = providers.get(provider_name)
+        if not provider:
+            return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
+
+        messages = [{"role": "user", "content": final_prompt}]
+        extra_kwargs = {"model": model}
+        if api_key:
+            extra_kwargs['api_key'] = api_key
+
         if images:
-            payload["images"] = [i['b64'] for i in images]
+            if model_supports_vision(provider_name, model):
+                print(f"👁️ Native vision: provider={provider_name}, model={model}")
+                reply = provider.generate_with_image(messages, images, **extra_kwargs)
+            else:
+                print(f"👁️ Text-only model – describing image with llava fallback")
+                description = describe_image_with_llava(images[0]["b64"])
+                if description:
+                    inject = f"[Image description]\n{description.strip()}\n\n[User question]\n"
+                else:
+                    inject = "[Image description unavailable]\n\n[User question]\n"
+                messages = [{"role": "user", "content": inject + final_prompt}]
+                reply = provider.generate(messages, **extra_kwargs)
+        else:
+            reply = provider.generate(messages, **extra_kwargs)
 
-        print(f"📨 Sending to Ollama (model {current_model}): {final_prompt[:60]}")
-        resp = requests.post(OLLAMA_URL, json=payload, timeout=180)
-        resp.raise_for_status()
-        reply = resp.json().get('response', 'No response.')
-        print(f"✅ Got reply: {reply[:60]}")
+        print(f"✅ Reply: {reply[:60]}")
 
         ts = datetime.now().strftime("%H:%M")
+        original_message = data.get('message', '').strip()
 
-        if not add_message(conv_id, "user", user_message, images, files, ts):
-            return jsonify({'error': f'Failed to save user message to conversation {conv_id}'}), 500
-
+        if not add_message(conv_id, "user", original_message, images, files, ts):
+            return jsonify({'error': f'Failed to save user message to {conv_id}'}), 500
         if not add_message(conv_id, "bot", reply, [], [], ts):
-            return jsonify({'error': f'Failed to save bot message to conversation {conv_id}'}), 500
+            return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
 
-        print(f"💾 Saved both messages to {conv_id}")
         return jsonify({'response': reply})
 
     except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to Ollama")
         return jsonify({'error': 'Cannot connect to Ollama. Make sure it is running.'}), 503
     except requests.exceptions.Timeout:
-        return jsonify({'error': 'Ollama timed out. Try a shorter message.'}), 504
+        return jsonify({'error': 'Request timed out. Try a shorter message.'}), 504
     except Exception as e:
         print(f"❌ Error: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ── Streaming Chat endpoint ──
+@app.route('/chat_stream', methods=['POST'])
+def chat_stream():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        user_message = data.get('message', '').strip()
+        images = data.get('images', [])
+        files = data.get('files', [])
+        conv_id = data.get('conversation_id')
+        search_enabled = data.get('search', False)
+        model = data.get('model', current_model)
+        api_key = data.get('api_key', None)
+
+        provider_name = data.get('provider', 'ollama')
+        if provider_name != 'ollama':
+            return jsonify({'error': 'Streaming only supported for Ollama in this version.'}), 400
+
+        if not user_message and not images and not files:
+            return jsonify({'error': 'Nothing to send'}), 400
+
+        if not conv_id:
+            conv_id = create_conversation()
+        else:
+            conv = get_conversation(conv_id)
+            if conv is None:
+                return jsonify({'error': 'Conversation not found'}), 404
+
+        if is_ollama_command(user_message):
+            return Response(
+                handle_ollama_command_stream(conv_id, user_message, images, files),
+                mimetype='text/event-stream'
+            )
+
+        search_context = ""
+        if SEARCH_AVAILABLE and search_enabled and user_message.strip():
+            try:
+                with DDGS() as ddgs:
+                    results = ddgs.text(user_message, max_results=3)
+                    snippets = [r['body'] for r in results if 'body' in r]
+                    if snippets:
+                        search_context = " ".join(snippets[:3])
+            except Exception as e:
+                print(f"❌ Search error: {e}")
+
+        if search_context:
+            final_prompt = (
+                f"Web search results for '{user_message}':\n{search_context}\n\n"
+                f"Based on these results, answer the user's question: {user_message}"
+            )
+        else:
+            final_prompt = user_message
+
+        for f in files:
+            try:
+                raw = base64.b64decode(f['b64']).decode('utf-8', errors='replace')
+                if f['name'].lower().endswith(('.c', '.cpp', '.h', '.hpp')):
+                    raw = strip_c_comments(raw)
+                final_prompt += f"\n\n--- File: {f['name']} ---\n{raw[:8000]}"
+            except:
+                final_prompt += f"\n\n[Attached file: {f['name']} — binary]"
+
+        payload = {
+            "model": model or current_model,
+            "prompt": final_prompt,
+            "stream": True,
+            "keep_alive": 300,
+            "options": {
+                "temperature": 0.7,
+                "num_predict": 2048,
+                "num_ctx": 4096,
+                "num_gpu": 99
+            }
+        }
+        if images:
+            payload["images"] = [
+                img["b64"].split(",")[-1] if "," in img["b64"] else img["b64"]
+                for img in images if "b64" in img
+            ]
+
+        def generate():
+            full_response = ""
+            try:
+                r = requests.post(
+                    "http://127.0.0.1:11434/api/generate",
+                    json=payload,
+                    stream=True,
+                    timeout=300
+                )
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        token = chunk.get("response", "")
+                        if token:
+                            full_response += token
+                            yield f"data: {json.dumps({'token': token})}\n\n"
+                        if chunk.get("done", False):
+                            yield f"data: {json.dumps({'done': True, 'full_response': full_response})}\n\n"
+                            break
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+            ts = datetime.now().strftime("%H:%M")
+            add_message(conv_id, "user", user_message, images, files, ts)
+            add_message(conv_id, "bot", full_response, [], [], ts)
+
+        return Response(generate(), mimetype='text/event-stream')
+
+    except Exception as e:
+        print(f"❌ chat_stream error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    from llm_providers import VISION_MODELS
     print("\n" + "="*50)
     print("🚀  AI CHAT Interfacing Loading... · Multi‑Conversation")
     print("="*50)
@@ -1120,16 +2212,14 @@ if __name__ == '__main__':
     print(f"  Storage       : {CONVERSATIONS_FILE}")
     print("="*50 + "\n")
 
-    # ── Auto‑generate certificates if missing ──
     cert_file = 'cert_store/localhost+1.pem'
-    key_file = 'cert_store/localhost+1-key.pem'
+    key_file  = 'cert_store/localhost+1-key.pem'
 
     if os.path.exists(cert_file) and os.path.exists(key_file):
         ssl_context = (cert_file, key_file)
         print("🔒 Running with HTTPS (SSL enabled)")
         url = "https://localhost:5000"
     else:
-        # Try to auto‑generate
         if ensure_certificates():
             ssl_context = (cert_file, key_file)
             print("🔒 Running with HTTPS (SSL enabled)")
