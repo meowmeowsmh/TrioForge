@@ -1,3 +1,4 @@
+# app.py (complete, with message editing, deletion, and token-speed meter)
 from flask import Flask, request, jsonify, Response
 from flask import send_from_directory
 import requests
@@ -12,6 +13,7 @@ import re
 import urllib.request
 import platform
 import sys
+import time   # <-- new import
 
 # ── Import the provider classes ──
 from llm_providers import (
@@ -20,6 +22,8 @@ from llm_providers import (
     LlamaCppProvider,
     HuggingFaceProvider,
     GroqProvider,
+    DeepSeekProvider,
+    ClaudeProvider,
     model_supports_vision,
 )
 
@@ -365,7 +369,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (with compact sliding toggle) ──
+# ── Build HTML (with compact toggle, drag-drop, and provider support) ──
 def build_html(model_name):
     return r"""<!DOCTYPE html>
 <html lang="en">
@@ -775,6 +779,7 @@ body.light-mode::before {
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     animation: fadeIn 0.3s ease;
     transition: background 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
+    position: relative;    /* <-- ADDED for absolute positioned buttons */
 }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
@@ -814,6 +819,49 @@ body.light-mode::before {
     margin-bottom: 8px;
     backdrop-filter: blur(5px);
 }
+
+/* NEW: edit/delete buttons on messages */
+.msg .msg-actions {
+    display: none;
+    position: absolute;
+    top: 4px;
+    right: 10px;
+    gap: 6px;
+}
+.msg:hover .msg-actions {
+    display: flex;
+}
+.msg .edit-btn, .msg .delete-btn {
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: #8b949e;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: 0.2s;
+}
+.msg .edit-btn:hover { color: #58a6ff; background: rgba(88,166,255,0.15); }
+.msg .delete-btn:hover { color: #f85149; background: rgba(248,81,73,0.15); }
+.edit-textarea {
+    width: 100%;
+    background: rgba(13,17,23,0.9);
+    color: #e1e4e8;
+    border: 1px solid #58a6ff;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: inherit;
+    resize: vertical;
+}
+
+/* ── FIX: Always show actions on User, hide them on Bot ── */
+.msg.user .msg-actions {
+    display: flex !important;
+}
+.msg.bot .msg-actions {
+    display: none !important;
+}
+/* ──────────────────────────────────────────────────────── */
 
 /* ── Attachments ─────────────────────────────── */
 .attachments {
@@ -938,6 +986,12 @@ body.light-mode::before {
     border: 1px solid rgba(255,255,255,0.05);
     transition: background 0.3s, border-color 0.3s;
 }
+#tokenSpeed {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    margin-left: 12px;
+    color: #3fb950;
+}
 
 /* ── Voice recording animation ───────────────── */
 .record-btn.recording {
@@ -982,6 +1036,39 @@ body.light-mode::before {
     transition: transform 0.2s;
 }
 #scrollBottomBtn:hover { transform: scale(1.05); }
+
+/* ===== DROP OVERLAY ===== */
+#dropOverlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: white;
+    font-size: 24px;
+    pointer-events: none;
+}
+#dropOverlay.active {
+    display: flex;
+    pointer-events: auto;
+}
+#dropOverlay .icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+#dropOverlay .sub {
+    font-size: 16px;
+    opacity: 0.7;
+    margin-top: 10px;
+}
+body.light-mode #dropOverlay {
+    background: rgba(255,255,255,0.85);
+    color: #24292f;
+}
 
 /* ===== LIGHT MODE OVERRIDES ===== */
 body.light-mode {
@@ -1232,6 +1319,8 @@ body.light-mode .vision-badge {
           <option value="llamacpp">llama.cpp</option>
           <option value="huggingface">Hugging Face</option>
           <option value="groq">Groq</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="claude">Claude (Anthropic)</option>
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
         <select id="modelSelect" class="model-select" title="Select model"></select>
@@ -1260,11 +1349,19 @@ body.light-mode .vision-badge {
     <div id="statusBar">
       <span id="status">✅ Ready</span>
       <span id="resourceDisplay">💾 RAM: -- | 🎮 VRAM: --</span>
+      <span id="tokenSpeed">⏱️ 0 tok/s | 0 tokens</span>
     </div>
   </div>
 </div>
 
 <button id="scrollBottomBtn" title="Scroll to bottom">↓</button>
+
+<!-- ===== DROP OVERLAY ===== -->
+<div id="dropOverlay">
+  <div class="icon">📂</div>
+  <div>Drop files or folders here</div>
+  <div class="sub">We'll read your documents for study assistance</div>
+</div>
 
 <script>
 /* ─── JavaScript ────────────────────────────── */
@@ -1285,23 +1382,156 @@ var pending     = [];
 var conversations = [];
 var searchQuery = '';
 
+// ── DROP OVERLAY LOGIC ─────────────────────────
+var dropOverlay = document.getElementById('dropOverlay');
+var dragCounter = 0;
+
+function showDropOverlay() { dropOverlay.classList.add('active'); }
+function hideDropOverlay() { dropOverlay.classList.remove('active'); }
+
+// Global drag events
+document.addEventListener('dragenter', function(e) {
+    e.preventDefault();
+    dragCounter++;
+    if (dragCounter === 1) showDropOverlay();
+});
+document.addEventListener('dragover', function(e) {
+    e.preventDefault();
+});
+document.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter === 0) hideDropOverlay();
+});
+document.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dragCounter = 0;
+    hideDropOverlay();
+    var items = e.dataTransfer.items;
+    if (items) {
+        processDropItems(items);
+    } else {
+        var files = e.dataTransfer.files;
+        if (files && files.length) {
+            for (var i = 0; i < files.length; i++) {
+                addDroppedFile(files[i]);
+            }
+        }
+    }
+});
+
+function processDropItems(items) {
+    var entries = [];
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        if (entry) entries.push(entry);
+    }
+    if (entries.length === 0) {
+        for (var i = 0; i < items.length; i++) {
+            var file = items[i].getAsFile ? items[i].getAsFile() : null;
+            if (file) addDroppedFile(file);
+        }
+        return;
+    }
+    var fileQueue = [];
+    var pendingReads = 0;
+    var maxFiles = 100;
+
+    function traverseEntry(entry, path) {
+        if (fileQueue.length >= maxFiles) return;
+        if (entry.isFile) {
+            entry.file(function(file) {
+                fileQueue.push(file);
+                pendingReads--;
+                if (pendingReads === 0) {
+                    fileQueue.forEach(f => addDroppedFile(f));
+                }
+            }, function(err) {
+                console.warn('Error reading file:', err);
+                pendingReads--;
+                if (pendingReads === 0) {
+                    fileQueue.forEach(f => addDroppedFile(f));
+                }
+            });
+            pendingReads++;
+        } else if (entry.isDirectory) {
+            var reader = entry.createReader();
+            var allEntries = [];
+            function readEntries() {
+                reader.readEntries(function(results) {
+                    if (results.length === 0) {
+                        allEntries.forEach(function(subEntry) {
+                            traverseEntry(subEntry, path + entry.name + '/');
+                        });
+                    } else {
+                        allEntries = allEntries.concat(results);
+                        readEntries();
+                    }
+                }, function(err) {
+                    console.warn('Error reading directory:', err);
+                });
+            }
+            readEntries();
+        }
+    }
+
+    entries.forEach(function(entry) {
+        traverseEntry(entry, '');
+    });
+    if (pendingReads === 0 && fileQueue.length === 0) {
+        status.textContent = '📁 No files found in drop.';
+    }
+    setTimeout(function() {
+        if (pendingReads === 0 && fileQueue.length > 0) {
+            fileQueue.forEach(f => addDroppedFile(f));
+        }
+    }, 100);
+}
+
+function addDroppedFile(file) {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        var b64 = ev.target.result.split(',')[1] || '';
+        var isImage = file.type.startsWith('image/');
+        pending.push({ type: isImage ? 'image' : 'file', name: file.name, b64: b64, mime: file.type });
+        var thumb = document.createElement('div');
+        thumb.className = 'att-thumb';
+        if (isImage) {
+            var img = document.createElement('img');
+            img.src = ev.target.result;
+            thumb.appendChild(img);
+        } else {
+            thumb.appendChild(document.createTextNode('📄 ' + file.name));
+        }
+        var rm = document.createElement('button');
+        rm.className = 'remove';
+        rm.textContent = '×';
+        rm.onclick = function() {
+            var idx = pending.findIndex(p => p.name === file.name && p.b64 === b64);
+            if (idx > -1) pending.splice(idx, 1);
+            thumb.remove();
+        };
+        thumb.appendChild(rm);
+        attachments.appendChild(thumb);
+        status.textContent = '📎 Added ' + file.name;
+    };
+    reader.readAsDataURL(file);
+}
+
 // ── THEME: Sliding Toggle ──────────────────────
 var themeOuter = document.getElementById('themeToggleOuter');
 var themeKnob = document.getElementById('themeKnob');
 
-// Load saved theme
 var isLight = localStorage.getItem('theme') === 'light';
 
 function applyTheme(light) {
     document.body.classList.toggle('light-mode', light);
     localStorage.setItem('theme', light ? 'light' : 'dark');
-    // Update toggle state
     themeOuter.classList.toggle('day', light);
 }
-// Apply on load
 applyTheme(isLight);
 
-// Click handler (only if not dragged)
 var draggedTheme = false;
 var isDraggingTheme = false;
 var startXTheme = 0, startLeftTheme = 0;
@@ -1312,9 +1542,8 @@ function handleThemeClick(e) {
     applyTheme(newLight);
 }
 
-// Drag support (compact dimensions)
 const MIN_LEFT_THEME = 3;
-const MAX_LEFT_THEME = 93; // 140 - 40 - 3 - 3 - 1 ≈ 93
+const MAX_LEFT_THEME = 93;
 
 themeKnob.addEventListener('mousedown', dragStartTheme);
 themeKnob.addEventListener('touchstart', dragStartTheme, { passive: true });
@@ -1339,8 +1568,6 @@ function dragMoveTheme(e) {
     if (Math.abs(dx) > 4) draggedTheme = true;
     let newLeft = Math.min(MAX_LEFT_THEME, Math.max(MIN_LEFT_THEME, startLeftTheme + dx));
     themeKnob.style.left = newLeft + 'px';
-
-    // Blend backgrounds for smooth visual feedback
     const progress = (newLeft - MIN_LEFT_THEME) / (MAX_LEFT_THEME - MIN_LEFT_THEME);
     document.querySelector('.night-bg').style.opacity = 1 - progress;
     document.querySelector('.stars-layer').style.opacity = 1 - progress;
@@ -1363,22 +1590,18 @@ function dragEndTheme(e) {
     document.querySelector('.knob-sun').style.opacity = '';
     document.querySelector('.astronaut').style.opacity = '';
     document.querySelector('.biplane').style.opacity = '';
-
-    // Snap to final state based on knob position
     const rect = themeKnob.getBoundingClientRect();
     const outerRect = themeOuter.getBoundingClientRect();
-    const currentLeft = rect.left - outerRect.left - 5; // inner padding
+    const currentLeft = rect.left - outerRect.left - 5;
     const midpoint = (MIN_LEFT_THEME + MAX_LEFT_THEME) / 2;
     const newLight = currentLeft > midpoint;
     applyTheme(newLight);
-
     window.removeEventListener('mousemove', dragMoveTheme);
     window.removeEventListener('mouseup', dragEndTheme);
     window.removeEventListener('touchmove', dragMoveTheme);
     window.removeEventListener('touchend', dragEndTheme);
 }
 
-// Generate stars inside the toggle (compact positions)
 function makeThemeStars() {
     const layer = document.getElementById('themeStars');
     const pts = [
@@ -1547,9 +1770,14 @@ function loadModels() {
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
     var keyInput = document.getElementById('apiKeyInput');
-    if (provider === 'groq' || provider === 'huggingface') {
+    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
         keyInput.style.display = 'inline-block';
-        keyInput.placeholder = provider === 'groq' ? 'Enter Groq API Key' : 'Enter HF Token (optional)';
+        var placeholder = '';
+        if (provider === 'groq') placeholder = 'Enter Groq API Key';
+        else if (provider === 'huggingface') placeholder = 'Enter HF Token (optional)';
+        else if (provider === 'deepseek') placeholder = 'Enter DeepSeek API Key';
+        else if (provider === 'claude') placeholder = 'Enter Anthropic API Key';
+        keyInput.placeholder = placeholder;
         keyInput.value = loadApiKey(provider);
     } else {
         keyInput.style.display = 'none';
@@ -1558,7 +1786,9 @@ providerSelect.addEventListener('change', function() {
 });
 apiKeyInput.addEventListener('blur', function() {
     var provider = providerSelect.value;
-    if (provider === 'groq' || provider === 'huggingface') saveApiKey(provider, this.value);
+    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
+        saveApiKey(provider, this.value);
+    }
 });
 modelSelect.addEventListener('change', function() {
     updateVisionBadge();
@@ -1807,7 +2037,7 @@ function selectConversation(id) {
             if (messages.length === 0) {
                 chatArea.innerHTML = '<div class="msg bot">💬 No messages yet. Say something!<br>You can also type <code>ollama pull &lt;model&gt;</code>, etc.</div>';
             } else {
-                messages.forEach(msg => renderMsg(msg.role, msg));
+                messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
             }
             scrollToBottomIfNeeded();
         });
@@ -1842,8 +2072,8 @@ function clearAllChats() {
         });
 }
 
-// ── Message rendering ──────────────────────────
-function renderMsg(role, entry) {
+// ── Message rendering (with edit/delete buttons) ──
+function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
     if (entry.images && entry.images.length) {
@@ -1869,9 +2099,118 @@ function renderMsg(role, entry) {
     ts.className = 'ts';
     ts.textContent = entry.ts || '';
     div.appendChild(ts);
+
+    // ---- FIX: Action buttons for edit/delete (Only for User) ----
+    if (role === 'user') {
+        var actions = document.createElement('div');
+        actions.className = 'msg-actions';
+        var editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.innerHTML = '✏️';
+        editBtn.title = 'Edit message';
+        editBtn.onclick = function(e) {
+            e.stopPropagation();
+            startEditMessage(div, role, entry, msgIndex);
+        };
+        var delBtn = document.createElement('button');
+        delBtn.className = 'delete-btn';
+        delBtn.innerHTML = '🗑️';
+        delBtn.title = 'Delete message';
+        delBtn.onclick = function(e) {
+            e.stopPropagation();
+            deleteMessage(div, msgIndex);
+        };
+        actions.appendChild(editBtn);
+        actions.appendChild(delBtn);
+        div.appendChild(actions);
+    }
+    // ---- end action buttons ----
+
     chatArea.appendChild(div);
     scrollToBottomIfNeeded();
     return div;
+}
+
+// ── Force-reload the current chat (bypasses selectConversation's early-exit guard) ──
+function reloadCurrentChat() {
+    if (!currentConv) return;
+    fetch('/conversations/' + currentConv + '/messages')
+        .then(r => r.json())
+        .then(messages => {
+            chatArea.innerHTML = '';
+            if (messages.length === 0) {
+                chatArea.innerHTML = '<div class="msg bot">👋 Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
+            } else {
+                messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
+            }
+            scrollToBottomIfNeeded();
+        });
+}
+
+// ── Edit & Delete message functions ─────────────
+async function startEditMessage(msgDiv, role, entry, idx) {
+    var body = msgDiv.querySelector('.body');
+    var oldText = body.textContent.trim();
+    var textarea = document.createElement('textarea');
+    textarea.className = 'edit-textarea';
+    textarea.value = oldText;
+    body.replaceWith(textarea);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.marginTop = '6px';
+
+    var saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save & Resend';
+    saveBtn.className = 'new-chat-btn';
+    saveBtn.onclick = async function() {
+        var newText = textarea.value.trim();
+        if (!newText) return;
+        // Delete the original user message and everything after it
+        var msgs = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
+        for (let i = msgs.length - 1; i >= idx; i--) {
+            await fetch(`/conversations/${currentConv}/messages/${i}`, {method: 'DELETE'});
+        }
+        // Clear the chat DOM so old messages don't duplicate when doSend renders a new user bubble
+        chatArea.innerHTML = '';
+        var remaining = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
+        remaining.forEach((msg, index) => renderMsg(msg.role, msg, index));
+        // Put the edited text in the input and send
+        msgInput.value = newText;
+        pending = [];
+        attachments.innerHTML = '';
+        doSend();  // re-send the edited user prompt
+    };
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'background:transparent; color:#8b949e; border:none; margin-left:8px; cursor:pointer;';
+    cancelBtn.onclick = () => reloadCurrentChat();
+
+    btnRow.appendChild(saveBtn);
+    btnRow.appendChild(cancelBtn);
+    textarea.after(btnRow);
+    textarea.focus();
+}
+
+async function deleteMessage(msgDiv, idx) {
+    if (!confirm('Delete this message?')) return;
+    // Re-fetch messages to get the real current index (idx may be stale or -1 for newly sent messages)
+    var msgs = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
+    var bodyEl = msgDiv.querySelector('.body');
+    var msgText = bodyEl ? bodyEl.textContent.trim() : '';
+    var realIdx = idx;
+    // If idx is invalid (-1 or out of range), find the message by matching text + role
+    if (realIdx < 0 || realIdx >= msgs.length) {
+        realIdx = msgs.findIndex(m => m.role === 'user' && m.text && m.text.trim() === msgText);
+    }
+    if (realIdx < 0 || realIdx >= msgs.length) {
+        status.textContent = 'Could not find message to delete';
+        return;
+    }
+    var res = await fetch(`/conversations/${currentConv}/messages/${realIdx}`, {method: 'DELETE'});
+    if (res.ok) {
+        reloadCurrentChat();
+    }
 }
 
 // Attachments
@@ -1933,9 +2272,15 @@ function doSend() {
     actuallySend(text);
 }
 
+// Token-speed tracking variables
+var tokenCount = 0;
+var startTimeToken = null;
+var speedInterval = null;
+
 function actuallySend(text) {
     var images = pending.filter(p => p.type === 'image');
     var files  = pending.filter(p => p.type === 'file');
+
     var userEntry = {
         role: 'user',
         text: text,
@@ -1943,22 +2288,58 @@ function actuallySend(text) {
         files: files.map(f => ({ name: f.name, mime: f.mime })),
         ts: new Date().toLocaleTimeString()
     };
-    renderMsg('user', userEntry);
+    var userDiv = renderMsg('user', userEntry, -1); // no index yet, but we can assign later if needed
+
     msgInput.value = '';
     msgInput.style.height = '46px';
     pending = [];
     attachments.innerHTML = '';
-    var botDiv = renderMsg('bot', { role:'bot', text:'⏳ Thinking...', ts:'' });
+
+    var botDiv = renderMsg('bot', { role:'bot', text:'⏳ Thinking...', ts:'' }, -1);
     botDiv.querySelector('.body').classList.add('thinking-dots');
     busy = true;
     sendBtn.disabled = true;
     status.textContent = '⏳ Generating...';
+
     var searchEnabled = document.getElementById('searchToggle').checked;
     var provider = providerSelect.value;
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
-    if (provider === 'groq' || provider === 'huggingface') saveApiKey(provider, apiKey);
+    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
+        saveApiKey(provider, apiKey);
+    }
+
     var endpoint = (provider === 'ollama') ? '/chat_stream' : '/chat';
+
+    // Reset token counters
+    tokenCount = 0;
+    startTimeToken = Date.now();
+    if (speedInterval) clearInterval(speedInterval);
+    var tokenSpeedSpan = document.getElementById('tokenSpeed');
+    speedInterval = setInterval(function() {
+        var elapsed = (Date.now() - startTimeToken) / 1000;
+        if (elapsed > 0) {
+            var speed = (tokenCount / elapsed).toFixed(1);
+            tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens`;
+        }
+    }, 200);
+
+    // Helper: remove the unsaved user+bot bubbles and reset UI on failure
+    function handleSendError(errMsg) {
+        clearInterval(speedInterval);
+        if (userDiv && userDiv.parentNode) userDiv.remove();
+        if (botDiv && botDiv.parentNode) botDiv.remove();
+        busy = false;
+        sendBtn.disabled = false;
+        msgInput.value = text;  // restore the text so user can retry
+        msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
+        status.textContent = '❌ ' + errMsg;
+        // If chat area is now empty, show the empty-state placeholder
+        if (chatArea.children.length === 0) {
+            chatArea.innerHTML = '<div class="msg bot">👋 Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
+        }
+    }
+
     fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1974,7 +2355,11 @@ function actuallySend(text) {
         })
     })
     .then(response => {
-        if (!response.ok) throw new Error('HTTP ' + response.status);
+        if (!response.ok) {
+            return response.json().catch(() => ({})).then(errData => {
+                throw new Error(errData.error || 'HTTP ' + response.status);
+            });
+        }
         var contentType = response.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream')) {
             var reader = response.body.getReader();
@@ -1982,7 +2367,10 @@ function actuallySend(text) {
             var fullText = '';
             function readStream() {
                 reader.read().then(({done, value}) => {
-                    if (done) { finishStream(fullText, botDiv); return; }
+                    if (done) {
+                        finishStream(fullText, botDiv);
+                        return;
+                    }
                     var chunk = decoder.decode(value, {stream: true});
                     var lines = chunk.split('\n');
                     for (var line of lines) {
@@ -1991,17 +2379,18 @@ function actuallySend(text) {
                             try {
                                 var data = JSON.parse(jsonStr);
                                 if (data.token) {
+                                    tokenCount++;
                                     fullText += data.token;
                                     botDiv.querySelector('.body').classList.remove('thinking-dots');
                                     botDiv.querySelector('.body').textContent = fullText;
                                     scrollToBottomIfNeeded();
                                 }
                                 if (data.error) {
-                                    botDiv.querySelector('.body').classList.remove('thinking-dots');
-                                    botDiv.querySelector('.body').textContent = '❌ ' + data.error;
-                                    status.textContent = '❌ ' + data.error;
-                                    busy = false; sendBtn.disabled = false;
+                                    handleSendError(data.error);
                                     return;
+                                }
+                                if (data.done && data.usage) {
+                                    finalizeStats(data.usage);
                                 }
                             } catch(e) {}
                         }
@@ -2013,9 +2402,7 @@ function actuallySend(text) {
         } else {
             response.json().then(data => {
                 if (data.error) {
-                    botDiv.querySelector('.body').classList.remove('thinking-dots');
-                    botDiv.querySelector('.body').textContent = '❌ ' + data.error;
-                    status.textContent = '❌ ' + data.error;
+                    handleSendError(data.error);
                 } else {
                     var text = data.response || '(no response)';
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
@@ -2024,17 +2411,25 @@ function actuallySend(text) {
                     status.textContent = '✅ Done';
                     loadConversations();
                     speakText(text);
+                    if (data.usage) finalizeStats(data.usage);
+                    else finalizeStats({tokens: text.split(' ').length, duration_sec: 1}); // estimate
+                    busy = false; sendBtn.disabled = false;
                 }
-                busy = false; sendBtn.disabled = false;
             });
         }
     })
     .catch(err => {
-        botDiv.querySelector('.body').classList.remove('thinking-dots');
-        botDiv.querySelector('.body').textContent = '❌ ' + err.message;
-        status.textContent = '❌ ' + err.message;
-        busy = false; sendBtn.disabled = false;
+        handleSendError(err.message || 'Connection failed');
     });
+}
+
+function finalizeStats(usage) {
+    clearInterval(speedInterval);
+    var tokenSpeedSpan = document.getElementById('tokenSpeed');
+    var tokens = usage.tokens || tokenCount;
+    var secs = usage.duration_sec || ((Date.now() - startTimeToken) / 1000);
+    var speed = secs > 0 ? (tokens / secs).toFixed(1) : '?';
+    tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens`;
 }
 
 function finishStream(fullText, botDiv) {
@@ -2129,7 +2524,7 @@ resourceIntervalId = setInterval(updateResources, 5000);
 
 window.addEventListener('load', function() {
     var provider = providerSelect.value;
-    if (provider === 'groq' || provider === 'huggingface') {
+    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
         apiKeyInput.value = loadApiKey(provider);
     }
     loadModels();
@@ -2161,6 +2556,8 @@ providers = {
     "llamacpp": LlamaCppProvider(),
     "huggingface": HuggingFaceProvider(),
     "groq": GroqProvider(),
+    "deepseek": DeepSeekProvider(),
+    "claude": ClaudeProvider(),
 }
 
 @app.route('/image/<path:filename>')
@@ -2258,10 +2655,7 @@ def get_provider_models():
     if not provider:
         return jsonify({'error': 'Unknown provider'}), 400
     try:
-        if provider_name == 'groq' and api_key:
-            models = provider.list_models(api_key=api_key)
-        else:
-            models = provider.list_models()
+        models = provider.list_models(api_key=api_key)
         return jsonify({'models': models})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2324,7 +2718,44 @@ def clear_all():
     save_conversations({})
     return jsonify({"ok": True})
 
-# ── New: rename ──────────────────────────────────
+# ── Edit a message (by index) ──────────────────
+@app.route('/conversations/<cid>/messages/<int:idx>', methods=['PUT'])
+def edit_message(cid, idx):
+    data = request.get_json()
+    new_text = data.get('text', '').strip()
+    if not new_text:
+        return jsonify({'error': 'Text cannot be empty'}), 400
+
+    convs = load_conversations()
+    conv = convs.get(cid)
+    if not conv:
+        return jsonify({'error': 'Conversation not found'}), 404
+
+    msgs = conv.get('messages', [])
+    if idx < 0 or idx >= len(msgs):
+        return jsonify({'error': 'Index out of range'}), 400
+
+    msgs[idx]['text'] = new_text
+    save_conversations(convs)
+    return jsonify({'ok': True})
+
+# ── Delete a message (by index) ────────────────
+@app.route('/conversations/<cid>/messages/<int:idx>', methods=['DELETE'])
+def delete_message(cid, idx):
+    convs = load_conversations()
+    conv = convs.get(cid)
+    if not conv:
+        return jsonify({'error': 'Conversation not found'}), 404
+
+    msgs = conv.get('messages', [])
+    if idx < 0 or idx >= len(msgs):
+        return jsonify({'error': 'Index out of range'}), 400
+
+    msgs.pop(idx)
+    save_conversations(convs)
+    return jsonify({'ok': True})
+
+# ── Rename ──────────────────────────────────────
 @app.route('/conversations/<cid>/rename', methods=['PUT'])
 def rename_conversation(cid):
     data = request.get_json()
@@ -2338,7 +2769,7 @@ def rename_conversation(cid):
     save_conversations(convs)
     return jsonify({'ok': True})
 
-# ── New: reorder ─────────────────────────────────
+# ── Reorder ─────────────────────────────────────
 @app.route('/conversations/reorder', methods=['POST'])
 def reorder_conversations():
     data = request.get_json()
@@ -2353,7 +2784,7 @@ def reorder_conversations():
     save_conversations(convs)
     return jsonify({'ok': True})
 
-# ── New: search conversations ────────────────────
+# ── Search conversations ────────────────────────
 @app.route('/conversations/search', methods=['GET'])
 def search_conversations():
     query = request.args.get('q', '').strip().lower()
@@ -2380,7 +2811,7 @@ def search_conversations():
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
-# ── Original Chat endpoint ──
+# ── Original Chat endpoint (non-streaming, with token estimate) ──
 @app.route('/chat', methods=['POST'])
 def chat():
     global current_model
@@ -2449,12 +2880,11 @@ def chat():
         if api_key:
             extra_kwargs['api_key'] = api_key
 
+        start_time = time.time()
         if images:
             if model_supports_vision(provider_name, model):
-                print(f"👁️ Native vision: provider={provider_name}, model={model}")
                 reply = provider.generate_with_image(messages, images, **extra_kwargs)
             else:
-                print(f"👁️ Text-only model – describing image with llava fallback")
                 description = describe_image_with_llava(images[0]["b64"])
                 if description:
                     inject = f"[Image description]\n{description.strip()}\n\n[User question]\n"
@@ -2464,6 +2894,12 @@ def chat():
                 reply = provider.generate(messages, **extra_kwargs)
         else:
             reply = provider.generate(messages, **extra_kwargs)
+        end_time = time.time()
+
+        # Approximate token count
+        token_estimate = len(reply.split()) / 0.75
+        duration = end_time - start_time if end_time > start_time else 1
+        usage = {"tokens": int(token_estimate), "duration_sec": round(duration, 2)}
 
         print(f"✅ Reply: {reply[:60]}")
 
@@ -2475,7 +2911,7 @@ def chat():
         if not add_message(conv_id, "bot", reply, [], [], ts):
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
 
-        return jsonify({'response': reply})
+        return jsonify({'response': reply, 'usage': usage})
 
     except requests.exceptions.ConnectionError:
         return jsonify({'error': 'Cannot connect to Ollama. Make sure it is running.'}), 503
@@ -2485,7 +2921,7 @@ def chat():
         print(f"❌ Error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ── Streaming Chat endpoint ──
+# ── Streaming Chat endpoint (Ollama only, with usage stats) ──
 @app.route('/chat_stream', methods=['POST'])
 def chat_stream():
     try:
@@ -2582,7 +3018,12 @@ def chat_stream():
                             full_response += token
                             yield f"data: {json.dumps({'token': token})}\n\n"
                         if chunk.get("done", False):
-                            yield f"data: {json.dumps({'done': True, 'full_response': full_response})}\n\n"
+                            usage = {}
+                            if "eval_count" in chunk and "eval_duration" in chunk:
+                                duration_sec = chunk.get("eval_duration", 0) / 1e9
+                                token_count = chunk.get("eval_count", 0)
+                                usage = {"tokens": token_count, "duration_sec": duration_sec}
+                            yield f"data: {json.dumps({'done': True, 'full_response': full_response, 'usage': usage})}\n\n"
                             break
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"

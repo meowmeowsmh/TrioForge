@@ -44,6 +44,14 @@ VISION_MODELS = {
         "qwen3.5-uncensored",
         "openscan",
     },
+    "claude": {
+        "claude-3-5-sonnet-20241022",
+        "claude-3-opus-20240229",
+        "claude-3-sonnet-20240229",
+        "claude-3-haiku-20240307",
+        "claude-3-5-haiku-20241022",
+    },
+    "deepseek": set(),  # no vision support
 }
 
 
@@ -51,7 +59,7 @@ def model_supports_vision(provider_name: str, model_name: str) -> bool:
     if not model_name:
         return False
     known = VISION_MODELS.get(provider_name, set())
-    if provider_name in ("groq", "huggingface"):
+    if provider_name in ("groq", "huggingface", "claude"):
         return model_name.lower() in {m.lower() for m in known}
     model_lower = model_name.lower()
     return any(keyword in model_lower for keyword in known)
@@ -69,7 +77,7 @@ class LLMProvider:
             messages[-1] = {**messages[-1], "content": note + "\n" + messages[-1].get("content", "")}
         return self.generate(messages, **kwargs)
 
-    def list_models(self) -> List[str]:
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
         return []
 
 
@@ -86,8 +94,6 @@ class OllamaProvider(LLMProvider):
             "model": model or self.model,
             "prompt": prompt,
             "stream": False,
-            # keep_alive:300 = unload after 5 min idle (matches streaming endpoint).
-            # -1 kept the model loaded forever, causing RAM growth on every reload.
             "keep_alive": 300,
             "options": {
                 "temperature": 0.7,
@@ -116,7 +122,7 @@ class OllamaProvider(LLMProvider):
                             images: List[Dict], **kwargs) -> str:
         return self.generate(messages, images=images, **kwargs)
 
-    def list_models(self) -> List[str]:
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
         try:
             resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
             resp.raise_for_status()
@@ -138,7 +144,7 @@ class LlamaCppProvider(LLMProvider):
         gguf_files = glob.glob(os.path.join(self.models_dir, "*.gguf"))
         return [os.path.basename(f) for f in gguf_files]
 
-    def list_models(self) -> List[str]:
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
         return self.available_models
 
     def _resolve_model_path(self, model: Optional[str]) -> str:
@@ -205,7 +211,7 @@ class HuggingFaceProvider(LLMProvider):
             self._available = False
             print("⚠️ huggingface_hub not installed. Run: pip install huggingface_hub")
 
-    def list_models(self) -> List[str]:
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
         text_models = [
             "microsoft/DialoGPT-medium",
             "google/flan-t5-base",
@@ -225,10 +231,11 @@ class HuggingFaceProvider(LLMProvider):
         ]
         return text_models + vision_models
 
-    def _make_headers(self) -> Dict:
+    def _make_headers(self, api_key: Optional[str] = None) -> Dict:
         headers = {"Content-Type": "application/json"}
-        if self.api_token:
-            headers["Authorization"] = f"Bearer {self.api_token}"
+        token = api_key or self.api_token
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
@@ -248,10 +255,7 @@ class HuggingFaceProvider(LLMProvider):
                 "return_full_text": False
             }
         }
-        headers = self._make_headers()
-        ui_key = kwargs.get("api_key")
-        if ui_key:
-            headers["Authorization"] = f"Bearer {ui_key}"
+        headers = self._make_headers(kwargs.get("api_key"))
         try:
             resp = requests.post(url, headers=headers, json=payload,
                                  timeout=60, verify=False)
@@ -279,10 +283,7 @@ class HuggingFaceProvider(LLMProvider):
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         model = kwargs.get("model") or self.model
         prompt = messages[-1]["content"] if messages else ""
-        headers = self._make_headers()
-        ui_key = kwargs.get("api_key")
-        if ui_key:
-            headers["Authorization"] = f"Bearer {ui_key}"
+        headers = self._make_headers(kwargs.get("api_key"))
         content_parts = []
         for img in images:
             b64 = img["b64"]
@@ -403,3 +404,166 @@ class GroqProvider(LLMProvider):
             model=model
         )
         return chat.choices[0].message.content
+
+
+# ===== NEW PROVIDERS =====
+
+class DeepSeekProvider(LLMProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        self._default_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+        self._available = bool(self._default_key)
+        if not self._available:
+            print("⚠️ DEEPSEEK_API_KEY not set. Provide it via UI or set env var.")
+
+    def _get_key(self, kwargs) -> str:
+        key = kwargs.get("api_key") or self._default_key
+        if not key:
+            raise Exception("DeepSeek API key is required. Enter it in the API Key field.")
+        return key
+
+    def _get_headers(self, api_key: str) -> Dict:
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
+        key = api_key or self._default_key
+        if not key:
+            return ["deepseek-chat", "deepseek-coder"]
+        try:
+            headers = self._get_headers(key)
+            resp = requests.get("https://api.deepseek.com/v1/models", headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            models = [m["id"] for m in data.get("data", [])]
+            return models if models else ["deepseek-chat", "deepseek-coder"]
+        except Exception as e:
+            print(f"⚠️ Failed to fetch DeepSeek models: {e}")
+            return ["deepseek-chat", "deepseek-coder"]
+
+    def generate(self, messages: List[Dict[str, str]], model: str = "deepseek-chat", **kwargs) -> str:
+        key = self._get_key(kwargs)
+        headers = self._get_headers(key)
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "max_tokens": 2048,
+            "temperature": 0.7
+        }
+        resp = requests.post("https://api.deepseek.com/v1/chat/completions",
+                             headers=headers, json=payload, timeout=120)
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+
+    def generate_with_image(self, messages: List[Dict[str, str]], images: List[Dict], **kwargs) -> str:
+        # DeepSeek doesn't support vision yet; fallback to text with note
+        note = f"[{len(images)} image(s) attached – this model does not support native vision]"
+        new_messages = list(messages)
+        if new_messages:
+            new_messages[-1] = {**new_messages[-1], "content": note + "\n" + new_messages[-1].get("content", "")}
+        return self.generate(new_messages, **kwargs)
+
+
+class ClaudeProvider(LLMProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        self._default_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        self._available = bool(self._default_key)
+        if not self._available:
+            print("⚠️ ANTHROPIC_API_KEY not set. Provide it via UI or set env var.")
+
+    def _get_key(self, kwargs) -> str:
+        key = kwargs.get("api_key") or self._default_key
+        if not key:
+            raise Exception("Claude (Anthropic) API key is required. Enter it in the API Key field.")
+        return key
+
+    def _get_headers(self, api_key: str) -> Dict:
+        return {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        }
+
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
+        key = api_key or self._default_key
+        if not key:
+            return ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229",
+                    "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+        try:
+            headers = self._get_headers(key)
+            resp = requests.get("https://api.anthropic.com/v1/models", headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            models = [m["id"] for m in data.get("data", [])]
+            return models if models else ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229",
+                                          "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+        except Exception as e:
+            print(f"⚠️ Failed to fetch Claude models: {e}")
+            return ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229",
+                    "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+
+    def generate(self, messages: List[Dict[str, str]], model: str = "claude-3-5-sonnet-20241022", **kwargs) -> str:
+        key = self._get_key(kwargs)
+        headers = self._get_headers(key)
+        system = ""
+        claude_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system = msg["content"]
+            else:
+                claude_messages.append(msg)
+        payload = {
+            "model": model,
+            "messages": claude_messages,
+            "max_tokens": 2048,
+            "temperature": 0.7
+        }
+        if system:
+            payload["system"] = system
+        resp = requests.post("https://api.anthropic.com/v1/messages",
+                             headers=headers, json=payload, timeout=120)
+        resp.raise_for_status()
+        return resp.json()["content"][0]["text"]
+
+    def generate_with_image(self, messages: List[Dict[str, str]], images: List[Dict], **kwargs) -> str:
+        key = self._get_key(kwargs)
+        model = kwargs.get("model", "claude-3-5-sonnet-20241022")
+        headers = self._get_headers(key)
+        content_blocks = []
+        for img in images:
+            b64 = img["b64"]
+            if "," in b64:
+                b64 = b64.split(",", 1)[1]
+            content_blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": b64
+                }
+            })
+        last_text = messages[-1].get("content", "") if messages else ""
+        content_blocks.append({"type": "text", "text": last_text})
+        claude_messages = []
+        for i, msg in enumerate(messages[:-1]):
+            claude_messages.append({"role": msg["role"], "content": msg["content"]})
+        claude_messages.append({"role": "user", "content": content_blocks})
+        payload = {
+            "model": model,
+            "messages": claude_messages,
+            "max_tokens": 2048,
+            "temperature": 0.7
+        }
+        system = ""
+        for msg in messages:
+            if msg["role"] == "system":
+                system = msg["content"]
+                break
+        if system:
+            payload["system"] = system
+        resp = requests.post("https://api.anthropic.com/v1/messages",
+                             headers=headers, json=payload, timeout=120)
+        resp.raise_for_status()
+        return resp.json()["content"][0]["text"]
