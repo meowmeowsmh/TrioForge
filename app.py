@@ -372,6 +372,9 @@ def build_html(model_name):
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<!-- this only worked only if you are int http --> 
+<link rel="icon" type="/static/image/png" href="/static/image/logo.png">
+<!-- worked for all if remove this link the other icon may worked with other link from html icon the bottom --> 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>Qwen Chat · Multi‑Conversation</title>
 <style>
