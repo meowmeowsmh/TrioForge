@@ -365,16 +365,13 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (with search and sidebar toggle) ────────────────
+# ── Build HTML (with compact sliding toggle) ──
 def build_html(model_name):
     return r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<!-- this only worked only if you are int http --> 
-<link rel="icon" type="/static/image/png" href="/static/image/logo.png">
-<!-- worked for all if remove this link the other icon may worked with other link from html icon the bottom --> 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>Qwen Chat · Multi‑Conversation</title>
 <style>
@@ -385,6 +382,7 @@ html, body {
     background: #0a0a0f;
     color: #e1e4e8;
     overflow: hidden;
+    transition: background 0.3s ease, color 0.3s ease;
 }
 
 body::before {
@@ -395,6 +393,10 @@ body::before {
                 radial-gradient(ellipse at 80% 20%, #16213e 0%, transparent 50%);
     animation: bgMove 20s ease infinite;
     z-index: -1;
+    transition: opacity 0.4s ease;
+}
+body.light-mode::before {
+    opacity: 0;
 }
 @keyframes bgMove {
     0% { transform: scale(1); }
@@ -415,7 +417,7 @@ body::before {
     border-right: 1px solid rgba(255,255,255,0.05);
     display:flex; flex-direction:column; flex-shrink:0;
     box-shadow: 0 0 20px rgba(0,0,0,0.4);
-    transition: width 0.25s ease, margin 0.25s ease;
+    transition: width 0.25s ease, margin 0.25s ease, background 0.3s ease;
     overflow: hidden;
 }
 .sidebar.hidden {
@@ -470,7 +472,7 @@ body::before {
     color: #e6edf3;
     font-size: 13px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, background 0.3s, color 0.3s;
 }
 .search-box input:focus {
     border-color: #58a6ff;
@@ -547,6 +549,7 @@ body::before {
     color: #8b949e;
     text-align: center;
     backdrop-filter: blur(10px);
+    transition: background 0.3s, color 0.3s;
 }
 
 /* ── Main content ────────────────────────────── */
@@ -554,6 +557,7 @@ body::before {
     flex:1; display:flex; flex-direction:column; min-width:0;
     background: rgba(10,10,15,0.7);
     backdrop-filter: blur(10px);
+    transition: background 0.3s ease;
 }
 .top-bar {
     background: rgba(22, 27, 34, 0.7);
@@ -563,6 +567,7 @@ body::before {
     display:flex; align-items:center; justify-content:space-between;
     flex-shrink:0; gap:12px; flex-wrap:wrap;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    transition: background 0.3s, border-color 0.3s;
 }
 .top-bar .left { display:flex; align-items:center; gap:12px; }
 .top-bar h1 {
@@ -599,7 +604,7 @@ body::before {
     padding: 6px 10px;
     font-size: 13px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, background 0.3s, color 0.3s;
     backdrop-filter: blur(5px);
 }
 .model-select:focus, .provider-select:focus, .api-key-input:focus {
@@ -647,6 +652,109 @@ body::before {
     cursor: pointer;
 }
 
+/* ===== THEME TOGGLE (sliding) - COMPACT ===== */
+.theme-toggle-wrapper {
+    display: inline-block;
+    vertical-align: middle;
+}
+.toggle-outer {
+    position: relative;
+    width: 140px;
+    height: 56px;
+    border-radius: 999px;
+    background: hsl(220 18% 82%);
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.12), -2px -2px 6px rgba(255,255,255,0.5),
+                inset 1px 1px 3px rgba(0,0,0,0.08), inset -1px -1px 3px rgba(255,255,255,0.4);
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+}
+.toggle-inner {
+    position: absolute;
+    inset: 5px;
+    border-radius: 999px;
+    overflow: hidden;
+}
+.night-bg { position: absolute; inset: 0; background: hsl(220 35% 18%); opacity:1; transition: opacity 0.3s ease; }
+.stars-layer { position: absolute; inset: 0; opacity:1; transition: opacity 0.3s ease; pointer-events:none; }
+.star { position: absolute; background: white; border-radius:50%; }
+.sparkle { position: absolute; color: white; font-size: 7px; line-height:1; }
+.day-bg { position: absolute; inset: 0; opacity:0; transition: opacity 0.3s ease; pointer-events:none; }
+.sky-layer { position: absolute; inset: 0; background: hsl(205 70% 62%); }
+.sky-mid { position: absolute; bottom:0; left:0; right:0; height:50%; background: hsl(205 60% 72%); border-radius: 40% 40% 0 0 / 30% 30% 0 0; }
+.cloud { position: absolute; background: rgba(255,255,255,0.88); border-radius: 999px; }
+.astronaut, .biplane {
+    position: absolute;
+    z-index: 4;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.astronaut {
+    left: 48px;
+    top: 50%;
+    transform: translateY(-55%);
+    width: 22px; height: 26px;
+    opacity:1;
+    animation: float 3s ease-in-out infinite;
+}
+.biplane {
+    left: 44px;
+    top: 38%;
+    transform: translateY(-50%);
+    width: 30px; height: 18px;
+    opacity:0;
+    animation: fly 3s ease-in-out infinite;
+}
+@keyframes float {
+    0%,100% { transform: translateY(-55%); }
+    50% { transform: translateY(-65%); }
+}
+@keyframes fly {
+    0%,100% { transform: translateY(-50%) rotate(-1deg); }
+    50% { transform: translateY(-60%) rotate(1deg); }
+}
+.knob {
+    position: absolute;
+    top: 50%;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    cursor: grab;
+    transition: left 0.4s cubic-bezier(0.34, 1.2, 0.64, 1);
+    left: 3px;
+}
+.knob:active { cursor: grabbing; }
+.knob-moon {
+    position: absolute; inset:0; border-radius:50%;
+    background: hsl(220 10% 82%);
+    box-shadow: 2px 2px 4px rgba(255,255,255,0.9) inset, -2px -2px 4px rgba(0,0,0,0.18) inset;
+    transition: opacity 0.3s ease;
+}
+.knob-moon .crater {
+    position: absolute; border-radius:50%;
+    background: hsl(220 8% 67%);
+    box-shadow: 1px 1px 2px rgba(255,255,255,0.4) inset, -1px -1px 2px rgba(0,0,0,0.2) inset;
+}
+.knob-sun {
+    position: absolute; inset:0; border-radius:50%;
+    background: hsl(44 100% 58%);
+    box-shadow: 2px 2px 6px rgba(255,255,180,0.9) inset, -2px -2px 4px rgba(180,100,0,0.3) inset,
+                0 0 12px hsl(44 100% 70% / 0.5);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+/* Day state for the toggle */
+.toggle-outer.day .night-bg { opacity: 0; }
+.toggle-outer.day .stars-layer { opacity: 0; }
+.toggle-outer.day .day-bg { opacity: 1; }
+.toggle-outer.day .knob { left: 93px; }
+.toggle-outer.day .knob-moon { opacity: 0; }
+.toggle-outer.day .knob-sun { opacity: 1; }
+.toggle-outer.day .astronaut { opacity: 0; }
+.toggle-outer.day .biplane { opacity: 1; }
+
 /* ── Chat area ────────────────────────────────── */
 .chat-area {
     flex:1; overflow-y:auto; padding: 24px 40px;
@@ -666,6 +774,7 @@ body::before {
     word-wrap: break-word;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     animation: fadeIn 0.3s ease;
+    transition: background 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
 }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
@@ -735,6 +844,7 @@ body::before {
     padding: 14px 40px 18px;
     display: flex; gap: 10px;
     align-items: flex-end; flex-shrink: 0;
+    transition: background 0.3s, border-color 0.3s;
 }
 .attach-btn, .record-btn, .voice-toggle {
     background: rgba(33,38,45,0.6);
@@ -783,7 +893,7 @@ body::before {
     height: 46px;
     overflow-y: hidden;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, background 0.3s, color 0.3s;
     will-change: height;
 }
 #msgInput:focus { border-color: #58a6ff; }
@@ -817,6 +927,7 @@ body::before {
     font-size: 12px;
     color: #8b949e;
     flex-shrink: 0;
+    transition: background 0.3s, color 0.3s, border-color 0.3s;
 }
 #resourceDisplay {
     font-family: 'SF Mono', 'Fira Code', monospace;
@@ -825,6 +936,7 @@ body::before {
     padding: 2px 12px;
     border-radius: 20px;
     border: 1px solid rgba(255,255,255,0.05);
+    transition: background 0.3s, border-color 0.3s;
 }
 
 /* ── Voice recording animation ───────────────── */
@@ -870,6 +982,148 @@ body::before {
     transition: transform 0.2s;
 }
 #scrollBottomBtn:hover { transform: scale(1.05); }
+
+/* ===== LIGHT MODE OVERRIDES ===== */
+body.light-mode {
+    background: #f6f8fa;
+    color: #24292f;
+}
+body.light-mode .sidebar {
+    background: rgba(255, 255, 255, 0.92);
+    border-right-color: rgba(0,0,0,0.08);
+}
+body.light-mode .sidebar .sidebar-header {
+    border-bottom-color: rgba(0,0,0,0.06);
+}
+body.light-mode .sidebar .group-heading {
+    color: #57606a;
+    border-bottom-color: rgba(0,0,0,0.06);
+}
+body.light-mode .conv-item:hover {
+    background: rgba(0,0,0,0.04);
+}
+body.light-mode .conv-item.active {
+    background: rgba(31,111,235,0.12);
+    border-color: rgba(31,111,235,0.3);
+}
+body.light-mode .conv-item .title {
+    color: #24292f;
+}
+body.light-mode .conv-item .time {
+    color: #57606a;
+}
+body.light-mode .conv-item .rename-btn {
+    color: #57606a;
+}
+body.light-mode .sidebar-footer {
+    color: #57606a;
+    border-top-color: rgba(0,0,0,0.06);
+}
+body.light-mode .main {
+    background: rgba(255,255,255,0.85);
+}
+body.light-mode .top-bar {
+    background: rgba(255, 255, 255, 0.9);
+    border-bottom-color: rgba(0,0,0,0.08);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+body.light-mode .top-bar h1 {
+    background: linear-gradient(135deg, #1f6feb, #a371f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+body.light-mode .model-select,
+body.light-mode .provider-select,
+body.light-mode .api-key-input {
+    background: rgba(255,255,255,0.8);
+    color: #24292f;
+    border-color: rgba(0,0,0,0.15);
+}
+body.light-mode .clear-btn {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(248,81,73,0.3);
+    color: #f85149;
+}
+body.light-mode .clear-btn:hover {
+    background: rgba(248,81,73,0.08);
+}
+body.light-mode .search-label,
+body.light-mode .search-box input {
+    color: #24292f;
+}
+body.light-mode .search-box input {
+    background: rgba(255,255,255,0.8);
+    color: #24292f;
+    border-color: rgba(0,0,0,0.12);
+}
+body.light-mode .search-box input::placeholder {
+    color: #8b949e;
+}
+body.light-mode .msg.bot {
+    background: rgba(240, 243, 246, 0.9);
+    border-color: rgba(0,0,0,0.06);
+    color: #24292f;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+body.light-mode .msg.user {
+    background: linear-gradient(135deg, #1f6feb, #388bfd);
+    color: white;
+}
+body.light-mode .input-bar {
+    background: rgba(255, 255, 255, 0.9);
+    border-top-color: rgba(0,0,0,0.06);
+}
+body.light-mode .attach-btn,
+body.light-mode .record-btn,
+body.light-mode .voice-toggle {
+    background: rgba(255,255,255,0.6);
+    border-color: rgba(0,0,0,0.1);
+    color: #57606a;
+}
+body.light-mode .attach-btn:hover,
+body.light-mode .record-btn:hover,
+body.light-mode .voice-toggle:hover {
+    color: #1f6feb;
+    border-color: #1f6feb;
+    background: rgba(31,111,235,0.05);
+}
+body.light-mode #msgInput {
+    background: rgba(255,255,255,0.8);
+    color: #24292f;
+    border-color: rgba(0,0,0,0.12);
+}
+body.light-mode #statusBar {
+    background: rgba(255, 255, 255, 0.85);
+    color: #57606a;
+    border-top-color: rgba(0,0,0,0.06);
+}
+body.light-mode #resourceDisplay {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.06);
+    color: #57606a;
+}
+body.light-mode .att-thumb {
+    background: rgba(255,255,255,0.8);
+    border-color: rgba(0,0,0,0.08);
+    color: #24292f;
+}
+body.light-mode .msg .file-chip {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.06);
+}
+body.light-mode .chat-area::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.12);
+}
+body.light-mode #scrollBottomBtn {
+    background: #1f6feb;
+    color: #fff;
+}
+body.light-mode .vision-badge {
+    background: rgba(63,185,80,0.12);
+    border-color: rgba(63,185,80,0.25);
+    color: #1e7e34;
+}
 </style>
 </head>
 <body>
@@ -889,7 +1143,6 @@ body::before {
   <div class="main">
     <div class="top-bar">
       <div class="left">
-        <!-- UPDATED: Replaced plain hamburger "☰" with the SVG icon -->
         <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -902,6 +1155,78 @@ body::before {
         <label class="search-label">
           <input type="checkbox" id="searchToggle" checked> 🌐 Search
         </label>
+
+        <!-- ===== SLIDING DAY/NIGHT TOGGLE (COMPACT) ===== -->
+        <div class="theme-toggle-wrapper">
+          <div class="toggle-outer" id="themeToggleOuter" onclick="handleThemeClick(event)">
+            <div class="toggle-inner">
+              <div class="night-bg"></div>
+              <div class="stars-layer" id="themeStars"></div>
+              <div class="day-bg">
+                <div class="sky-layer"></div>
+                <div class="sky-mid"></div>
+                <div class="cloud" style="width:36px;height:14px;bottom:3px;right:0px;"></div>
+                <div class="cloud" style="width:26px;height:10px;bottom:14px;right:22px;opacity:.85;"></div>
+                <div class="cloud" style="width:20px;height:8px;bottom:22px;left:4px;opacity:.7;"></div>
+              </div>
+              <!-- Astronaut Bear (scaled) -->
+              <div class="astronaut">
+                <svg viewBox="0 0 44 54" width="22" height="26" xmlns="http://www.w3.org/2000/svg">
+                  <ellipse cx="22" cy="36" rx="13" ry="14" fill="#e8e8e8"/>
+                  <circle cx="22" cy="18" r="13" fill="#d0d8e8"/>
+                  <circle cx="22" cy="18" r="10" fill="#c8d8f0" opacity="0.4"/>
+                  <ellipse cx="22" cy="19" rx="7" ry="6" fill="#5a7ab0" opacity="0.85"/>
+                  <circle cx="22" cy="20" r="5" fill="#c8844a"/>
+                  <circle cx="20" cy="18.5" r="1.2" fill="#7a3a0a"/>
+                  <circle cx="24" cy="18.5" r="1.2" fill="#7a3a0a"/>
+                  <ellipse cx="22" cy="21" rx="2" ry="1.2" fill="#b06030"/>
+                  <circle cx="10" cy="11" r="3.5" fill="#d0d8e8"/>
+                  <circle cx="34" cy="11" r="3.5" fill="#d0d8e8"/>
+                  <text x="22" y="37" text-anchor="middle" font-size="8" fill="#bbb">★</text>
+                  <ellipse cx="9" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(-10 9 36)"/>
+                  <ellipse cx="35" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(10 35 36)"/>
+                  <ellipse cx="16" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
+                  <ellipse cx="28" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
+                  <ellipse cx="16" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
+                  <ellipse cx="28" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
+                  <ellipse cx="22" cy="28" rx="9" ry="3" fill="none" stroke="#c0c8d8" stroke-width="2"/>
+                </svg>
+              </div>
+              <!-- Biplane (scaled) -->
+              <div class="biplane">
+                <svg viewBox="0 0 70 42" width="30" height="18" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="14" y="4" width="42" height="8" rx="4" fill="#d0d8e0"/>
+                  <ellipse cx="35" cy="22" rx="22" ry="9" fill="#e8e0d8"/>
+                  <ellipse cx="58" cy="22" rx="8" ry="6" fill="#d0c8c0"/>
+                  <polygon points="8,14 14,20 8,26" fill="#c8d0d8"/>
+                  <rect x="4" y="15" width="12" height="5" rx="2" fill="#c0c8d0"/>
+                  <rect x="18" y="26" width="34" height="6" rx="3" fill="#c8d0d8"/>
+                  <line x1="22" y1="12" x2="22" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
+                  <line x1="48" y1="12" x2="48" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
+                  <ellipse cx="44" cy="17" rx="7" ry="5" fill="#7aaecc" opacity="0.8"/>
+                  <circle cx="44" cy="15" r="5" fill="#c8844a"/>
+                  <circle cx="42.5" cy="13.5" r="1" fill="#6b3a1f"/>
+                  <circle cx="45.5" cy="13.5" r="1" fill="#6b3a1f"/>
+                  <ellipse cx="44" cy="16" rx="1.5" ry="1" fill="#b06030"/>
+                  <circle cx="40" cy="11" r="2" fill="#c8844a"/>
+                  <circle cx="48" cy="11" r="2" fill="#c8844a"/>
+                  <line x1="66" y1="13" x2="66" y2="31" stroke="#8a7060" stroke-width="3" stroke-linecap="round"/>
+                  <circle cx="66" cy="22" r="2.5" fill="#6a5040"/>
+                </svg>
+              </div>
+              <!-- THE KNOB (moon / sun) -->
+              <div class="knob" id="themeKnob">
+                <div class="knob-moon">
+                  <div class="crater" style="width:10px;height:10px;top:8px;left:7px;"></div>
+                  <div class="crater" style="width:8px;height:8px;top:22px;left:11px;"></div>
+                  <div class="crater" style="width:5px;height:5px;top:18px;left:25px;"></div>
+                </div>
+                <div class="knob-sun"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <select id="providerSelect" class="provider-select">
           <option value="ollama">Ollama</option>
           <option value="llamacpp">llama.cpp</option>
@@ -960,39 +1285,150 @@ var pending     = [];
 var conversations = [];
 var searchQuery = '';
 
+// ── THEME: Sliding Toggle ──────────────────────
+var themeOuter = document.getElementById('themeToggleOuter');
+var themeKnob = document.getElementById('themeKnob');
+
+// Load saved theme
+var isLight = localStorage.getItem('theme') === 'light';
+
+function applyTheme(light) {
+    document.body.classList.toggle('light-mode', light);
+    localStorage.setItem('theme', light ? 'light' : 'dark');
+    // Update toggle state
+    themeOuter.classList.toggle('day', light);
+}
+// Apply on load
+applyTheme(isLight);
+
+// Click handler (only if not dragged)
+var draggedTheme = false;
+var isDraggingTheme = false;
+var startXTheme = 0, startLeftTheme = 0;
+
+function handleThemeClick(e) {
+    if (draggedTheme) return;
+    var newLight = !document.body.classList.contains('light-mode');
+    applyTheme(newLight);
+}
+
+// Drag support (compact dimensions)
+const MIN_LEFT_THEME = 3;
+const MAX_LEFT_THEME = 93; // 140 - 40 - 3 - 3 - 1 ≈ 93
+
+themeKnob.addEventListener('mousedown', dragStartTheme);
+themeKnob.addEventListener('touchstart', dragStartTheme, { passive: true });
+
+function dragStartTheme(e) {
+    isDraggingTheme = true;
+    draggedTheme = false;
+    themeKnob.style.transition = 'none';
+    startXTheme = e.touches ? e.touches[0].clientX : e.clientX;
+    startLeftTheme = document.body.classList.contains('light-mode') ? MAX_LEFT_THEME : MIN_LEFT_THEME;
+    e.stopPropagation();
+    window.addEventListener('mousemove', dragMoveTheme);
+    window.addEventListener('mouseup', dragEndTheme);
+    window.addEventListener('touchmove', dragMoveTheme, { passive: true });
+    window.addEventListener('touchend', dragEndTheme);
+}
+
+function dragMoveTheme(e) {
+    if (!isDraggingTheme) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const dx = clientX - startXTheme;
+    if (Math.abs(dx) > 4) draggedTheme = true;
+    let newLeft = Math.min(MAX_LEFT_THEME, Math.max(MIN_LEFT_THEME, startLeftTheme + dx));
+    themeKnob.style.left = newLeft + 'px';
+
+    // Blend backgrounds for smooth visual feedback
+    const progress = (newLeft - MIN_LEFT_THEME) / (MAX_LEFT_THEME - MIN_LEFT_THEME);
+    document.querySelector('.night-bg').style.opacity = 1 - progress;
+    document.querySelector('.stars-layer').style.opacity = 1 - progress;
+    document.querySelector('.day-bg').style.opacity = progress;
+    document.querySelector('.knob-moon').style.opacity = 1 - progress;
+    document.querySelector('.knob-sun').style.opacity = progress;
+    document.querySelector('.astronaut').style.opacity = progress < 0.5 ? 1 : 0;
+    document.querySelector('.biplane').style.opacity = progress >= 0.5 ? 1 : 0;
+}
+
+function dragEndTheme(e) {
+    if (!isDraggingTheme) return;
+    isDraggingTheme = false;
+    themeKnob.style.transition = '';
+    themeKnob.style.left = '';
+    document.querySelector('.night-bg').style.opacity = '';
+    document.querySelector('.stars-layer').style.opacity = '';
+    document.querySelector('.day-bg').style.opacity = '';
+    document.querySelector('.knob-moon').style.opacity = '';
+    document.querySelector('.knob-sun').style.opacity = '';
+    document.querySelector('.astronaut').style.opacity = '';
+    document.querySelector('.biplane').style.opacity = '';
+
+    // Snap to final state based on knob position
+    const rect = themeKnob.getBoundingClientRect();
+    const outerRect = themeOuter.getBoundingClientRect();
+    const currentLeft = rect.left - outerRect.left - 5; // inner padding
+    const midpoint = (MIN_LEFT_THEME + MAX_LEFT_THEME) / 2;
+    const newLight = currentLeft > midpoint;
+    applyTheme(newLight);
+
+    window.removeEventListener('mousemove', dragMoveTheme);
+    window.removeEventListener('mouseup', dragEndTheme);
+    window.removeEventListener('touchmove', dragMoveTheme);
+    window.removeEventListener('touchend', dragEndTheme);
+}
+
+// Generate stars inside the toggle (compact positions)
+function makeThemeStars() {
+    const layer = document.getElementById('themeStars');
+    const pts = [
+        {x:26,y:10,s:1},{x:34,y:14,s:0.8},{x:40,y:7,s:1.2},{x:46,y:17,s:0.8},
+        {x:62,y:18,s:0.8},{x:76,y:16,s:0.8},{x:86,y:6,s:1},
+        {x:98,y:13,s:1},{x:112,y:10,s:1},{x:124,y:18,s:0.8},
+    ];
+    pts.forEach(d => {
+        const s = document.createElement('div');
+        s.className = 'star';
+        s.style.cssText = `width:${d.s}px;height:${d.s}px;left:${d.x}px;top:${d.y}px;`;
+        layer.appendChild(s);
+    });
+    [{x:38,y:12},{x:76,y:18},{x:114,y:20}].forEach(p => {
+        const sp = document.createElement('div');
+        sp.className = 'sparkle';
+        sp.style.cssText = `left:${p.x}px;top:${p.y}px;`;
+        sp.innerHTML = '✦';
+        layer.appendChild(sp);
+    });
+}
+makeThemeStars();
+
 // ── Sidebar toggle ─────────────────────────────
 var sidebar = document.getElementById('sidebar');
-var sidebarVisible = localStorage.getItem('sidebarVisible') !== 'false'; // default true
+var sidebarVisible = localStorage.getItem('sidebarVisible') !== 'false';
 
 function toggleSidebar() {
     sidebarVisible = !sidebarVisible;
     localStorage.setItem('sidebarVisible', sidebarVisible);
     sidebar.classList.toggle('hidden', !sidebarVisible);
 }
-
-// Restore sidebar state
 if (!sidebarVisible) sidebar.classList.add('hidden');
 
 // ── Scroll button ───────────────────────────────
 var scrollBtn = document.getElementById('scrollBottomBtn');
-
 chatArea.addEventListener('scroll', function() {
     var threshold = 80;
     var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
     scrollBtn.style.display = atBottom ? 'none' : 'block';
 });
-
 scrollBtn.addEventListener('click', function() {
     chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
 });
-
 document.addEventListener('keydown', function(e) {
     if (e.altKey && e.key === 'ArrowDown') {
         e.preventDefault();
         chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
     }
 });
-
 function scrollToBottomIfNeeded() {
     var threshold = 80;
     var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
@@ -1003,15 +1439,11 @@ function scrollToBottomIfNeeded() {
 var voiceEnabled = false;
 var speaking = false;
 var currentUtterance = null;
-
 const speakToggleBtn = document.getElementById('speakToggleBtn');
 const stopSpeakBtn = document.getElementById('stopSpeakBtn');
-
 if (!('speechSynthesis' in window)) {
     speakToggleBtn.style.display = 'none';
-    console.warn('⚠️ Speech synthesis not supported.');
 }
-
 function toggleVoice() {
     voiceEnabled = !voiceEnabled;
     if (voiceEnabled) {
@@ -1025,7 +1457,6 @@ function toggleVoice() {
         stopSpeaking();
     }
 }
-
 function stopSpeaking() {
     if (currentUtterance && speaking) {
         window.speechSynthesis.cancel();
@@ -1033,7 +1464,6 @@ function stopSpeaking() {
         stopSpeakBtn.style.display = 'none';
     }
 }
-
 function speakText(text) {
     if (!voiceEnabled || !text) return;
     window.speechSynthesis.cancel();
@@ -1159,7 +1589,6 @@ function getDateGroup(dateStr) {
     weekStart.setDate(weekStart.getDate() - today.getDay());
     var lastWeekStart = new Date(weekStart);
     lastWeekStart.setDate(lastWeekStart.getDate() - 7);
-
     var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     if (d.getTime() === today.getTime()) return 'Today';
     if (d.getTime() === yesterday.getTime()) return 'Yesterday';
@@ -1170,7 +1599,6 @@ function getDateGroup(dateStr) {
 
 // ── Search ──────────────────────────────────────
 var searchTimeout = null;
-
 function searchChats() {
     var input = document.getElementById('searchInput');
     var query = input.value.trim();
@@ -1178,7 +1606,6 @@ function searchChats() {
     if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(function() {
         if (query.length === 0) {
-            // Show all chats
             renderConvList(conversations);
             return;
         }
@@ -1189,7 +1616,6 @@ function searchChats() {
                     status.textContent = '⚠️ ' + data.error;
                     return;
                 }
-                // data is an array of conversation objects that match
                 renderConvList(data);
             })
             .catch(err => {
@@ -1204,7 +1630,6 @@ function loadConversations() {
         .then(r => r.json())
         .then(data => {
             conversations = data;
-            // If search query is active, re-apply search
             var query = document.getElementById('searchInput').value.trim();
             if (query.length > 0) {
                 searchChats();
@@ -1228,14 +1653,12 @@ function renderConvList(convs) {
         convList.innerHTML = '<div class="no-results">🔍 No chats found</div>';
         return;
     }
-    // Group by date
     var groups = {};
     convs.forEach(conv => {
         var group = getDateGroup(conv.created);
         if (!groups[group]) groups[group] = [];
         groups[group].push(conv);
     });
-
     var groupOrder = ['Today', 'Yesterday', 'This Week', 'Last Week', 'Older'];
     convList.innerHTML = '';
     groupOrder.forEach(groupName => {
@@ -1249,12 +1672,10 @@ function renderConvList(convs) {
                 div.className = 'conv-item' + (conv.id === currentConv ? ' active' : '');
                 div.dataset.id = conv.id;
                 div.draggable = true;
-
                 var titleSpan = document.createElement('span');
                 titleSpan.className = 'title';
                 titleSpan.textContent = conv.title || 'Untitled';
                 div.appendChild(titleSpan);
-
                 var renameBtn = document.createElement('button');
                 renameBtn.className = 'rename-btn';
                 renameBtn.textContent = '✏️';
@@ -1264,13 +1685,11 @@ function renderConvList(convs) {
                     renameChat(conv.id);
                 };
                 div.appendChild(renameBtn);
-
                 var timeSpan = document.createElement('span');
                 timeSpan.className = 'time';
                 var d = new Date(conv.created);
                 timeSpan.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
                 div.appendChild(timeSpan);
-
                 var delBtn = document.createElement('button');
                 delBtn.className = 'del';
                 delBtn.textContent = '×';
@@ -1280,16 +1699,13 @@ function renderConvList(convs) {
                     deleteChat(conv.id);
                 };
                 div.appendChild(delBtn);
-
                 div.addEventListener('dragstart', handleDragStart);
                 div.addEventListener('dragend', handleDragEnd);
                 div.addEventListener('dragover', handleDragOver);
                 div.addEventListener('drop', handleDrop);
-
                 div.addEventListener('click', function() {
                     selectConversation(conv.id);
                 });
-
                 convList.appendChild(div);
             });
         }
@@ -1298,44 +1714,36 @@ function renderConvList(convs) {
 
 // ── Drag and drop ──────────────────────────────
 var dragSrcId = null;
-
 function handleDragStart(e) {
     dragSrcId = this.dataset.id;
     this.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', this.dataset.id);
 }
-
 function handleDragEnd(e) {
     this.classList.remove('dragging');
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('drag-over'));
 }
-
 function handleDragOver(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('drag-over'));
     this.classList.add('drag-over');
 }
-
 function handleDrop(e) {
     e.preventDefault();
     this.classList.remove('drag-over');
     var targetId = this.dataset.id;
     if (dragSrcId === targetId) return;
-
     var srcIndex = conversations.findIndex(c => c.id === dragSrcId);
     var targetIndex = conversations.findIndex(c => c.id === targetId);
     if (srcIndex === -1 || targetIndex === -1) return;
-
     var moved = conversations.splice(srcIndex, 1)[0];
     conversations.splice(targetIndex, 0, moved);
-
     var newOrder = {};
     conversations.forEach((c, idx) => {
         newOrder[c.id] = idx;
     });
-
     fetch('/conversations/reorder', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1345,7 +1753,6 @@ function handleDrop(e) {
     .then(data => {
         if (data.ok) {
             conversations.forEach(c => c.order = newOrder[c.id]);
-            // Re-render with current search query
             var query = document.getElementById('searchInput').value.trim();
             if (query.length > 0) searchChats();
             else renderConvList(conversations);
@@ -1366,7 +1773,6 @@ function renameChat(id) {
     var newTitle = prompt('Rename chat:', conv.title);
     if (newTitle === null || newTitle.trim() === '') return;
     newTitle = newTitle.trim();
-
     fetch('/conversations/' + id + '/rename', {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
@@ -1394,7 +1800,6 @@ function selectConversation(id) {
     if (id === currentConv) return;
     currentConv = id;
     document.querySelectorAll('.conv-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
-
     fetch('/conversations/' + id + '/messages')
         .then(r => r.json())
         .then(messages => {
@@ -1412,7 +1817,6 @@ function newChat() {
     fetch('/conversations', { method: 'POST' })
         .then(r => r.json())
         .then(() => {
-            // Clear search input when creating a new chat
             document.getElementById('searchInput').value = '';
             searchQuery = '';
             loadConversations();
@@ -1532,7 +1936,6 @@ function doSend() {
 function actuallySend(text) {
     var images = pending.filter(p => p.type === 'image');
     var files  = pending.filter(p => p.type === 'file');
-
     var userEntry = {
         role: 'user',
         text: text,
@@ -1541,26 +1944,21 @@ function actuallySend(text) {
         ts: new Date().toLocaleTimeString()
     };
     renderMsg('user', userEntry);
-
     msgInput.value = '';
     msgInput.style.height = '46px';
     pending = [];
     attachments.innerHTML = '';
-
     var botDiv = renderMsg('bot', { role:'bot', text:'⏳ Thinking...', ts:'' });
     botDiv.querySelector('.body').classList.add('thinking-dots');
     busy = true;
     sendBtn.disabled = true;
     status.textContent = '⏳ Generating...';
-
     var searchEnabled = document.getElementById('searchToggle').checked;
     var provider = providerSelect.value;
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
     if (provider === 'groq' || provider === 'huggingface') saveApiKey(provider, apiKey);
-
     var endpoint = (provider === 'ollama') ? '/chat_stream' : '/chat';
-
     fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1710,7 +2108,6 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
 // Resource monitor
 var resourceIntervalId = null;
-
 function updateResources() {
     fetch('/resources')
         .then(r => r.json())
@@ -1724,12 +2121,10 @@ function updateResources() {
         })
         .catch(err => console.log('Resource update failed:', err));
 }
-
 window.addEventListener('beforeunload', function() {
     if (resourceIntervalId) { clearInterval(resourceIntervalId); resourceIntervalId = null; }
     navigator.sendBeacon('/unload_model');
 });
-
 resourceIntervalId = setInterval(updateResources, 5000);
 
 window.addEventListener('load', function() {
@@ -1963,14 +2358,12 @@ def reorder_conversations():
 def search_conversations():
     query = request.args.get('q', '').strip().lower()
     if not query:
-        return jsonify([])  # return empty if no query, but frontend handles empty differently
+        return jsonify([])
 
     convs = load_conversations()
     results = []
     for cid, conv in convs.items():
-        # Search in title
         title_match = query in conv.get('title', '').lower()
-        # Search in messages
         msg_match = False
         for msg in conv.get('messages', []):
             text = msg.get('text', '').lower()
@@ -1984,7 +2377,6 @@ def search_conversations():
                 "created": conv.get("created", ""),
                 "order": conv.get("order", 0)
             })
-    # Sort by order
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
