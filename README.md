@@ -32,3 +32,5 @@ Then pull a model of your choice:
 
 ```bash
 ollama pull vaultbox/qwen3.5-uncensored:9b
+
+![alt text](image.png)
