@@ -24,3 +24,5 @@ venv/
 # modular gguf junk – ignore all .gguf files anywhere, especially in /models
 *.gguf
 /models/*.gguf
+#ignore personal file 
+*.txt
