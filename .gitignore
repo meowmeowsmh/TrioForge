@@ -26,4 +26,4 @@ venv/
 /models/*.gguf
 
 # ignore personal file
-*.txt
+ollama-chat-interface/notes.txt
