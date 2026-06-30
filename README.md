@@ -25,12 +25,11 @@ Everything auto‑creates itself – just clone, run, and go.
 ---
 
 ## 🚀 Quick Start
-
+![alt text](image.png)
+images
 ### 1️⃣ Install Ollama
 Download and install Ollama from [ollama.com](https://ollama.com).  
 Then pull a model of your choice:
-
 ```bash
 ollama pull vaultbox/qwen3.5-uncensored:9b
 
-![alt text](image.png)
