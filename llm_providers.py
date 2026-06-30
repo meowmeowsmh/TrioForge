@@ -82,44 +82,80 @@ class LLMProvider:
 
 
 class OllamaProvider(LLMProvider):
+    """Ollama provider using /api/chat for all requests (preserves conversation history)."""
     def __init__(self, model: str = "vaultbox/qwen3.5-uncensored:9b",
                  base_url: str = "http://127.0.0.1:11434"):
         self.model = model
         self.base_url = base_url
-        self.api_url = f"{base_url}/api/generate"
+        self.chat_url = f"{base_url}/api/chat"
 
-    def _build_payload(self, messages, images=None, model=None):
-        prompt = messages[-1]["content"] if messages else ""
+    def _prepare_messages(self, messages: List[Dict], images: Optional[List[Dict]] = None) -> List[Dict]:
+        """Convert provider messages to Ollama /api/chat format, embedding images if present."""
+        # If images are provided, we need to convert the last user message content into a list
+        # of parts (text + images). Otherwise, keep content as plain string.
+        if images:
+            # Make a deep copy to avoid mutating the original
+            msgs = [m.copy() for m in messages]
+            # Find the last user message (or any message with role 'user')
+            last_user_idx = None
+            for i in range(len(msgs) - 1, -1, -1):
+                if msgs[i].get("role") == "user":
+                    last_user_idx = i
+                    break
+            if last_user_idx is not None:
+                user_msg = msgs[last_user_idx]
+                # Build content parts: images first, then text
+                content_parts = []
+                for img in images:
+                    b64 = img["b64"]
+                    if "," in b64:
+                        b64 = b64.split(",", 1)[1]
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                    })
+                content_parts.append({"type": "text", "text": user_msg.get("content", "")})
+                msgs[last_user_idx] = {"role": "user", "content": content_parts}
+            return msgs
+        else:
+            return messages
+
+    def generate(self, messages: List[Dict[str, str]],
+                 images: Optional[List[Dict]] = None, **kwargs) -> str:
+        """
+        Generate a response using Ollama /api/chat.
+        Accepts full message history and optional images.
+        """
+        model = kwargs.get("model") or self.model
+        num_gpu = kwargs.get("num_gpu", 99)
+        low_vram = kwargs.get("low_vram", False)
+
+        # Prepare messages with images if any
+        chat_messages = self._prepare_messages(messages, images)
+
         payload = {
-            "model": model or self.model,
-            "prompt": prompt,
+            "model": model,
+            "messages": chat_messages,
             "stream": False,
             "keep_alive": 300,
             "options": {
                 "temperature": 0.7,
                 "num_predict": 2048,
                 "num_ctx": 4096,
-                "num_gpu": 99,
-                "low_vram": False,
+                "num_gpu": num_gpu,
+                "low_vram": low_vram,
             }
         }
-        if images:
-            payload["images"] = [
-                img["b64"].split(",")[-1] if "," in img["b64"] else img["b64"]
-                for img in images if "b64" in img
-            ]
-        return payload
 
-    def generate(self, messages: List[Dict[str, str]],
-                 images: Optional[List[Dict]] = None, **kwargs) -> str:
-        model = kwargs.get("model") or self.model
-        payload = self._build_payload(messages, images=images, model=model)
-        resp = requests.post(self.api_url, json=payload, timeout=180)
+        resp = requests.post(self.chat_url, json=payload, timeout=180)
         resp.raise_for_status()
-        return resp.json().get("response", "")
+        data = resp.json()
+        # /api/chat returns a single object with "message" when stream=False
+        return data.get("message", {}).get("content", "")
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
+        """Forward to generate with images."""
         return self.generate(messages, images=images, **kwargs)
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
@@ -130,6 +166,9 @@ class OllamaProvider(LLMProvider):
         except:
             return []
 
+
+# The rest of the providers remain unchanged – they are included for completeness.
+# If you want to keep the same file, copy the following classes exactly as they were.
 
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: str = "./models",
@@ -406,8 +445,6 @@ class GroqProvider(LLMProvider):
         return chat.choices[0].message.content
 
 
-# ===== NEW PROVIDERS =====
-
 class DeepSeekProvider(LLMProvider):
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
@@ -458,7 +495,6 @@ class DeepSeekProvider(LLMProvider):
         return resp.json()["choices"][0]["message"]["content"]
 
     def generate_with_image(self, messages: List[Dict[str, str]], images: List[Dict], **kwargs) -> str:
-        # DeepSeek doesn't support vision yet; fallback to text with note
         note = f"[{len(images)} image(s) attached – this model does not support native vision]"
         new_messages = list(messages)
         if new_messages:
