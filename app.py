@@ -1,4 +1,4 @@
-# app.py (complete, with message editing, deletion, and token-speed meter)
+# app.py – with automatic memory management (no manual sliders)
 from flask import Flask, request, jsonify, Response
 from flask import send_from_directory
 import requests
@@ -13,7 +13,7 @@ import re
 import urllib.request
 import platform
 import sys
-import time   # <-- new import
+import time
 
 # ── Import the provider classes ──
 from llm_providers import (
@@ -42,6 +42,14 @@ OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
 MODEL_CONFIG_FILE = "json_configuration/model_config.json"
+
+# ── System prompt to encourage Markdown formatting ──
+SYSTEM_PROMPT = (
+    "Always format tabular data as Markdown tables with headers. "
+    "Use **bold** for important terms or emphasis. "
+    "Use bullet lists (- or *) for enumerations. "
+    "Keep your responses clear, structured, and easy to read."
+)
 
 try:
     from duckduckgo_search import DDGS
@@ -245,6 +253,48 @@ def describe_image_with_llava(image_b64: str) -> str:
         print(f"⚠️ llava fallback failed: {e}")
         return ""
 
+# ── Automatic memory settings for Ollama ──────────────────────────
+def get_ollama_memory_settings() -> dict:
+    """
+    Dynamically choose num_gpu and low_vram based on current system memory.
+    Returns dict with keys 'num_gpu' and 'low_vram'.
+    """
+    try:
+        mem = psutil.virtual_memory()
+        ram_free_gb = mem.available / (1024**3)
+        # Threshold: if less than 2 GB free, consider it low
+        low_ram = ram_free_gb < 2.0
+
+        # Check VRAM availability and free space
+        vram_available = False
+        vram_free_gb = 0
+        if NVML_AVAILABLE:
+            try:
+                handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                vram_free_gb = info.free / (1024**3)
+                vram_available = True
+            except:
+                pass
+
+        if low_ram and vram_available and vram_free_gb > 2.0:
+            # RAM is low, VRAM has space → offload everything to GPU
+            num_gpu = 99
+            low_vram = True
+        elif low_ram and not vram_available:
+            # RAM is low but no VRAM → reduce memory usage by CPU only
+            num_gpu = 0
+            low_vram = True
+        else:
+            # RAM is fine – use default: offload to GPU if available, else CPU
+            num_gpu = 99 if vram_available else 0
+            low_vram = False
+
+        return {"num_gpu": num_gpu, "low_vram": low_vram}
+    except Exception:
+        # Fallback safe values
+        return {"num_gpu": 99, "low_vram": False}
+
 # ── Ollama command detection & execution ────────────────────────
 def is_ollama_command(text: str) -> bool:
     return text.strip().lower().startswith("ollama ")
@@ -369,7 +419,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (with compact toggle, drag-drop, and provider support) ──
+# ── Build HTML (with Unload button, no memory controls) ──
 def build_html(model_name):
     return r"""<!DOCTYPE html>
 <html lang="en">
@@ -378,6 +428,8 @@ def build_html(model_name):
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>Qwen Chat · Multi‑Conversation</title>
+<!-- Markdown rendering library -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body {
@@ -615,7 +667,8 @@ body.light-mode::before {
     border-color: #58a6ff;
 }
 .api-key-input { display:none; }
-.clear-btn {
+
+.clear-btn, .unload-btn {
     background: rgba(33,38,45,0.7);
     border: 1px solid rgba(248,81,73,0.3);
     color: #f85149;
@@ -626,7 +679,8 @@ body.light-mode::before {
     transition: all 0.2s;
     backdrop-filter: blur(5px);
 }
-.clear-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
+.clear-btn:hover, .unload-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
+.unload-btn { display: none; } /* shown only for Ollama */
 
 .vision-badge {
     font-size: 11px;
@@ -774,12 +828,11 @@ body.light-mode::before {
     max-width: 75%;
     line-height: 1.65;
     font-size: 15px;
-    white-space: pre-wrap;
     word-wrap: break-word;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     animation: fadeIn 0.3s ease;
     transition: background 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
-    position: relative;    /* <-- ADDED for absolute positioned buttons */
+    position: relative;
 }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
@@ -820,7 +873,52 @@ body.light-mode::before {
     backdrop-filter: blur(5px);
 }
 
-/* NEW: edit/delete buttons on messages */
+/* ── Markdown rendering for bot messages ────────────── */
+.msg.bot table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 14px;
+}
+.msg.bot th, .msg.bot td {
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 8px 12px;
+    text-align: left;
+}
+.msg.bot th {
+    background: rgba(255,255,255,0.08);
+    font-weight: 600;
+}
+.msg.bot ul, .msg.bot ol {
+    padding-left: 24px;
+    margin: 8px 0;
+}
+.msg.bot li {
+    margin: 4px 0;
+}
+.msg.bot strong, .msg.bot b {
+    font-weight: 700;
+    color: #58a6ff;
+}
+.msg.bot code {
+    background: rgba(255,255,255,0.1);
+    padding: 0 4px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+/* Light mode overrides for Markdown */
+body.light-mode .msg.bot th {
+    background: rgba(0,0,0,0.05);
+}
+body.light-mode .msg.bot strong,
+body.light-mode .msg.bot b {
+    color: #1f6feb;
+}
+body.light-mode .msg.bot code {
+    background: rgba(0,0,0,0.06);
+}
+
+/* ── Message actions (edit/delete) ─────────────── */
 .msg .msg-actions {
     display: none;
     position: absolute;
@@ -853,15 +951,12 @@ body.light-mode::before {
     font-size: inherit;
     resize: vertical;
 }
-
-/* ── FIX: Always show actions on User, hide them on Bot ── */
 .msg.user .msg-actions {
     display: flex !important;
 }
 .msg.bot .msg-actions {
     display: none !important;
 }
-/* ──────────────────────────────────────────────────────── */
 
 /* ── Attachments ─────────────────────────────── */
 .attachments {
@@ -1127,12 +1222,14 @@ body.light-mode .api-key-input {
     color: #24292f;
     border-color: rgba(0,0,0,0.15);
 }
-body.light-mode .clear-btn {
+body.light-mode .clear-btn,
+body.light-mode .unload-btn {
     background: rgba(0,0,0,0.05);
     border-color: rgba(248,81,73,0.3);
     color: #f85149;
 }
-body.light-mode .clear-btn:hover {
+body.light-mode .clear-btn:hover,
+body.light-mode .unload-btn:hover {
     background: rgba(248,81,73,0.08);
 }
 body.light-mode .search-label,
@@ -1324,6 +1421,7 @@ body.light-mode .vision-badge {
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
         <select id="modelSelect" class="model-select" title="Select model"></select>
+        <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
         <button class="clear-btn" onclick="clearAllChats()">🗑 Clear All</button>
       </div>
@@ -1381,6 +1479,18 @@ var currentConv = null;
 var pending     = [];
 var conversations = [];
 var searchQuery = '';
+
+var unloadBtn = document.getElementById('unloadBtn');
+
+// Unload model
+unloadBtn.addEventListener('click', function() {
+    if (!confirm('Unload current Ollama model from memory?')) return;
+    fetch('/unload_model', { method: 'POST' })
+        .then(() => {
+            status.textContent = '✅ Model unloaded (memory freed)';
+        })
+        .catch(() => status.textContent = '❌ Unload failed');
+});
 
 // ── DROP OVERLAY LOGIC ─────────────────────────
 var dropOverlay = document.getElementById('dropOverlay');
@@ -1762,6 +1872,12 @@ function loadModels() {
                 modelSelect.appendChild(opt);
             }
             updateVisionBadge();
+            // Show Unload button only for Ollama
+            if (provider === 'ollama') {
+                unloadBtn.style.display = 'inline-block';
+            } else {
+                unloadBtn.style.display = 'none';
+            }
         })
         .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
 }
@@ -2072,7 +2188,7 @@ function clearAllChats() {
         });
 }
 
-// ── Message rendering (with edit/delete buttons) ──
+// ── Message rendering (with edit/delete buttons and Markdown for bot) ──
 function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
@@ -2093,14 +2209,19 @@ function renderMsg(role, entry, msgIndex) {
     }
     var body = document.createElement('div');
     body.className = 'body';
-    body.textContent = entry.text || '';
+    // Render Markdown for bot, plain text for user
+    if (role === 'bot') {
+        body.innerHTML = marked.parse(entry.text || '');
+    } else {
+        body.textContent = entry.text || '';
+    }
     div.appendChild(body);
     var ts = document.createElement('div');
     ts.className = 'ts';
     ts.textContent = entry.ts || '';
     div.appendChild(ts);
 
-    // ---- FIX: Action buttons for edit/delete (Only for User) ----
+    // Action buttons for user messages only
     if (role === 'user') {
         var actions = document.createElement('div');
         actions.className = 'msg-actions';
@@ -2124,14 +2245,13 @@ function renderMsg(role, entry, msgIndex) {
         actions.appendChild(delBtn);
         div.appendChild(actions);
     }
-    // ---- end action buttons ----
 
     chatArea.appendChild(div);
     scrollToBottomIfNeeded();
     return div;
 }
 
-// ── Force-reload the current chat (bypasses selectConversation's early-exit guard) ──
+// ── Force-reload the current chat ──────────────
 function reloadCurrentChat() {
     if (!currentConv) return;
     fetch('/conversations/' + currentConv + '/messages')
@@ -2194,12 +2314,10 @@ async function startEditMessage(msgDiv, role, entry, idx) {
 
 async function deleteMessage(msgDiv, idx) {
     if (!confirm('Delete this message?')) return;
-    // Re-fetch messages to get the real current index (idx may be stale or -1 for newly sent messages)
     var msgs = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
     var bodyEl = msgDiv.querySelector('.body');
     var msgText = bodyEl ? bodyEl.textContent.trim() : '';
     var realIdx = idx;
-    // If idx is invalid (-1 or out of range), find the message by matching text + role
     if (realIdx < 0 || realIdx >= msgs.length) {
         realIdx = msgs.findIndex(m => m.role === 'user' && m.text && m.text.trim() === msgText);
     }
@@ -2288,7 +2406,7 @@ function actuallySend(text) {
         files: files.map(f => ({ name: f.name, mime: f.mime })),
         ts: new Date().toLocaleTimeString()
     };
-    var userDiv = renderMsg('user', userEntry, -1); // no index yet, but we can assign later if needed
+    var userDiv = renderMsg('user', userEntry, -1);
 
     msgInput.value = '';
     msgInput.style.height = '46px';
@@ -2324,17 +2442,15 @@ function actuallySend(text) {
         }
     }, 200);
 
-    // Helper: remove the unsaved user+bot bubbles and reset UI on failure
     function handleSendError(errMsg) {
         clearInterval(speedInterval);
         if (userDiv && userDiv.parentNode) userDiv.remove();
         if (botDiv && botDiv.parentNode) botDiv.remove();
         busy = false;
         sendBtn.disabled = false;
-        msgInput.value = text;  // restore the text so user can retry
+        msgInput.value = text;
         msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
         status.textContent = '❌ ' + errMsg;
-        // If chat area is now empty, show the empty-state placeholder
         if (chatArea.children.length === 0) {
             chatArea.innerHTML = '<div class="msg bot">👋 Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
         }
@@ -2406,13 +2522,13 @@ function actuallySend(text) {
                 } else {
                     var text = data.response || '(no response)';
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
-                    botDiv.querySelector('.body').textContent = text;
+                    botDiv.querySelector('.body').innerHTML = marked.parse(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                     status.textContent = '✅ Done';
                     loadConversations();
                     speakText(text);
                     if (data.usage) finalizeStats(data.usage);
-                    else finalizeStats({tokens: text.split(' ').length, duration_sec: 1}); // estimate
+                    else finalizeStats({tokens: text.split(' ').length, duration_sec: 1});
                     busy = false; sendBtn.disabled = false;
                 }
             });
@@ -2434,7 +2550,7 @@ function finalizeStats(usage) {
 
 function finishStream(fullText, botDiv) {
     botDiv.querySelector('.body').classList.remove('thinking-dots');
-    botDiv.querySelector('.body').textContent = fullText || '(empty response)';
+    botDiv.querySelector('.body').innerHTML = marked.parse(fullText || '(empty response)');
     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
     status.textContent = '✅ Done';
     busy = false;
@@ -2854,13 +2970,15 @@ def chat():
             except Exception as e:
                 print(f"❌ Search error: {e}")
 
+        # Build final prompt with system instruction and search context
+        final_prompt = SYSTEM_PROMPT + "\n\n"
         if search_context:
-            final_prompt = (
+            final_prompt += (
                 f"Web search results for '{user_message}':\n{search_context}\n\n"
                 f"Based on these results, answer the user's question: {user_message}"
             )
         else:
-            final_prompt = user_message
+            final_prompt += user_message
 
         for f in files:
             try:
@@ -2875,10 +2993,29 @@ def chat():
         if not provider:
             return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
 
-        messages = [{"role": "user", "content": final_prompt}]
+        # Build message history from conversation
+        conv = get_conversation(conv_id)
+        messages = []
+        if conv:
+            for msg in conv.get('messages', []):
+                if msg['role'] == 'user':
+                    messages.append({"role": "user", "content": msg['text']})
+                elif msg['role'] == 'bot':
+                    messages.append({"role": "assistant", "content": msg['text']})
+        # Add system prompt as first message
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+        # Now add the current user message (with search and files) as the last user message
+        messages.append({"role": "user", "content": final_prompt})
+
         extra_kwargs = {"model": model}
         if api_key:
             extra_kwargs['api_key'] = api_key
+
+        # For Ollama, pass dynamic memory settings
+        if provider_name == 'ollama':
+            mem_settings = get_ollama_memory_settings()
+            extra_kwargs['num_gpu'] = mem_settings['num_gpu']
+            extra_kwargs['low_vram'] = mem_settings['low_vram']
 
         start_time = time.time()
         if images:
@@ -2890,13 +3027,12 @@ def chat():
                     inject = f"[Image description]\n{description.strip()}\n\n[User question]\n"
                 else:
                     inject = "[Image description unavailable]\n\n[User question]\n"
-                messages = [{"role": "user", "content": inject + final_prompt}]
+                messages[-1]['content'] = inject + messages[-1]['content']
                 reply = provider.generate(messages, **extra_kwargs)
         else:
             reply = provider.generate(messages, **extra_kwargs)
         end_time = time.time()
 
-        # Approximate token count
         token_estimate = len(reply.split()) / 0.75
         duration = end_time - start_time if end_time > start_time else 1
         usage = {"tokens": int(token_estimate), "duration_sec": round(duration, 2)}
@@ -2965,13 +3101,15 @@ def chat_stream():
             except Exception as e:
                 print(f"❌ Search error: {e}")
 
+        # Build final prompt with system instruction
+        final_prompt = SYSTEM_PROMPT + "\n\n"
         if search_context:
-            final_prompt = (
+            final_prompt += (
                 f"Web search results for '{user_message}':\n{search_context}\n\n"
                 f"Based on these results, answer the user's question: {user_message}"
             )
         else:
-            final_prompt = user_message
+            final_prompt += user_message
 
         for f in files:
             try:
@@ -2982,29 +3120,55 @@ def chat_stream():
             except:
                 final_prompt += f"\n\n[Attached file: {f['name']} — binary]"
 
+        # Build message history from conversation.
+        conv = get_conversation(conv_id)
+        messages = []
+        if conv:
+            for msg in conv.get('messages', []):
+                if msg['role'] == 'user':
+                    messages.append({"role": "user", "content": msg['text']})
+                elif msg['role'] == 'bot':
+                    messages.append({"role": "assistant", "content": msg['text']})
+        # Add system as first message
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+        # Add current user message
+        messages.append({"role": "user", "content": final_prompt})
+
+        # Get dynamic memory settings
+        mem_settings = get_ollama_memory_settings()
+
         payload = {
             "model": model or current_model,
-            "prompt": final_prompt,
+            "messages": messages,
             "stream": True,
-            "keep_alive": 300,
             "options": {
                 "temperature": 0.7,
                 "num_predict": 2048,
                 "num_ctx": 4096,
-                "num_gpu": 99
+                "num_gpu": mem_settings['num_gpu'],
+                "low_vram": mem_settings['low_vram'],
             }
         }
         if images:
-            payload["images"] = [
-                img["b64"].split(",")[-1] if "," in img["b64"] else img["b64"]
-                for img in images if "b64" in img
-            ]
+            # Ollama chat API accepts images as part of content for user messages.
+            last_msg = messages[-1]
+            content_parts = []
+            for img in images:
+                b64 = img["b64"]
+                if "," in b64:
+                    b64 = b64.split(",", 1)[1]
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                })
+            content_parts.append({"type": "text", "text": last_msg["content"]})
+            payload["messages"][-1] = {"role": "user", "content": content_parts}
 
         def generate():
             full_response = ""
             try:
                 r = requests.post(
-                    "http://127.0.0.1:11434/api/generate",
+                    "http://127.0.0.1:11434/api/chat",
                     json=payload,
                     stream=True,
                     timeout=300
@@ -3013,10 +3177,11 @@ def chat_stream():
                 for line in r.iter_lines():
                     if line:
                         chunk = json.loads(line)
-                        token = chunk.get("response", "")
-                        if token:
-                            full_response += token
-                            yield f"data: {json.dumps({'token': token})}\n\n"
+                        if "message" in chunk and "content" in chunk["message"]:
+                            token = chunk["message"]["content"]
+                            if token:
+                                full_response += token
+                                yield f"data: {json.dumps({'token': token})}\n\n"
                         if chunk.get("done", False):
                             usage = {}
                             if "eval_count" in chunk and "eval_duration" in chunk:
