@@ -15,6 +15,7 @@ import platform
 import sys
 import time
 
+
 # ── Import the provider classes ──
 from llm_providers import (
     LLMProvider,
@@ -25,6 +26,7 @@ from llm_providers import (
     DeepSeekProvider,
     ClaudeProvider,
     model_supports_vision,
+    VISION_MODELS,
 )
 
 # ── NVIDIA GPU support (optional) ──
@@ -38,7 +40,6 @@ except:
 
 app = Flask(__name__)
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
 MODEL_CONFIG_FILE = "json_configuration/model_config.json"
@@ -71,6 +72,21 @@ if not os.path.exists(MODEL_CONFIG_FILE):
     with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
     print(f"✅ Created {MODEL_CONFIG_FILE}")
+
+# ── NOTES storage (built-in) ─────────────────────────────────
+NOTES_FILE = "json_configuration/notes.json"
+os.makedirs(os.path.dirname(NOTES_FILE), exist_ok=True)
+if not os.path.exists(NOTES_FILE):
+    with open(NOTES_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f, indent=2)
+
+def load_notes():
+    with open(NOTES_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_notes(notes):
+    with open(NOTES_FILE, "w", encoding="utf-8") as f:
+        json.dump(notes, f, indent=2)
 
 # ── Auto‑SSL certificate generation ──
 def ensure_certificates():
@@ -255,17 +271,11 @@ def describe_image_with_llava(image_b64: str) -> str:
 
 # ── Automatic memory settings for Ollama ──────────────────────────
 def get_ollama_memory_settings() -> dict:
-    """
-    Dynamically choose num_gpu and low_vram based on current system memory.
-    Returns dict with keys 'num_gpu' and 'low_vram'.
-    """
     try:
         mem = psutil.virtual_memory()
         ram_free_gb = mem.available / (1024**3)
-        # Threshold: if less than 2 GB free, consider it low
         low_ram = ram_free_gb < 2.0
 
-        # Check VRAM availability and free space
         vram_available = False
         vram_free_gb = 0
         if NVML_AVAILABLE:
@@ -278,21 +288,17 @@ def get_ollama_memory_settings() -> dict:
                 pass
 
         if low_ram and vram_available and vram_free_gb > 2.0:
-            # RAM is low, VRAM has space → offload everything to GPU
             num_gpu = 99
             low_vram = True
         elif low_ram and not vram_available:
-            # RAM is low but no VRAM → reduce memory usage by CPU only
             num_gpu = 0
             low_vram = True
         else:
-            # RAM is fine – use default: offload to GPU if available, else CPU
             num_gpu = 99 if vram_available else 0
             low_vram = False
 
         return {"num_gpu": num_gpu, "low_vram": low_vram}
     except Exception:
-        # Fallback safe values
         return {"num_gpu": 99, "low_vram": False}
 
 # ── Ollama command detection & execution ────────────────────────
@@ -419,7 +425,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (with Unload button, no memory controls) ──
+# ── Build HTML (with Notes tab centred in top bar) ──
 def build_html(model_name):
     return r"""<!DOCTYPE html>
 <html lang="en">
@@ -428,9 +434,9 @@ def build_html(model_name):
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>Qwen Chat · Multi‑Conversation</title>
-<!-- Markdown rendering library -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
+/* ===== all styles, with updated top-bar using CSS grid for perfect centering ===== */
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body {
     height:100%;
@@ -440,7 +446,6 @@ html, body {
     overflow: hidden;
     transition: background 0.3s ease, color 0.3s ease;
 }
-
 body::before {
     content: '';
     position: fixed;
@@ -451,20 +456,16 @@ body::before {
     z-index: -1;
     transition: opacity 0.4s ease;
 }
-body.light-mode::before {
-    opacity: 0;
-}
+body.light-mode::before { opacity: 0; }
 @keyframes bgMove {
     0% { transform: scale(1); }
     50% { transform: scale(1.05); }
     100% { transform: scale(1); }
 }
-
 .app {
     display:flex; height:100%;
     backdrop-filter: blur(2px);
 }
-
 /* ── Sidebar ─────────────────────────────────── */
 .sidebar {
     width: 280px;
@@ -514,8 +515,6 @@ body.light-mode::before {
     box-shadow: 0 6px 16px rgba(31,111,235,0.6);
     transform: translateY(-1px);
 }
-
-/* Search bar */
 .search-box {
     padding: 8px 16px;
 }
@@ -530,26 +529,19 @@ body.light-mode::before {
     outline: none;
     transition: border-color 0.2s, background 0.3s, color 0.3s;
 }
-.search-box input:focus {
-    border-color: #58a6ff;
-}
-.search-box input::placeholder {
-    color: #8b949e;
-}
-
+.search-box input:focus { border-color: #58a6ff; }
+.search-box input::placeholder { color: #8b949e; }
 .conv-list {
     flex:1; overflow-y:auto; padding: 8px;
 }
 .conv-list::-webkit-scrollbar { width: 4px; }
 .conv-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-
 .no-results {
     padding: 20px 12px;
     text-align: center;
     color: #8b949e;
     font-size: 14px;
 }
-
 .group-heading {
     font-size: 11px;
     text-transform: uppercase;
@@ -560,7 +552,6 @@ body.light-mode::before {
     margin-top: 8px;
 }
 .group-heading:first-of-type { margin-top: 0; }
-
 .conv-item {
     display:flex; align-items:center; padding: 8px 12px; cursor:grab;
     border-radius: 10px; margin-bottom: 2px; transition: background 0.2s;
@@ -575,29 +566,24 @@ body.light-mode::before {
 }
 .conv-item.dragging { opacity: 0.4; }
 .conv-item.drag-over { border: 2px dashed #58a6ff; }
-
 .conv-item .title {
     flex:1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: #c9d1d9;
 }
 .conv-item.active .title { color: white; }
-
 .conv-item .rename-btn {
     background: transparent; border: none; color: #8b949e; font-size: 13px;
     cursor: pointer; opacity: 0.4; padding: 0 4px; transition: opacity 0.2s;
 }
 .conv-item .rename-btn:hover { opacity: 1; color: #58a6ff; }
-
 .conv-item .del {
     background: transparent; border: none; color: #f85149; font-size: 16px;
     cursor: pointer; opacity: 0.4; padding: 0 4px; transition: opacity 0.2s;
 }
 .conv-item .del:hover { opacity: 1; }
-
 .conv-item .time {
     font-size: 11px; color: #8b949e; margin-right: 4px; white-space: nowrap;
 }
-
 .sidebar-footer {
     padding: 12px 16px;
     border-top: 1px solid rgba(255,255,255,0.05);
@@ -607,7 +593,6 @@ body.light-mode::before {
     backdrop-filter: blur(10px);
     transition: background 0.3s, color 0.3s;
 }
-
 /* ── Main content ────────────────────────────── */
 .main {
     flex:1; display:flex; flex-direction:column; min-width:0;
@@ -615,18 +600,27 @@ body.light-mode::before {
     backdrop-filter: blur(10px);
     transition: background 0.3s ease;
 }
+/* ── NEW: Top bar with CSS grid for perfect centering ── */
 .top-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;  /* left, center, right */
+    align-items: center;
     background: rgba(22, 27, 34, 0.7);
     backdrop-filter: blur(20px);
     border-bottom: 1px solid rgba(255,255,255,0.05);
     padding: 12px 24px;
-    display:flex; align-items:center; justify-content:space-between;
-    flex-shrink:0; gap:12px; flex-wrap:wrap;
+    gap: 12px;
+    flex-shrink: 0;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     transition: background 0.3s, border-color 0.3s;
 }
-.top-bar .left { display:flex; align-items:center; gap:12px; }
-.top-bar h1 {
+.top-bar .left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-self: start;   /* left aligned */
+}
+.top-bar .left h1 {
     font-size: 19px;
     background: linear-gradient(135deg, #58a6ff, #a371f7);
     -webkit-background-clip: text;
@@ -634,9 +628,61 @@ body.light-mode::before {
     background-clip: text;
     font-weight: 700;
 }
-.top-bar .right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-
-/* ── Updated Sidebar Toggle Button ──── */
+/* ── Centered tab buttons (pill style) ──────── */
+.top-bar .center-tabs {
+    display: flex;
+    gap: 4px;
+    background: rgba(255,255,255,0.06);
+    padding: 4px;
+    border-radius: 30px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255,255,255,0.06);
+    justify-self: center;   /* forces perfect centre */
+}
+.center-tabs .tab-btn {
+    background: transparent;
+    border: none;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #8b949e;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.center-tabs .tab-btn:hover {
+    color: #c9d1d9;
+    background: rgba(255,255,255,0.05);
+}
+.center-tabs .tab-btn.active {
+    background: #1f6feb;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(31,111,235,0.3);
+}
+body.light-mode .center-tabs {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.06);
+}
+body.light-mode .center-tabs .tab-btn {
+    color: #57606a;
+}
+body.light-mode .center-tabs .tab-btn:hover {
+    background: rgba(0,0,0,0.04);
+    color: #1f6feb;
+}
+body.light-mode .center-tabs .tab-btn.active {
+    background: #1f6feb;
+    color: #fff;
+}
+/* ── Right side of top bar ───────────────────── */
+.top-bar .right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-self: end;   /* right aligned */
+}
 .sidebar-toggle {
     background: transparent;
     border: none;
@@ -651,7 +697,6 @@ body.light-mode::before {
     outline: none;
 }
 .sidebar-toggle:hover { color: #58a6ff; background: rgba(255,255,255,0.05); }
-
 .model-select, .provider-select, .api-key-input {
     background: rgba(13, 17, 23, 0.8);
     border: 1px solid rgba(255,255,255,0.1);
@@ -667,7 +712,6 @@ body.light-mode::before {
     border-color: #58a6ff;
 }
 .api-key-input { display:none; }
-
 .clear-btn, .unload-btn {
     background: rgba(33,38,45,0.7);
     border: 1px solid rgba(248,81,73,0.3);
@@ -680,8 +724,7 @@ body.light-mode::before {
     backdrop-filter: blur(5px);
 }
 .clear-btn:hover, .unload-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
-.unload-btn { display: none; } /* shown only for Ollama */
-
+.unload-btn { display: none; }
 .vision-badge {
     font-size: 11px;
     padding: 2px 10px;
@@ -694,12 +737,8 @@ body.light-mode::before {
     backdrop-filter: blur(4px);
 }
 .vision-badge.visible { display:inline-block; }
-
-/* ===== THEME TOGGLE (sliding) - COMPACT ===== */
-.theme-toggle-wrapper {
-    display: inline-block;
-    vertical-align: middle;
-}
+/* ===== THEME TOGGLE (sliding) ===== */
+.theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
 .toggle-outer {
     position: relative;
     width: 140px;
@@ -788,7 +827,6 @@ body.light-mode::before {
     opacity: 0;
     transition: opacity 0.3s ease;
 }
-/* Day state for the toggle */
 .toggle-outer.day .night-bg { opacity: 0; }
 .toggle-outer.day .stars-layer { opacity: 0; }
 .toggle-outer.day .day-bg { opacity: 1; }
@@ -797,7 +835,133 @@ body.light-mode::before {
 .toggle-outer.day .knob-sun { opacity: 1; }
 .toggle-outer.day .astronaut { opacity: 0; }
 .toggle-outer.day .biplane { opacity: 1; }
-
+/* ── Chat panel & notes panel ───────────────── */
+.chat-panel {
+    flex:1; display:flex; flex-direction:column; min-height:0;
+}
+.notes-panel {
+    flex:1; overflow-y:auto; padding: 24px 40px; display:none;
+    flex-direction:column; gap:16px;
+}
+.notes-panel .note-editor {
+    background: rgba(13,17,23,0.7);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 10px;
+}
+.notes-panel .note-editor input,
+.notes-panel .note-editor textarea {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: #e6edf3;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+}
+.notes-panel .note-editor input {
+    font-weight: 600;
+    font-size: 18px;
+    margin-bottom: 8px;
+}
+.notes-panel .note-editor textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+.notes-panel .note-editor .note-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+.notes-panel .note-editor .note-actions button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 8px;
+    padding: 6px 18px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: 0.2s;
+}
+.notes-panel .note-editor .note-actions .save-note {
+    background: #1f6feb;
+    color: white;
+    border-color: #1f6feb;
+}
+.notes-panel .note-editor .note-actions .save-note:hover {
+    background: #388bfd;
+}
+.notes-panel .note-editor .note-actions button:hover {
+    background: rgba(255,255,255,0.1);
+}
+.notes-panel .note-item {
+    background: rgba(28, 35, 51, 0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px 20px;
+    transition: 0.2s;
+}
+.notes-panel .note-item:hover {
+    background: rgba(28, 35, 51, 0.8);
+}
+.notes-panel .note-title {
+    font-weight: 600;
+    font-size: 16px;
+    margin-bottom: 6px;
+    color: #e6edf3;
+}
+.notes-panel .note-content {
+    font-size: 14px;
+    color: #8b949e;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+.notes-panel .note-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+}
+.notes-panel .note-actions button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 8px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+.notes-panel .note-actions button:hover {
+    background: rgba(255,255,255,0.1);
+    color: #58a6ff;
+}
+.notes-panel .note-actions .delete-note {
+    color: #f85149;
+}
+.notes-panel .note-actions .delete-note:hover {
+    background: rgba(248,81,73,0.15);
+    border-color: #f85149;
+}
+body.light-mode .notes-panel .note-item {
+    background: rgba(255,255,255,0.8);
+    border-color: rgba(0,0,0,0.06);
+}
+body.light-mode .notes-panel .note-item:hover {
+    background: rgba(255,255,255,0.95);
+}
+body.light-mode .notes-panel .note-title { color: #24292f; }
+body.light-mode .notes-panel .note-content { color: #57606a; }
+body.light-mode .notes-panel .note-editor {
+    background: rgba(255,255,255,0.8);
+    border-color: rgba(0,0,0,0.08);
+}
+body.light-mode .notes-panel .note-editor input,
+body.light-mode .notes-panel .note-editor textarea {
+    color: #24292f;
+}
 /* ── Chat area ────────────────────────────────── */
 .chat-area {
     flex:1; overflow-y:auto; padding: 24px 40px;
@@ -806,7 +970,6 @@ body.light-mode::before {
 }
 .chat-area::-webkit-scrollbar { width: 6px; }
 .chat-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-
 .msg {
     padding: 14px 20px;
     border-radius: 16px;
@@ -857,8 +1020,6 @@ body.light-mode::before {
     margin-bottom: 8px;
     backdrop-filter: blur(5px);
 }
-
-/* ── Markdown rendering for bot messages ────────────── */
 .msg.bot table {
     border-collapse: collapse;
     width: 100%;
@@ -891,7 +1052,6 @@ body.light-mode::before {
     border-radius: 4px;
     font-family: monospace;
 }
-/* Light mode overrides for Markdown */
 body.light-mode .msg.bot th {
     background: rgba(0,0,0,0.05);
 }
@@ -902,8 +1062,7 @@ body.light-mode .msg.bot b {
 body.light-mode .msg.bot code {
     background: rgba(0,0,0,0.06);
 }
-
-/* ── Message actions (edit/delete) ─────────────── */
+/* ── Message actions ─────────────────────────── */
 .msg .msg-actions {
     display: none;
     position: absolute;
@@ -942,7 +1101,6 @@ body.light-mode .msg.bot code {
 .msg.bot .msg-actions {
     display: none !important;
 }
-
 /* ── Attachments ─────────────────────────────── */
 .attachments {
     display:flex; flex-wrap:wrap; gap: 8px;
@@ -963,7 +1121,6 @@ body.light-mode .msg.bot code {
     width: 18px; height: 18px; font-size: 11px; cursor: pointer;
     line-height: 18px; text-align: center; flex-shrink: 0;
 }
-
 /* ── Input bar ────────────────────────────────── */
 .input-bar {
     background: rgba(22, 27, 34, 0.7);
@@ -1051,7 +1208,6 @@ body.light-mode .msg.bot code {
     will-change: height;
 }
 #msgInput:focus { border-color: #58a6ff; }
-/* Model dropdown in the input bar – compact */
 .input-bar .model-select {
     background: rgba(13, 17, 23, 0.8);
     border: 1px solid rgba(255,255,255,0.1);
@@ -1087,7 +1243,6 @@ body.light-mode .msg.bot code {
 }
 #sendBtn:hover { box-shadow: 0 6px 16px rgba(31,111,235,0.6); transform: translateY(-1px); }
 #sendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
-
 /* ── Status bar ───────────────────────────────── */
 #statusBar {
     display: flex;
@@ -1117,7 +1272,6 @@ body.light-mode .msg.bot code {
     margin-left: 12px;
     color: #3fb950;
 }
-
 /* ── Voice recording animation ───────────────── */
 .record-btn.recording {
     background: #f85149;
@@ -1130,7 +1284,6 @@ body.light-mode .msg.bot code {
     70% { box-shadow: 0 0 0 10px rgba(248,81,73,0); }
     100% { box-shadow: 0 0 0 0 rgba(248,81,73,0); }
 }
-
 .thinking-dots::after {
     content: '';
     animation: dots 1.4s infinite;
@@ -1142,7 +1295,6 @@ body.light-mode .msg.bot code {
     75%  { content: '...'; }
     100% { content: ''; }
 }
-
 #scrollBottomBtn {
     position: fixed;
     bottom: 100px;
@@ -1161,8 +1313,6 @@ body.light-mode .msg.bot code {
     transition: transform 0.2s;
 }
 #scrollBottomBtn:hover { transform: scale(1.05); }
-
-/* ===== DROP OVERLAY ===== */
 #dropOverlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -1194,7 +1344,6 @@ body.light-mode #dropOverlay {
     background: rgba(255,255,255,0.85);
     color: #24292f;
 }
-
 /* ===== LIGHT MODE OVERRIDES ===== */
 body.light-mode {
     background: #f6f8fa;
@@ -1239,7 +1388,7 @@ body.light-mode .top-bar {
     border-bottom-color: rgba(0,0,0,0.08);
     box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
-body.light-mode .top-bar h1 {
+body.light-mode .top-bar .left h1 {
     background: linear-gradient(135deg, #1f6feb, #a371f7);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -1366,6 +1515,7 @@ body.light-mode .vision-badge {
   </div>
 
   <div class="main">
+    <!-- TOP BAR WITH CENTER TABS (grid ensures perfect centering) -->
     <div class="top-bar">
       <div class="left">
         <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
@@ -1376,11 +1526,14 @@ body.light-mode .vision-badge {
         </button>
         <h1>🧠 Trio-llama Custom Chat</h1>
       </div>
-      <div class="right">
-        <!-- Web Search checkbox removed – now a button in the input bar -->
-        <!-- Model select moved to input bar – removed from here -->
 
-        <!-- ===== SLIDING DAY/NIGHT TOGGLE (COMPACT) ===== -->
+      <!-- CENTER TABS (pill style) – perfectly centred -->
+      <div class="center-tabs">
+        <button class="tab-btn active" data-tab="chat">💬 Chat</button>
+        <button class="tab-btn" data-tab="notes">📝 Notes</button>
+      </div>
+
+      <div class="right">
         <div class="theme-toggle-wrapper">
           <div class="toggle-outer" id="themeToggleOuter" onclick="handleThemeClick(event)">
             <div class="toggle-inner">
@@ -1393,7 +1546,6 @@ body.light-mode .vision-badge {
                 <div class="cloud" style="width:26px;height:10px;bottom:14px;right:22px;opacity:.85;"></div>
                 <div class="cloud" style="width:20px;height:8px;bottom:22px;left:4px;opacity:.7;"></div>
               </div>
-              <!-- Astronaut Bear (scaled) -->
               <div class="astronaut">
                 <svg viewBox="0 0 44 54" width="22" height="26" xmlns="http://www.w3.org/2000/svg">
                   <ellipse cx="22" cy="36" rx="13" ry="14" fill="#e8e8e8"/>
@@ -1416,7 +1568,6 @@ body.light-mode .vision-badge {
                   <ellipse cx="22" cy="28" rx="9" ry="3" fill="none" stroke="#c0c8d8" stroke-width="2"/>
                 </svg>
               </div>
-              <!-- Biplane (scaled) -->
               <div class="biplane">
                 <svg viewBox="0 0 70 42" width="30" height="18" xmlns="http://www.w3.org/2000/svg">
                   <rect x="14" y="4" width="42" height="8" rx="4" fill="#d0d8e0"/>
@@ -1438,7 +1589,6 @@ body.light-mode .vision-badge {
                   <circle cx="66" cy="22" r="2.5" fill="#6a5040"/>
                 </svg>
               </div>
-              <!-- THE KNOB (moon / sun) -->
               <div class="knob" id="themeKnob">
                 <div class="knob-moon">
                   <div class="crater" style="width:10px;height:10px;top:8px;left:7px;"></div>
@@ -1460,36 +1610,45 @@ body.light-mode .vision-badge {
           <option value="claude">Claude (Anthropic)</option>
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
-        <!-- modelSelect is now in the input bar -->
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
         <button class="clear-btn" onclick="clearAllChats()">🗑 Clear All</button>
-        <!-- ===== NEW: DeepSeek model info and status ===== -->
         <div id="modelInfo" style="font-size:12px; color:#8b949e; max-width:200px; display:inline-block; vertical-align:middle; margin-left:10px;"></div>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
-        <!-- ===== END NEW ===== -->
       </div>
     </div>
 
-    <div class="chat-area" id="chatArea">
-      <div class="msg bot">👋 Hello! Select or create a chat from the sidebar.
-      <br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>
+    <!-- CHAT PANEL -->
+    <div id="chatPanel" class="chat-panel">
+      <div class="chat-area" id="chatArea">
+        <div class="msg bot">👋 Hello! Select or create a chat from the sidebar.
+        <br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>
+      </div>
+      <div class="attachments" id="attachments"></div>
+      <div class="input-bar">
+        <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
+        <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
+        <input type="file" id="fileInput" accept="image/*,.pdf,.txt,.md,.py,.js,.csv,.json,.c,.cpp,.h,.hpp" multiple style="display:none"/>
+        <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
+        <select id="modelSelect" class="model-select" title="Select model"></select>
+        <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
+        <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
+        <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
+        <button id="sendBtn">Send</button>
+      </div>
     </div>
 
-    <div class="attachments" id="attachments"></div>
-
-    <div class="input-bar">
-      <!-- SEARCH TOGGLE BUTTON -->
-      <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
-      <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
-      <input type="file" id="fileInput" accept="image/*,.pdf,.txt,.md,.py,.js,.csv,.json,.c,.cpp,.h,.hpp" multiple style="display:none"/>
-      <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
-      <!-- MODEL SELECTOR – placed right before the microphone button -->
-      <select id="modelSelect" class="model-select" title="Select model"></select>
-      <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
-      <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
-      <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
-      <button id="sendBtn">Send</button>
+    <!-- NOTES PANEL -->
+    <div class="notes-panel" id="notesPanel">
+      <div class="note-editor" id="noteEditor">
+        <input type="text" id="noteTitleInput" placeholder="Note title...">
+        <textarea id="noteContentInput" placeholder="Write your note here..."></textarea>
+        <div class="note-actions">
+          <button class="save-note" id="saveNoteBtn">💾 Save Note</button>
+          <button id="cancelNoteBtn" style="display:none;">Cancel</button>
+        </div>
+      </div>
+      <div id="notesList"></div>
     </div>
 
     <div id="statusBar">
@@ -1501,8 +1660,6 @@ body.light-mode .vision-badge {
 </div>
 
 <button id="scrollBottomBtn" title="Scroll to bottom">↓</button>
-
-<!-- ===== DROP OVERLAY ===== -->
 <div id="dropOverlay">
   <div class="icon">📂</div>
   <div>Drop files or folders here</div>
@@ -1527,13 +1684,10 @@ var currentConv = null;
 var pending     = [];
 var conversations = [];
 var searchQuery = '';
-
-// Global search state – default ON
 var searchEnabled = true;
-
 var unloadBtn = document.getElementById('unloadBtn');
 
-// ── NEW: Function to check DeepSeek status ──
+// ── DeepSeek status ──
 function checkDeepSeekStatus() {
     const statusSpan = document.getElementById('deepseekStatus');
     if (providerSelect.value !== 'deepseek') {
@@ -1570,19 +1724,14 @@ unloadBtn.addEventListener('click', function() {
 // ── DROP OVERLAY LOGIC ─────────────────────────
 var dropOverlay = document.getElementById('dropOverlay');
 var dragCounter = 0;
-
 function showDropOverlay() { dropOverlay.classList.add('active'); }
 function hideDropOverlay() { dropOverlay.classList.remove('active'); }
-
-// Global drag events
 document.addEventListener('dragenter', function(e) {
     e.preventDefault();
     dragCounter++;
     if (dragCounter === 1) showDropOverlay();
 });
-document.addEventListener('dragover', function(e) {
-    e.preventDefault();
-});
+document.addEventListener('dragover', function(e) { e.preventDefault(); });
 document.addEventListener('dragleave', function(e) {
     e.preventDefault();
     dragCounter--;
@@ -1604,7 +1753,6 @@ document.addEventListener('drop', function(e) {
         }
     }
 });
-
 function processDropItems(items) {
     var entries = [];
     for (var i = 0; i < items.length; i++) {
@@ -1622,7 +1770,6 @@ function processDropItems(items) {
     var fileQueue = [];
     var pendingReads = 0;
     var maxFiles = 100;
-
     function traverseEntry(entry, path) {
         if (fileQueue.length >= maxFiles) return;
         if (entry.isFile) {
@@ -1660,7 +1807,6 @@ function processDropItems(items) {
             readEntries();
         }
     }
-
     entries.forEach(function(entry) {
         traverseEntry(entry, '');
     });
@@ -1673,7 +1819,6 @@ function processDropItems(items) {
         }
     }, 100);
 }
-
 function addDroppedFile(file) {
     var reader = new FileReader();
     reader.onload = function(ev) {
@@ -1704,35 +1849,28 @@ function addDroppedFile(file) {
     reader.readAsDataURL(file);
 }
 
-// ── THEME: Sliding Toggle ──────────────────────
+// ── THEME ──────────────────────────────────────
 var themeOuter = document.getElementById('themeToggleOuter');
 var themeKnob = document.getElementById('themeKnob');
-
 var isLight = localStorage.getItem('theme') === 'light';
-
 function applyTheme(light) {
     document.body.classList.toggle('light-mode', light);
     localStorage.setItem('theme', light ? 'light' : 'dark');
     themeOuter.classList.toggle('day', light);
 }
 applyTheme(isLight);
-
 var draggedTheme = false;
 var isDraggingTheme = false;
 var startXTheme = 0, startLeftTheme = 0;
-
 function handleThemeClick(e) {
     if (draggedTheme) return;
     var newLight = !document.body.classList.contains('light-mode');
     applyTheme(newLight);
 }
-
 const MIN_LEFT_THEME = 3;
 const MAX_LEFT_THEME = 93;
-
 themeKnob.addEventListener('mousedown', dragStartTheme);
 themeKnob.addEventListener('touchstart', dragStartTheme, { passive: true });
-
 function dragStartTheme(e) {
     isDraggingTheme = true;
     draggedTheme = false;
@@ -1745,7 +1883,6 @@ function dragStartTheme(e) {
     window.addEventListener('touchmove', dragMoveTheme, { passive: true });
     window.addEventListener('touchend', dragEndTheme);
 }
-
 function dragMoveTheme(e) {
     if (!isDraggingTheme) return;
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -1762,7 +1899,6 @@ function dragMoveTheme(e) {
     document.querySelector('.astronaut').style.opacity = progress < 0.5 ? 1 : 0;
     document.querySelector('.biplane').style.opacity = progress >= 0.5 ? 1 : 0;
 }
-
 function dragEndTheme(e) {
     if (!isDraggingTheme) return;
     isDraggingTheme = false;
@@ -1786,7 +1922,6 @@ function dragEndTheme(e) {
     window.removeEventListener('touchmove', dragMoveTheme);
     window.removeEventListener('touchend', dragEndTheme);
 }
-
 function makeThemeStars() {
     const layer = document.getElementById('themeStars');
     const pts = [
@@ -1813,7 +1948,6 @@ makeThemeStars();
 // ── Sidebar toggle ─────────────────────────────
 var sidebar = document.getElementById('sidebar');
 var sidebarVisible = localStorage.getItem('sidebarVisible') !== 'false';
-
 function toggleSidebar() {
     sidebarVisible = !sidebarVisible;
     localStorage.setItem('sidebarVisible', sidebarVisible);
@@ -1947,13 +2081,11 @@ function loadModels() {
                 modelSelect.appendChild(opt);
             }
             updateVisionBadge();
-            // Show Unload button only for Ollama
             if (provider === 'ollama') {
                 unloadBtn.style.display = 'inline-block';
             } else {
                 unloadBtn.style.display = 'none';
             }
-            // If DeepSeek is selected, fetch model info and status
             if (provider === 'deepseek' && modelSelect.value) {
                 fetchModelInfo(modelSelect.value);
                 checkDeepSeekStatus();
@@ -1963,8 +2095,6 @@ function loadModels() {
         })
         .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
 }
-
-// ── NEW: Fetch DeepSeek model info ──
 function fetchModelInfo(model) {
     if (providerSelect.value !== 'deepseek' || !model) {
         document.getElementById('modelInfo').textContent = '';
@@ -1989,8 +2119,6 @@ function fetchModelInfo(model) {
             document.getElementById('modelInfo').textContent = '⚠️ Could not load model info';
         });
 }
-
-// Provider change
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
     var keyInput = document.getElementById('apiKeyInput');
@@ -2018,19 +2146,13 @@ apiKeyInput.addEventListener('blur', function() {
     var provider = providerSelect.value;
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
         saveApiKey(provider, this.value);
-        // If DeepSeek, re‑check status after key change
         if (provider === 'deepseek') checkDeepSeekStatus();
     }
 });
-
 modelSelect.addEventListener('change', function() {
     const provider = providerSelect.value;
     const model = this.value;
-    
-    // Update vision badge
     updateVisionBadge();
-    
-    // If Ollama, switch model
     if (provider === 'ollama') {
         fetch('/set_model', {
             method: 'POST',
@@ -2043,8 +2165,6 @@ modelSelect.addEventListener('change', function() {
         })
         .catch(err => { status.textContent = '❌ Error: ' + err; });
     }
-    
-    // If DeepSeek, fetch model info
     if (provider === 'deepseek') {
         fetchModelInfo(model);
     } else {
@@ -2121,7 +2241,6 @@ function loadConversations() {
             }
         });
 }
-
 function renderConvList(convs) {
     if (!convs || convs.length === 0) {
         convList.innerHTML = '<div class="no-results">🔍 No chats found</div>';
@@ -2185,8 +2304,6 @@ function renderConvList(convs) {
         }
     });
 }
-
-// ── Drag and drop ──────────────────────────────
 var dragSrcId = null;
 function handleDragStart(e) {
     dragSrcId = this.dataset.id;
@@ -2239,8 +2356,6 @@ function handleDrop(e) {
         status.textContent = '❌ Error: ' + err;
     });
 }
-
-// ── Rename chat ─────────────────────────────────
 function renameChat(id) {
     var conv = conversations.find(c => c.id === id);
     if (!conv) return;
@@ -2268,8 +2383,6 @@ function renameChat(id) {
         status.textContent = '❌ Error: ' + err;
     });
 }
-
-// ── Select conversation ────────────────────────
 function selectConversation(id) {
     if (id === currentConv) return;
     currentConv = id;
@@ -2286,7 +2399,6 @@ function selectConversation(id) {
             scrollToBottomIfNeeded();
         });
 }
-
 function newChat() {
     fetch('/conversations', { method: 'POST' })
         .then(r => r.json())
@@ -2296,7 +2408,6 @@ function newChat() {
             loadConversations();
         });
 }
-
 function deleteChat(id) {
     if (!confirm('Delete this conversation?')) return;
     fetch('/conversations/' + id, { method: 'DELETE' })
@@ -2305,7 +2416,6 @@ function deleteChat(id) {
             loadConversations();
         });
 }
-
 function clearAllChats() {
     if (!confirm('Delete ALL conversations?')) return;
     fetch('/clear_all', { method: 'POST' })
@@ -2315,8 +2425,6 @@ function clearAllChats() {
             chatArea.innerHTML = '<div class="msg bot">🗑 All chats cleared. Start a new one!</div>';
         });
 }
-
-// ── Message rendering (with edit/delete buttons and Markdown for bot) ──
 function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
@@ -2337,7 +2445,6 @@ function renderMsg(role, entry, msgIndex) {
     }
     var body = document.createElement('div');
     body.className = 'body';
-    // Render Markdown for bot, plain text for user
     if (role === 'bot') {
         body.innerHTML = marked.parse(entry.text || '');
     } else {
@@ -2348,8 +2455,6 @@ function renderMsg(role, entry, msgIndex) {
     ts.className = 'ts';
     ts.textContent = entry.ts || '';
     div.appendChild(ts);
-
-    // Action buttons for user messages only
     if (role === 'user') {
         var actions = document.createElement('div');
         actions.className = 'msg-actions';
@@ -2373,13 +2478,10 @@ function renderMsg(role, entry, msgIndex) {
         actions.appendChild(delBtn);
         div.appendChild(actions);
     }
-
     chatArea.appendChild(div);
     scrollToBottomIfNeeded();
     return div;
 }
-
-// ── Force-reload the current chat ──────────────
 function reloadCurrentChat() {
     if (!currentConv) return;
     fetch('/conversations/' + currentConv + '/messages')
@@ -2394,8 +2496,6 @@ function reloadCurrentChat() {
             scrollToBottomIfNeeded();
         });
 }
-
-// ── Edit & Delete message functions ─────────────
 async function startEditMessage(msgDiv, role, entry, idx) {
     var body = msgDiv.querySelector('.body');
     var oldText = body.textContent.trim();
@@ -2403,43 +2503,35 @@ async function startEditMessage(msgDiv, role, entry, idx) {
     textarea.className = 'edit-textarea';
     textarea.value = oldText;
     body.replaceWith(textarea);
-
     var btnRow = document.createElement('div');
     btnRow.style.marginTop = '6px';
-
     var saveBtn = document.createElement('button');
     saveBtn.textContent = 'Save & Resend';
     saveBtn.className = 'new-chat-btn';
     saveBtn.onclick = async function() {
         var newText = textarea.value.trim();
         if (!newText) return;
-        // Delete the original user message and everything after it
         var msgs = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
         for (let i = msgs.length - 1; i >= idx; i--) {
             await fetch(`/conversations/${currentConv}/messages/${i}`, {method: 'DELETE'});
         }
-        // Clear the chat DOM so old messages don't duplicate when doSend renders a new user bubble
         chatArea.innerHTML = '';
         var remaining = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
         remaining.forEach((msg, index) => renderMsg(msg.role, msg, index));
-        // Put the edited text in the input and send
         msgInput.value = newText;
         pending = [];
         attachments.innerHTML = '';
-        doSend();  // re-send the edited user prompt
+        doSend();
     };
-
     var cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
     cancelBtn.style.cssText = 'background:transparent; color:#8b949e; border:none; margin-left:8px; cursor:pointer;';
     cancelBtn.onclick = () => reloadCurrentChat();
-
     btnRow.appendChild(saveBtn);
     btnRow.appendChild(cancelBtn);
     textarea.after(btnRow);
     textarea.focus();
 }
-
 async function deleteMessage(msgDiv, idx) {
     if (!confirm('Delete this message?')) return;
     var msgs = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
@@ -2458,8 +2550,6 @@ async function deleteMessage(msgDiv, idx) {
         reloadCurrentChat();
     }
 }
-
-// Attachments
 fileInput.addEventListener('change', function() {
     var files = Array.from(fileInput.files);
     files.forEach(function(file) {
@@ -2492,8 +2582,6 @@ fileInput.addEventListener('change', function() {
     });
     fileInput.value = '';
 });
-
-// Input handling
 msgInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
 });
@@ -2501,8 +2589,6 @@ msgInput.addEventListener('input', function() {
     this.style.height = Math.min(this.scrollHeight, 140) + 'px';
 });
 sendBtn.addEventListener('click', doSend);
-
-// ── Search toggle button listener ──────────────
 document.getElementById('searchToggleBtn').addEventListener('click', function() {
     searchEnabled = !searchEnabled;
     this.classList.toggle('active', searchEnabled);
@@ -2525,16 +2611,12 @@ function doSend() {
     }
     actuallySend(text);
 }
-
-// Token-speed tracking variables
 var tokenCount = 0;
 var startTimeToken = null;
 var speedInterval = null;
-
 function actuallySend(text) {
     var images = pending.filter(p => p.type === 'image');
     var files  = pending.filter(p => p.type === 'file');
-
     var userEntry = {
         role: 'user',
         text: text,
@@ -2543,31 +2625,23 @@ function actuallySend(text) {
         ts: new Date().toLocaleTimeString()
     };
     var userDiv = renderMsg('user', userEntry, -1);
-
     msgInput.value = '';
     msgInput.style.height = '46px';
     pending = [];
     attachments.innerHTML = '';
-
     var botDiv = renderMsg('bot', { role:'bot', text:'⏳ Thinking...', ts:'' }, -1);
     botDiv.querySelector('.body').classList.add('thinking-dots');
     busy = true;
     sendBtn.disabled = true;
     status.textContent = '⏳ Generating...';
-
-    // Use the global searchEnabled variable (no checkbox anymore)
     var searchEnabled = window.searchEnabled;
-
     var provider = providerSelect.value;
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
         saveApiKey(provider, apiKey);
     }
-
     var endpoint = (provider === 'ollama') ? '/chat_stream' : '/chat';
-
-    // Reset token counters
     tokenCount = 0;
     startTimeToken = Date.now();
     if (speedInterval) clearInterval(speedInterval);
@@ -2579,7 +2653,6 @@ function actuallySend(text) {
             tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens`;
         }
     }, 200);
-
     function handleSendError(errMsg) {
         clearInterval(speedInterval);
         if (userDiv && userDiv.parentNode) userDiv.remove();
@@ -2593,7 +2666,6 @@ function actuallySend(text) {
             chatArea.innerHTML = '<div class="msg bot">👋 Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
         }
     }
-
     fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2676,7 +2748,6 @@ function actuallySend(text) {
         handleSendError(err.message || 'Connection failed');
     });
 }
-
 function finalizeStats(usage) {
     clearInterval(speedInterval);
     var tokenSpeedSpan = document.getElementById('tokenSpeed');
@@ -2685,7 +2756,6 @@ function finalizeStats(usage) {
     var speed = secs > 0 ? (tokens / secs).toFixed(1) : '?';
     tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens`;
 }
-
 function finishStream(fullText, botDiv) {
     botDiv.querySelector('.body').classList.remove('thinking-dots');
     botDiv.querySelector('.body').innerHTML = marked.parse(fullText || '(empty response)');
@@ -2755,7 +2825,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     status.textContent = '⚠️ Voice recording not supported.';
 }
 
-// Resource monitor
+// ── Resource monitor ────────────────────────────
 var resourceIntervalId = null;
 function updateResources() {
     fetch('/resources')
@@ -2776,6 +2846,132 @@ window.addEventListener('beforeunload', function() {
 });
 resourceIntervalId = setInterval(updateResources, 5000);
 
+// ─── Notes ──────────────────────────────────────
+var notesList = document.getElementById('notesList');
+var noteTitleInput = document.getElementById('noteTitleInput');
+var noteContentInput = document.getElementById('noteContentInput');
+var saveNoteBtn = document.getElementById('saveNoteBtn');
+var cancelNoteBtn = document.getElementById('cancelNoteBtn');
+var editingNoteId = null;
+
+function loadNotes() {
+    fetch('/notes')
+        .then(r => r.json())
+        .then(notes => {
+            renderNotes(notes);
+        })
+        .catch(err => console.error('Failed to load notes:', err));
+}
+function renderNotes(notes) {
+    notesList.innerHTML = '';
+    const ids = Object.keys(notes);
+    if (ids.length === 0) {
+        notesList.innerHTML = '<div class="note-item" style="text-align:center;color:#8b949e;">📝 No notes yet. Create one above!</div>';
+        return;
+    }
+    ids.sort((a, b) => new Date(notes[b].created) - new Date(notes[a].created));
+    ids.forEach(id => {
+        const note = notes[id];
+        const div = document.createElement('div');
+        div.className = 'note-item';
+        div.innerHTML = `
+            <div class="note-title">${escapeHtml(note.title)}</div>
+            <div class="note-content">${escapeHtml(note.content)}</div>
+            <div class="note-actions">
+                <button class="edit-note" data-id="${id}">✏️ Edit</button>
+                <button class="delete-note" data-id="${id}">🗑️ Delete</button>
+            </div>
+        `;
+        notesList.appendChild(div);
+    });
+    notesList.querySelectorAll('.edit-note').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            const note = notes[id];
+            if (note) {
+                noteTitleInput.value = note.title;
+                noteContentInput.value = note.content;
+                editingNoteId = id;
+                saveNoteBtn.textContent = '✏️ Update Note';
+                cancelNoteBtn.style.display = 'inline-block';
+                document.getElementById('noteEditor').scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    });
+    notesList.querySelectorAll('.delete-note').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            if (confirm('Delete this note?')) {
+                fetch('/notes/' + id, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.ok) loadNotes();
+                    });
+            }
+        });
+    });
+}
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+saveNoteBtn.addEventListener('click', function() {
+    const title = noteTitleInput.value.trim() || 'Untitled';
+    const content = noteContentInput.value.trim();
+    if (!content && !title) {
+        alert('Please add some content or a title.');
+        return;
+    }
+    const method = editingNoteId ? 'PUT' : 'POST';
+    const url = editingNoteId ? '/notes/' + editingNoteId : '/notes';
+    fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok || data.id) {
+            noteTitleInput.value = '';
+            noteContentInput.value = '';
+            editingNoteId = null;
+            saveNoteBtn.textContent = '💾 Save Note';
+            cancelNoteBtn.style.display = 'none';
+            loadNotes();
+        }
+    });
+});
+cancelNoteBtn.addEventListener('click', function() {
+    noteTitleInput.value = '';
+    noteContentInput.value = '';
+    editingNoteId = null;
+    saveNoteBtn.textContent = '💾 Save Note';
+    cancelNoteBtn.style.display = 'none';
+});
+
+// ─── Tab switching ──────────────────────────────
+const tabBtns = document.querySelectorAll('.tab-btn');
+const chatPanel = document.getElementById('chatPanel');
+const notesPanel = document.getElementById('notesPanel');
+tabBtns.forEach(btn => {
+    btn.addEventListener('click', function() {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        const tab = this.dataset.tab;
+        if (tab === 'chat') {
+            chatPanel.style.display = 'flex';
+            notesPanel.style.display = 'none';
+            msgInput.focus();
+        } else if (tab === 'notes') {
+            chatPanel.style.display = 'none';
+            notesPanel.style.display = 'flex';
+            loadNotes();
+        }
+    });
+});
+
+// ─── Initialisation ─────────────────────────────
 window.addEventListener('load', function() {
     var provider = providerSelect.value;
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
@@ -2785,12 +2981,9 @@ window.addEventListener('load', function() {
     loadConversations();
     msgInput.focus();
     setTimeout(updateResources, 500);
-    // If DeepSeek is selected by default, check status
     if (provider === 'deepseek') {
         checkDeepSeekStatus();
     }
-
-    // Set initial search button state
     var searchBtn = document.getElementById('searchToggleBtn');
     searchBtn.classList.toggle('active', searchEnabled);
     searchBtn.textContent = searchEnabled ? '🔍' : '🔍 off';
@@ -2824,13 +3017,52 @@ providers = {
     "claude": ClaudeProvider(),
 }
 
-@app.route('/image/<path:filename>')
-def serve_image(filename):
-    return send_from_directory('image', filename)
-
 @app.route('/')
 def index():
     return build_html(current_model)
+
+# ── Notes routes (built‑in) ────────────────────────────────────
+@app.route('/notes', methods=['GET'])
+def notes_get_all():
+    return jsonify(load_notes())
+
+@app.route('/notes', methods=['POST'])
+def notes_create():
+    data = request.get_json()
+    notes = load_notes()
+    note_id = str(uuid.uuid4())
+    notes[note_id] = {
+        "id": note_id,
+        "title": data.get("title", "Untitled"),
+        "content": data.get("content", ""),
+        "created": datetime.now().isoformat()
+    }
+    save_notes(notes)
+    return jsonify({"id": note_id, "ok": True})
+
+@app.route('/notes/<note_id>', methods=['PUT'])
+def notes_update(note_id):
+    data = request.get_json()
+    notes = load_notes()
+    if note_id not in notes:
+        return jsonify({"error": "Note not found"}), 404
+    if "title" in data:
+        notes[note_id]["title"] = data["title"]
+    if "content" in data:
+        notes[note_id]["content"] = data["content"]
+    save_notes(notes)
+    return jsonify({"ok": True})
+
+@app.route('/notes/<note_id>', methods=['DELETE'])
+def notes_delete(note_id):
+    notes = load_notes()
+    if note_id not in notes:
+        return jsonify({"error": "Note not found"}), 404
+    del notes[note_id]
+    save_notes(notes)
+    return jsonify({"ok": True})
+
+# ── End of notes routes ────────────────────────────────────────
 
 @app.route('/resources', methods=['GET'])
 def get_resources():
@@ -2898,19 +3130,6 @@ def check_vision():
     has_vision = model_supports_vision(provider_name, model)
     return jsonify({"vision": has_vision})
 
-@app.route('/models', methods=['GET'])
-def get_models():
-    try:
-        resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-        models = [m['name'] for m in data.get('models', [])]
-        return jsonify(models)
-    except requests.exceptions.ConnectionError:
-        return jsonify({'error': 'Cannot connect to Ollama'}), 503
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/providers/models', methods=['GET'])
 def get_provider_models():
     provider_name = request.args.get('provider', 'ollama')
@@ -2924,11 +3143,6 @@ def get_provider_models():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/current_model', methods=['GET'])
-def get_current_model():
-    return jsonify({'model': current_model})
-
-# ── UPDATED /set_model route with validation ──
 @app.route('/set_model', methods=['POST'])
 def set_model():
     global current_model
@@ -2937,8 +3151,6 @@ def set_model():
     if not model:
         return jsonify({'error': 'No model provided'}), 400
 
-    # Validate model exists in Ollama (if provider is ollama)
-    # We always try to validate; if Ollama is down we'll accept it but warn.
     try:
         resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
         if resp.status_code == 200:
@@ -2946,7 +3158,6 @@ def set_model():
             if model not in models:
                 return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 400
         else:
-            # Ollama not responding – we'll accept the model but log a warning
             print("⚠️ Cannot verify model existence – Ollama not responding.")
     except Exception as e:
         print(f"⚠️ Error verifying model: {e}")
@@ -2956,7 +3167,6 @@ def set_model():
     providers["ollama"].model = model
     return jsonify({'ok': True, 'model': model})
 
-# ── NEW: DeepSeek model info endpoint ──
 @app.route('/deepseek/model_info', methods=['GET'])
 def deepseek_model_info():
     model = request.args.get('model')
@@ -2967,10 +3177,8 @@ def deepseek_model_info():
         return jsonify(provider.get_model_info(model))
     return jsonify({"error": "DeepSeek provider not available"}), 404
 
-# ── NEW: DeepSeek status endpoint ──
 @app.route('/deepseek/status', methods=['GET'])
 def deepseek_status():
-    """Return API status – checks if an API key is present and optionally pings the DeepSeek API."""
     provider = providers.get('deepseek')
     if not provider:
         return jsonify({"ok": False, "error": "Provider not initialized"}), 503
@@ -2988,16 +3196,6 @@ def deepseek_status():
             return jsonify({"ok": False, "message": "API unreachable or invalid key"})
     else:
         return jsonify({"ok": False, "message": "No API key provided"})
-
-# ── Serve the MP3 file used by the 404 page ──
-@app.route('/Meatball-Parade(chotic.com).mp3')
-def serve_mp3():
-    return send_from_directory('.', 'Meatball-Parade(chotic.com).mp3')
-
-# ── Custom 404 handler – serve your 404.html ──
-@app.errorhandler(404)
-def page_not_found(e):
-    return send_from_directory('.', '404.html'), 404
 
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
@@ -3033,7 +3231,6 @@ def clear_all():
     save_conversations({})
     return jsonify({"ok": True})
 
-# ── Edit a message (by index) ──────────────────
 @app.route('/conversations/<cid>/messages/<int:idx>', methods=['PUT'])
 def edit_message(cid, idx):
     data = request.get_json()
@@ -3054,7 +3251,6 @@ def edit_message(cid, idx):
     save_conversations(convs)
     return jsonify({'ok': True})
 
-# ── Delete a message (by index) ────────────────
 @app.route('/conversations/<cid>/messages/<int:idx>', methods=['DELETE'])
 def delete_message(cid, idx):
     convs = load_conversations()
@@ -3070,7 +3266,6 @@ def delete_message(cid, idx):
     save_conversations(convs)
     return jsonify({'ok': True})
 
-# ── Rename ──────────────────────────────────────
 @app.route('/conversations/<cid>/rename', methods=['PUT'])
 def rename_conversation(cid):
     data = request.get_json()
@@ -3084,7 +3279,6 @@ def rename_conversation(cid):
     save_conversations(convs)
     return jsonify({'ok': True})
 
-# ── Reorder ─────────────────────────────────────
 @app.route('/conversations/reorder', methods=['POST'])
 def reorder_conversations():
     data = request.get_json()
@@ -3099,7 +3293,6 @@ def reorder_conversations():
     save_conversations(convs)
     return jsonify({'ok': True})
 
-# ── Search conversations ────────────────────────
 @app.route('/conversations/search', methods=['GET'])
 def search_conversations():
     query = request.args.get('q', '').strip().lower()
@@ -3126,7 +3319,6 @@ def search_conversations():
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
-# ── Original Chat endpoint (non-streaming, with token estimate) ──
 @app.route('/chat', methods=['POST'])
 def chat():
     global current_model
@@ -3169,7 +3361,6 @@ def chat():
             except Exception as e:
                 print(f"❌ Search error: {e}")
 
-        # Build final prompt with system instruction and search context
         final_prompt = SYSTEM_PROMPT + "\n\n"
         if search_context:
             final_prompt += (
@@ -3192,7 +3383,6 @@ def chat():
         if not provider:
             return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
 
-        # Build message history from conversation
         conv = get_conversation(conv_id)
         messages = []
         if conv:
@@ -3201,16 +3391,13 @@ def chat():
                     messages.append({"role": "user", "content": msg['text']})
                 elif msg['role'] == 'bot':
                     messages.append({"role": "assistant", "content": msg['text']})
-        # Add system prompt as first message
         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
-        # Now add the current user message (with search and files) as the last user message
         messages.append({"role": "user", "content": final_prompt})
 
         extra_kwargs = {"model": model}
         if api_key:
             extra_kwargs['api_key'] = api_key
 
-        # For Ollama, pass dynamic memory settings
         if provider_name == 'ollama':
             mem_settings = get_ollama_memory_settings()
             extra_kwargs['num_gpu'] = mem_settings['num_gpu']
@@ -3260,7 +3447,6 @@ def chat():
         print(f"❌ Error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ── Streaming Chat endpoint (Ollama only, with usage stats) ──
 @app.route('/chat_stream', methods=['POST'])
 def chat_stream():
     try:
@@ -3304,7 +3490,6 @@ def chat_stream():
             except Exception as e:
                 print(f"❌ Search error: {e}")
 
-        # Build final prompt with system instruction
         final_prompt = SYSTEM_PROMPT + "\n\n"
         if search_context:
             final_prompt += (
@@ -3323,7 +3508,6 @@ def chat_stream():
             except:
                 final_prompt += f"\n\n[Attached file: {f['name']} — binary]"
 
-        # Build message history from conversation.
         conv = get_conversation(conv_id)
         messages = []
         if conv:
@@ -3332,12 +3516,9 @@ def chat_stream():
                     messages.append({"role": "user", "content": msg['text']})
                 elif msg['role'] == 'bot':
                     messages.append({"role": "assistant", "content": msg['text']})
-        # Add system as first message
         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
-        # Add current user message
         messages.append({"role": "user", "content": final_prompt})
 
-        # Get dynamic memory settings
         mem_settings = get_ollama_memory_settings()
 
         payload = {
@@ -3353,7 +3534,6 @@ def chat_stream():
             }
         }
         if images:
-            # Ollama chat API accepts images as part of content for user messages.
             last_msg = messages[-1]
             content_parts = []
             for img in images:
@@ -3415,7 +3595,6 @@ def chat_stream():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    from llm_providers import VISION_MODELS
     print("\n" + "="*50)
     print("🚀  AI CHAT Interfacing Loading... · Multi‑Conversation")
     print("="*50)
