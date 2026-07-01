@@ -3229,16 +3229,16 @@ if __name__ == '__main__':
     if os.path.exists(cert_file) and os.path.exists(key_file):
         ssl_context = (cert_file, key_file)
         print("🔒 Running with HTTPS (SSL enabled)")
-        url = "https://localhost:5000"
+        url = "https://localhost:5001"
     else:
         if ensure_certificates():
             ssl_context = (cert_file, key_file)
             print("🔒 Running with HTTPS (SSL enabled)")
-            url = "https://localhost:5000"
+            url = "https://localhost:5001"
         else:
             ssl_context = None
             print("⚠️  Running with HTTP (SSL unavailable)")
-            url = "http://localhost:5000"
+            url = "http://localhost:5001"
 
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
