@@ -11,6 +11,22 @@ Everything auto‑creates itself – just clone, run, and go.
 
 ---
 
+## 📖 Table of Contents
+
+- [✨ Features](#-features)
+- [📦 Prerequisites](#-prerequisites)
+- [🚀 Quick Start](#-quick-start)
+- [🛠️ Configuration](#️-configuration)
+- [🧠 How the Fallback Works](#-how-the-fallback-works)
+- [📁 Project Structure](#-project-structure)
+- [💻 Running Manually](#-running-manually)
+- [❓ Troubleshooting](#-troubleshooting)
+- [🤝 Contributing](#-contributing)
+- [📝 License](#-license)
+- [🙌 Acknowledgements](#-acknowledgements)
+
+---
+
 ## ✨ Features
 
 | Feature | Description |
@@ -25,30 +41,31 @@ Everything auto‑creates itself – just clone, run, and go.
 | 🚦 **Smart Fallback** | A built‑in reverse proxy (`fallback.py`) serves a custom `404.html` with a GIF and background music whenever Flask is down. |
 | 🎵 **“Troll” 404 Page** | The error page autoplays `Meatball-Parade(chosic.com).mp3` and shows a funny animation – great for pranks or just making downtime more entertaining. |
 | 📦 **One‑Click Launcher** | `start.py` launches both the fallback proxy and Flask in separate windows (or tabs), so you never get “connection refused”. |
+| 🧰 **Multi‑Provider Support** | Besides Ollama, you can also use Groq, Hugging Face, DeepSeek, Claude, and llama.cpp – just add your API key. |
+| 📑 **Persistent Conversations** | Chats are automatically saved in `json_configuration/conversations.json` – you can rename, delete, and reorder them. |
+| 🖱️ **Drag‑and‑Drop File Upload** | Drop files or folders directly onto the chat to attach them. |
+
+---
+
+## 📦 Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- **Python 3.8+** – [Download](https://www.python.org/downloads/)
+- **Ollama** – [Download](https://ollama.com) (required for local models)
+- **Git** – (optional, for cloning)
 
 ---
 
 ## 🚀 Quick Start
-![alt text](image.png)
----
-## How to clone from my github
+
+### 1️⃣ Clone the Repository
+```bash
 git clone https://github.com/meowmeowsmh/ollama-chat-interface.git
 cd ollama-chat-interface
----
-## How to install the package:
- pip install -r requirements.txt
- if you still see import errors then used pip install <import>
----
-## how to launch I have changed the direction 
+#ensure to download all requirement 
+pip install -r requirements.txt
+#to run the real application(ensure to get certificate): 
+python app.py 
+#to run fully integrated 
 python start.py
-Why? 
-it will run seperately
-Terminal 1 (Proxy): python fallback.py
-Terminal 2 (Flask): python app.py
----
-### 1️⃣ Install Ollama
-Download and install Ollama from [ollama.com](https://ollama.com).  
-Then pull a model of your choice:
-```bash
-ollama pull vaultbox/qwen3.5-uncensored:9b
-
