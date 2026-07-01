@@ -39,7 +39,7 @@ cd ollama-chat-interface
  pip install -r requirements.txt
  if you still see import errors then used pip install <import>
 ---
-# how to launch I have changed the direction 
+## how to launch I have changed the direction 
 python start.py
 Why? 
 it will run seperately
