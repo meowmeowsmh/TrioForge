@@ -58,7 +58,7 @@ Before you begin, ensure you have the following installed:
 ---
 
 ## 🚀 Quick Start
-
+![alt text](image-1.png)
 ### 1️⃣ Clone the Repository
 ```bash
 git clone https://github.com/meowmeowsmh/ollama-chat-interface.git
