@@ -2800,6 +2800,16 @@ def set_model():
     providers["ollama"].model = model
     return jsonify({'ok': True, 'model': model})
 
+# ── Serve the MP3 file used by the 404 page ──
+@app.route('/Meatball-Parade(chotic.com).mp3')
+def serve_mp3():
+    return send_from_directory('.', 'Meatball-Parade(chotic.com).mp3')
+
+# ── Custom 404 handler – serve your 404.html ──
+@app.errorhandler(404)
+def page_not_found(e):
+    return send_from_directory('.', '404.html'), 404
+
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
     convs = load_conversations()
@@ -3233,4 +3243,4 @@ if __name__ == '__main__':
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
 
-    app.run(host='127.0.0.1', port=5000, debug=True, ssl_context=ssl_context)
+    app.run(host='127.0.0.1', port=5001, debug=True, ssl_context=ssl_context)
