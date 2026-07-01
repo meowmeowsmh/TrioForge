@@ -695,21 +695,6 @@ body.light-mode::before {
 }
 .vision-badge.visible { display:inline-block; }
 
-.search-label {
-    color: #8b949e;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-    user-select: none;
-}
-.search-label input[type="checkbox"] {
-    width: 16px; height: 16px;
-    accent-color: #1f6feb;
-    cursor: pointer;
-}
-
 /* ===== THEME TOGGLE (sliding) - COMPACT ===== */
 .theme-toggle-wrapper {
     display: inline-block;
@@ -989,6 +974,32 @@ body.light-mode .msg.bot code {
     align-items: flex-end; flex-shrink: 0;
     transition: background 0.3s, border-color 0.3s;
 }
+.search-toggle-btn {
+    background: rgba(33,38,45,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 12px;
+    width: 46px;
+    height: 46px;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+}
+.search-toggle-btn:hover {
+    color: #58a6ff;
+    border-color: #58a6ff;
+    background: rgba(88,166,255,0.1);
+}
+.search-toggle-btn.active {
+    border-color: #3fb950;
+    color: #3fb950;
+    background: rgba(63,185,80,0.15);
+}
 .attach-btn, .record-btn, .voice-toggle {
     background: rgba(33,38,45,0.6);
     border: 1px solid rgba(255,255,255,0.1);
@@ -1040,6 +1051,25 @@ body.light-mode .msg.bot code {
     will-change: height;
 }
 #msgInput:focus { border-color: #58a6ff; }
+/* Model dropdown in the input bar – compact */
+.input-bar .model-select {
+    background: rgba(13, 17, 23, 0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    color: #e6edf3;
+    padding: 4px 8px;
+    font-size: 13px;
+    height: 46px;
+    min-width: 120px;
+    max-width: 180px;
+    outline: none;
+    transition: border-color 0.2s, background 0.3s, color 0.3s;
+    backdrop-filter: blur(5px);
+    cursor: pointer;
+}
+.input-bar .model-select:focus {
+    border-color: #58a6ff;
+}
 #sendBtn {
     background: linear-gradient(135deg, #1f6feb, #388bfd);
     color: white;
@@ -1232,10 +1262,6 @@ body.light-mode .clear-btn:hover,
 body.light-mode .unload-btn:hover {
     background: rgba(248,81,73,0.08);
 }
-body.light-mode .search-label,
-body.light-mode .search-box input {
-    color: #24292f;
-}
 body.light-mode .search-box input {
     background: rgba(255,255,255,0.8);
     color: #24292f;
@@ -1260,17 +1286,32 @@ body.light-mode .input-bar {
 }
 body.light-mode .attach-btn,
 body.light-mode .record-btn,
-body.light-mode .voice-toggle {
+body.light-mode .voice-toggle,
+body.light-mode .search-toggle-btn {
     background: rgba(255,255,255,0.6);
     border-color: rgba(0,0,0,0.1);
     color: #57606a;
 }
 body.light-mode .attach-btn:hover,
 body.light-mode .record-btn:hover,
-body.light-mode .voice-toggle:hover {
+body.light-mode .voice-toggle:hover,
+body.light-mode .search-toggle-btn:hover {
     color: #1f6feb;
     border-color: #1f6feb;
     background: rgba(31,111,235,0.05);
+}
+body.light-mode .search-toggle-btn.active {
+    border-color: #1e7e34;
+    color: #1e7e34;
+    background: rgba(63,185,80,0.12);
+}
+body.light-mode .input-bar .model-select {
+    background: rgba(255,255,255,0.8);
+    color: #24292f;
+    border-color: rgba(0,0,0,0.15);
+}
+body.light-mode .input-bar .model-select:focus {
+    border-color: #1f6feb;
 }
 body.light-mode #msgInput {
     background: rgba(255,255,255,0.8);
@@ -1336,9 +1377,8 @@ body.light-mode .vision-badge {
         <h1>🧠 Trio-llama Custom Chat</h1>
       </div>
       <div class="right">
-        <label class="search-label">
-          <input type="checkbox" id="searchToggle" checked> 🌐 Search
-        </label>
+        <!-- Web Search checkbox removed – now a button in the input bar -->
+        <!-- Model select moved to input bar – removed from here -->
 
         <!-- ===== SLIDING DAY/NIGHT TOGGLE (COMPACT) ===== -->
         <div class="theme-toggle-wrapper">
@@ -1420,10 +1460,14 @@ body.light-mode .vision-badge {
           <option value="claude">Claude (Anthropic)</option>
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
-        <select id="modelSelect" class="model-select" title="Select model"></select>
+        <!-- modelSelect is now in the input bar -->
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
         <button class="clear-btn" onclick="clearAllChats()">🗑 Clear All</button>
+        <!-- ===== NEW: DeepSeek model info and status ===== -->
+        <div id="modelInfo" style="font-size:12px; color:#8b949e; max-width:200px; display:inline-block; vertical-align:middle; margin-left:10px;"></div>
+        <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
+        <!-- ===== END NEW ===== -->
       </div>
     </div>
 
@@ -1435,9 +1479,13 @@ body.light-mode .vision-badge {
     <div class="attachments" id="attachments"></div>
 
     <div class="input-bar">
+      <!-- SEARCH TOGGLE BUTTON -->
+      <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
       <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
       <input type="file" id="fileInput" accept="image/*,.pdf,.txt,.md,.py,.js,.csv,.json,.c,.cpp,.h,.hpp" multiple style="display:none"/>
       <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
+      <!-- MODEL SELECTOR – placed right before the microphone button -->
+      <select id="modelSelect" class="model-select" title="Select model"></select>
       <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
       <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
       <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
@@ -1480,7 +1528,34 @@ var pending     = [];
 var conversations = [];
 var searchQuery = '';
 
+// Global search state – default ON
+var searchEnabled = true;
+
 var unloadBtn = document.getElementById('unloadBtn');
+
+// ── NEW: Function to check DeepSeek status ──
+function checkDeepSeekStatus() {
+    const statusSpan = document.getElementById('deepseekStatus');
+    if (providerSelect.value !== 'deepseek') {
+        statusSpan.textContent = '';
+        return;
+    }
+    fetch('/deepseek/status')
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                statusSpan.textContent = '✅ ' + (data.message || 'API online');
+                statusSpan.style.color = '#3fb950';
+            } else {
+                statusSpan.textContent = '⚠️ ' + (data.message || 'API unavailable');
+                statusSpan.style.color = '#f85149';
+            }
+        })
+        .catch(() => {
+            statusSpan.textContent = '⚠️ Status check failed';
+            statusSpan.style.color = '#f85149';
+        });
+}
 
 // Unload model
 unloadBtn.addEventListener('click', function() {
@@ -1878,8 +1953,41 @@ function loadModels() {
             } else {
                 unloadBtn.style.display = 'none';
             }
+            // If DeepSeek is selected, fetch model info and status
+            if (provider === 'deepseek' && modelSelect.value) {
+                fetchModelInfo(modelSelect.value);
+                checkDeepSeekStatus();
+            } else {
+                document.getElementById('modelInfo').textContent = '';
+            }
         })
         .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
+}
+
+// ── NEW: Fetch DeepSeek model info ──
+function fetchModelInfo(model) {
+    if (providerSelect.value !== 'deepseek' || !model) {
+        document.getElementById('modelInfo').textContent = '';
+        return;
+    }
+    fetch('/deepseek/model_info?model=' + encodeURIComponent(model))
+        .then(r => r.json())
+        .then(info => {
+            const infoDiv = document.getElementById('modelInfo');
+            if (info.error) {
+                infoDiv.textContent = '⚠️ ' + info.error;
+                return;
+            }
+            infoDiv.innerHTML = `
+                <strong>${model}</strong><br>
+                ${info.description}<br>
+                Capabilities: ${info.capabilities.join(', ')}<br>
+                Pricing: Input ${info.pricing.input}, Output ${info.pricing.output}
+            `;
+        })
+        .catch(() => {
+            document.getElementById('modelInfo').textContent = '⚠️ Could not load model info';
+        });
 }
 
 // Provider change
@@ -1899,28 +2007,48 @@ providerSelect.addEventListener('change', function() {
         keyInput.style.display = 'none';
     }
     loadModels();
+    if (provider === 'deepseek') {
+        checkDeepSeekStatus();
+    } else {
+        document.getElementById('deepseekStatus').textContent = '';
+        document.getElementById('modelInfo').textContent = '';
+    }
 });
 apiKeyInput.addEventListener('blur', function() {
     var provider = providerSelect.value;
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
         saveApiKey(provider, this.value);
+        // If DeepSeek, re‑check status after key change
+        if (provider === 'deepseek') checkDeepSeekStatus();
     }
 });
+
 modelSelect.addEventListener('change', function() {
+    const provider = providerSelect.value;
+    const model = this.value;
+    
+    // Update vision badge
     updateVisionBadge();
-    if (providerSelect.value === 'ollama') {
+    
+    // If Ollama, switch model
+    if (provider === 'ollama') {
         fetch('/set_model', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({model: this.value})
+            body: JSON.stringify({model: model})
         })
         .then(r => r.json())
         .then(data => {
-            status.textContent = data.ok ? '✅ Model switched to ' + this.value : '❌ ' + (data.error || 'Failed');
+            status.textContent = data.ok ? '✅ Model switched to ' + model : '❌ ' + (data.error || 'Failed');
         })
         .catch(err => { status.textContent = '❌ Error: ' + err; });
+    }
+    
+    // If DeepSeek, fetch model info
+    if (provider === 'deepseek') {
+        fetchModelInfo(model);
     } else {
-        status.textContent = '✅ Model selected: ' + this.value;
+        document.getElementById('modelInfo').textContent = '';
     }
 });
 
@@ -2374,6 +2502,14 @@ msgInput.addEventListener('input', function() {
 });
 sendBtn.addEventListener('click', doSend);
 
+// ── Search toggle button listener ──────────────
+document.getElementById('searchToggleBtn').addEventListener('click', function() {
+    searchEnabled = !searchEnabled;
+    this.classList.toggle('active', searchEnabled);
+    this.textContent = searchEnabled ? '🔍' : '🔍 off';
+    status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
+});
+
 function doSend() {
     var text = msgInput.value.trim();
     if ((!text && pending.length === 0) || busy) return;
@@ -2419,7 +2555,9 @@ function actuallySend(text) {
     sendBtn.disabled = true;
     status.textContent = '⏳ Generating...';
 
-    var searchEnabled = document.getElementById('searchToggle').checked;
+    // Use the global searchEnabled variable (no checkbox anymore)
+    var searchEnabled = window.searchEnabled;
+
     var provider = providerSelect.value;
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
@@ -2647,6 +2785,16 @@ window.addEventListener('load', function() {
     loadConversations();
     msgInput.focus();
     setTimeout(updateResources, 500);
+    // If DeepSeek is selected by default, check status
+    if (provider === 'deepseek') {
+        checkDeepSeekStatus();
+    }
+
+    // Set initial search button state
+    var searchBtn = document.getElementById('searchToggleBtn');
+    searchBtn.classList.toggle('active', searchEnabled);
+    searchBtn.textContent = searchEnabled ? '🔍' : '🔍 off';
+    status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
 });
 </script>
 </body>
@@ -2780,6 +2928,7 @@ def get_provider_models():
 def get_current_model():
     return jsonify({'model': current_model})
 
+# ── UPDATED /set_model route with validation ──
 @app.route('/set_model', methods=['POST'])
 def set_model():
     global current_model
@@ -2787,18 +2936,58 @@ def set_model():
     model = data.get('model')
     if not model:
         return jsonify({'error': 'No model provided'}), 400
+
+    # Validate model exists in Ollama (if provider is ollama)
+    # We always try to validate; if Ollama is down we'll accept it but warn.
     try:
-        resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=5)
-        resp.raise_for_status()
-        models = [m['name'] for m in resp.json().get('models', [])]
-        if model not in models:
-            return jsonify({'error': f'Model "{model}" not found in Ollama'}), 400
-    except:
-        pass
+        resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+        if resp.status_code == 200:
+            models = [m['name'] for m in resp.json().get('models', [])]
+            if model not in models:
+                return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 400
+        else:
+            # Ollama not responding – we'll accept the model but log a warning
+            print("⚠️ Cannot verify model existence – Ollama not responding.")
+    except Exception as e:
+        print(f"⚠️ Error verifying model: {e}")
+
     current_model = model
     save_model_config(model)
     providers["ollama"].model = model
     return jsonify({'ok': True, 'model': model})
+
+# ── NEW: DeepSeek model info endpoint ──
+@app.route('/deepseek/model_info', methods=['GET'])
+def deepseek_model_info():
+    model = request.args.get('model')
+    if not model:
+        return jsonify({"error": "No model specified"}), 400
+    provider = providers.get('deepseek')
+    if provider and hasattr(provider, 'get_model_info'):
+        return jsonify(provider.get_model_info(model))
+    return jsonify({"error": "DeepSeek provider not available"}), 404
+
+# ── NEW: DeepSeek status endpoint ──
+@app.route('/deepseek/status', methods=['GET'])
+def deepseek_status():
+    """Return API status – checks if an API key is present and optionally pings the DeepSeek API."""
+    provider = providers.get('deepseek')
+    if not provider:
+        return jsonify({"ok": False, "error": "Provider not initialized"}), 503
+    
+    api_key = provider._default_key
+    if api_key:
+        try:
+            headers = provider._get_headers(api_key)
+            resp = requests.get("https://api.deepseek.com/v1/models", headers=headers, timeout=5)
+            if resp.status_code == 200:
+                return jsonify({"ok": True, "message": "API online"})
+            else:
+                return jsonify({"ok": False, "message": "API returned error"})
+        except Exception:
+            return jsonify({"ok": False, "message": "API unreachable or invalid key"})
+    else:
+        return jsonify({"ok": False, "message": "No API key provided"})
 
 # ── Serve the MP3 file used by the 404 page ──
 @app.route('/Meatball-Parade(chotic.com).mp3')
@@ -3063,6 +3252,10 @@ def chat():
         return jsonify({'error': 'Cannot connect to Ollama. Make sure it is running.'}), 503
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Request timed out. Try a shorter message.'}), 504
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 404
+        raise
     except Exception as e:
         print(f"❌ Error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -3209,6 +3402,14 @@ def chat_stream():
 
         return Response(generate(), mimetype='text/event-stream')
 
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': 'Cannot connect to Ollama. Make sure it is running.'}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Request timed out. Try a shorter message.'}), 504
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 404
+        raise
     except Exception as e:
         print(f"❌ chat_stream error: {e}")
         return jsonify({'error': str(e)}), 500

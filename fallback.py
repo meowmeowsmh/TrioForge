@@ -1,30 +1,22 @@
 #!/usr/bin/env python3
 """
-Reverse proxy that forwards to Flask on port 5001 (HTTPS).
+Reverse proxy with retry logic – forwards to Flask on port 5001 (HTTPS).
 Serves static files and 404.html when Flask is down.
-Handles client disconnections gracefully.
 """
 
 import http.server
 import socketserver
-import urllib.request
-import urllib.error
+import requests
 import os
-import sys
-import traceback
 import socket
-import http.client
 import ssl
+import time
 
 PORT = 5000
 FLASK_PORT = 5001
 FLASK_URL = f"https://127.0.0.1:{FLASK_PORT}"
 STATIC_404 = "404.html"
 STATIC_EXTENSIONS = {'.mp3', '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg'}
-
-SSL_CONTEXT = ssl.create_default_context()
-SSL_CONTEXT.check_hostname = False
-SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -38,11 +30,9 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         self.handle_request("HEAD")
 
     def safe_write(self, data):
-        """Write data to the client, ignoring broken pipe errors."""
         try:
             self.wfile.write(data)
         except (BrokenPipeError, ConnectionAbortedError, socket.error) as e:
-            # Client disconnected – just log and ignore
             print(f"⚠️ Client disconnected while writing: {e}")
 
     def handle_request(self, method):
@@ -55,46 +45,59 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                     self.serve_static_file(path.lstrip('/'))
                     return
 
-            # Forward to Flask
+            # Build target for Flask
             flask_path = self.path
             if flask_path.startswith("/"):
                 flask_path = flask_path[1:]
             target = f"{FLASK_URL}/{flask_path}" if flask_path else FLASK_URL
 
-            req = urllib.request.Request(target, method=method)
+            headers = {}
             for header, value in self.headers.items():
                 if header.lower() not in ("host", "connection"):
-                    req.add_header(header, value)
+                    headers[header] = value
+
+            data = None
             if method == "POST":
                 content_length = int(self.headers.get('Content-Length', 0))
-                post_data = self.rfile.read(content_length)
-                req.data = post_data
+                data = self.rfile.read(content_length)
 
-            with urllib.request.urlopen(req, timeout=2, context=SSL_CONTEXT) as response:
-                self.send_response(response.status)
-                for header, value in response.headers.items():
-                    self.send_header(header, value)
+            # Retry up to 3 times with 30‑second timeout
+            for attempt in range(3):
+                try:
+                    response = requests.request(
+                        method=method,
+                        url=target,
+                        headers=headers,
+                        data=data,
+                        timeout=30,
+                        verify=False
+                    )
+                    self.send_response(response.status_code)
+                    for key, value in response.headers.items():
+                        self.send_header(key, value)
+                    self.end_headers()
+                    self.safe_write(response.content)
+                    return  # success
+                except (requests.ConnectionError, requests.Timeout) as e:
+                    print(f"⚠️ Attempt {attempt+1} failed: {e}")
+                    if attempt < 2:
+                        time.sleep(1)
+                    else:
+                        raise  # all retries failed
+
+        except Exception as e:
+            print(f"⚠️ Flask unavailable – serving fallback: {e}")
+            # For API endpoints, return JSON error
+            if self.path.startswith('/providers/') or self.path.startswith('/chat') or self.path.startswith('/conversations'):
+                self.send_response(503)
+                self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                # Read and write in chunks to avoid large memory usage
-                while True:
-                    chunk = response.read(8192)
-                    if not chunk:
-                        break
-                    self.safe_write(chunk)
-
-        except (urllib.error.URLError, ConnectionRefusedError, TimeoutError,
-                ConnectionResetError, BrokenPipeError, OSError,
-                http.client.RemoteDisconnected, socket.error) as e:
-            print(f"⚠️ Flask unavailable ({type(e).__name__}: {e}) – serving fallback")
+                self.safe_write(b'{"error": "Backend temporarily unavailable"}')
+                return
             if any(path.endswith(ext) for ext in STATIC_EXTENSIONS):
                 if os.path.exists(path.lstrip('/')):
                     self.serve_static_file(path.lstrip('/'))
                     return
-            self.serve_404()
-
-        except Exception as e:
-            print(f"❌ Unexpected error: {e}")
-            traceback.print_exc()
             self.serve_404()
 
     def serve_static_file(self, filepath):
@@ -135,7 +138,6 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.safe_write(b"<h1>404 - Page Not Found</h1>")
                 print("⚠️ 404.html not found!")
         except Exception as e:
-            # If we can't even send headers, just log
             print(f"⚠️ Failed to send 404 response: {e}")
 
 if __name__ == "__main__":

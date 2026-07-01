@@ -91,12 +91,8 @@ class OllamaProvider(LLMProvider):
 
     def _prepare_messages(self, messages: List[Dict], images: Optional[List[Dict]] = None) -> List[Dict]:
         """Convert provider messages to Ollama /api/chat format, embedding images if present."""
-        # If images are provided, we need to convert the last user message content into a list
-        # of parts (text + images). Otherwise, keep content as plain string.
         if images:
-            # Make a deep copy to avoid mutating the original
             msgs = [m.copy() for m in messages]
-            # Find the last user message (or any message with role 'user')
             last_user_idx = None
             for i in range(len(msgs) - 1, -1, -1):
                 if msgs[i].get("role") == "user":
@@ -104,7 +100,6 @@ class OllamaProvider(LLMProvider):
                     break
             if last_user_idx is not None:
                 user_msg = msgs[last_user_idx]
-                # Build content parts: images first, then text
                 content_parts = []
                 for img in images:
                     b64 = img["b64"]
@@ -122,15 +117,10 @@ class OllamaProvider(LLMProvider):
 
     def generate(self, messages: List[Dict[str, str]],
                  images: Optional[List[Dict]] = None, **kwargs) -> str:
-        """
-        Generate a response using Ollama /api/chat.
-        Accepts full message history and optional images.
-        """
         model = kwargs.get("model") or self.model
         num_gpu = kwargs.get("num_gpu", 99)
         low_vram = kwargs.get("low_vram", False)
 
-        # Prepare messages with images if any
         chat_messages = self._prepare_messages(messages, images)
 
         payload = {
@@ -150,12 +140,10 @@ class OllamaProvider(LLMProvider):
         resp = requests.post(self.chat_url, json=payload, timeout=180)
         resp.raise_for_status()
         data = resp.json()
-        # /api/chat returns a single object with "message" when stream=False
         return data.get("message", {}).get("content", "")
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
-        """Forward to generate with images."""
         return self.generate(messages, images=images, **kwargs)
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
@@ -167,76 +155,135 @@ class OllamaProvider(LLMProvider):
             return []
 
 
-# The rest of the providers remain unchanged – they are included for completeness.
-# If you want to keep the same file, copy the following classes exactly as they were.
-
+# ================== IMPROVED LLAMA.CPP PROVIDER ==================
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: str = "./models",
                  server_url: str = "http://127.0.0.1:8080/v1"):
-        self.models_dir = models_dir
+        self.models_dir = os.path.abspath(models_dir)
         self.server_url = server_url.rstrip("/")
+        self._ensure_models_dir()
         self.available_models = self._discover_models()
 
-    def _discover_models(self) -> List[str]:
+    def _ensure_models_dir(self):
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir, exist_ok=True)
+
+    def _discover_models(self) -> List[str]:
+        # Local .gguf files
         gguf_files = glob.glob(os.path.join(self.models_dir, "*.gguf"))
-        return [os.path.basename(f) for f in gguf_files]
+        local_models = [os.path.basename(f) for f in gguf_files]
+
+        # Try to fetch models from server (if it supports /models endpoint)
+        server_models = []
+        try:
+            resp = requests.get(f"{self.server_url}/models", timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                if "data" in data:
+                    server_models = [m["id"] for m in data["data"]]
+        except Exception:
+            pass
+
+        all_models = list(set(local_models + server_models))
+        return all_models
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         return self.available_models
 
     def _resolve_model_path(self, model: Optional[str]) -> str:
-        if model:
-            if os.path.sep not in model and not model.startswith("/") and not model.startswith("\\"):
-                return os.path.join(self.models_dir, model)
+        if not model:
+            if self.available_models:
+                model = self.available_models[0]
+            else:
+                raise Exception("No models found in ./models folder and no model specified.")
+        # If it's just a filename, try to make it an absolute path
+        if os.path.sep not in model and not model.startswith("/") and not model.startswith("\\"):
+            candidate = os.path.join(self.models_dir, model)
+            if os.path.exists(candidate):
+                return candidate
+            # Otherwise assume server already knows it by name
             return model
-        if self.available_models:
-            return os.path.join(self.models_dir, self.available_models[0])
-        raise Exception("No .gguf models found in ./models folder.")
+        return model
+
+    def _check_server(self):
+        """Raise an exception if the llama.cpp server is not reachable."""
+        try:
+            requests.get(self.server_url, timeout=2)
+        except Exception:
+            raise ConnectionError(
+                "llama.cpp server is not running or not reachable. "
+                "Please start it with: ./server -m <model.gguf> --host 127.0.0.1 --port 8080"
+            )
 
     def generate(self, messages: List[Dict[str, str]],
                  model: Optional[str] = None, **kwargs) -> str:
+        self._check_server()
         model_path = self._resolve_model_path(model)
+
         payload = {
             "model": model_path,
             "messages": messages,
-            "stream": False
+            "stream": False,
+            "temperature": kwargs.get("temperature", 0.7),
+            "max_tokens": kwargs.get("max_tokens", 2048),
         }
-        resp = requests.post(f"{self.server_url}/chat/completions",
-                             json=payload, timeout=180)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        try:
+            resp = requests.post(
+                f"{self.server_url}/chat/completions",
+                json=payload,
+                timeout=180
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.Timeout:
+            raise Exception("llama.cpp server timed out. Try reducing context size or use a smaller model.")
+        except requests.exceptions.ConnectionError:
+            raise Exception("Cannot connect to llama.cpp server. Is it running?")
+        except Exception as e:
+            raise Exception(f"llama.cpp error: {e}")
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
+        self._check_server()
         model_path = self._resolve_model_path(kwargs.get("model"))
+
         content_parts = []
         for img in images:
             b64 = img["b64"]
-            if not b64.startswith("data:"):
-                b64 = f"data:image/jpeg;base64,{b64}"
+            if "," in b64:
+                b64 = b64.split(",", 1)[1]
             content_parts.append({
                 "type": "image_url",
-                "image_url": {"url": b64}
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
             })
         last_text = messages[-1].get("content", "") if messages else ""
         content_parts.append({"type": "text", "text": last_text})
-        vision_messages = [
-            {"role": m["role"], "content": m["content"]}
-            for m in messages
-        ]
-        vision_messages[-1] = {"role": "user", "content": content_parts}
+
+        vision_messages = []
+        for m in messages[:-1]:
+            vision_messages.append({"role": m["role"], "content": m["content"]})
+        vision_messages.append({"role": "user", "content": content_parts})
+
         payload = {
             "model": model_path,
             "messages": vision_messages,
-            "stream": False
+            "stream": False,
+            "temperature": kwargs.get("temperature", 0.7),
+            "max_tokens": kwargs.get("max_tokens", 2048),
         }
-        resp = requests.post(f"{self.server_url}/chat/completions",
-                             json=payload, timeout=180)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        try:
+            resp = requests.post(
+                f"{self.server_url}/chat/completions",
+                json=payload,
+                timeout=180
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            raise Exception(f"llama.cpp vision error: {e}")
 
+
+# ================== OTHER PROVIDERS ==================
 
 class HuggingFaceProvider(LLMProvider):
     def __init__(self, model: str = "microsoft/DialoGPT-medium",
@@ -467,17 +514,78 @@ class DeepSeekProvider(LLMProvider):
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         key = api_key or self._default_key
         if not key:
-            return ["deepseek-chat", "deepseek-coder"]
+            return [
+                "deepseek-chat",
+                "deepseek-coder",
+                "deepseek-vl",
+                "deepseek-v2",
+                "deepseek-math",
+                "deepseek-llm",
+            ]
         try:
             headers = self._get_headers(key)
             resp = requests.get("https://api.deepseek.com/v1/models", headers=headers, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             models = [m["id"] for m in data.get("data", [])]
-            return models if models else ["deepseek-chat", "deepseek-coder"]
+            return models if models else [
+                "deepseek-chat",
+                "deepseek-coder",
+                "deepseek-vl",
+                "deepseek-v2",
+                "deepseek-math",
+                "deepseek-llm",
+            ]
         except Exception as e:
             print(f"⚠️ Failed to fetch DeepSeek models: {e}")
-            return ["deepseek-chat", "deepseek-coder"]
+            return [
+                "deepseek-chat",
+                "deepseek-coder",
+                "deepseek-vl",
+                "deepseek-v2",
+                "deepseek-math",
+                "deepseek-llm",
+            ]
+
+    def get_model_info(self, model_id: str) -> dict:
+        """Return description, capabilities, and pricing for a given DeepSeek model."""
+        info = {
+            "deepseek-chat": {
+                "description": "General‑purpose chat (R1 / V3) – best for reasoning, conversation, and complex tasks.",
+                "capabilities": ["Chat", "Reasoning", "Multilingual"],
+                "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
+            },
+            "deepseek-coder": {
+                "description": "Optimised for coding, debugging, code generation, and explanation.",
+                "capabilities": ["Code generation", "Debugging", "Code explanation"],
+                "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
+            },
+            "deepseek-vl": {
+                "description": "Vision‑language model – understands images and text, answers questions about visuals.",
+                "capabilities": ["Image analysis", "Multimodal", "Visual QA"],
+                "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
+            },
+            "deepseek-v2": {
+                "description": "Older general‑purpose chat model (V2) – still useful for basic tasks.",
+                "capabilities": ["Chat", "Text generation"],
+                "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
+            },
+            "deepseek-math": {
+                "description": "Specialised for mathematical reasoning, equations, and proofs.",
+                "capabilities": ["Math", "Logic", "Problem solving"],
+                "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
+            },
+            "deepseek-llm": {
+                "description": "Original base model – foundation for all DeepSeek variants.",
+                "capabilities": ["Text generation", "Foundation model"],
+                "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
+            }
+        }
+        return info.get(model_id, {
+            "description": "DeepSeek model – check API docs for details.",
+            "capabilities": [],
+            "pricing": {}
+        })
 
     def generate(self, messages: List[Dict[str, str]], model: str = "deepseek-chat", **kwargs) -> str:
         key = self._get_key(kwargs)
