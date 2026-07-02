@@ -1,0 +1,1 @@
+This project is for personal and educational use. Users are responsible for complying with the Terms of Service of any third-party APIs they connect to. The author assumes no liability for misuse.
