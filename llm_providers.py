@@ -515,12 +515,8 @@ class DeepSeekProvider(LLMProvider):
         key = api_key or self._default_key
         if not key:
             return [
-                "deepseek-chat",
-                "deepseek-coder",
-                "deepseek-vl",
-                "deepseek-v2",
-                "deepseek-math",
-                "deepseek-llm",
+                "deepseek-v4-flash",
+                "deepseek-v4-pro",
             ]
         try:
             headers = self._get_headers(key)
@@ -529,22 +525,14 @@ class DeepSeekProvider(LLMProvider):
             data = resp.json()
             models = [m["id"] for m in data.get("data", [])]
             return models if models else [
-                "deepseek-chat",
-                "deepseek-coder",
-                "deepseek-vl",
-                "deepseek-v2",
-                "deepseek-math",
-                "deepseek-llm",
+                "deepseek-v4-flash",
+                "deepseek-v4-pro",
             ]
         except Exception as e:
             print(f"⚠️ Failed to fetch DeepSeek models: {e}")
             return [
-                "deepseek-chat",
-                "deepseek-coder",
-                "deepseek-vl",
-                "deepseek-v2",
-                "deepseek-math",
-                "deepseek-llm",
+                "deepseek-v4-flash",
+                "deepseek-v4-pro",
             ]
 
     def get_model_info(self, model_id: str) -> dict:
