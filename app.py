@@ -465,6 +465,9 @@ def build_html(model_name):
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>Qwen Chat · Multi‑Conversation</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- Added Highlight.js for code blocks -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <style>
 /* ===== all styles (without notes-panel styles) ===== */
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -970,6 +973,74 @@ body.light-mode .msg.bot b {
 body.light-mode .msg.bot code {
     background: rgba(0,0,0,0.06);
 }
+
+/* ===== NEW: CODE BLOCK ENHANCEMENTS (Highlight + Copy) ===== */
+.code-block-wrapper {
+    background: #1e1e1e;
+    border-radius: 8px;
+    margin: 12px 0;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    font-size: 0; /* Remove extra space */
+}
+.code-header {
+    background: #2d2d2d;
+    padding: 6px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 12px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+.language-label {
+    color: #8b949e;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+.copy-code-btn {
+    background: rgba(255,255,255,0.08);
+    border: none;
+    color: #c9d1d9;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+.copy-code-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+.copy-code-btn.copied { background: #3fb950; color: #fff; }
+.code-block-wrapper pre {
+    margin: 0 !important;
+    padding: 16px !important;
+    border-radius: 0 !important;
+    background: #1e1e1e !important;
+}
+.code-block-wrapper pre code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+}
+body.light-mode .code-block-wrapper {
+    background: #f6f8fa;
+    border-color: rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+body.light-mode .code-header {
+    background: #e1e4e8;
+    border-bottom-color: rgba(0,0,0,0.08);
+}
+body.light-mode .language-label { color: #57606a; }
+body.light-mode .copy-code-btn { background: rgba(0,0,0,0.05); color: #24292f; }
+body.light-mode .copy-code-btn:hover { background: rgba(0,0,0,0.1); }
+/* ========================================================== */
+
 /* ── Message actions ─────────────────────────── */
 .msg .msg-actions {
     display: none;
@@ -1522,7 +1593,6 @@ body.light-mode .vision-badge {
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
         <button class="clear-btn" onclick="clearAllChats()">🗑 Clear All</button>
-        <div id="modelInfo" style="font-size:12px; color:#8b949e; max-width:200px; display:inline-block; vertical-align:middle; margin-left:10px;"></div>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
       </div>
     </div>
@@ -1582,6 +1652,80 @@ var conversations = [];
 var searchQuery = '';
 var searchEnabled = true;
 var unloadBtn = document.getElementById('unloadBtn');
+
+// ── New function to enrich code blocks with language label and copy button ──
+function processCodeBlocks(root) {
+    var codeBlocks = root.querySelectorAll('pre code');
+    if (codeBlocks.length === 0) return;
+    codeBlocks.forEach(function(codeBlock) {
+        var parentPre = codeBlock.parentElement;
+        if (parentPre.classList.contains('processed')) return;
+        parentPre.classList.add('processed');
+
+        var lang = '';
+        var classMatch = codeBlock.className.match(/language-(\w+)/);
+        if (classMatch) lang = classMatch[1];
+        if (!lang) lang = 'code';
+
+        var wrapper = document.createElement('div');
+        wrapper.className = 'code-block-wrapper';
+
+        var header = document.createElement('div');
+        header.className = 'code-header';
+        var label = document.createElement('span');
+        label.className = 'language-label';
+        label.textContent = lang;
+        var copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-code-btn';
+        copyBtn.textContent = 'Copy';
+        copyBtn.onclick = function(e) {
+            e.stopPropagation();
+            var text = codeBlock.textContent;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(function() {
+                    copyBtn.textContent = 'Copied!';
+                    copyBtn.classList.add('copied');
+                    setTimeout(function() {
+                        copyBtn.textContent = 'Copy';
+                        copyBtn.classList.remove('copied');
+                    }, 2500);
+                }, function() {
+                    fallbackCopy(text, copyBtn);
+                });
+            } else {
+                fallbackCopy(text, copyBtn);
+            }
+        };
+        function fallbackCopy(text, btn) {
+            var textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(function() {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2500);
+            } catch (err) {
+                btn.textContent = 'Error';
+            }
+            document.body.removeChild(textarea);
+        }
+        header.appendChild(label);
+        header.appendChild(copyBtn);
+
+        parentPre.parentNode.insertBefore(wrapper, parentPre);
+        wrapper.appendChild(header);
+        wrapper.appendChild(parentPre);
+
+        if (window.hljs) {
+            hljs.highlightElement(codeBlock);
+        }
+    });
+}
 
 // ── DeepSeek status ──
 function checkDeepSeekStatus() {
@@ -1983,7 +2127,6 @@ function loadModels() {
                 unloadBtn.style.display = 'none';
             }
             if (provider === 'deepseek' && modelSelect.value) {
-                fetchModelInfo(modelSelect.value);
                 checkDeepSeekStatus();
             } else {
                 document.getElementById('modelInfo').textContent = '';
@@ -1991,30 +2134,7 @@ function loadModels() {
         })
         .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
 }
-function fetchModelInfo(model) {
-    if (providerSelect.value !== 'deepseek' || !model) {
-        document.getElementById('modelInfo').textContent = '';
-        return;
-    }
-    fetch('/deepseek/model_info?model=' + encodeURIComponent(model))
-        .then(r => r.json())
-        .then(info => {
-            const infoDiv = document.getElementById('modelInfo');
-            if (info.error) {
-                infoDiv.textContent = '⚠️ ' + info.error;
-                return;
-            }
-            infoDiv.innerHTML = `
-                <strong>${model}</strong><br>
-                ${info.description}<br>
-                Capabilities: ${info.capabilities.join(', ')}<br>
-                Pricing: Input ${info.pricing.input}, Output ${info.pricing.output}
-            `;
-        })
-        .catch(() => {
-            document.getElementById('modelInfo').textContent = '⚠️ Could not load model info';
-        });
-}
+
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
     var keyInput = document.getElementById('apiKeyInput');
@@ -2049,6 +2169,7 @@ modelSelect.addEventListener('change', function() {
     const provider = providerSelect.value;
     const model = this.value;
     updateVisionBadge();
+    
     if (provider === 'ollama') {
         fetch('/set_model', {
             method: 'POST',
@@ -2061,13 +2182,10 @@ modelSelect.addEventListener('change', function() {
         })
         .catch(err => { status.textContent = '❌ Error: ' + err; });
     }
-    if (provider === 'deepseek') {
-        fetchModelInfo(model);
-    } else {
-        document.getElementById('modelInfo').textContent = '';
-    }
+    
+    // Clear the model info div regardless of which provider is selected
+    document.getElementById('modelInfo').textContent = '';
 });
-
 // ── Date grouping helpers ──────────────────────
 function getDateGroup(dateStr) {
     var now = new Date();
@@ -2375,6 +2493,9 @@ function renderMsg(role, entry, msgIndex) {
         div.appendChild(actions);
     }
     chatArea.appendChild(div);
+    if (role === 'bot') {
+        processCodeBlocks(div); // Process code blocks for this message
+    }
     scrollToBottomIfNeeded();
     return div;
 }
@@ -2390,6 +2511,7 @@ function reloadCurrentChat() {
                 messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
             }
             scrollToBottomIfNeeded();
+            processCodeBlocks(chatArea); // Global safety net
         });
 }
 async function startEditMessage(msgDiv, role, entry, idx) {
@@ -2630,6 +2752,7 @@ function actuallySend(text) {
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
                     botDiv.querySelector('.body').innerHTML = marked.parse(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
+                    processCodeBlocks(botDiv); // Process code blocks
                     status.textContent = '✅ Done';
                     loadConversations();
                     speakText(text);
@@ -2656,6 +2779,7 @@ function finishStream(fullText, botDiv) {
     botDiv.querySelector('.body').classList.remove('thinking-dots');
     botDiv.querySelector('.body').innerHTML = marked.parse(fullText || '(empty response)');
     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
+    processCodeBlocks(botDiv); // Process code blocks
     status.textContent = '✅ Done';
     busy = false;
     sendBtn.disabled = false;
