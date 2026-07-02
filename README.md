@@ -73,5 +73,3 @@ cd ollama-chat-interface
 pip install -r requirements.txt
 #to run the real application(ensure to get certificate): 
 python app.py 
-#to run fully integrated 
-python start.py
