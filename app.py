@@ -1,6 +1,5 @@
-# app.py – with automatic memory management (no manual sliders)
+# app.py – chat only, notes moved to notes.py
 from flask import Flask, request, jsonify, Response
-from flask import send_from_directory
 import requests
 import base64
 import os
@@ -15,8 +14,7 @@ import platform
 import sys
 import time
 
-
-# ── Import the provider classes ──
+# ── Import provider classes ──
 from llm_providers import (
     LLMProvider,
     OllamaProvider,
@@ -29,6 +27,10 @@ from llm_providers import (
     VISION_MODELS,
 )
 
+# ── Import notes blueprint ──
+from notes import notes_bp
+from cork_board import corkboard_bp
+
 # ── NVIDIA GPU support (optional) ──
 try:
     import pynvml
@@ -39,6 +41,8 @@ except:
     print("⚠️ NVML not available – GPU VRAM monitoring disabled.")
 
 app = Flask(__name__)
+app.register_blueprint(notes_bp)   # notes routes are now separate
+app.register_blueprint(corkboard_bp)   # cork board routes
 
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
@@ -72,21 +76,6 @@ if not os.path.exists(MODEL_CONFIG_FILE):
     with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
     print(f"✅ Created {MODEL_CONFIG_FILE}")
-
-# ── NOTES storage (built-in) ─────────────────────────────────
-NOTES_FILE = "json_configuration/notes.json"
-os.makedirs(os.path.dirname(NOTES_FILE), exist_ok=True)
-if not os.path.exists(NOTES_FILE):
-    with open(NOTES_FILE, "w", encoding="utf-8") as f:
-        json.dump({}, f, indent=2)
-
-def load_notes():
-    with open(NOTES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_notes(notes):
-    with open(NOTES_FILE, "w", encoding="utf-8") as f:
-        json.dump(notes, f, indent=2)
 
 # ── Auto‑SSL certificate generation ──
 def ensure_certificates():
@@ -425,7 +414,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (with Notes tab centred in top bar) ──
+# ── Build HTML (chat only, with link to notes) ──
 def build_html(model_name):
     return r"""<!DOCTYPE html>
 <html lang="en">
@@ -436,7 +425,7 @@ def build_html(model_name):
 <title>Qwen Chat · Multi‑Conversation</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-/* ===== all styles, with updated top-bar using CSS grid for perfect centering ===== */
+/* ===== all styles (without notes-panel styles) ===== */
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body {
     height:100%;
@@ -600,10 +589,10 @@ body.light-mode::before { opacity: 0; }
     backdrop-filter: blur(10px);
     transition: background 0.3s ease;
 }
-/* ── NEW: Top bar with CSS grid for perfect centering ── */
+/* ── Top bar with CSS grid for perfect centering ── */
 .top-bar {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;  /* left, center, right */
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     background: rgba(22, 27, 34, 0.7);
     backdrop-filter: blur(20px);
@@ -618,7 +607,7 @@ body.light-mode::before { opacity: 0; }
     display: flex;
     align-items: center;
     gap: 12px;
-    justify-self: start;   /* left aligned */
+    justify-self: start;
 }
 .top-bar .left h1 {
     font-size: 19px;
@@ -637,7 +626,7 @@ body.light-mode::before { opacity: 0; }
     border-radius: 30px;
     backdrop-filter: blur(5px);
     border: 1px solid rgba(255,255,255,0.06);
-    justify-self: center;   /* forces perfect centre */
+    justify-self: center;
 }
 .center-tabs .tab-btn {
     background: transparent;
@@ -650,6 +639,8 @@ body.light-mode::before { opacity: 0; }
     cursor: pointer;
     transition: all 0.2s;
     white-space: nowrap;
+    text-decoration: none;
+    display: inline-block;
 }
 .center-tabs .tab-btn:hover {
     color: #c9d1d9;
@@ -681,7 +672,7 @@ body.light-mode .center-tabs .tab-btn.active {
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    justify-self: end;   /* right aligned */
+    justify-self: end;
 }
 .sidebar-toggle {
     background: transparent;
@@ -835,134 +826,10 @@ body.light-mode .center-tabs .tab-btn.active {
 .toggle-outer.day .knob-sun { opacity: 1; }
 .toggle-outer.day .astronaut { opacity: 0; }
 .toggle-outer.day .biplane { opacity: 1; }
-/* ── Chat panel & notes panel ───────────────── */
+/* ── Chat panel ────────────────────────────────── */
 .chat-panel {
     flex:1; display:flex; flex-direction:column; min-height:0;
 }
-.notes-panel {
-    flex:1; overflow-y:auto; padding: 24px 40px; display:none;
-    flex-direction:column; gap:16px;
-}
-.notes-panel .note-editor {
-    background: rgba(13,17,23,0.7);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 10px;
-}
-.notes-panel .note-editor input,
-.notes-panel .note-editor textarea {
-    width: 100%;
-    background: transparent;
-    border: none;
-    color: #e6edf3;
-    font-size: 14px;
-    font-family: inherit;
-    outline: none;
-}
-.notes-panel .note-editor input {
-    font-weight: 600;
-    font-size: 18px;
-    margin-bottom: 8px;
-}
-.notes-panel .note-editor textarea {
-    resize: vertical;
-    min-height: 100px;
-}
-.notes-panel .note-editor .note-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    margin-top: 12px;
-}
-.notes-panel .note-editor .note-actions button {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #8b949e;
-    border-radius: 8px;
-    padding: 6px 18px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: 0.2s;
-}
-.notes-panel .note-editor .note-actions .save-note {
-    background: #1f6feb;
-    color: white;
-    border-color: #1f6feb;
-}
-.notes-panel .note-editor .note-actions .save-note:hover {
-    background: #388bfd;
-}
-.notes-panel .note-editor .note-actions button:hover {
-    background: rgba(255,255,255,0.1);
-}
-.notes-panel .note-item {
-    background: rgba(28, 35, 51, 0.6);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    padding: 16px 20px;
-    transition: 0.2s;
-}
-.notes-panel .note-item:hover {
-    background: rgba(28, 35, 51, 0.8);
-}
-.notes-panel .note-title {
-    font-weight: 600;
-    font-size: 16px;
-    margin-bottom: 6px;
-    color: #e6edf3;
-}
-.notes-panel .note-content {
-    font-size: 14px;
-    color: #8b949e;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-}
-.notes-panel .note-actions {
-    margin-top: 10px;
-    display: flex;
-    gap: 8px;
-}
-.notes-panel .note-actions button {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #8b949e;
-    border-radius: 8px;
-    padding: 4px 12px;
-    cursor: pointer;
-    font-size: 12px;
-    transition: 0.2s;
-}
-.notes-panel .note-actions button:hover {
-    background: rgba(255,255,255,0.1);
-    color: #58a6ff;
-}
-.notes-panel .note-actions .delete-note {
-    color: #f85149;
-}
-.notes-panel .note-actions .delete-note:hover {
-    background: rgba(248,81,73,0.15);
-    border-color: #f85149;
-}
-body.light-mode .notes-panel .note-item {
-    background: rgba(255,255,255,0.8);
-    border-color: rgba(0,0,0,0.06);
-}
-body.light-mode .notes-panel .note-item:hover {
-    background: rgba(255,255,255,0.95);
-}
-body.light-mode .notes-panel .note-title { color: #24292f; }
-body.light-mode .notes-panel .note-content { color: #57606a; }
-body.light-mode .notes-panel .note-editor {
-    background: rgba(255,255,255,0.8);
-    border-color: rgba(0,0,0,0.08);
-}
-body.light-mode .notes-panel .note-editor input,
-body.light-mode .notes-panel .note-editor textarea {
-    color: #24292f;
-}
-/* ── Chat area ────────────────────────────────── */
 .chat-area {
     flex:1; overflow-y:auto; padding: 24px 40px;
     display:flex; flex-direction:column; gap: 16px;
@@ -1515,7 +1382,7 @@ body.light-mode .vision-badge {
   </div>
 
   <div class="main">
-    <!-- TOP BAR WITH CENTER TABS (grid ensures perfect centering) -->
+    <!-- TOP BAR WITH CENTER TABS -->
     <div class="top-bar">
       <div class="left">
         <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
@@ -1527,10 +1394,11 @@ body.light-mode .vision-badge {
         <h1>🧠 Trio-llama Custom Chat</h1>
       </div>
 
-      <!-- CENTER TABS (pill style) – perfectly centred -->
+      <!-- CENTER TABS (pill style) – only Chat, Notes is a link -->
       <div class="center-tabs">
-        <button class="tab-btn active" data-tab="chat">💬 Chat</button>
-        <button class="tab-btn" data-tab="notes">📝 Notes</button>
+        <button class="tab-btn active">💬 Chat</button>
+        <a href="/notes" class="tab-btn" style="text-decoration:none;">📝 Notes</a>
+        <a href="/corkboard" class="tab-btn" style="text-decoration:none;">📌 Cork Board</a>
       </div>
 
       <div class="right">
@@ -1638,19 +1506,6 @@ body.light-mode .vision-badge {
       </div>
     </div>
 
-    <!-- NOTES PANEL -->
-    <div class="notes-panel" id="notesPanel">
-      <div class="note-editor" id="noteEditor">
-        <input type="text" id="noteTitleInput" placeholder="Note title...">
-        <textarea id="noteContentInput" placeholder="Write your note here..."></textarea>
-        <div class="note-actions">
-          <button class="save-note" id="saveNoteBtn">💾 Save Note</button>
-          <button id="cancelNoteBtn" style="display:none;">Cancel</button>
-        </div>
-      </div>
-      <div id="notesList"></div>
-    </div>
-
     <div id="statusBar">
       <span id="status">✅ Ready</span>
       <span id="resourceDisplay">💾 RAM: -- | 🎮 VRAM: --</span>
@@ -1667,7 +1522,7 @@ body.light-mode .vision-badge {
 </div>
 
 <script>
-/* ─── JavaScript ────────────────────────────── */
+/* ─── JavaScript (only chat) ────────────────────────────── */
 var chatArea    = document.getElementById('chatArea');
 var msgInput    = document.getElementById('msgInput');
 var sendBtn     = document.getElementById('sendBtn');
@@ -2846,131 +2701,6 @@ window.addEventListener('beforeunload', function() {
 });
 resourceIntervalId = setInterval(updateResources, 5000);
 
-// ─── Notes ──────────────────────────────────────
-var notesList = document.getElementById('notesList');
-var noteTitleInput = document.getElementById('noteTitleInput');
-var noteContentInput = document.getElementById('noteContentInput');
-var saveNoteBtn = document.getElementById('saveNoteBtn');
-var cancelNoteBtn = document.getElementById('cancelNoteBtn');
-var editingNoteId = null;
-
-function loadNotes() {
-    fetch('/notes')
-        .then(r => r.json())
-        .then(notes => {
-            renderNotes(notes);
-        })
-        .catch(err => console.error('Failed to load notes:', err));
-}
-function renderNotes(notes) {
-    notesList.innerHTML = '';
-    const ids = Object.keys(notes);
-    if (ids.length === 0) {
-        notesList.innerHTML = '<div class="note-item" style="text-align:center;color:#8b949e;">📝 No notes yet. Create one above!</div>';
-        return;
-    }
-    ids.sort((a, b) => new Date(notes[b].created) - new Date(notes[a].created));
-    ids.forEach(id => {
-        const note = notes[id];
-        const div = document.createElement('div');
-        div.className = 'note-item';
-        div.innerHTML = `
-            <div class="note-title">${escapeHtml(note.title)}</div>
-            <div class="note-content">${escapeHtml(note.content)}</div>
-            <div class="note-actions">
-                <button class="edit-note" data-id="${id}">✏️ Edit</button>
-                <button class="delete-note" data-id="${id}">🗑️ Delete</button>
-            </div>
-        `;
-        notesList.appendChild(div);
-    });
-    notesList.querySelectorAll('.edit-note').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const id = this.dataset.id;
-            const note = notes[id];
-            if (note) {
-                noteTitleInput.value = note.title;
-                noteContentInput.value = note.content;
-                editingNoteId = id;
-                saveNoteBtn.textContent = '✏️ Update Note';
-                cancelNoteBtn.style.display = 'inline-block';
-                document.getElementById('noteEditor').scrollIntoView({ behavior: 'smooth' });
-            }
-        });
-    });
-    notesList.querySelectorAll('.delete-note').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const id = this.dataset.id;
-            if (confirm('Delete this note?')) {
-                fetch('/notes/' + id, { method: 'DELETE' })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.ok) loadNotes();
-                    });
-            }
-        });
-    });
-}
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-saveNoteBtn.addEventListener('click', function() {
-    const title = noteTitleInput.value.trim() || 'Untitled';
-    const content = noteContentInput.value.trim();
-    if (!content && !title) {
-        alert('Please add some content or a title.');
-        return;
-    }
-    const method = editingNoteId ? 'PUT' : 'POST';
-    const url = editingNoteId ? '/notes/' + editingNoteId : '/notes';
-    fetch(url, {
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.ok || data.id) {
-            noteTitleInput.value = '';
-            noteContentInput.value = '';
-            editingNoteId = null;
-            saveNoteBtn.textContent = '💾 Save Note';
-            cancelNoteBtn.style.display = 'none';
-            loadNotes();
-        }
-    });
-});
-cancelNoteBtn.addEventListener('click', function() {
-    noteTitleInput.value = '';
-    noteContentInput.value = '';
-    editingNoteId = null;
-    saveNoteBtn.textContent = '💾 Save Note';
-    cancelNoteBtn.style.display = 'none';
-});
-
-// ─── Tab switching ──────────────────────────────
-const tabBtns = document.querySelectorAll('.tab-btn');
-const chatPanel = document.getElementById('chatPanel');
-const notesPanel = document.getElementById('notesPanel');
-tabBtns.forEach(btn => {
-    btn.addEventListener('click', function() {
-        tabBtns.forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-        const tab = this.dataset.tab;
-        if (tab === 'chat') {
-            chatPanel.style.display = 'flex';
-            notesPanel.style.display = 'none';
-            msgInput.focus();
-        } else if (tab === 'notes') {
-            chatPanel.style.display = 'none';
-            notesPanel.style.display = 'flex';
-            loadNotes();
-        }
-    });
-});
-
 // ─── Initialisation ─────────────────────────────
 window.addEventListener('load', function() {
     var provider = providerSelect.value;
@@ -3020,49 +2750,6 @@ providers = {
 @app.route('/')
 def index():
     return build_html(current_model)
-
-# ── Notes routes (built‑in) ────────────────────────────────────
-@app.route('/notes', methods=['GET'])
-def notes_get_all():
-    return jsonify(load_notes())
-
-@app.route('/notes', methods=['POST'])
-def notes_create():
-    data = request.get_json()
-    notes = load_notes()
-    note_id = str(uuid.uuid4())
-    notes[note_id] = {
-        "id": note_id,
-        "title": data.get("title", "Untitled"),
-        "content": data.get("content", ""),
-        "created": datetime.now().isoformat()
-    }
-    save_notes(notes)
-    return jsonify({"id": note_id, "ok": True})
-
-@app.route('/notes/<note_id>', methods=['PUT'])
-def notes_update(note_id):
-    data = request.get_json()
-    notes = load_notes()
-    if note_id not in notes:
-        return jsonify({"error": "Note not found"}), 404
-    if "title" in data:
-        notes[note_id]["title"] = data["title"]
-    if "content" in data:
-        notes[note_id]["content"] = data["content"]
-    save_notes(notes)
-    return jsonify({"ok": True})
-
-@app.route('/notes/<note_id>', methods=['DELETE'])
-def notes_delete(note_id):
-    notes = load_notes()
-    if note_id not in notes:
-        return jsonify({"error": "Note not found"}), 404
-    del notes[note_id]
-    save_notes(notes)
-    return jsonify({"ok": True})
-
-# ── End of notes routes ────────────────────────────────────────
 
 @app.route('/resources', methods=['GET'])
 def get_resources():
