@@ -770,8 +770,51 @@ NOTES_HTML = r"""<!DOCTYPE html>
                                 <div class="cloud" style="width:26px;height:10px;bottom:14px;right:22px;opacity:.85;"></div>
                                 <div class="cloud" style="width:20px;height:8px;bottom:22px;left:4px;opacity:.7;"></div>
                             </div>
-                            <div class="astronaut"><!-- SVG same as before --></div>
-                            <div class="biplane"><!-- SVG same as before --></div>
+                            <!-- ===== FIX: Astronaut & Biplane SVGs inserted ===== -->
+                            <div class="astronaut">
+                                <svg viewBox="0 0 44 54" width="22" height="26" xmlns="http://www.w3.org/2000/svg">
+                                    <ellipse cx="22" cy="36" rx="13" ry="14" fill="#e8e8e8"/>
+                                    <circle cx="22" cy="18" r="13" fill="#d0d8e8"/>
+                                    <circle cx="22" cy="18" r="10" fill="#c8d8f0" opacity="0.4"/>
+                                    <ellipse cx="22" cy="19" rx="7" ry="6" fill="#5a7ab0" opacity="0.85"/>
+                                    <circle cx="22" cy="20" r="5" fill="#c8844a"/>
+                                    <circle cx="20" cy="18.5" r="1.2" fill="#7a3a0a"/>
+                                    <circle cx="24" cy="18.5" r="1.2" fill="#7a3a0a"/>
+                                    <ellipse cx="22" cy="21" rx="2" ry="1.2" fill="#b06030"/>
+                                    <circle cx="10" cy="11" r="3.5" fill="#d0d8e8"/>
+                                    <circle cx="34" cy="11" r="3.5" fill="#d0d8e8"/>
+                                    <text x="22" y="37" text-anchor="middle" font-size="8" fill="#bbb">★</text>
+                                    <ellipse cx="9" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(-10 9 36)"/>
+                                    <ellipse cx="35" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(10 35 36)"/>
+                                    <ellipse cx="16" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
+                                    <ellipse cx="28" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
+                                    <ellipse cx="16" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
+                                    <ellipse cx="28" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
+                                    <ellipse cx="22" cy="28" rx="9" ry="3" fill="none" stroke="#c0c8d8" stroke-width="2"/>
+                                </svg>
+                            </div>
+                            <div class="biplane">
+                                <svg viewBox="0 0 70 42" width="30" height="18" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="14" y="4" width="42" height="8" rx="4" fill="#d0d8e0"/>
+                                    <ellipse cx="35" cy="22" rx="22" ry="9" fill="#e8e0d8"/>
+                                    <ellipse cx="58" cy="22" rx="8" ry="6" fill="#d0c8c0"/>
+                                    <polygon points="8,14 14,20 8,26" fill="#c8d0d8"/>
+                                    <rect x="4" y="15" width="12" height="5" rx="2" fill="#c0c8d0"/>
+                                    <rect x="18" y="26" width="34" height="6" rx="3" fill="#c8d0d8"/>
+                                    <line x1="22" y1="12" x2="22" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
+                                    <line x1="48" y1="12" x2="48" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
+                                    <ellipse cx="44" cy="17" rx="7" ry="5" fill="#7aaecc" opacity="0.8"/>
+                                    <circle cx="44" cy="15" r="5" fill="#c8844a"/>
+                                    <circle cx="42.5" cy="13.5" r="1" fill="#6b3a1f"/>
+                                    <circle cx="45.5" cy="13.5" r="1" fill="#6b3a1f"/>
+                                    <ellipse cx="44" cy="16" rx="1.5" ry="1" fill="#b06030"/>
+                                    <circle cx="40" cy="11" r="2" fill="#c8844a"/>
+                                    <circle cx="48" cy="11" r="2" fill="#c8844a"/>
+                                    <line x1="66" y1="13" x2="66" y2="31" stroke="#8a7060" stroke-width="3" stroke-linecap="round"/>
+                                    <circle cx="66" cy="22" r="2.5" fill="#6a5040"/>
+                                </svg>
+                            </div>
+                            <!-- ===== END FIX ===== -->
                             <div class="knob" id="themeKnob">
                                 <div class="knob-moon">
                                     <div class="crater" style="width:10px;height:10px;top:8px;left:7px;"></div>

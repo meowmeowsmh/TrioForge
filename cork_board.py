@@ -252,7 +252,7 @@ CORKBOARD_HTML = r"""<!DOCTYPE html>
 <title>Cork Board · Advanced</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-/* ── Base (same as notes.py) ─────────────────────────── */
+/* ── Base (same as app.py) ─────────────────────────── */
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body {
     height:100%;
@@ -280,7 +280,7 @@ body.light-mode::before { opacity: 0; }
 }
 .app { display:flex; flex-direction:column; height:100%; backdrop-filter: blur(2px); }
 
-/* ── Top bar (identical to notes.py) ─────────────── */
+/* ── Top bar (identical to app.py) ───────────────── */
 .top-bar {
     display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;
     background: rgba(22,27,34,0.7); backdrop-filter: blur(20px);
@@ -308,39 +308,14 @@ body.light-mode::before { opacity: 0; }
 .top-bar .right {
     display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-self:end;
 }
-.top-bar .right .search-input {
-    background: rgba(13,17,23,0.7);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 20px;
-    padding: 6px 14px;
-    color: #e6edf3;
-    font-size: 13px;
-    outline: none;
-    width: 160px;
-    transition: border-color 0.2s, width 0.2s;
-}
-.top-bar .right .search-input:focus { border-color:#58a6ff; width: 220px; }
-.top-bar .right .search-input::placeholder { color:#8b949e; }
-
-.top-btn {
-    background: rgba(33,38,45,0.7); border:1px solid rgba(255,255,255,0.1); color:#c9d1d9;
-    border-radius:10px; padding:7px 14px; font-size:12px; cursor:pointer; transition: all .2s; backdrop-filter: blur(5px);
-}
-.top-btn:hover { background: rgba(88,166,255,0.15); border-color:#58a6ff; }
-.top-btn.linking { background:#1f6feb; border-color:#1f6feb; color:#fff; }
-.top-btn.red-thread-active {
-    background:#da3633;
-    border-color:#da3633;
-    color:#fff;
-    box-shadow: 0 0 12px rgba(218,54,51,0.5);
-}
 .clear-btn {
     background: rgba(33,38,45,0.7); border:1px solid rgba(248,81,73,0.3); color:#f85149;
-    border-radius:10px; padding:7px 14px; font-size:12px; cursor:pointer; transition: all .2s; backdrop-filter: blur(5px);
+    border-radius:10px; padding:6px 14px; font-size:12px; cursor:pointer; transition: all .2s; backdrop-filter: blur(5px);
 }
 .clear-btn:hover { background: rgba(248,81,73,0.15); border-color:#f85149; }
 
-/* ── Theme toggle (exact copy from notes.py) ─────── */
+/* ── Theme toggle (exact copy from app.py) ──────── */
+.theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
 .toggle-outer {
     position:relative; width:140px; height:56px; border-radius:999px;
     background: hsl(220 18% 82%);
@@ -391,23 +366,65 @@ body.light-mode::before { opacity: 0; }
 .toggle-outer.day .astronaut { opacity:0; }
 .toggle-outer.day .biplane { opacity:1; }
 
+/* ── Toolbar (below top bar) ──────────────────────── */
+.toolbar {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 24px;
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    flex-wrap:wrap;
+    backdrop-filter: blur(5px);
+}
+.toolbar .search-input {
+    background: rgba(13,17,23,0.7);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 6px 14px;
+    color: #e6edf3;
+    font-size: 13px;
+    outline: none;
+    width: 160px;
+    transition: border-color 0.2s, width 0.2s;
+}
+.toolbar .search-input:focus { border-color:#58a6ff; width: 220px; }
+.toolbar .search-input::placeholder { color:#8b949e; }
+.toolbar .top-btn {
+    background: rgba(33,38,45,0.7); border:1px solid rgba(255,255,255,0.1); color:#c9d1d9;
+    border-radius:10px; padding:6px 14px; font-size:12px; cursor:pointer; transition: all .2s; backdrop-filter: blur(5px);
+    white-space:nowrap;
+}
+.toolbar .top-btn:hover { background: rgba(88,166,255,0.15); border-color:#58a6ff; }
+.toolbar .top-btn.linking { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+.toolbar .top-btn.red-thread-active {
+    background:#da3633;
+    border-color:#da3633;
+    color:#fff;
+    box-shadow: 0 0 12px rgba(218,54,51,0.5);
+}
+.toolbar .file-input-wrapper { position:relative; display:inline-block; }
+.toolbar .file-input-wrapper input[type="file"] {
+    position:absolute; left:0; top:0; opacity:0; width:100%; height:100%; cursor:pointer;
+}
+
 /* ── Tag filter bar ───────────────────────────────── */
 .tag-filter {
     padding: 6px 24px;
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    background: rgba(0,0,0,0.2);
+    background: rgba(0,0,0,0.15);
     border-bottom: 1px solid rgba(255,255,255,0.05);
     backdrop-filter: blur(5px);
-    min-height: 38px;
+    min-height: 34px;
     align-items: center;
 }
 .tag-filter .tag-pill {
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 20px;
-    padding: 4px 12px;
+    padding: 3px 12px;
     font-size: 12px;
     color: #8b949e;
     cursor: pointer;
@@ -429,7 +446,7 @@ body.light-mode::before { opacity: 0; }
     flex:1;
     position:relative;
     overflow:auto;
-    padding: 24px 40px;
+    padding: 20px 30px;
     background: rgba(10,10,15,0.7);
     backdrop-filter: blur(10px);
     transition: background 0.3s ease;
@@ -723,7 +740,7 @@ body.light-mode .center-tabs .tab-btn.active {
     background: #1f6feb;
     color: #fff;
 }
-body.light-mode .top-btn {
+body.light-mode .toolbar .top-btn {
     background: rgba(0,0,0,0.04);
     color: #24292f;
     border-color: rgba(0,0,0,0.12);
@@ -736,7 +753,7 @@ body.light-mode .clear-btn {
 body.light-mode .clear-btn:hover {
     background: rgba(248,81,73,0.08);
 }
-body.light-mode .top-bar .right .search-input {
+body.light-mode .toolbar .search-input {
     background: rgba(255,255,255,0.8);
     color:#24292f;
     border-color:rgba(0,0,0,0.12);
@@ -757,7 +774,7 @@ body.light-mode .tag-filter .tag-pill.active {
 </head>
 <body>
 <div class="app">
-    <!-- TOP BAR -->
+    <!-- TOP BAR (clean – matches app.py) -->
     <div class="top-bar">
         <div class="left">
             <h1>📌 Cork Board</h1>
@@ -768,38 +785,86 @@ body.light-mode .tag-filter .tag-pill.active {
             <button class="tab-btn active">📌 Cork Board</button>
         </div>
         <div class="right">
-            <input type="text" class="search-input" id="searchInput" placeholder="🔍 Search pins..." oninput="searchPins()">
-            <button class="top-btn" onclick="createNewPin()">+ New Note</button>
-            <button class="top-btn" onclick="document.getElementById('fileInput').click()">📎 Import File</button>
-            <input type="file" id="fileInput" accept=".md,.txt,.ipynb,.pdf" style="display:none" onchange="handleFileUpload(event)">
-            <button class="top-btn" id="linkBtn" onclick="toggleLinkMode()">🔗 Link Mode</button>
-            <!-- Red Thread toggle button -->
-            <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
-            <div class="toggle-outer" id="themeToggleOuter" onclick="handleThemeClick(event)">
-                <div class="toggle-inner">
-                    <div class="night-bg"></div>
-                    <div class="stars-layer" id="themeStars"></div>
-                    <div class="day-bg">
-                        <div class="sky-layer"></div>
-                        <div class="sky-mid"></div>
-                        <div class="cloud" style="width:36px;height:14px;bottom:3px;right:0px;"></div>
-                        <div class="cloud" style="width:26px;height:10px;bottom:14px;right:22px;opacity:.85;"></div>
-                        <div class="cloud" style="width:20px;height:8px;bottom:22px;left:4px;opacity:.7;"></div>
-                    </div>
-                    <div class="astronaut"><svg viewBox="0 0 44 54" width="22" height="26" xmlns="http://www.w3.org/2000/svg"><ellipse cx="22" cy="36" rx="13" ry="14" fill="#e8e8e8"/><circle cx="22" cy="18" r="13" fill="#d0d8e8"/><circle cx="22" cy="18" r="10" fill="#c8d8f0" opacity="0.4"/><ellipse cx="22" cy="19" rx="7" ry="6" fill="#5a7ab0" opacity="0.85"/><circle cx="22" cy="20" r="5" fill="#c8844a"/><circle cx="20" cy="18.5" r="1.2" fill="#7a3a0a"/><circle cx="24" cy="18.5" r="1.2" fill="#7a3a0a"/><ellipse cx="22" cy="21" rx="2" ry="1.2" fill="#b06030"/><circle cx="10" cy="11" r="3.5" fill="#d0d8e8"/><circle cx="34" cy="11" r="3.5" fill="#d0d8e8"/><text x="22" y="37" text-anchor="middle" font-size="8" fill="#bbb">★</text><ellipse cx="9" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(-10 9 36)"/><ellipse cx="35" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(10 35 36)"/><ellipse cx="16" cy="49" rx="5" ry="5" fill="#d0d0d0"/><ellipse cx="28" cy="49" rx="5" ry="5" fill="#d0d0d0"/><ellipse cx="16" cy="52" rx="6" ry="3" fill="#b0b0b8"/><ellipse cx="28" cy="52" rx="6" ry="3" fill="#b0b0b8"/><ellipse cx="22" cy="28" rx="9" ry="3" fill="none" stroke="#c0c8d8" stroke-width="2"/></svg></div>
-                    <div class="biplane"><svg viewBox="0 0 70 42" width="30" height="18" xmlns="http://www.w3.org/2000/svg"><rect x="14" y="4" width="42" height="8" rx="4" fill="#d0d8e0"/><ellipse cx="35" cy="22" rx="22" ry="9" fill="#e8e0d8"/><ellipse cx="58" cy="22" rx="8" ry="6" fill="#d0c8c0"/><polygon points="8,14 14,20 8,26" fill="#c8d0d8"/><rect x="4" y="15" width="12" height="5" rx="2" fill="#c0c8d0"/><rect x="18" y="26" width="34" height="6" rx="3" fill="#c8d0d8"/><line x1="22" y1="12" x2="22" y2="26" stroke="#aab0b8" stroke-width="1.5"/><line x1="48" y1="12" x2="48" y2="26" stroke="#aab0b8" stroke-width="1.5"/><ellipse cx="44" cy="17" rx="7" ry="5" fill="#7aaecc" opacity="0.8"/><circle cx="44" cy="15" r="5" fill="#c8844a"/><circle cx="42.5" cy="13.5" r="1" fill="#6b3a1f"/><circle cx="45.5" cy="13.5" r="1" fill="#6b3a1f"/><ellipse cx="44" cy="16" rx="1.5" ry="1" fill="#b06030"/><circle cx="40" cy="11" r="2" fill="#c8844a"/><circle cx="48" cy="11" r="2" fill="#c8844a"/><line x1="66" y1="13" x2="66" y2="31" stroke="#8a7060" stroke-width="3" stroke-linecap="round"/><circle cx="66" cy="22" r="2.5" fill="#6a5040"/></svg></div>
-                    <div class="knob" id="themeKnob">
-                        <div class="knob-moon">
-                            <div class="crater" style="width:10px;height:10px;top:8px;left:7px;"></div>
-                            <div class="crater" style="width:8px;height:8px;top:22px;left:11px;"></div>
-                            <div class="crater" style="width:5px;height:5px;top:18px;left:25px;"></div>
+            <div class="theme-toggle-wrapper">
+                <div class="toggle-outer" id="themeToggleOuter" onclick="handleThemeClick(event)">
+                    <div class="toggle-inner">
+                        <div class="night-bg"></div>
+                        <div class="stars-layer" id="themeStars"></div>
+                        <div class="day-bg">
+                            <div class="sky-layer"></div>
+                            <div class="sky-mid"></div>
+                            <div class="cloud" style="width:36px;height:14px;bottom:3px;right:0px;"></div>
+                            <div class="cloud" style="width:26px;height:10px;bottom:14px;right:22px;opacity:.85;"></div>
+                            <div class="cloud" style="width:20px;height:8px;bottom:22px;left:4px;opacity:.7;"></div>
                         </div>
-                        <div class="knob-sun"></div>
+                        <div class="astronaut">
+                            <svg viewBox="0 0 44 54" width="22" height="26" xmlns="http://www.w3.org/2000/svg">
+                                <ellipse cx="22" cy="36" rx="13" ry="14" fill="#e8e8e8"/>
+                                <circle cx="22" cy="18" r="13" fill="#d0d8e8"/>
+                                <circle cx="22" cy="18" r="10" fill="#c8d8f0" opacity="0.4"/>
+                                <ellipse cx="22" cy="19" rx="7" ry="6" fill="#5a7ab0" opacity="0.85"/>
+                                <circle cx="22" cy="20" r="5" fill="#c8844a"/>
+                                <circle cx="20" cy="18.5" r="1.2" fill="#7a3a0a"/>
+                                <circle cx="24" cy="18.5" r="1.2" fill="#7a3a0a"/>
+                                <ellipse cx="22" cy="21" rx="2" ry="1.2" fill="#b06030"/>
+                                <circle cx="10" cy="11" r="3.5" fill="#d0d8e8"/>
+                                <circle cx="34" cy="11" r="3.5" fill="#d0d8e8"/>
+                                <text x="22" y="37" text-anchor="middle" font-size="8" fill="#bbb">★</text>
+                                <ellipse cx="9" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(-10 9 36)"/>
+                                <ellipse cx="35" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(10 35 36)"/>
+                                <ellipse cx="16" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
+                                <ellipse cx="28" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
+                                <ellipse cx="16" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
+                                <ellipse cx="28" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
+                                <ellipse cx="22" cy="28" rx="9" ry="3" fill="none" stroke="#c0c8d8" stroke-width="2"/>
+                            </svg>
+                        </div>
+                        <div class="biplane">
+                            <svg viewBox="0 0 70 42" width="30" height="18" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="14" y="4" width="42" height="8" rx="4" fill="#d0d8e0"/>
+                                <ellipse cx="35" cy="22" rx="22" ry="9" fill="#e8e0d8"/>
+                                <ellipse cx="58" cy="22" rx="8" ry="6" fill="#d0c8c0"/>
+                                <polygon points="8,14 14,20 8,26" fill="#c8d0d8"/>
+                                <rect x="4" y="15" width="12" height="5" rx="2" fill="#c0c8d0"/>
+                                <rect x="18" y="26" width="34" height="6" rx="3" fill="#c8d0d8"/>
+                                <line x1="22" y1="12" x2="22" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
+                                <line x1="48" y1="12" x2="48" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
+                                <ellipse cx="44" cy="17" rx="7" ry="5" fill="#7aaecc" opacity="0.8"/>
+                                <circle cx="44" cy="15" r="5" fill="#c8844a"/>
+                                <circle cx="42.5" cy="13.5" r="1" fill="#6b3a1f"/>
+                                <circle cx="45.5" cy="13.5" r="1" fill="#6b3a1f"/>
+                                <ellipse cx="44" cy="16" rx="1.5" ry="1" fill="#b06030"/>
+                                <circle cx="40" cy="11" r="2" fill="#c8844a"/>
+                                <circle cx="48" cy="11" r="2" fill="#c8844a"/>
+                                <line x1="66" y1="13" x2="66" y2="31" stroke="#8a7060" stroke-width="3" stroke-linecap="round"/>
+                                <circle cx="66" cy="22" r="2.5" fill="#6a5040"/>
+                            </svg>
+                        </div>
+                        <div class="knob" id="themeKnob">
+                            <div class="knob-moon">
+                                <div class="crater" style="width:10px;height:10px;top:8px;left:7px;"></div>
+                                <div class="crater" style="width:8px;height:8px;top:22px;left:11px;"></div>
+                                <div class="crater" style="width:5px;height:5px;top:18px;left:25px;"></div>
+                            </div>
+                            <div class="knob-sun"></div>
+                        </div>
                     </div>
                 </div>
             </div>
             <button class="clear-btn" onclick="clearAllPins()">🗑 Clear All</button>
         </div>
+    </div>
+
+    <!-- TOOLBAR (actions) -->
+    <div class="toolbar" id="toolbar">
+        <input type="text" class="search-input" id="searchInput" placeholder="🔍 Search pins..." oninput="searchPins()">
+        <button class="top-btn" onclick="createNewPin()">+ New Note</button>
+        <span class="file-input-wrapper">
+            <button class="top-btn">📎 Import File</button>
+            <input type="file" accept=".md,.txt,.ipynb,.pdf" onchange="handleFileUpload(event)">
+        </span>
+        <button class="top-btn" id="linkBtn" onclick="toggleLinkMode()">🔗 Link Mode</button>
+        <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
     </div>
 
     <!-- TAG FILTER -->
@@ -870,7 +935,7 @@ body.light-mode .tag-filter .tag-pill.active {
 </div>
 
 <script>
-// ─── THEME (exact copy from notes.py) ─────────────────
+// ─── THEME (exact copy from app.py) ─────────────────
 var themeOuter = document.getElementById('themeToggleOuter');
 var themeKnob = document.getElementById('themeKnob');
 var isLight = localStorage.getItem('theme') === 'light';
@@ -976,7 +1041,7 @@ var saveTimers = {};
 var activeTagFilter = '';
 var searchQuery = '';
 var editingPinId = null;
-var redThreadMode = false;  // NEW: red thread toggle
+var redThreadMode = false;
 
 // ─── Load & render ────────────────────────────────────
 function loadBoard() {
@@ -1227,7 +1292,6 @@ function renderTagFilter() {
 function toggleRedThread() {
     redThreadMode = !redThreadMode;
     document.getElementById('redThreadBtn').classList.toggle('red-thread-active', redThreadMode);
-    // Also update tooltip
     document.getElementById('redThreadBtn').title = redThreadMode ? 'Red Thread ON' : 'Red Thread OFF';
 }
 
@@ -1237,8 +1301,6 @@ function toggleLinkMode() {
     linkSourceId = null;
     document.getElementById('linkBtn').classList.toggle('linking', linkMode);
     document.querySelectorAll('.pin').forEach(p => p.classList.remove('link-source'));
-    // If link mode is turned off, also reset red thread mode? (optional)
-    // We'll keep them independent.
 }
 function handleLinkClick(id, el) {
     if (!linkSourceId) {
@@ -1251,7 +1313,6 @@ function handleLinkClick(id, el) {
         el.classList.remove('link-source');
         return;
     }
-    // Use redThreadMode to decide link color
     var color = redThreadMode ? 'red' : 'black';
     fetch('/corkboard/api/links', {
         method: 'POST',
@@ -1269,12 +1330,10 @@ function handleLinkClick(id, el) {
         }
         document.querySelectorAll('.pin').forEach(p => p.classList.remove('link-source'));
         linkSourceId = null;
-        // Optionally turn off red thread mode after linking? We'll leave it on.
     });
 }
 
 function renderLinks() {
-    // Clear defs and lines, keep markers
     linkLayer.innerHTML = `
         <defs>
             <marker id="arrowhead-black" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -1384,9 +1443,7 @@ window.addEventListener('load', function() {
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeModal();
     });
-    // Set initial red thread button state
-    toggleRedThread(); // just to set initial class and tooltip; but we don't want to turn it on.
-    // Actually, we want to ensure the button reflects the initial false state.
+    // Ensure red thread button starts off
     document.getElementById('redThreadBtn').classList.remove('red-thread-active');
     document.getElementById('redThreadBtn').title = 'Red Thread OFF';
     redThreadMode = false;

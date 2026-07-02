@@ -13,6 +13,8 @@ import urllib.request
 import platform
 import sys
 import time
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 
 # ── Import provider classes ──
 from llm_providers import (
@@ -161,12 +163,15 @@ def load_conversations():
     _ensure_cache()
     return _conversations_cache
 
+# ── Atomic save (temp file + rename) to prevent I/O hangs ──
 def save_conversations(convs):
     global _conversations_cache
     _conversations_cache = convs
     try:
-        with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
+        temp_file = CONVERSATIONS_FILE + ".tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
             json.dump(convs, f, ensure_ascii=False, indent=2)
+        os.replace(temp_file, CONVERSATIONS_FILE)  # atomic on Windows/Unix
         print(f"✅ Saved conversations ({len(convs)} items)")
     except Exception as e:
         print(f"❌ Failed to save conversations: {e}")
@@ -257,6 +262,42 @@ def describe_image_with_llava(image_b64: str) -> str:
     except Exception as e:
         print(f"⚠️ llava fallback failed: {e}")
         return ""
+
+# ── Thread pool for concurrent vision fallback ──
+_executor = ThreadPoolExecutor(max_workers=2)
+
+# ── Trim conversation history to keep context small ──
+def trim_conversation_history(messages, max_messages=10, max_tokens=3000):
+    """
+    Keep only the most recent 'max_messages' exchanges (excluding system prompt),
+    and further reduce by character length to fit ~max_tokens (assuming 1 token ≈ 4 chars).
+    Always preserves the system prompt if present.
+    """
+    if not messages:
+        return messages
+
+    # Separate system message (if any)
+    system_msg = None
+    if messages and messages[0]["role"] == "system":
+        system_msg = messages.pop(0)
+
+    # Keep the last N messages (user + assistant pairs)
+    if len(messages) > max_messages:
+        messages = messages[-max_messages:]
+
+    # Further trim by total character count (rough token limit)
+    total_len = sum(len(m.get("content", "")) for m in messages)
+    while messages and total_len > max_tokens * 4:
+        # Remove the second oldest (keep the very latest query)
+        if len(messages) > 1:
+            removed = messages.pop(1)
+            total_len -= len(removed.get("content", ""))
+        else:
+            break
+
+    if system_msg:
+        messages.insert(0, system_msg)
+    return messages
 
 # ── Automatic memory settings for Ollama ──────────────────────────
 def get_ollama_memory_settings() -> dict:
@@ -2790,11 +2831,9 @@ def get_resources():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/check_vision', methods=['GET'])
-def check_vision():
-    provider_name = request.args.get('provider', 'ollama')
-    model = request.args.get('model', '')
-
+# ── Cached vision check (speeds up repeated queries) ──
+@lru_cache(maxsize=128)
+def cached_vision_check(provider_name, model):
     if provider_name == 'ollama' and model:
         try:
             resp = requests.post(
@@ -2806,15 +2845,20 @@ def check_vision():
                 details = data.get("details", {})
                 caps = details.get("capabilities", [])
                 if "vision" in caps:
-                    return jsonify({"vision": True})
+                    return True
                 family = details.get("family", "").lower()
                 vision_families = VISION_MODELS["ollama"]
-                has_vision = any(kw in family for kw in vision_families)
-                return jsonify({"vision": has_vision})
+                return any(kw in family for kw in vision_families)
         except Exception:
             pass
-    
-    has_vision = model_supports_vision(provider_name, model)
+    # fallback to provider's generic check
+    return model_supports_vision(provider_name, model)
+
+@app.route('/check_vision', methods=['GET'])
+def check_vision():
+    provider_name = request.args.get('provider', 'ollama')
+    model = request.args.get('model', '')
+    has_vision = cached_vision_check(provider_name, model)
     return jsonify({"vision": has_vision})
 
 @app.route('/providers/models', methods=['GET'])
@@ -2852,6 +2896,8 @@ def set_model():
     current_model = model
     save_model_config(model)
     providers["ollama"].model = model
+    # Invalidate vision cache when model changes
+    cached_vision_check.cache_clear()
     return jsonify({'ok': True, 'model': model})
 
 @app.route('/deepseek/model_info', methods=['GET'])
@@ -2869,7 +2915,7 @@ def deepseek_status():
     provider = providers.get('deepseek')
     if not provider:
         return jsonify({"ok": False, "error": "Provider not initialized"}), 503
-    
+
     api_key = provider._default_key
     if api_key:
         try:
@@ -3078,7 +3124,10 @@ def chat():
                     messages.append({"role": "user", "content": msg['text']})
                 elif msg['role'] == 'bot':
                     messages.append({"role": "assistant", "content": msg['text']})
+
+        # Prepend system prompt and trim history for speed
         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+        messages = trim_conversation_history(messages)
         messages.append({"role": "user", "content": final_prompt})
 
         extra_kwargs = {"model": model}
@@ -3092,10 +3141,12 @@ def chat():
 
         start_time = time.time()
         if images:
-            if model_supports_vision(provider_name, model):
+            if cached_vision_check(provider_name, model):
                 reply = provider.generate_with_image(messages, images, **extra_kwargs)
             else:
-                description = describe_image_with_llava(images[0]["b64"])
+                # Run vision fallback in thread to avoid blocking
+                future = _executor.submit(describe_image_with_llava, images[0]["b64"])
+                description = future.result(timeout=60)  # wait for result
                 if description:
                     inject = f"[Image description]\n{description.strip()}\n\n[User question]\n"
                 else:
@@ -3203,7 +3254,9 @@ def chat_stream():
                     messages.append({"role": "user", "content": msg['text']})
                 elif msg['role'] == 'bot':
                     messages.append({"role": "assistant", "content": msg['text']})
+
         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+        messages = trim_conversation_history(messages)
         messages.append({"role": "user", "content": final_prompt})
 
         mem_settings = get_ollama_memory_settings()
@@ -3215,7 +3268,7 @@ def chat_stream():
             "options": {
                 "temperature": 0.7,
                 "num_predict": 2048,
-                "num_ctx": 4096,
+                "num_ctx": 2048,          # reduced from 4096 for speed
                 "num_gpu": mem_settings['num_gpu'],
                 "low_vram": mem_settings['low_vram'],
             }
