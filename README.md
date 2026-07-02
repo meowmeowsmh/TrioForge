@@ -5,10 +5,8 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/meowmeowsmh/ollama-chat-interface)](https://github.com/meowmeowsmh/ollama-chat-interface)
 
 > A full‑featured, multi‑conversation chat interface for [Ollama](https://ollama.com) – **100% free**, no API keys, no limits (when using Ollama).  
-> Plus, a **clever fallback** that shows a fun 404 page with background music when the backend is down – so you never see a boring “connection refused” again.
 
 Everything auto‑creates itself – just clone, run, and go.
-
 ---
 
 ## 📖 Table of Contents
