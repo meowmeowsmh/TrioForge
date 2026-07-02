@@ -1159,7 +1159,8 @@ function dragMove(e) {
     dragCtx.el.style.top = y + 'px';
     boardData.pins[dragCtx.id].x = x;
     boardData.pins[dragCtx.id].y = y;
-    renderLinks();
+    // We removed renderLinks() here to stop the extreme lag.
+    // Links are updated instantly when the mouse is released.
 }
 function dragEnd() {
     if (!dragCtx) return;
@@ -1167,6 +1168,7 @@ function dragEnd() {
     var id = dragCtx.id;
     var pin = boardData.pins[id];
     savePin(id, { x: pin.x, y: pin.y }, true);
+    renderLinks(); // Update links safely on drop
     dragCtx = null;
     window.removeEventListener('mousemove', dragMove);
     window.removeEventListener('mouseup', dragEnd);
@@ -1333,29 +1335,61 @@ function handleLinkClick(id, el) {
     });
 }
 
+// Optimized renderLinks: updates attributes instead of destroying the DOM
 function renderLinks() {
-    linkLayer.innerHTML = `
-        <defs>
+    // Keep the defs safe - don't wipe them out!
+    var defs = linkLayer.querySelector('defs');
+    if (!defs) {
+        defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs.innerHTML = `
             <marker id="arrowhead-black" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                 <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker" />
             </marker>
             <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                 <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker red" />
             </marker>
-        </defs>
-    `;
+        `;
+        linkLayer.prepend(defs);
+    }
+
+    // Remove orphaned lines
+    var existingLines = linkLayer.querySelectorAll('.link-line');
+    var activeIds = new Set();
+    boardData.links.forEach(link => {
+        activeIds.add(`${link.from}-${link.to}`);
+        activeIds.add(`${link.to}-${link.from}`);
+    });
+
+    existingLines.forEach(line => {
+        var id = line.dataset.linkId;
+        if (!activeIds.has(id)) {
+            line.remove();
+        }
+    });
+
+    // Update or create current lines
     boardData.links.forEach(link => {
         var a = boardData.pins[link.from], b = boardData.pins[link.to];
         if (!a || !b) return;
         var x1 = a.x + (a.width || 220)/2, y1 = a.y + (a.height || 160)/2;
         var x2 = b.x + (b.width || 220)/2, y2 = b.y + (b.height || 160)/2;
-        var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', x1); line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+        
+        var id = `${link.from}-${link.to}`;
+        var line = linkLayer.querySelector(`.link-line[data-link-id="${id}"]`);
+        if (!line) {
+            line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('class', 'link-line');
+            line.dataset.linkId = id;
+            linkLayer.appendChild(line);
+        }
+        
         var isRed = (link.color === 'red');
         line.setAttribute('class', isRed ? 'link-line red' : 'link-line black');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
         line.setAttribute('marker-end', isRed ? 'url(#arrowhead-red)' : 'url(#arrowhead-black)');
-        linkLayer.appendChild(line);
     });
 }
 
