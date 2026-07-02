@@ -38,9 +38,6 @@ Everything auto‑creates itself – just clone, run, and go.
 | 📎 **File/Image Upload** | Attach images, PDFs, text files, code files. |
 | 💾 **Live Monitor** | Shows RAM & VRAM usage in real time. |
 | 🔒 **HTTPS** | Auto‑generates certificates on Windows – just run and go. |
-| 🚦 **Smart Fallback** | A built‑in reverse proxy (`fallback.py`) serves a custom `404.html` with a GIF and background music whenever Flask is down. |
-| 🎵 **“Troll” 404 Page** | The error page autoplays `Meatball-Parade(chosic.com).mp3` and shows a funny animation – great for pranks or just making downtime more entertaining. |
-| 📦 **One‑Click Launcher** | `start.py` launches both the fallback proxy and Flask in separate windows (or tabs), so you never get “connection refused”. |
 | 🧰 **Multi‑Provider Support** | Besides Ollama, you can also use Groq, Hugging Face, DeepSeek, Claude, and llama.cpp – just add your API key. |
 | 📑 **Persistent Conversations** | Chats are automatically saved in `json_configuration/conversations.json` – you can rename, delete, and reorder them. |
 | 🖱️ **Drag‑and‑Drop File Upload** | Drop files or folders directly onto the chat to attach them. |
