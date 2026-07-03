@@ -39,6 +39,7 @@ Everything auto‑creates itself – just clone, run, and go.
 | 🧰 **Multi‑Provider Support** | Besides Ollama, you can also use Groq, Hugging Face, DeepSeek, Claude, and llama.cpp – just add your API key. |
 | 📑 **Persistent Conversations** | Chats are automatically saved in `json_configuration/conversations.json` – you can rename, delete, and reorder them. |
 | 🖱️ **Drag‑and‑Drop File Upload** | Drop files or folders directly onto the chat to attach them. |
+| 🤖 **We applogies that embedded models will not be supported** | Embedded does not worked on the ui interface only worked on cmd or other cmd related. |
 
 ---
 
