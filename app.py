@@ -2219,7 +2219,7 @@ modelSelect.addEventListener('change', function() {
     const provider = providerSelect.value;
     const model = this.value;
     updateVisionBadge();
-    
+
     if (provider === 'ollama') {
         fetch('/set_model', {
             method: 'POST',
@@ -2228,12 +2228,15 @@ modelSelect.addEventListener('change', function() {
         })
         .then(r => r.json())
         .then(data => {
-            status.textContent = data.ok ? '✅ Model switched to ' + model : '❌ ' + (data.error || 'Failed');
+            if (data.ok) {
+                status.textContent = '✅ Model switched to ' + model;
+            } else {
+                status.textContent = '❌ ' + (data.error || 'Failed');
+            }
         })
         .catch(err => { status.textContent = '❌ Error: ' + err; });
     }
     
-    // Clear the model info div regardless of which provider is selected
     document.getElementById('modelInfo').textContent = '';
 });
 // ── Date grouping helpers ──────────────────────
@@ -3520,7 +3523,6 @@ def chat_stream():
     except Exception as e:
         print(f"❌ chat_stream error: {e}")
         return jsonify({'error': str(e)}), 500
-
 
 # ─── UNCENSORED VISION MODELS (extend built‑in list) ──────────
 UNCENSORED_VISION_MODELS = [
