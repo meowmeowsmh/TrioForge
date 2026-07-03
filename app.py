@@ -393,7 +393,27 @@ def execute_ollama_command_sync(text: str) -> str:
             return f"✅ Model '{model}' pulled successfully.\nLast status: {last_status}"
 
         elif cmd == 'push':
-            return "❌ Push command requires authentication and is not supported in this interface."
+            if not args:
+                return "❌ Usage: ollama push <model> [--insecure]"
+            model = args[0]
+            insecure = "--insecure" in args
+            payload = {"name": model, "insecure": insecure}
+            headers = {}
+            token = os.environ.get("OLLAMA_REGISTRY_TOKEN")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            r = requests.post("http://127.0.0.1:11434/api/push",
+                              json=payload, headers=headers, stream=True, timeout=600)
+            r.raise_for_status()
+            last_status = ""
+            for line in r.iter_lines():
+                if line:
+                    chunk = json.loads(line)
+                    if 'status' in chunk:
+                        last_status = chunk['status']
+                    if 'error' in chunk:
+                        return f"❌ Error pushing '{model}': {chunk['error']}"
+            return f"✅ Model '{model}' pushed successfully.\nLast status: {last_status}"
 
         else:
             return f"❌ Unknown command: {cmd}"
@@ -435,6 +455,36 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
                             full_response += err
                             yield f"data: {json.dumps({'token': err})}\n\n"
                 final = f"\n✅ Model '{model}' pulled successfully."
+                full_response += final
+                yield f"data: {json.dumps({'token': final})}\n\n"
+
+        elif cmd == 'push':
+            if not args:
+                full_response = "❌ Usage: ollama push <model> [--insecure]"
+                yield f"data: {json.dumps({'token': full_response})}\n\n"
+            else:
+                model = args[0]
+                insecure = "--insecure" in args
+                payload = {"name": model, "insecure": insecure}
+                headers = {}
+                token = os.environ.get("OLLAMA_REGISTRY_TOKEN")
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+                r = requests.post("http://127.0.0.1:11434/api/push",
+                                  json=payload, headers=headers, stream=True, timeout=600)
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        status = chunk.get('status', '')
+                        if status:
+                            full_response += status + "\n"
+                            yield f"data: {json.dumps({'token': status + '\n'})}\n\n"
+                        if 'error' in chunk:
+                            err = '❌ ' + chunk['error']
+                            full_response += err
+                            yield f"data: {json.dumps({'token': err})}\n\n"
+                final = f"\n✅ Model '{model}' pushed successfully."
                 full_response += final
                 yield f"data: {json.dumps({'token': final})}\n\n"
 
@@ -2709,14 +2759,24 @@ function actuallySend(text) {
             var reader = response.body.getReader();
             var decoder = new TextDecoder();
             var fullText = '';
+            var sseBuffer = '';
             function readStream() {
                 reader.read().then(({done, value}) => {
                     if (done) {
+                        // Flush any trailing complete line left in the buffer
+                        if (sseBuffer.startsWith('data: ')) {
+                            try {
+                                var data = JSON.parse(sseBuffer.substring(6));
+                                if (data.token) { fullText += data.token; }
+                            } catch(e) {}
+                        }
                         finishStream(fullText, botDiv);
                         return;
                     }
-                    var chunk = decoder.decode(value, {stream: true});
-                    var lines = chunk.split('\n');
+                    sseBuffer += decoder.decode(value, {stream: true});
+                    var lines = sseBuffer.split('\n');
+                    // The last element may be an incomplete line — keep it in the buffer
+                    sseBuffer = lines.pop();
                     for (var line of lines) {
                         if (line.startsWith('data: ')) {
                             var jsonStr = line.substring(6);
@@ -3399,17 +3459,20 @@ def chat_stream():
         }
         if images:
             last_msg = messages[-1]
-            content_parts = []
+            b64_list = []
             for img in images:
                 b64 = img["b64"]
                 if "," in b64:
                     b64 = b64.split(",", 1)[1]
-                content_parts.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
-                })
-            content_parts.append({"type": "text", "text": last_msg["content"]})
-            payload["messages"][-1] = {"role": "user", "content": content_parts}
+                b64_list.append(b64)
+            # Ollama's native /api/chat expects `content` as a plain string
+            # with a separate top-level `images` array of raw base64 strings
+            # (NOT OpenAI-style content=[{"type": "image_url", ...}]).
+            payload["messages"][-1] = {
+                "role": "user",
+                "content": last_msg["content"],
+                "images": b64_list
+            }
 
         def generate():
             full_response = ""
@@ -3457,6 +3520,107 @@ def chat_stream():
     except Exception as e:
         print(f"❌ chat_stream error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ─── UNCENSORED VISION MODELS (extend built‑in list) ──────────
+UNCENSORED_VISION_MODELS = [
+    "mikemikeok/Qwythos-9B-Uncensored",
+    "baytout3/ultragemma4-12b-heretic-uncensored",
+    "maxwellb/gemma4-12b-it-oym",
+    "tinyrick/gemma-4-31B-it-uncensored-heretic-vision-llmfan46",
+    "tinyrick/Qwen3.6-35B-A3B-uncensored-heretic-vision-llmfan46",
+    "dzgg/Qwen3.5-Uncensored-HauhauCS-Aggressive",
+    "krishairnd/Gemma-4-Uncensored",
+    "trinhnv1205/Qwen3.5-9B-Uncensored-ctx64k",
+    "dzgg/Gemma-4-Uncensored-HauhauCS-Aggressive",
+    "frob/davidau-qwen3.6-uncensored",
+    "tinyrick/Gemma-4-Harmonia-31B-uncensored-heretic-vision-llmfan46",
+    "fredrezones55/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive",
+    "fredrezones55/Qwen3.6-27B-Uncensored-HauhauCS-Balanced",
+    "fredrezones55/Gemma-4-Uncensored-HauhauCS-Aggressive",
+    "fredrezones55/Qwen3.5-Uncensored-HauhauCS-Aggressive",
+    "vaultbox/qwen3.5-uncensored",
+    "baytout3/qwen3.5-uncensored",
+    "joe-speedboat/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive",
+    "joe-speedboat/Gemma-4-Uncensored-HauhauCS-Aggressive",
+    "Agen/gemma-4-26B-A4B-it-uncensored-heretic",
+    "nexusriot/Gemma-4-Uncensored-HauhauCS-Aggressive",
+    "baytout3/Qwen3.6-27B-Uncensored-HauhauCS-Balanced",
+    "nexusriot/Qwen3.5-Uncensored-HauhauCS-Aggressive",
+    "baytout3/gemma-4-26B-A4B-it-uncensored-heretic",
+    "baytout3/Qwen3.5-Uncensored-HauhauCS-Aggressive",
+    "baytout3/Gemma-4-Uncensored-HauhauCS-Aggressive",
+    "studiobrn/uncensoredmodAI",
+    "ramitmitra/qwen3.5-uncensored-9b-baburao",
+    "kaelri/qwen3.5-mt",
+    "GX-Telecom/Qwen3.6-35B-APEX-Uncensored",
+    "aeline/Omega",
+    "mdq100/Gemma3-Instruct-Abliterated",
+    "redule26/huihui_ai_qwen2.5-vl-7b-abliterated",
+    "valkyriesys/eudaimonia-dryad3-vision",
+    "jayeshpandit2480/gemma3-UNCENSORED",
+    "austinlaw076/gemma-4-31B-it-Mystery-Fine-Tune-HERETIC-UNCENSORED-Thinking-Instruct-GGUF-Q6_K",
+    "rafw007/Qwen3.6-35B-A3B-mlx-claude-coder-abliterated",
+    "aratan/Qwen3.6-abliterated",
+    "HammerAI/qwen3.5-abliterated",
+    "bozstvimluvil0a/qwen3.5-abliterated",
+    "aratan/qwen3.5-9b-abliterated-flash",
+    "levy52/Qwen3.6-abliterated",
+    "maxwellb/gemma4-12b-it-dn",
+    "huihui_ai/gemma-4-abliterated",
+    "huihui_ai/qwen3.5-abliterated",
+    "huihui_ai/Qwen3.6-abliterated",
+    "dzgg/gemma-4-abliterated",
+    "dzgg/qwen3.5-abliterated",
+    "alexanderschneider/gemma-4-abliterated",
+    "lukey03/qwen3.5-9b-abliterated-vision",
+    "charaf/Huihui-Qwen3.6-35B-A3B-abliterated-mlx",
+    "Jarcgon/qwen3.6-abliterated-27b",
+    "charaf/Huihui-Qwen3.6-27B-abliterated-mlx-nvfp4",
+    "kiwi_kiwi/qwen3.5-abliterated",
+    "nexusriot/gemma-4-abliterated",
+    "aratan/qwen3.5-a3b-abliterated",
+    "kaelri/qwen3.5-abliterated-nonthinking",
+    "kiwi_kiwi/qwen3.5-abliterated-vision",
+    "nexusriot/qwen3.5-abliterated",
+    "kiwi_kiwi/gemma-4-abliterated-8b",
+    "Jarcgon/gemma-4-abliterated",
+    "oroboroslabs/qwen3.5-abliterated-47-4",
+    "kiwi_kiwi/Qwen3.6-abliterated",
+    "kiwi_kiwi/gemma-4-abliterated-q4",
+    "vishalraj/gemma3-27b-abliterated",
+    "nexusriot/gemma3-abliterated",
+    "oroboroslabs/qwen3.5-abliterated-27-4",
+    "huihui_ai/qwen3-vl-abliterated",
+    "huihui_ai/qwen2.5-vl-abliterated",
+    "hrbrmstr/qwen3.5-abliterated",
+    "huihui_ai/fara-abliterated",
+    "seamon67/Gemma3-Abliterated",
+    "seamon67/Qwen2.5VL-Abliterated",
+    "huihui_ai/gemma3-abliterated",
+    "Drews54/llama3.2-vision-abliterated",
+    "pidrilkin/gemma3_27b_abliterated",
+    "huihui_ai/granite3.2-vision-abliterated",
+    "Ryan512FL/llama3-GHAI-abliterated",
+    "rjmalagon/gemma-3-abliterated",
+    "rosemarla/devstral-abliterated-vision",
+]
+
+# ── Add them to the existing Ollama vision list, robustly ──
+if "ollama" in VISION_MODELS:
+    current = VISION_MODELS["ollama"]
+    # Convert to list if it's not already (could be a set)
+    if not isinstance(current, list):
+        current = list(current)
+    # Use a set for O(1) dedup
+    current_set = set(current)
+    for m in UNCENSORED_VISION_MODELS:
+        if m not in current_set:
+            current.append(m)
+            current_set.add(m)
+    VISION_MODELS["ollama"] = current
+else:
+    VISION_MODELS["ollama"] = list(UNCENSORED_VISION_MODELS)
 
 if __name__ == '__main__':
     print("\n" + "="*50)
