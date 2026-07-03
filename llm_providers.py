@@ -90,7 +90,13 @@ class OllamaProvider(LLMProvider):
         self.chat_url = f"{base_url}/api/chat"
 
     def _prepare_messages(self, messages: List[Dict], images: Optional[List[Dict]] = None) -> List[Dict]:
-        """Convert provider messages to Ollama /api/chat format, embedding images if present."""
+        """Convert provider messages to Ollama /api/chat format, embedding images if present.
+
+        NOTE: Ollama's native /api/chat does NOT use the OpenAI-style
+        content=[{"type": "image_url", ...}] format. It expects `content`
+        to remain a plain string, with raw base64 images passed in a
+        separate top-level `images` list on the message.
+        """
         if images:
             msgs = [m.copy() for m in messages]
             last_user_idx = None
@@ -100,17 +106,17 @@ class OllamaProvider(LLMProvider):
                     break
             if last_user_idx is not None:
                 user_msg = msgs[last_user_idx]
-                content_parts = []
+                b64_list = []
                 for img in images:
                     b64 = img["b64"]
                     if "," in b64:
                         b64 = b64.split(",", 1)[1]
-                    content_parts.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
-                    })
-                content_parts.append({"type": "text", "text": user_msg.get("content", "")})
-                msgs[last_user_idx] = {"role": "user", "content": content_parts}
+                    b64_list.append(b64)
+                msgs[last_user_idx] = {
+                    "role": "user",
+                    "content": user_msg.get("content", ""),
+                    "images": b64_list
+                }
             return msgs
         else:
             return messages
