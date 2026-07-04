@@ -40,7 +40,11 @@ Everything auto‑creates itself – just clone, run, and go.
 | 📑 **Persistent Conversations** | Chats are automatically saved in `json_configuration/conversations.json` – you can rename, delete, and reorder them. |
 | 🖱️ **Drag‑and‑Drop File Upload** | Drop files or folders directly onto the chat to attach them. |
 | 🤖 **We applogies that embedded models will not be supported** | Embedded does not worked on the ui interface only worked on cmd or other cmd related. |
-
+| 📖 **notes that notes we include in our page** | you can add notes to your study related subject. |
+| 📖 **Corkboard that help people to related fact with fact** | Corkboard include to help to make notes. |
+| >_ **bat terminal to open application for the code** | help user to relief it the problem they have just one button to communicate with the server |
+---
+notes that we are coming out decartion for our corkboard
 ---
 
 ## 📦 Prerequisites
