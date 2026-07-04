@@ -1,7 +1,17 @@
 @echo off
 title AI Chat Launcher
 
-:: ── Check if Ollama is already running ─────────────────
+:: ── Install Python dependencies ────────────────────────────
+echo Installing/updating required packages from requirements.txt...
+pip install -r requirements.txt
+if %ERRORLEVEL% neq 0 (
+    echo ❌ Failed to install dependencies. Please check your internet connection and Python/pip setup.
+    pause
+    exit /b 1
+)
+echo ✅ Dependencies installed.
+
+:: ── Check if Ollama is already running ─────────────────────
 echo Checking if Ollama is already running...
 tasklist /FI "IMAGENAME eq ollama.exe" 2>NUL | find /I /N "ollama.exe" >NUL
 if "%ERRORLEVEL%"=="0" (
@@ -14,7 +24,7 @@ if "%ERRORLEVEL%"=="0" (
     timeout /t 5 /nobreak >nul
 )
 
-:: ── Start the AI Chat App in a new window ──────────────
+:: ── Start the AI Chat App in a new window ──────────────────
 echo Starting AI Chat App...
 start "AI Chat App" cmd /k "python app.py & exit"
 
