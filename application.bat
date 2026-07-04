@@ -1,39 +1,50 @@
 @echo off
 title AI Chat Launcher
 
-:: ── Install Python dependencies ────────────────────────────
-echo Installing/updating required packages from requirements.txt...
-pip install -r requirements.txt
-if %ERRORLEVEL% neq 0 (
-    echo ❌ Failed to install dependencies. Please check your internet connection and Python/pip setup.
+:: ── Change to the script's own folder ──────────────────────
+cd /d "%~dp0"
+
+:: ── Check if app.py exists ──────────────────────────────────
+if not exist "app.py" (
+    echo ❌ ERROR: app.py not found in this folder!
+    echo    Current folder: %cd%
+    echo    Please place this .bat file in the same folder as app.py
     pause
     exit /b 1
 )
-echo ✅ Dependencies installed.
 
-:: ── Check if Ollama is already running ─────────────────────
+:: ── 1. Install dependencies in a NEW window (and wait for it) ──
+if not exist ".deps_installed" (
+    echo 📦 Installing dependencies... (new window opens)
+    start "Installing Dependencies" cmd /c "pip install -r requirements.txt && type nul > .deps_installed && echo ✅ Done. Close this window." 
+    echo Waiting for installation to finish...
+    :wait_for_pip
+    timeout /t 2 /nobreak >nul
+    if not exist ".deps_installed" goto wait_for_pip
+    echo ✅ Installation complete.
+) else (
+    echo ✅ Dependencies already installed (skipping pip install).
+)
+
+:: ── 2. Start Ollama in a new window (if not already running) ──
 echo Checking if Ollama is already running...
 tasklist /FI "IMAGENAME eq ollama.exe" 2>NUL | find /I /N "ollama.exe" >NUL
 if "%ERRORLEVEL%"=="0" (
-    echo ✅ Ollama is already running.
+    echo ✅ Ollama is already running (skip starting).
 ) else (
-    echo ⚙️  Ollama not running. Starting Ollama serve in a new window...
-    start "Ollama Server" cmd /k "ollama serve & exit"
-    
-    :: Wait until Ollama is ready (ping its API)
-    echo Waiting for Ollama to be ready...
-    :wait_ollama
-    timeout /t 2 /nobreak >nul
-    curl -s -o nul -w "%%{http_code}" http://localhost:11434/api/tags | find "200" >nul
-    if %ERRORLEVEL% neq 0 goto wait_ollama
-    echo ✅ Ollama is ready.
+    echo 🚀 Starting Ollama server in a new window...
+    start "Ollama Server" cmd /k "ollama serve"
 )
 
-:: ── Start the AI Chat App (Flask) in a new window ──────────
-echo Starting AI Chat App...
-start "AI Chat App" cmd /k "python app.py & exit"
+:: ── 3. Start the Flask app in a new window ──────────────────
+echo 🚀 Starting AI Chat App in a new window...
+start "AI Chat App" cmd /k "python app.py"
 
 echo.
-echo All services are running. Close this window when you're done.
+echo ✅ All windows launched.
+echo   - Dependencies: closed automatically after install (if it was opened).
+echo   - Ollama Server: running in its own window.
+echo   - AI Chat App: running in its own window.
 echo.
+echo Close this launcher window whenever you want.
 pause
