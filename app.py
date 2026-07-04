@@ -3454,8 +3454,8 @@ def chat_stream():
             "stream": True,
             "options": {
                 "temperature": 0.7,
-                "num_predict": 2048,
-                "num_ctx": 2048,          # reduced from 4096 for speed
+                "num_predict": 16384,
+                "num_ctx": 16384,          # reduced from 4096 for speed
                 "num_gpu": mem_settings['num_gpu'],
                 "low_vram": mem_settings['low_vram'],
             }
