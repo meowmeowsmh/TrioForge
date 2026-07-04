@@ -457,10 +457,11 @@ body.light-mode .board-wrap {
 
 .board {
     position:relative;
-    width:100%;
-    height:100%;
-    min-height: 600px;
-    min-width: 800px;
+    /* Let the board grow beyond the viewport by using min-width/min-height
+       instead of fixed width/height. The JavaScript updateBoardSize() will
+       adjust the actual width/height when pins extend past the visible area. */
+    min-width: 100%;
+    min-height: 100%;
     background-color: #5a3a24;
     background-image:
         radial-gradient(circle at 20% 30%, rgba(0,0,0,0.15) 0, transparent 3px),
@@ -486,9 +487,11 @@ svg.link-layer {
     position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1;
 }
 .link-line {
+    fill:none;
     stroke-width:2.5;
     stroke-dasharray:6 4;
     opacity:0.8;
+    cursor: pointer;
 }
 .link-line.red {
     stroke:#ff3b30;
@@ -508,6 +511,8 @@ svg.link-layer {
 /* ── Pins ──────────────────────────────────────────── */
 .pin {
     position:absolute;
+    left:0; top:0;
+    will-change: transform;
     border-radius:2px;
     cursor:grab;
     z-index:2;
@@ -520,7 +525,7 @@ svg.link-layer {
     display:flex;
     flex-direction:column;
 }
-.pin.dragging { cursor:grabbing; z-index:50; box-shadow: 6px 10px 22px rgba(0,0,0,0.6); }
+.pin.dragging { cursor:grabbing; z-index:50; box-shadow: 6px 10px 22px rgba(0,0,0,0.6); transition: none; }
 .pin.link-source { outline:3px solid #58a6ff; outline-offset:2px; }
 .pin.color-yellow { background: linear-gradient(#fff8b0,#fdec8f); }
 .pin.color-blue   { background: linear-gradient(#bfe3ff,#9fd3ff); }
@@ -886,6 +891,7 @@ body.light-mode .tag-filter .tag-pill.active {
             <div class="empty-hint" id="emptyHint" style="display:none;">
                 📌 Empty board. Click "+ New Note" or "📎 Import File" to pin something.
                 Drag to arrange, double‑click to edit.
+                <br><small>Right‑click a link line to remove it.</small>
             </div>
         </div>
     </div>
@@ -1042,6 +1048,41 @@ var activeTagFilter = '';
 var searchQuery = '';
 var editingPinId = null;
 var redThreadMode = false;
+var isDragging = false;          // NEW: prevent link creation during drag
+var searchDebounceTimer = null;  // NEW: debounce search
+
+// ─── DYNAMIC BOARD SIZE ──────────────────────────────
+// Calculates the required board size so that all pins have a comfortable
+// margin and the board never feels cramped.  Called after every render,
+// after drag, and when the window is resized.
+function updateBoardSize() {
+    const wrap = document.getElementById('boardWrap');
+    if (!wrap) return;
+
+    // Get the available content area inside the wrap (excluding padding)
+    const wrapStyle = getComputedStyle(wrap);
+    const padLeft = parseFloat(wrapStyle.paddingLeft) || 0;
+    const padRight = parseFloat(wrapStyle.paddingRight) || 0;
+    const padTop = parseFloat(wrapStyle.paddingTop) || 0;
+    const padBottom = parseFloat(wrapStyle.paddingBottom) || 0;
+
+    const contentWidth = wrap.clientWidth - padLeft - padRight;
+    const contentHeight = wrap.clientHeight - padTop - padBottom;
+
+    // Compute the bounding box of all pins with a 200px margin
+    let maxX = contentWidth;
+    let maxY = contentHeight;
+    Object.values(boardData.pins).forEach(pin => {
+        const r = (pin.width || 220) + (pin.x || 0);
+        const b = (pin.height || 160) + (pin.y || 0);
+        if (r + 200 > maxX) maxX = r + 200;
+        if (b + 200 > maxY) maxY = b + 200;
+    });
+
+    // Apply the new size
+    boardEl.style.width = maxX + 'px';
+    boardEl.style.height = maxY + 'px';
+}
 
 // ─── Load & render ────────────────────────────────────
 function loadBoard() {
@@ -1059,30 +1100,71 @@ function loadBoard() {
 }
 
 function renderAll() {
-    document.querySelectorAll('.pin').forEach(el => el.remove());
-    var ids = Object.keys(boardData.pins);
-    document.getElementById('emptyHint').style.display = ids.length ? 'none' : 'block';
-    ids.forEach(id => renderPin(boardData.pins[id]));
+    // Remove pins that no longer exist or have changed
+    var existingPins = document.querySelectorAll('.pin');
+    var keepIds = new Set(Object.keys(boardData.pins));
+    existingPins.forEach(el => {
+        if (!keepIds.has(el.dataset.id)) {
+            el.remove();
+        }
+    });
+    // Update or create pins
+    Object.values(boardData.pins).forEach(pin => {
+        var el = document.querySelector(`.pin[data-id="${pin.id}"]`);
+        if (el) {
+            updatePinElement(el, pin);
+        } else {
+            renderPin(pin);
+        }
+    });
+    document.getElementById('emptyHint').style.display = keepIds.size ? 'none' : 'block';
     renderLinks();
+    // Expand board if pins exceed current size
+    updateBoardSize();
 }
 
 function renderPin(pin) {
     var div = document.createElement('div');
-    var colorClass = 'color-' + (pin.color || 'yellow');
-    div.className = 'pin ' + colorClass;
     div.dataset.id = pin.id;
+    div.className = 'pin';
+    boardEl.appendChild(div);
+    updatePinElement(div, pin);
+    // Attach el-level listeners exactly once here. updatePinElement() only
+    // rebinds the toolbar buttons (edit-pin/del-pin) since those get recreated
+    // by innerHTML on every update; these below persist on `div` itself.
+    div.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        openEditModal(pin.id);
+    });
+    div.addEventListener('mousedown', e => dragStart(e, div, pin.id));
+    div.addEventListener('touchstart', e => dragStart(e, div, pin.id), { passive: false });
+    div.addEventListener('click', function(e) {
+        // Ignore if we are dragging or if clicked on interactive elements
+        if (isDragging) return;
+        if (!linkMode) return;
+        if (e.target.closest('.pin-title') || e.target.closest('.pin-content') ||
+            e.target.closest('.pin-tags') || e.target.closest('.pin-timestamp') ||
+            e.target.closest('.pin-toolbar')) return;
+        handleLinkClick(pin.id, div);
+    });
+}
+
+function updatePinElement(el, pin) {
+    var colorClass = 'color-' + (pin.color || 'yellow');
+    el.className = 'pin ' + colorClass;
     var w = pin.width || 220;
     var h = pin.height || 160;
-    div.style.width = w + 'px';
-    div.style.height = h + 'px';
-    div.style.left = (pin.x || 40) + 'px';
-    div.style.top = (pin.y || 40) + 'px';
-    div.style.transform = 'rotate(' + (pin.rotation || 0) + 'deg)';
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+    // Use a single translate3d + rotate transform instead of left/top. Transform
+    // changes are handled by the compositor (no layout/paint reflow), which is
+    // noticeably smoother than repeatedly writing left/top during drag.
+    el.style.transform = 'translate3d(' + (pin.x || 40) + 'px, ' + (pin.y || 40) + 'px, 0) rotate(' + (pin.rotation || 0) + 'deg)';
 
     var contentHtml = marked.parse(pin.content || '');
     var tagsHtml = (pin.tags || []).map(t => `<span class="tag-label">#${escapeHtml(t)}</span>`).join('');
 
-    div.innerHTML = `
+    el.innerHTML = `
         <div class="pin-nail"></div>
         <div class="pin-title">${escapeHtml(pin.title)}</div>
         <div class="pin-content">${contentHtml}</div>
@@ -1093,29 +1175,19 @@ function renderPin(pin) {
             <button class="del-pin" title="Delete">🗑</button>
         </div>
     `;
-    boardEl.appendChild(div);
-
-    div.querySelector('.edit-pin').addEventListener('click', function(e) {
+    // NOTE: dblclick/mousedown/touchstart/click are bound once on `el` itself in
+    // renderPin() and survive innerHTML updates (el is never replaced, only its
+    // children are). Only the toolbar buttons below are recreated by innerHTML,
+    // so only they need their listeners rebound here. Re-binding the el-level
+    // listeners on every update (as before) stacked duplicate handlers on every
+    // render, causing drag to fire multiple times per mousedown -> the "buggy" feel.
+    el.querySelector('.edit-pin').addEventListener('click', function(e) {
         e.stopPropagation();
         openEditModal(pin.id);
     });
-    div.querySelector('.del-pin').addEventListener('click', function(e) {
+    el.querySelector('.del-pin').addEventListener('click', function(e) {
         e.stopPropagation();
         if (confirm('Delete this pin?')) deletePin(pin.id);
-    });
-    div.addEventListener('dblclick', function(e) {
-        e.stopPropagation();
-        openEditModal(pin.id);
-    });
-    div.addEventListener('mousedown', e => dragStart(e, div, pin.id));
-    div.addEventListener('touchstart', e => dragStart(e, div, pin.id), { passive: false });
-
-    div.addEventListener('click', function(e) {
-        if (!linkMode) return;
-        if (e.target.closest('.pin-title') || e.target.closest('.pin-content') ||
-            e.target.closest('.pin-tags') || e.target.closest('.pin-timestamp') ||
-            e.target.closest('.pin-toolbar')) return;
-        handleLinkClick(pin.id, div);
     });
 }
 
@@ -1125,14 +1197,60 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
+// ─── Curved "string" path between two pins (like a real cork board thread) ──
+// Deterministic per-link hash so the same link always bows the same way
+// instead of jittering on every re-render.
+function hashStr(s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
+    return Math.abs(h);
+}
+function buildLinkPath(link, a, b) {
+    var x1 = a.x + (a.width || 220)/2, y1 = a.y + (a.height || 160)/2;
+    var x2 = b.x + (b.width || 220)/2, y2 = b.y + (b.height || 160)/2;
+    var dx = x2 - x1, dy = y2 - y1;
+    var dist = Math.max(Math.sqrt(dx*dx + dy*dy), 1);
+    var px = -dy / dist, py = dx / dist; // unit vector perpendicular to the line
+
+    var seed = hashStr(link.from + '-' + link.to);
+    // -1..1, decides which way the string bows (C one way, mirrored the other)
+    var side = ((seed % 200) / 100) - 1;
+    var wave = side * Math.min(dist * 0.28, 70);
+    // Gentle downward sag, like the string is actually hanging off the nails
+    var sag = Math.min(dist * 0.12, 36);
+
+    var cp1x = x1 + dx * 0.33 + px * wave;
+    var cp1y = y1 + dy * 0.33 + py * wave + sag;
+    var cp2x = x1 + dx * 0.66 - px * wave;
+    var cp2y = y1 + dy * 0.66 - py * wave + sag;
+
+    return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+}
+
+// ─── Reposition only the links touching one pin (cheap, used while dragging) ───
+function updateLinksForPin(pinId) {
+    boardData.links.forEach(link => {
+        if (link.from !== pinId && link.to !== pinId) return;
+        var a = boardData.pins[link.from], b = boardData.pins[link.to];
+        if (!a || !b) return;
+        var id = `${link.from}-${link.to}`;
+        var line = linkLayer.querySelector(`.link-line[data-link-id="${id}"]`);
+        if (line) {
+            line.setAttribute('d', buildLinkPath(link, a, b));
+        }
+    });
+}
+
 // ─── DRAG ─────────────────────────────────────────────
 var dragCtx = null;
+var dragRAF = null;
 function dragStart(e, el, id) {
     if (e.target.closest('.pin-title') || e.target.closest('.pin-content') ||
         e.target.closest('.pin-tags') || e.target.closest('.pin-timestamp') ||
         e.target.closest('.pin-toolbar')) return;
     if (linkMode) return;
     e.preventDefault();
+    isDragging = true;  // set flag
     var point = e.touches ? e.touches[0] : e;
     var rect = el.getBoundingClientRect();
     var boardRect = boardEl.getBoundingClientRect();
@@ -1152,24 +1270,41 @@ function dragMove(e) {
     if (!dragCtx) return;
     e.preventDefault();
     var point = e.touches ? e.touches[0] : e;
-    var x = point.clientX - dragCtx.boardRect.left - dragCtx.offsetX;
-    var y = point.clientY - dragCtx.boardRect.top - dragCtx.offsetY;
+    // Stash latest pointer position; actual DOM work happens once per animation
+    // frame below so fast mousemove bursts don't pile up and cause jank.
+    dragCtx.lastClientX = point.clientX;
+    dragCtx.lastClientY = point.clientY;
+    if (dragRAF) return;
+    dragRAF = requestAnimationFrame(applyDragMove);
+}
+function applyDragMove() {
+    dragRAF = null;
+    if (!dragCtx) return;
+    var x = dragCtx.lastClientX - dragCtx.boardRect.left - dragCtx.offsetX;
+    var y = dragCtx.lastClientY - dragCtx.boardRect.top - dragCtx.offsetY;
     x = Math.max(0, x); y = Math.max(0, y);
-    dragCtx.el.style.left = x + 'px';
-    dragCtx.el.style.top = y + 'px';
+    dragCtx.el.style.transform = 'translate3d(' + x + 'px, ' + y + 'px, 0) rotate(' + (boardData.pins[dragCtx.id].rotation || 0) + 'deg)';
     boardData.pins[dragCtx.id].x = x;
     boardData.pins[dragCtx.id].y = y;
-    // We removed renderLinks() here to stop the extreme lag.
-    // Links are updated instantly when the mouse is released.
+    // Keep any connected arrows/links glued to the pin while it's mid-drag,
+    // instead of only snapping into place on drop.
+    updateLinksForPin(dragCtx.id);
 }
 function dragEnd() {
     if (!dragCtx) return;
+    if (dragRAF) {
+        cancelAnimationFrame(dragRAF);
+        dragRAF = null;
+    }
     dragCtx.el.classList.remove('dragging');
     var id = dragCtx.id;
     var pin = boardData.pins[id];
     savePin(id, { x: pin.x, y: pin.y }, true);
-    renderLinks(); // Update links safely on drop
+    renderLinks();
+    // Board may need to grow after pin is released
+    updateBoardSize();
     dragCtx = null;
+    isDragging = false;  // clear flag
     window.removeEventListener('mousemove', dragMove);
     window.removeEventListener('mouseup', dragEnd);
     window.removeEventListener('touchmove', dragMove);
@@ -1258,7 +1393,10 @@ function handleFileUpload(e) {
 
 // ─── SEARCH & TAG FILTER ──────────────────────────────
 function searchPins() {
-    loadBoard();
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(function() {
+        loadBoard();
+    }, 300);
 }
 
 function setTagFilter(tag) {
@@ -1335,9 +1473,23 @@ function handleLinkClick(id, el) {
     });
 }
 
-// Optimized renderLinks: updates attributes instead of destroying the DOM
+// ─── REMOVE LINK (right‑click) ──────────────────────
+function removeLink(from, to) {
+    fetch('/corkboard/api/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: from, to: to, color: 'black' })
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            boardData.links = boardData.links.filter(l =>
+                !((l.from === from && l.to === to) || (l.from === to && l.to === from)));
+            renderLinks();
+        }
+    }).catch(e => console.error('Failed to remove link:', e));
+}
+
+// Optimized renderLinks
 function renderLinks() {
-    // Keep the defs safe - don't wipe them out!
     var defs = linkLayer.querySelector('defs');
     if (!defs) {
         defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -1352,7 +1504,6 @@ function renderLinks() {
         linkLayer.prepend(defs);
     }
 
-    // Remove orphaned lines
     var existingLines = linkLayer.querySelectorAll('.link-line');
     var activeIds = new Set();
     boardData.links.forEach(link => {
@@ -1367,29 +1518,37 @@ function renderLinks() {
         }
     });
 
-    // Update or create current lines
     boardData.links.forEach(link => {
         var a = boardData.pins[link.from], b = boardData.pins[link.to];
         if (!a || !b) return;
-        var x1 = a.x + (a.width || 220)/2, y1 = a.y + (a.height || 160)/2;
-        var x2 = b.x + (b.width || 220)/2, y2 = b.y + (b.height || 160)/2;
-        
+
         var id = `${link.from}-${link.to}`;
         var line = linkLayer.querySelector(`.link-line[data-link-id="${id}"]`);
         if (!line) {
-            line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             line.setAttribute('class', 'link-line');
             line.dataset.linkId = id;
+            line.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (confirm('Remove this link?')) {
+                    removeLink(link.from, link.to);
+                }
+            });
             linkLayer.appendChild(line);
         }
-        
+
         var isRed = (link.color === 'red');
+        var curved = buildLinkPath(link, a, b);
         line.setAttribute('class', isRed ? 'link-line red' : 'link-line black');
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
+        line.setAttribute('d', curved);
         line.setAttribute('marker-end', isRed ? 'url(#arrowhead-red)' : 'url(#arrowhead-black)');
+    });
+
+    boardEl.addEventListener('contextmenu', function(e) {
+        if (e.target.closest('.link-line')) {
+            e.preventDefault();
+        }
     });
 }
 
@@ -1477,10 +1636,16 @@ window.addEventListener('load', function() {
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeModal();
     });
-    // Ensure red thread button starts off
     document.getElementById('redThreadBtn').classList.remove('red-thread-active');
     document.getElementById('redThreadBtn').title = 'Red Thread OFF';
     redThreadMode = false;
+});
+
+// Keep the board size in sync when the window is resized
+let resizeTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(updateBoardSize, 100);
 });
 </script>
 </body>
