@@ -34,7 +34,7 @@ VISION_MODELS = {
     "llamacpp": {
         "llava", "bakllava", "cogvlm", "moondream",
         "minicpm-v", "phi3-vision", "phi-3-vision",
-        "gemma-3", "llama-4", "qwen2-vl","qwen3.5",
+        "gemma-3", "llama-4", "qwen2-vl","qwen3.5","qwen3.6",
     },
     "ollama": {
         "llava", "bakllava", "cogvlm", "moondream",
