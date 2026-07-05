@@ -941,7 +941,7 @@ body.light-mode .tag-filter .tag-pill.active {
 </div>
 
 <script>
-// ─── THEME (exact copy from app.py) ─────────────────
+// ─── THEME (unchanged) ─────────────────────────────────
 var themeOuter = document.getElementById('themeToggleOuter');
 var themeKnob = document.getElementById('themeKnob');
 var isLight = localStorage.getItem('theme') === 'light';
@@ -1048,28 +1048,23 @@ var activeTagFilter = '';
 var searchQuery = '';
 var editingPinId = null;
 var redThreadMode = false;
-var isDragging = false;          // NEW: prevent link creation during drag
-var searchDebounceTimer = null;  // NEW: debounce search
+var isDragging = false;
+var searchDebounceTimer = null;
+
+// ★★★ NEW: cache for link SVG elements ★★★
+var linkElementMap = {};
 
 // ─── DYNAMIC BOARD SIZE ──────────────────────────────
-// Calculates the required board size so that all pins have a comfortable
-// margin and the board never feels cramped.  Called after every render,
-// after drag, and when the window is resized.
 function updateBoardSize() {
     const wrap = document.getElementById('boardWrap');
     if (!wrap) return;
-
-    // Get the available content area inside the wrap (excluding padding)
     const wrapStyle = getComputedStyle(wrap);
     const padLeft = parseFloat(wrapStyle.paddingLeft) || 0;
     const padRight = parseFloat(wrapStyle.paddingRight) || 0;
     const padTop = parseFloat(wrapStyle.paddingTop) || 0;
     const padBottom = parseFloat(wrapStyle.paddingBottom) || 0;
-
     const contentWidth = wrap.clientWidth - padLeft - padRight;
     const contentHeight = wrap.clientHeight - padTop - padBottom;
-
-    // Compute the bounding box of all pins with a 200px margin
     let maxX = contentWidth;
     let maxY = contentHeight;
     Object.values(boardData.pins).forEach(pin => {
@@ -1078,8 +1073,6 @@ function updateBoardSize() {
         if (r + 200 > maxX) maxX = r + 200;
         if (b + 200 > maxY) maxY = b + 200;
     });
-
-    // Apply the new size
     boardEl.style.width = maxX + 'px';
     boardEl.style.height = maxY + 'px';
 }
@@ -1100,7 +1093,6 @@ function loadBoard() {
 }
 
 function renderAll() {
-    // Remove pins that no longer exist or have changed
     var existingPins = document.querySelectorAll('.pin');
     var keepIds = new Set(Object.keys(boardData.pins));
     existingPins.forEach(el => {
@@ -1108,7 +1100,6 @@ function renderAll() {
             el.remove();
         }
     });
-    // Update or create pins
     Object.values(boardData.pins).forEach(pin => {
         var el = document.querySelector(`.pin[data-id="${pin.id}"]`);
         if (el) {
@@ -1119,7 +1110,6 @@ function renderAll() {
     });
     document.getElementById('emptyHint').style.display = keepIds.size ? 'none' : 'block';
     renderLinks();
-    // Expand board if pins exceed current size
     updateBoardSize();
 }
 
@@ -1129,9 +1119,6 @@ function renderPin(pin) {
     div.className = 'pin';
     boardEl.appendChild(div);
     updatePinElement(div, pin);
-    // Attach el-level listeners exactly once here. updatePinElement() only
-    // rebinds the toolbar buttons (edit-pin/del-pin) since those get recreated
-    // by innerHTML on every update; these below persist on `div` itself.
     div.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         openEditModal(pin.id);
@@ -1139,7 +1126,6 @@ function renderPin(pin) {
     div.addEventListener('mousedown', e => dragStart(e, div, pin.id));
     div.addEventListener('touchstart', e => dragStart(e, div, pin.id), { passive: false });
     div.addEventListener('click', function(e) {
-        // Ignore if we are dragging or if clicked on interactive elements
         if (isDragging) return;
         if (!linkMode) return;
         if (e.target.closest('.pin-title') || e.target.closest('.pin-content') ||
@@ -1156,9 +1142,6 @@ function updatePinElement(el, pin) {
     var h = pin.height || 160;
     el.style.width = w + 'px';
     el.style.height = h + 'px';
-    // Use a single translate3d + rotate transform instead of left/top. Transform
-    // changes are handled by the compositor (no layout/paint reflow), which is
-    // noticeably smoother than repeatedly writing left/top during drag.
     el.style.transform = 'translate3d(' + (pin.x || 40) + 'px, ' + (pin.y || 40) + 'px, 0) rotate(' + (pin.rotation || 0) + 'deg)';
 
     var contentHtml = marked.parse(pin.content || '');
@@ -1175,12 +1158,6 @@ function updatePinElement(el, pin) {
             <button class="del-pin" title="Delete">🗑</button>
         </div>
     `;
-    // NOTE: dblclick/mousedown/touchstart/click are bound once on `el` itself in
-    // renderPin() and survive innerHTML updates (el is never replaced, only its
-    // children are). Only the toolbar buttons below are recreated by innerHTML,
-    // so only they need their listeners rebound here. Re-binding the el-level
-    // listeners on every update (as before) stacked duplicate handlers on every
-    // render, causing drag to fire multiple times per mousedown -> the "buggy" feel.
     el.querySelector('.edit-pin').addEventListener('click', function(e) {
         e.stopPropagation();
         openEditModal(pin.id);
@@ -1197,9 +1174,7 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
-// ─── Curved "string" path between two pins (like a real cork board thread) ──
-// Deterministic per-link hash so the same link always bows the same way
-// instead of jittering on every re-render.
+// ─── Curved path helper ──────────────────────────────
 function hashStr(s) {
     var h = 0;
     for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
@@ -1210,31 +1185,94 @@ function buildLinkPath(link, a, b) {
     var x2 = b.x + (b.width || 220)/2, y2 = b.y + (b.height || 160)/2;
     var dx = x2 - x1, dy = y2 - y1;
     var dist = Math.max(Math.sqrt(dx*dx + dy*dy), 1);
-    var px = -dy / dist, py = dx / dist; // unit vector perpendicular to the line
-
+    var px = -dy / dist, py = dx / dist;
     var seed = hashStr(link.from + '-' + link.to);
-    // -1..1, decides which way the string bows (C one way, mirrored the other)
     var side = ((seed % 200) / 100) - 1;
     var wave = side * Math.min(dist * 0.28, 70);
-    // Gentle downward sag, like the string is actually hanging off the nails
     var sag = Math.min(dist * 0.12, 36);
-
     var cp1x = x1 + dx * 0.33 + px * wave;
     var cp1y = y1 + dy * 0.33 + py * wave + sag;
     var cp2x = x1 + dx * 0.66 - px * wave;
     var cp2y = y1 + dy * 0.66 - py * wave + sag;
-
     return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
 }
 
-// ─── Reposition only the links touching one pin (cheap, used while dragging) ───
+// ─── Optimised link rendering (with caching) ─────────
+function renderLinks() {
+    var defs = linkLayer.querySelector('defs');
+    if (!defs) {
+        defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs.innerHTML = `
+            <marker id="arrowhead-black" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker" />
+            </marker>
+            <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker red" />
+            </marker>
+        `;
+        linkLayer.prepend(defs);
+    }
+
+    // Determine which links are active
+    var activeIds = new Set();
+    boardData.links.forEach(link => {
+        activeIds.add(`${link.from}-${link.to}`);
+    });
+
+    // Remove orphaned DOM lines and clean map
+    var existingLines = linkLayer.querySelectorAll('.link-line');
+    existingLines.forEach(line => {
+        var id = line.dataset.linkId;
+        if (!activeIds.has(id)) {
+            line.remove();
+            delete linkElementMap[id];
+        }
+    });
+
+    // Create/update links
+    boardData.links.forEach(link => {
+        var a = boardData.pins[link.from], b = boardData.pins[link.to];
+        if (!a || !b) return;
+
+        var id = `${link.from}-${link.to}`;
+        var line = linkElementMap[id];
+        if (!line) {
+            line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            line.setAttribute('class', 'link-line');
+            line.dataset.linkId = id;
+            line.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (confirm('Remove this link?')) {
+                    removeLink(link.from, link.to);
+                }
+            });
+            linkLayer.appendChild(line);
+            linkElementMap[id] = line;
+        }
+
+        var isRed = (link.color === 'red');
+        var curved = buildLinkPath(link, a, b);
+        line.setAttribute('class', isRed ? 'link-line red' : 'link-line black');
+        line.setAttribute('d', curved);
+        line.setAttribute('marker-end', isRed ? 'url(#arrowhead-red)' : 'url(#arrowhead-black)');
+    });
+
+    boardEl.addEventListener('contextmenu', function(e) {
+        if (e.target.closest('.link-line')) {
+            e.preventDefault();
+        }
+    });
+}
+
+// ─── Update only links touching a pin (cheap, uses cache) ──
 function updateLinksForPin(pinId) {
     boardData.links.forEach(link => {
         if (link.from !== pinId && link.to !== pinId) return;
         var a = boardData.pins[link.from], b = boardData.pins[link.to];
         if (!a || !b) return;
         var id = `${link.from}-${link.to}`;
-        var line = linkLayer.querySelector(`.link-line[data-link-id="${id}"]`);
+        var line = linkElementMap[id];
         if (line) {
             line.setAttribute('d', buildLinkPath(link, a, b));
         }
@@ -1250,7 +1288,7 @@ function dragStart(e, el, id) {
         e.target.closest('.pin-toolbar')) return;
     if (linkMode) return;
     e.preventDefault();
-    isDragging = true;  // set flag
+    isDragging = true;
     var point = e.touches ? e.touches[0] : e;
     var rect = el.getBoundingClientRect();
     var boardRect = boardEl.getBoundingClientRect();
@@ -1270,8 +1308,6 @@ function dragMove(e) {
     if (!dragCtx) return;
     e.preventDefault();
     var point = e.touches ? e.touches[0] : e;
-    // Stash latest pointer position; actual DOM work happens once per animation
-    // frame below so fast mousemove bursts don't pile up and cause jank.
     dragCtx.lastClientX = point.clientX;
     dragCtx.lastClientY = point.clientY;
     if (dragRAF) return;
@@ -1286,8 +1322,7 @@ function applyDragMove() {
     dragCtx.el.style.transform = 'translate3d(' + x + 'px, ' + y + 'px, 0) rotate(' + (boardData.pins[dragCtx.id].rotation || 0) + 'deg)';
     boardData.pins[dragCtx.id].x = x;
     boardData.pins[dragCtx.id].y = y;
-    // Keep any connected arrows/links glued to the pin while it's mid-drag,
-    // instead of only snapping into place on drop.
+    // ★ Only update links that touch this pin – cached lookup is instant ★
     updateLinksForPin(dragCtx.id);
 }
 function dragEnd() {
@@ -1300,11 +1335,10 @@ function dragEnd() {
     var id = dragCtx.id;
     var pin = boardData.pins[id];
     savePin(id, { x: pin.x, y: pin.y }, true);
-    renderLinks();
-    // Board may need to grow after pin is released
+    renderLinks(); // full refresh after drop (optional, ensures consistency)
     updateBoardSize();
     dragCtx = null;
-    isDragging = false;  // clear flag
+    isDragging = false;
     window.removeEventListener('mousemove', dragMove);
     window.removeEventListener('mouseup', dragEnd);
     window.removeEventListener('touchmove', dragMove);
@@ -1354,6 +1388,14 @@ function deletePin(id) {
         .then(r => r.json()).then(data => {
             if (data.ok) {
                 delete boardData.pins[id];
+                // Also remove any links connected to this pin
+                boardData.links = boardData.links.filter(l => l.from !== id && l.to !== id);
+                // Clean map entries
+                for (var key in linkElementMap) {
+                    if (key.startsWith(id + '-') || key.endsWith('-' + id)) {
+                        delete linkElementMap[key];
+                    }
+                }
                 renderAll();
                 renderTagFilter();
             }
@@ -1366,6 +1408,7 @@ function clearAllPins() {
         .then(r => r.json()).then(data => {
             if (data.ok) {
                 boardData = { pins: {}, links: [] };
+                linkElementMap = {}; // reset cache
                 renderAll();
                 renderTagFilter();
             }
@@ -1465,6 +1508,11 @@ function handleLinkClick(id, el) {
             } else {
                 boardData.links = boardData.links.filter(l =>
                     !((l.from === linkSourceId && l.to === id) || (l.from === id && l.to === linkSourceId)));
+                // Also remove from cache
+                var key1 = `${linkSourceId}-${id}`;
+                var key2 = `${id}-${linkSourceId}`;
+                delete linkElementMap[key1];
+                delete linkElementMap[key2];
             }
             renderLinks();
         }
@@ -1473,7 +1521,6 @@ function handleLinkClick(id, el) {
     });
 }
 
-// ─── REMOVE LINK (right‑click) ──────────────────────
 function removeLink(from, to) {
     fetch('/corkboard/api/links', {
         method: 'POST',
@@ -1483,73 +1530,11 @@ function removeLink(from, to) {
         if (data.ok) {
             boardData.links = boardData.links.filter(l =>
                 !((l.from === from && l.to === to) || (l.from === to && l.to === from)));
+            var key = `${from}-${to}`;
+            delete linkElementMap[key];
             renderLinks();
         }
     }).catch(e => console.error('Failed to remove link:', e));
-}
-
-// Optimized renderLinks
-function renderLinks() {
-    var defs = linkLayer.querySelector('defs');
-    if (!defs) {
-        defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        defs.innerHTML = `
-            <marker id="arrowhead-black" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker" />
-            </marker>
-            <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker red" />
-            </marker>
-        `;
-        linkLayer.prepend(defs);
-    }
-
-    var existingLines = linkLayer.querySelectorAll('.link-line');
-    var activeIds = new Set();
-    boardData.links.forEach(link => {
-        activeIds.add(`${link.from}-${link.to}`);
-        activeIds.add(`${link.to}-${link.from}`);
-    });
-
-    existingLines.forEach(line => {
-        var id = line.dataset.linkId;
-        if (!activeIds.has(id)) {
-            line.remove();
-        }
-    });
-
-    boardData.links.forEach(link => {
-        var a = boardData.pins[link.from], b = boardData.pins[link.to];
-        if (!a || !b) return;
-
-        var id = `${link.from}-${link.to}`;
-        var line = linkLayer.querySelector(`.link-line[data-link-id="${id}"]`);
-        if (!line) {
-            line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            line.setAttribute('class', 'link-line');
-            line.dataset.linkId = id;
-            line.addEventListener('contextmenu', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                if (confirm('Remove this link?')) {
-                    removeLink(link.from, link.to);
-                }
-            });
-            linkLayer.appendChild(line);
-        }
-
-        var isRed = (link.color === 'red');
-        var curved = buildLinkPath(link, a, b);
-        line.setAttribute('class', isRed ? 'link-line red' : 'link-line black');
-        line.setAttribute('d', curved);
-        line.setAttribute('marker-end', isRed ? 'url(#arrowhead-red)' : 'url(#arrowhead-black)');
-    });
-
-    boardEl.addEventListener('contextmenu', function(e) {
-        if (e.target.closest('.link-line')) {
-            e.preventDefault();
-        }
-    });
 }
 
 // ─── EDIT MODAL ──────────────────────────────────────
@@ -1641,7 +1626,6 @@ window.addEventListener('load', function() {
     redThreadMode = false;
 });
 
-// Keep the board size in sync when the window is resized
 let resizeTimer;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
