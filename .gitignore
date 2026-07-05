@@ -27,4 +27,4 @@ venv/
 /models/*.gguf
 
 # ignore personal file
-*.txt
+personal.txt
