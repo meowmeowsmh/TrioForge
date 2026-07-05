@@ -529,7 +529,7 @@ def build_html(model_name):
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
-<title>Qwen Chat · Multi‑Conversation</title>
+<title>TrioForge chat interface</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <!-- Added Highlight.js for code blocks -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
