@@ -43,6 +43,7 @@ Everything auto‑creates itself – just clone, run, and go.
 | 📖 **notes that notes we include in our page** | you can add notes to your study related subject. |
 | 📖 **Corkboard that help people to related fact with fact** | Corkboard include to help to make notes. |
 | >_ **bat terminal to open application for the code** | help user to relief it the problem they have just one button to communicate with the server |
+| 🧠 **check out the instruction.md helps user to get onto llama.cpp style I recommend llama than ollama in terms of clearing cache** | reason,because it instantly cache out if you want to used ollama recommend cloud service for providing better and quality answer. |
 ---
 notes that we are coming out decartion for our corkboard
 ---
