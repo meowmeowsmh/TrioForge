@@ -6,3 +6,5 @@ psutil>=5.9.0
 pynvml>=11.525.0
 requests>=2.31.0
 urllib3>=1.26.0
+uv
+

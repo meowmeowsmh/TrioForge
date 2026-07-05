@@ -39,7 +39,8 @@ if %errorlevel% equ 0 (
 :: 1. Install dependencies (if not already done)
 if not exist ".deps_installed" (
     echo 📦 Installing dependencies in a new window...
-    start "Installing Dependencies" cmd /k "pip install -r requirements.txt && type nul > .deps_installed && echo ✅ Done. Close this window."
+    :: FIX: Added --user to avoid admin permissions and save space!
+    start "Installing Dependencies" cmd /k "pip install --user -r requirements.txt && type nul > .deps_installed && echo ✅ Done. Close this window."
 ) else (
     echo ✅ Dependencies already installed.
 )
