@@ -1,4 +1,6 @@
-# cork_board.py – advanced with Markdown, tags, search, resizable pins, modal editor, and Red Thread links
+# cork_board.py – advanced with Markdown, tags, search, resizable pins, modal editor,
+# Red Thread links, and AI assistance with dynamic model selection.
+
 import os
 import json
 import uuid
@@ -6,11 +8,45 @@ import random
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
 
+# ---------- Embedding (semantic search) ----------
+try:
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
+    EMBED_AVAILABLE = True
+except ImportError:
+    EMBED_AVAILABLE = False
+    print("⚠️ sentence-transformers or scikit-learn not installed. Run: pip install sentence-transformers scikit-learn")
+
+# ---------- LLM for AI assistance ----------
+from llm_providers import OllamaProvider
+
 CORKBOARD_FILE = "json_configuration/corkboard.json"
 os.makedirs(os.path.dirname(CORKBOARD_FILE), exist_ok=True)
 if not os.path.exists(CORKBOARD_FILE):
     with open(CORKBOARD_FILE, "w", encoding="utf-8") as f:
         json.dump({"pins": {}, "links": []}, f, indent=2)
+
+# ---------- Embedding model (lazy loaded) ----------
+_embed_model = None
+
+def get_embedder():
+    global _embed_model
+    if not EMBED_AVAILABLE:
+        return None
+    if _embed_model is None:
+        _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+    return _embed_model
+
+def embed_pin(pin):
+    """Generate embedding for a pin (title + content). Returns list of floats or None."""
+    if not EMBED_AVAILABLE:
+        return None
+    model = get_embedder()
+    text = (pin.get('title', '') + ' ' + pin.get('content', '')).strip()[:1000]
+    if not text:
+        return None
+    return model.encode(text).tolist()
 
 
 def load_board():
@@ -18,10 +54,22 @@ def load_board():
         data = json.load(f)
     data.setdefault("pins", {})
     data.setdefault("links", [])
+    # Ensure all pins have embeddings (generate if missing)
+    for pid, pin in data["pins"].items():
+        if 'embedding' not in pin:
+            emb = embed_pin(pin)
+            if emb is not None:
+                pin['embedding'] = emb
     return data
 
 
 def save_board(data):
+    # Generate embeddings for any new/changed pins
+    for pid, pin in data.get("pins", {}).items():
+        if 'embedding' not in pin:
+            emb = embed_pin(pin)
+            if emb is not None:
+                pin['embedding'] = emb
     with open(CORKBOARD_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
@@ -40,7 +88,7 @@ def get_board():
     return jsonify(load_board())
 
 
-# ---------- API: search pins ----------
+# ---------- API: keyword search ----------
 @corkboard_bp.route('/api/search', methods=['GET'])
 def search_pins():
     query = request.args.get('q', '').strip().lower()
@@ -59,9 +107,145 @@ def search_pins():
             if not (title_match or content_match or tag_match):
                 continue
         results[pid] = pin
-    # Keep links that reference pins that still exist
     board['links'] = [l for l in board['links'] if l['from'] in results and l['to'] in results]
     return jsonify({"pins": results, "links": board['links']})
+
+
+# ---------- API: semantic search ----------
+@corkboard_bp.route('/api/semantic_search', methods=['GET'])
+def semantic_search_pins():
+    if not EMBED_AVAILABLE:
+        return jsonify({"error": "Embedding model not available"}), 503
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify([])
+    board = load_board()
+    if not board['pins']:
+        return jsonify([])
+
+    model = get_embedder()
+    q_emb = model.encode(query).reshape(1, -1)
+
+    candidates = []
+    for pid, pin in board['pins'].items():
+        emb = pin.get('embedding')
+        if emb is None:
+            emb = embed_pin(pin)
+            if emb is not None:
+                pin['embedding'] = emb
+        if emb:
+            candidates.append((pid, pin, emb))
+
+    if not candidates:
+        return jsonify([])
+
+    emb_matrix = np.array([c[2] for c in candidates])
+    similarities = cosine_similarity(q_emb, emb_matrix).flatten()
+    sorted_idx = np.argsort(similarities)[::-1]
+
+    results = []
+    for idx in sorted_idx[:10]:
+        if similarities[idx] > 0.2:
+            pid, pin, _ = candidates[idx]
+            results.append({
+                "id": pid,
+                "title": pin["title"],
+                "content": pin["content"][:200] + "..." if len(pin["content"]) > 200 else pin["content"],
+                "score": float(similarities[idx])
+            })
+    return jsonify(results)
+
+
+# ---------- API: AI assistance (updated to accept model) ----------
+@corkboard_bp.route('/api/ai_assist', methods=['POST'])
+def ai_assist():
+    data = request.get_json()
+    pin_id = data.get('pin_id')
+    action = data.get('action')  # 'summarise', 'suggest_tags', 'improve', 'suggest_links'
+    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')  # default fallback
+    if not pin_id or not action:
+        return jsonify({"error": "Missing pin_id or action"}), 400
+
+    board = load_board()
+    pin = board['pins'].get(pin_id)
+    if not pin:
+        return jsonify({"error": "Pin not found"}), 404
+
+    content = pin.get('content', '').strip()
+    title = pin.get('title', '').strip()
+    if not content and not title:
+        return jsonify({"error": "Pin is empty"}), 400
+
+    # ----- Handle suggest_links separately (no LLM needed) -----
+    if action == 'suggest_links':
+        if not EMBED_AVAILABLE:
+            return jsonify({"error": "Embedding model not available"}), 503
+        # Compute similarity between this pin and all others
+        model = get_embedder()
+        pin_emb = np.array(pin.get('embedding')).reshape(1, -1) if pin.get('embedding') else embed_pin(pin)
+        if pin_emb is None:
+            return jsonify({"error": "Could not generate embedding for this pin"}), 500
+        candidates = []
+        for pid, other in board['pins'].items():
+            if pid == pin_id:
+                continue
+            emb = other.get('embedding')
+            if emb is None:
+                emb = embed_pin(other)
+                if emb is not None:
+                    other['embedding'] = emb
+            if emb:
+                candidates.append((pid, other, emb))
+        if not candidates:
+            return jsonify([])
+        emb_matrix = np.array([c[2] for c in candidates])
+        similarities = cosine_similarity(pin_emb, emb_matrix).flatten()
+        sorted_idx = np.argsort(similarities)[::-1]
+        suggestions = []
+        for idx in sorted_idx[:10]:
+            if similarities[idx] > 0.3:  # threshold
+                pid, other, _ = candidates[idx]
+                suggestions.append({
+                    "id": pid,
+                    "title": other["title"],
+                    "score": float(similarities[idx])
+                })
+        return jsonify({"suggestions": suggestions})
+
+    # ----- LLM-based actions -----
+    prompts = {
+        "summarise": f"Summarise the following pin in one short paragraph (max 50 words):\n\nTitle: {title}\nContent: {content}\n\nSummary:",
+        "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this pin:\n\nTitle: {title}\nContent: {content}\n\nTags:",
+        "improve": f"Rewrite the following pin to improve clarity, grammar, and flow. Keep the same meaning but make it more concise and professional:\n\n{content}\n\nImproved version:"
+    }
+    prompt = prompts.get(action)
+    if not prompt:
+        return jsonify({"error": "Invalid action"}), 400
+
+    # Use Ollama with the selected model
+    try:
+        ollama = OllamaProvider()
+        response = ollama.generate([
+            {"role": "system", "content": "You are a helpful assistant that helps improve notes and pins."},
+            {"role": "user", "content": prompt}
+        ], model=model)
+        result = response.strip()
+    except Exception as e:
+        return jsonify({"error": f"AI service unavailable: {str(e)}"}), 503
+
+    # For 'suggest_tags', auto-apply tags
+    if action == 'suggest_tags' and result:
+        tags = [t.strip() for t in result.split(',') if t.strip()]
+        if tags:
+            # Merge with existing tags
+            existing = set(pin.get('tags', []))
+            new_tags = [t for t in tags if t not in existing]
+            if new_tags:
+                pin['tags'] = list(existing.union(new_tags))
+                save_board(board)
+                return jsonify({"result": result, "tags": new_tags})
+
+    return jsonify({"result": result})
 
 
 # ---------- API: pins ----------
@@ -102,6 +286,8 @@ def update_pin(pin_id):
         if field in data:
             pin[field] = data[field]
     pin["last_modified"] = datetime.now().isoformat()
+    # Remove embedding so it gets regenerated on save
+    pin.pop("embedding", None)
     save_board(board)
     return jsonify({"ok": True})
 
@@ -117,12 +303,12 @@ def delete_pin(pin_id):
     return jsonify({"ok": True})
 
 
-# ---------- API: links (string between pins) with color support ----------
+# ---------- API: links ----------
 @corkboard_bp.route('/api/links', methods=['POST'])
 def toggle_link():
     data = request.get_json() or {}
     a, b = data.get('from'), data.get('to')
-    new_color = data.get('color', 'black')  # Default to black if not provided
+    new_color = data.get('color', 'black')
     if not a or not b or a == b:
         return jsonify({"error": "Invalid link"}), 400
     board = load_board()
@@ -143,7 +329,6 @@ def toggle_link():
     return jsonify({"ok": True, "linked": linked, "color": new_color})
 
 
-# ---------- (Optional) API: change link color ----------
 @corkboard_bp.route('/api/links/color', methods=['PUT'])
 def change_link_color():
     data = request.get_json() or {}
@@ -166,9 +351,8 @@ def clear_all():
     return jsonify({"ok": True})
 
 
-# ---------- API: file import (md, txt, ipynb, pdf) ----------
+# ---------- API: file import ----------
 ALLOWED_EXT = {"txt", "md", "ipynb", "pdf"}
-
 
 @corkboard_bp.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -185,7 +369,6 @@ def upload_file():
     try:
         if ext in ('txt', 'md'):
             content = f.read().decode('utf-8', errors='replace')
-
         elif ext == 'ipynb':
             nb = json.load(f)
             parts = []
@@ -197,7 +380,6 @@ def upload_file():
                 else:
                     parts.append("```\n" + src_text + "\n```")
             content = "\n\n".join(parts)
-
         elif ext == 'pdf':
             reader_cls = None
             try:
@@ -208,13 +390,10 @@ def upload_file():
                 except ImportError:
                     reader_cls = None
             if reader_cls is None:
-                return jsonify({
-                    "error": "PDF support needs a library. Run: pip install pypdf"
-                }), 400
+                return jsonify({"error": "PDF support needs a library. Run: pip install pypdf"}), 400
             reader = reader_cls(f)
             pages = [(page.extract_text() or "") for page in reader.pages]
             content = "\n\n".join(pages)
-
     except Exception as e:
         return jsonify({"error": f"Failed to parse file: {e}"}), 400
 
@@ -242,17 +421,17 @@ def upload_file():
     return jsonify({"ok": True, "id": pin_id, "pin": board['pins'][pin_id]})
 
 
-# ---------- HTML template for the cork board page ----------
+# ---------- HTML template with AI features ----------
 CORKBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📌%3C/text%3E%3C/svg%3E">
-<title>Cork Board · Advanced</title>
+<title>Cork Board · AI‑Powered</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-/* ── Base (same as app.py) ─────────────────────────── */
+/* ── Base (same as original) ─────────────────────────── */
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body {
     height:100%;
@@ -280,7 +459,7 @@ body.light-mode::before { opacity: 0; }
 }
 .app { display:flex; flex-direction:column; height:100%; backdrop-filter: blur(2px); }
 
-/* ── Top bar (identical to app.py) ───────────────── */
+/* ── Top bar ────────────────────────────────────────── */
 .top-bar {
     display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;
     background: rgba(22,27,34,0.7); backdrop-filter: blur(20px);
@@ -314,7 +493,7 @@ body.light-mode::before { opacity: 0; }
 }
 .clear-btn:hover { background: rgba(248,81,73,0.15); border-color:#f85149; }
 
-/* ── Theme toggle (exact copy from app.py) ──────── */
+/* ── Theme toggle ───────────────────────────────────── */
 .theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
 .toggle-outer {
     position:relative; width:140px; height:56px; border-radius:999px;
@@ -366,7 +545,7 @@ body.light-mode::before { opacity: 0; }
 .toggle-outer.day .astronaut { opacity:0; }
 .toggle-outer.day .biplane { opacity:1; }
 
-/* ── Toolbar (below top bar) ──────────────────────── */
+/* ── Toolbar ────────────────────────────────────────── */
 .toolbar {
     display:flex;
     align-items:center;
@@ -407,8 +586,31 @@ body.light-mode::before { opacity: 0; }
 .toolbar .file-input-wrapper input[type="file"] {
     position:absolute; left:0; top:0; opacity:0; width:100%; height:100%; cursor:pointer;
 }
+/* Search mode toggle inside toolbar */
+.toolbar .search-mode-toggle {
+    display:inline-flex;
+    gap:2px;
+    background:rgba(0,0,0,0.2);
+    border-radius:20px;
+    padding:2px;
+}
+.toolbar .search-mode-toggle button {
+    background:transparent;
+    border:none;
+    border-radius:18px;
+    padding:4px 12px;
+    font-size:12px;
+    color:#8b949e;
+    cursor:pointer;
+    transition:0.2s;
+}
+.toolbar .search-mode-toggle button.active {
+    background:#1f6feb;
+    color:#fff;
+}
+.toolbar .search-mode-toggle button:hover { background:rgba(255,255,255,0.05); }
 
-/* ── Tag filter bar ───────────────────────────────── */
+/* ── Tag filter ────────────────────────────────────── */
 .tag-filter {
     padding: 6px 24px;
     display: flex;
@@ -441,7 +643,7 @@ body.light-mode::before { opacity: 0; }
 .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.15); }
 .tag-filter .filter-label { font-size: 11px; color: #8b949e; margin-right: 4px; }
 
-/* ── Board area ───────────────────────────────────── */
+/* ── Board ──────────────────────────────────────────── */
 .board-wrap {
     flex:1;
     position:relative;
@@ -457,9 +659,6 @@ body.light-mode .board-wrap {
 
 .board {
     position:relative;
-    /* Let the board grow beyond the viewport by using min-width/min-height
-       instead of fixed width/height. The JavaScript updateBoardSize() will
-       adjust the actual width/height when pins extend past the visible area. */
     min-width: 100%;
     min-height: 100%;
     background-color: #5a3a24;
@@ -700,6 +899,114 @@ body.light-mode .modal textarea {
 .color-pink   { background:#ffb3cd; }
 .color-orange { background:#ffc27a; }
 
+/* AI section inside modal */
+.modal .ai-section {
+    margin-top:16px;
+    padding-top:12px;
+    border-top:1px solid rgba(255,255,255,0.1);
+}
+.modal .ai-section .ai-row {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+}
+.modal .ai-section select {
+    background: rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:6px;
+    color:#8b949e;
+    padding:4px 8px;
+    font-size:13px;
+    outline:none;
+}
+.modal .ai-section .ai-btn {
+    background:#6f42c1;
+    border:none;
+    border-radius:6px;
+    color:#fff;
+    padding:4px 16px;
+    font-size:13px;
+    cursor:pointer;
+    transition:0.2s;
+}
+.modal .ai-section .ai-btn:hover { background:#8b5cf6; }
+.modal .ai-section .ai-result {
+    margin-top:8px;
+    padding:8px 12px;
+    border-radius:8px;
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.08);
+    color:#e1e4e8;
+    font-size:14px;
+    white-space:pre-wrap;
+    display:none;
+}
+
+/* ── Suggest Links modal ───────────────────────────── */
+.link-suggestions-overlay {
+    display:none;
+    position:fixed; top:0; left:0; right:0; bottom:0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(5px);
+    z-index:2000;
+    align-items:center;
+    justify-content:center;
+}
+.link-suggestions-overlay.active { display:flex; }
+.link-suggestions-box {
+    background: #1c2333;
+    border-radius:16px;
+    padding:24px 28px;
+    max-width:500px;
+    width:90%;
+    max-height:80vh;
+    overflow-y:auto;
+    color:#e1e4e8;
+    box-shadow:0 20px 60px rgba(0,0,0,0.6);
+}
+body.light-mode .link-suggestions-box {
+    background:#f0f2f5;
+    color:#24292f;
+}
+.link-suggestions-box h3 { margin-bottom:12px; }
+.link-suggestions-box .suggestion-item {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:6px 8px;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.link-suggestions-box .suggestion-item .title { flex:1; }
+.link-suggestions-box .suggestion-item .score {
+    font-size:11px;
+    color:#8b949e;
+    margin-right:8px;
+}
+.link-suggestions-box .suggestion-item .link-btn {
+    background:#1f6feb;
+    border:none;
+    border-radius:4px;
+    color:#fff;
+    padding:2px 12px;
+    font-size:12px;
+    cursor:pointer;
+}
+.link-suggestions-box .suggestion-item .link-btn:hover { background:#388bfd; }
+.link-suggestions-box .close-suggestions {
+    margin-top:16px;
+    text-align:right;
+}
+.link-suggestions-box .close-suggestions button {
+    background:rgba(255,255,255,0.1);
+    border:none;
+    border-radius:6px;
+    padding:6px 20px;
+    color:#8b949e;
+    cursor:pointer;
+}
+body.light-mode .link-suggestions-box .close-suggestions button { background:rgba(0,0,0,0.05); }
+
 .modal .modal-actions {
     display:flex;
     justify-content:flex-end;
@@ -721,7 +1028,7 @@ body.light-mode .modal textarea {
 .modal .modal-actions .delete-btn { background:rgba(248,81,73,0.2); color:#f85149; }
 .modal .modal-actions .delete-btn:hover { background:rgba(248,81,73,0.4); }
 
-/* ── LIGHT MODE overrides ───────────────────────────── */
+/* ── LIGHT MODE overrides ──────────────────────────── */
 body.light-mode {
     background: #f6f8fa;
     color: #24292f;
@@ -738,13 +1045,8 @@ body.light-mode .center-tabs {
     background: rgba(0,0,0,0.04);
     border-color: rgba(0,0,0,0.06);
 }
-body.light-mode .center-tabs .tab-btn {
-    color: #57606a;
-}
-body.light-mode .center-tabs .tab-btn.active {
-    background: #1f6feb;
-    color: #fff;
-}
+body.light-mode .center-tabs .tab-btn { color: #57606a; }
+body.light-mode .center-tabs .tab-btn.active { background:#1f6feb; color:#fff; }
 body.light-mode .toolbar .top-btn {
     background: rgba(0,0,0,0.04);
     color: #24292f;
@@ -755,9 +1057,7 @@ body.light-mode .clear-btn {
     border-color: rgba(248,81,73,0.3);
     color: #f85149;
 }
-body.light-mode .clear-btn:hover {
-    background: rgba(248,81,73,0.08);
-}
+body.light-mode .clear-btn:hover { background: rgba(248,81,73,0.08); }
 body.light-mode .toolbar .search-input {
     background: rgba(255,255,255,0.8);
     color:#24292f;
@@ -775,11 +1075,42 @@ body.light-mode .tag-filter .tag-pill.active {
     background:#1f6feb;
     color:#fff;
 }
+body.light-mode .modal {
+    background:#f0f2f5;
+    color:#24292f;
+}
+body.light-mode .modal input, body.light-mode .modal textarea {
+    background:#fff;
+    color:#24292f;
+    border-color:rgba(0,0,0,0.12);
+}
+body.light-mode .modal .ai-section .ai-result {
+    background:rgba(0,0,0,0.03);
+    color:#24292f;
+}
+body.light-mode .modal .ai-section select {
+    background:rgba(0,0,0,0.04);
+    color:#24292f;
+}
+body.light-mode .link-suggestions-box {
+    background:#f0f2f5;
+    color:#24292f;
+}
+body.light-mode .link-suggestions-box .suggestion-item {
+    border-bottom-color:rgba(0,0,0,0.06);
+}
+body.light-mode .toolbar .search-mode-toggle button { color:#57606a; }
+body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb; color:#fff; }
+
+/* Additional style for model selector inside modal */
+.modal .ai-section select#aiModelSelect {
+    max-width: 140px;
+}
 </style>
 </head>
 <body>
 <div class="app">
-    <!-- TOP BAR (clean – matches app.py) -->
+    <!-- TOP BAR -->
     <div class="top-bar">
         <div class="left">
             <h1>📌 Cork Board</h1>
@@ -860,9 +1191,13 @@ body.light-mode .tag-filter .tag-pill.active {
         </div>
     </div>
 
-    <!-- TOOLBAR (actions) -->
+    <!-- TOOLBAR -->
     <div class="toolbar" id="toolbar">
         <input type="text" class="search-input" id="searchInput" placeholder="🔍 Search pins..." oninput="searchPins()">
+        <span class="search-mode-toggle">
+            <button id="searchModeKeyword" class="active" onclick="setSearchMode('keyword')">Keyword</button>
+            <button id="searchModeSemantic" onclick="setSearchMode('semantic')">🧠 Semantic</button>
+        </span>
         <button class="top-btn" onclick="createNewPin()">+ New Note</button>
         <span class="file-input-wrapper">
             <button class="top-btn">📎 Import File</button>
@@ -870,6 +1205,8 @@ body.light-mode .tag-filter .tag-pill.active {
         </span>
         <button class="top-btn" id="linkBtn" onclick="toggleLinkMode()">🔗 Link Mode</button>
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
+        <!-- NEW: Suggest Links button -->
+        <button class="top-btn" id="suggestLinksBtn" onclick="openLinkSuggestions()">💡 Suggest Links</button>
     </div>
 
     <!-- TAG FILTER -->
@@ -932,6 +1269,26 @@ body.light-mode .tag-filter .tag-pill.active {
                 <input type="number" id="pinHeight" min="100" max="600" value="160">
             </div>
         </div>
+
+        <!-- AI ASSIST SECTION (with model dropdown) -->
+        <div class="ai-section">
+            <div class="ai-row">
+                <label style="margin:0; font-weight:500;">✨ AI Assist:</label>
+                <select id="aiActionSelect">
+                    <option value="summarise">Summarise</option>
+                    <option value="suggest_tags">Suggest Tags</option>
+                    <option value="improve">Improve Writing</option>
+                    <option value="suggest_links">Suggest Links for this Pin</option>
+                </select>
+                <!-- Model dropdown: populated dynamically -->
+                <select id="aiModelSelect" title="Select Ollama model for AI assistance">
+                    <option value="">Loading models...</option>
+                </select>
+                <button class="ai-btn" id="aiAssistBtn">Run AI</button>
+            </div>
+            <div class="ai-result" id="aiResult"></div>
+        </div>
+
         <div class="modal-actions">
             <button class="delete-btn" id="modalDeleteBtn" onclick="deleteCurrentPin()">🗑 Delete</button>
             <button class="cancel-btn" onclick="closeModal()">Cancel</button>
@@ -940,8 +1297,19 @@ body.light-mode .tag-filter .tag-pill.active {
     </div>
 </div>
 
+<!-- LINK SUGGESTIONS MODAL -->
+<div class="link-suggestions-overlay" id="linkSuggestionsOverlay">
+    <div class="link-suggestions-box">
+        <h3>💡 Suggested Links</h3>
+        <div id="suggestionsList"></div>
+        <div class="close-suggestions">
+            <button onclick="closeLinkSuggestions()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
-// ─── THEME (unchanged) ─────────────────────────────────
+// ─── THEME (unchanged) ─────────────────────────────────────
 var themeOuter = document.getElementById('themeToggleOuter');
 var themeKnob = document.getElementById('themeKnob');
 var isLight = localStorage.getItem('theme') === 'light';
@@ -1050,8 +1418,7 @@ var editingPinId = null;
 var redThreadMode = false;
 var isDragging = false;
 var searchDebounceTimer = null;
-
-// ★★★ NEW: cache for link SVG elements ★★★
+var searchMode = 'keyword'; // 'keyword' or 'semantic'
 var linkElementMap = {};
 
 // ─── DYNAMIC BOARD SIZE ──────────────────────────────
@@ -1081,32 +1448,72 @@ function updateBoardSize() {
 function loadBoard() {
     var query = document.getElementById('searchInput').value.trim();
     var tag = activeTagFilter;
-    var url = '/corkboard/api/search?q=' + encodeURIComponent(query) + '&tag=' + encodeURIComponent(tag);
-    fetch(url)
+    var url;
+    if (query && searchMode === 'semantic') {
+        url = '/corkboard/api/semantic_search?q=' + encodeURIComponent(query);
+        fetch(url)
+            .then(r => r.json())
+            .then(results => {
+                if (results.error) { console.warn(results.error); loadAllAndFilter(query, tag, null); return; }
+                loadAllAndFilter(query, tag, results);
+            })
+            .catch(() => loadAllAndFilter(query, tag, null));
+    } else {
+        url = '/corkboard/api/search?q=' + encodeURIComponent(query) + '&tag=' + encodeURIComponent(tag);
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                boardData = data;
+                renderAll();
+                renderTagFilter();
+            })
+            .catch(e => console.error('Failed to load board:', e));
+    }
+}
+
+function loadAllAndFilter(query, tag, semanticResults) {
+    fetch('/corkboard/api?q=&tag=')
         .then(r => r.json())
-        .then(data => {
-            boardData = data;
+        .then(allData => {
+            var allPins = allData.pins || {};
+            var filteredPins = {};
+            if (semanticResults && semanticResults.length) {
+                semanticResults.forEach(item => {
+                    if (allPins[item.id]) filteredPins[item.id] = allPins[item.id];
+                });
+            } else {
+                // fallback to keyword
+                for (var pid in allPins) {
+                    var pin = allPins[pid];
+                    var match = true;
+                    if (tag && !pin.tags.map(t => t.toLowerCase()).includes(tag)) match = false;
+                    if (query && match) {
+                        var q = query.toLowerCase();
+                        var titleMatch = pin.title.toLowerCase().includes(q);
+                        var contentMatch = pin.content.toLowerCase().includes(q);
+                        var tagMatch = pin.tags.some(t => t.toLowerCase().includes(q));
+                        if (!(titleMatch || contentMatch || tagMatch)) match = false;
+                    }
+                    if (match) filteredPins[pid] = pin;
+                }
+            }
+            boardData.pins = filteredPins;
+            boardData.links = allData.links.filter(l => filteredPins[l.from] && filteredPins[l.to]);
             renderAll();
             renderTagFilter();
-        })
-        .catch(e => console.error('Failed to load board:', e));
+        });
 }
 
 function renderAll() {
     var existingPins = document.querySelectorAll('.pin');
     var keepIds = new Set(Object.keys(boardData.pins));
     existingPins.forEach(el => {
-        if (!keepIds.has(el.dataset.id)) {
-            el.remove();
-        }
+        if (!keepIds.has(el.dataset.id)) el.remove();
     });
     Object.values(boardData.pins).forEach(pin => {
         var el = document.querySelector(`.pin[data-id="${pin.id}"]`);
-        if (el) {
-            updatePinElement(el, pin);
-        } else {
-            renderPin(pin);
-        }
+        if (el) updatePinElement(el, pin);
+        else renderPin(pin);
     });
     document.getElementById('emptyHint').style.display = keepIds.size ? 'none' : 'block';
     renderLinks();
@@ -1174,7 +1581,7 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
-// ─── Curved path helper ──────────────────────────────
+// ─── Links ─────────────────────────────────────────────
 function hashStr(s) {
     var h = 0;
     for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
@@ -1197,7 +1604,6 @@ function buildLinkPath(link, a, b) {
     return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
 }
 
-// ─── Optimised link rendering (with caching) ─────────
 function renderLinks() {
     var defs = linkLayer.querySelector('defs');
     if (!defs) {
@@ -1213,13 +1619,9 @@ function renderLinks() {
         linkLayer.prepend(defs);
     }
 
-    // Determine which links are active
     var activeIds = new Set();
-    boardData.links.forEach(link => {
-        activeIds.add(`${link.from}-${link.to}`);
-    });
+    boardData.links.forEach(link => { activeIds.add(`${link.from}-${link.to}`); });
 
-    // Remove orphaned DOM lines and clean map
     var existingLines = linkLayer.querySelectorAll('.link-line');
     existingLines.forEach(line => {
         var id = line.dataset.linkId;
@@ -1229,11 +1631,9 @@ function renderLinks() {
         }
     });
 
-    // Create/update links
     boardData.links.forEach(link => {
         var a = boardData.pins[link.from], b = boardData.pins[link.to];
         if (!a || !b) return;
-
         var id = `${link.from}-${link.to}`;
         var line = linkElementMap[id];
         if (!line) {
@@ -1243,29 +1643,22 @@ function renderLinks() {
             line.addEventListener('contextmenu', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                if (confirm('Remove this link?')) {
-                    removeLink(link.from, link.to);
-                }
+                if (confirm('Remove this link?')) removeLink(link.from, link.to);
             });
             linkLayer.appendChild(line);
             linkElementMap[id] = line;
         }
-
         var isRed = (link.color === 'red');
         var curved = buildLinkPath(link, a, b);
         line.setAttribute('class', isRed ? 'link-line red' : 'link-line black');
         line.setAttribute('d', curved);
         line.setAttribute('marker-end', isRed ? 'url(#arrowhead-red)' : 'url(#arrowhead-black)');
     });
-
     boardEl.addEventListener('contextmenu', function(e) {
-        if (e.target.closest('.link-line')) {
-            e.preventDefault();
-        }
+        if (e.target.closest('.link-line')) e.preventDefault();
     });
 }
 
-// ─── Update only links touching a pin (cheap, uses cache) ──
 function updateLinksForPin(pinId) {
     boardData.links.forEach(link => {
         if (link.from !== pinId && link.to !== pinId) return;
@@ -1273,9 +1666,7 @@ function updateLinksForPin(pinId) {
         if (!a || !b) return;
         var id = `${link.from}-${link.to}`;
         var line = linkElementMap[id];
-        if (line) {
-            line.setAttribute('d', buildLinkPath(link, a, b));
-        }
+        if (line) line.setAttribute('d', buildLinkPath(link, a, b));
     });
 }
 
@@ -1292,12 +1683,7 @@ function dragStart(e, el, id) {
     var point = e.touches ? e.touches[0] : e;
     var rect = el.getBoundingClientRect();
     var boardRect = boardEl.getBoundingClientRect();
-    dragCtx = {
-        el: el, id: id,
-        offsetX: point.clientX - rect.left,
-        offsetY: point.clientY - rect.top,
-        boardRect: boardRect
-    };
+    dragCtx = { el: el, id: id, offsetX: point.clientX - rect.left, offsetY: point.clientY - rect.top, boardRect: boardRect };
     el.classList.add('dragging');
     window.addEventListener('mousemove', dragMove);
     window.addEventListener('mouseup', dragEnd);
@@ -1322,20 +1708,16 @@ function applyDragMove() {
     dragCtx.el.style.transform = 'translate3d(' + x + 'px, ' + y + 'px, 0) rotate(' + (boardData.pins[dragCtx.id].rotation || 0) + 'deg)';
     boardData.pins[dragCtx.id].x = x;
     boardData.pins[dragCtx.id].y = y;
-    // ★ Only update links that touch this pin – cached lookup is instant ★
     updateLinksForPin(dragCtx.id);
 }
 function dragEnd() {
     if (!dragCtx) return;
-    if (dragRAF) {
-        cancelAnimationFrame(dragRAF);
-        dragRAF = null;
-    }
+    if (dragRAF) { cancelAnimationFrame(dragRAF); dragRAF = null; }
     dragCtx.el.classList.remove('dragging');
     var id = dragCtx.id;
     var pin = boardData.pins[id];
     savePin(id, { x: pin.x, y: pin.y }, true);
-    renderLinks(); // full refresh after drop (optional, ensures consistency)
+    renderLinks();
     updateBoardSize();
     dragCtx = null;
     isDragging = false;
@@ -1388,13 +1770,9 @@ function deletePin(id) {
         .then(r => r.json()).then(data => {
             if (data.ok) {
                 delete boardData.pins[id];
-                // Also remove any links connected to this pin
                 boardData.links = boardData.links.filter(l => l.from !== id && l.to !== id);
-                // Clean map entries
                 for (var key in linkElementMap) {
-                    if (key.startsWith(id + '-') || key.endsWith('-' + id)) {
-                        delete linkElementMap[key];
-                    }
+                    if (key.startsWith(id + '-') || key.endsWith('-' + id)) delete linkElementMap[key];
                 }
                 renderAll();
                 renderTagFilter();
@@ -1408,7 +1786,7 @@ function clearAllPins() {
         .then(r => r.json()).then(data => {
             if (data.ok) {
                 boardData = { pins: {}, links: [] };
-                linkElementMap = {}; // reset cache
+                linkElementMap = {};
                 renderAll();
                 renderTagFilter();
             }
@@ -1437,9 +1815,7 @@ function handleFileUpload(e) {
 // ─── SEARCH & TAG FILTER ──────────────────────────────
 function searchPins() {
     clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(function() {
-        loadBoard();
-    }, 300);
+    searchDebounceTimer = setTimeout(loadBoard, 300);
 }
 
 function setTagFilter(tag) {
@@ -1450,9 +1826,7 @@ function setTagFilter(tag) {
 function renderTagFilter() {
     var container = document.getElementById('tagFilterContainer');
     var tagSet = new Set();
-    Object.values(boardData.pins).forEach(p => {
-        if (p.tags) p.tags.forEach(t => tagSet.add(t));
-    });
+    Object.values(boardData.pins).forEach(p => { if (p.tags) p.tags.forEach(t => tagSet.add(t)); });
     var tags = Array.from(tagSet).sort();
     var html = '';
     if (tags.length) {
@@ -1471,14 +1845,22 @@ function renderTagFilter() {
     container.innerHTML = html;
 }
 
-// ─── RED THREAD TOGGLE ──────────────────────────────
+// ─── Search mode toggle ──────────────────────────────
+function setSearchMode(mode) {
+    searchMode = mode;
+    document.getElementById('searchModeKeyword').classList.toggle('active', mode === 'keyword');
+    document.getElementById('searchModeSemantic').classList.toggle('active', mode === 'semantic');
+    loadBoard();
+}
+
+// ─── RED THREAD ───────────────────────────────────────
 function toggleRedThread() {
     redThreadMode = !redThreadMode;
     document.getElementById('redThreadBtn').classList.toggle('red-thread-active', redThreadMode);
     document.getElementById('redThreadBtn').title = redThreadMode ? 'Red Thread ON' : 'Red Thread OFF';
 }
 
-// ─── LINKING ─────────────────────────────────────────
+// ─── LINK MODE ────────────────────────────────────────
 function toggleLinkMode() {
     linkMode = !linkMode;
     linkSourceId = null;
@@ -1486,16 +1868,8 @@ function toggleLinkMode() {
     document.querySelectorAll('.pin').forEach(p => p.classList.remove('link-source'));
 }
 function handleLinkClick(id, el) {
-    if (!linkSourceId) {
-        linkSourceId = id;
-        el.classList.add('link-source');
-        return;
-    }
-    if (linkSourceId === id) {
-        linkSourceId = null;
-        el.classList.remove('link-source');
-        return;
-    }
+    if (!linkSourceId) { linkSourceId = id; el.classList.add('link-source'); return; }
+    if (linkSourceId === id) { linkSourceId = null; el.classList.remove('link-source'); return; }
     var color = redThreadMode ? 'red' : 'black';
     fetch('/corkboard/api/links', {
         method: 'POST',
@@ -1508,7 +1882,6 @@ function handleLinkClick(id, el) {
             } else {
                 boardData.links = boardData.links.filter(l =>
                     !((l.from === linkSourceId && l.to === id) || (l.from === id && l.to === linkSourceId)));
-                // Also remove from cache
                 var key1 = `${linkSourceId}-${id}`;
                 var key2 = `${id}-${linkSourceId}`;
                 delete linkElementMap[key1];
@@ -1537,6 +1910,50 @@ function removeLink(from, to) {
     }).catch(e => console.error('Failed to remove link:', e));
 }
 
+// ─── Load Ollama models dynamically ──────────────────
+function loadOllamaModels() {
+    const select = document.getElementById('aiModelSelect');
+    fetch('/providers/models?provider=ollama')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                select.innerHTML = '<option value="">⚠️ Error loading models</option>';
+                console.warn('Ollama API error:', data.error);
+                return;
+            }
+            if (!data.models || data.models.length === 0) {
+                select.innerHTML = '<option value="">No models found (pull one first)</option>';
+                return;
+            }
+            // Build options
+            const saved = localStorage.getItem('corkboard_ai_model') || '';
+            let options = '';
+            data.models.forEach(m => {
+                const selected = (m === saved) ? 'selected' : '';
+                options += `<option value="${m}" ${selected}>${m}</option>`;
+            });
+            select.innerHTML = options;
+            // If no saved model or saved model not in list, select first
+            if (!saved || !data.models.includes(saved)) {
+                if (data.models.length) {
+                    select.value = data.models[0];
+                    localStorage.setItem('corkboard_ai_model', data.models[0]);
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Failed to fetch Ollama models:', err);
+            select.innerHTML = '<option value="">⚠️ Cannot reach Ollama</option>';
+        });
+}
+
+// ─── Save model preference when user changes it ──────
+document.addEventListener('change', function(e) {
+    if (e.target && e.target.id === 'aiModelSelect') {
+        localStorage.setItem('corkboard_ai_model', e.target.value);
+    }
+});
+
 // ─── EDIT MODAL ──────────────────────────────────────
 function openEditModal(id) {
     var pin = boardData.pins[id];
@@ -1555,6 +1972,7 @@ function openEditModal(id) {
     document.getElementById('modalDeleteBtn').style.display = 'inline-block';
     document.getElementById('pinPreview').innerHTML = '';
     document.getElementById('pinPreview').classList.remove('visible');
+    document.getElementById('aiResult').style.display = 'none';
     document.getElementById('editModal').classList.add('active');
 }
 
@@ -1570,6 +1988,59 @@ function togglePreview() {
     preview.classList.toggle('visible');
 }
 
+// ─── AI Assist in Modal (sends selected model) ──────
+document.getElementById('aiAssistBtn').addEventListener('click', function() {
+    if (!editingPinId) {
+        alert('Please save the pin first, then use AI assist.');
+        return;
+    }
+    var action = document.getElementById('aiActionSelect').value;
+    var modelSelect = document.getElementById('aiModelSelect');
+    var model = modelSelect.value;
+    if (!model) {
+        alert('No model selected. Please wait for models to load or select one.');
+        return;
+    }
+    var resultDiv = document.getElementById('aiResult');
+    resultDiv.style.display = 'block';
+    resultDiv.textContent = '⏳ Thinking...';
+
+    fetch('/corkboard/api/ai_assist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            pin_id: editingPinId,
+            action: action,
+            model: model  // send selected model
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            resultDiv.textContent = '❌ ' + data.error;
+            return;
+        }
+        if (action === 'suggest_tags' && data.tags) {
+            var tagsInput = document.getElementById('pinTags');
+            var existing = tagsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+            var newTags = data.tags.filter(t => !existing.includes(t));
+            if (newTags.length) {
+                tagsInput.value = existing.concat(newTags).join(', ');
+            }
+            resultDiv.textContent = '✅ Suggested tags: ' + data.tags.join(', ') + ' (added to tags field)';
+        } else if (action === 'suggest_links' && data.suggestions) {
+            var list = data.suggestions.map(s => `• ${s.title} (${(s.score*100).toFixed(0)}%)`).join('\n');
+            resultDiv.textContent = '🔗 Suggested links:\n' + list + '\n\nUse "💡 Suggest Links" button in toolbar to create them.';
+        } else {
+            resultDiv.textContent = data.result || 'Done.';
+        }
+    })
+    .catch(err => {
+        resultDiv.textContent = '❌ Error: ' + err;
+    });
+});
+
+// ─── SAVE PIN FROM MODAL ─────────────────────────────
 function savePinFromModal() {
     if (!editingPinId) return;
     var title = document.getElementById('pinTitle').value.trim() || 'Untitled';
@@ -1604,6 +2075,71 @@ function deleteCurrentPin() {
     }
 }
 
+// ─── LINK SUGGESTIONS (global) ──────────────────────
+function openLinkSuggestions() {
+    // This global link suggestion feature is partially implemented.
+    // The /api/global_link_suggestions endpoint doesn't exist yet.
+    // We'll show a placeholder for now, or we can implement it later.
+    alert('Global link suggestions will be implemented soon. Use "Suggest Links for this Pin" from the edit modal.');
+    // For now, we'll just return.
+    return;
+    // If you want to implement, uncomment the following:
+    /*
+    fetch('/corkboard/api/global_link_suggestions')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error: ' + data.error);
+                return;
+            }
+            var list = document.getElementById('suggestionsList');
+            list.innerHTML = '';
+            if (!data.suggestions || data.suggestions.length === 0) {
+                list.innerHTML = '<p>No suggestions found. Add more pins with content.</p>';
+            } else {
+                data.suggestions.forEach(function(pair) {
+                    var div = document.createElement('div');
+                    div.className = 'suggestion-item';
+                    div.innerHTML = `
+                        <span class="title">${escapeHtml(pair.from_title)} ↔ ${escapeHtml(pair.to_title)}</span>
+                        <span class="score">${(pair.score*100).toFixed(0)}%</span>
+                        <button class="link-btn" onclick="createLink('${pair.from}', '${pair.to}')">Link</button>
+                    `;
+                    list.appendChild(div);
+                });
+            }
+            document.getElementById('linkSuggestionsOverlay').classList.add('active');
+        })
+        .catch(err => alert('Failed to get suggestions: ' + err));
+    */
+}
+
+function closeLinkSuggestions() {
+    document.getElementById('linkSuggestionsOverlay').classList.remove('active');
+}
+
+function createLink(from, to) {
+    var color = redThreadMode ? 'red' : 'black';
+    fetch('/corkboard/api/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: from, to: to, color: color })
+    }).then(r => r.json()).then(data => {
+        if (data.ok && data.linked) {
+            boardData.links.push({ from: from, to: to, color: color });
+            renderLinks();
+            // Remove this suggestion from list
+            var items = document.querySelectorAll('.suggestion-item');
+            items.forEach(function(item) {
+                var btn = item.querySelector('.link-btn');
+                if (btn && btn.dataset.from === from && btn.dataset.to === to) {
+                    item.remove();
+                }
+            });
+        }
+    });
+}
+
 // ─── Colour picker in modal ──────────────────────────
 document.querySelectorAll('#pinColorPicker .color-option').forEach(el => {
     el.addEventListener('click', function() {
@@ -1615,6 +2151,7 @@ document.querySelectorAll('#pinColorPicker .color-option').forEach(el => {
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('load', function() {
     loadBoard();
+    loadOllamaModels();   // populate AI model dropdown
     document.getElementById('editModal').addEventListener('click', function(e) {
         if (e.target === this) closeModal();
     });

@@ -1,9 +1,24 @@
 # notes.py – advanced version with Markdown, tags, pinning, colours
+# + AI assistance (summarise, suggest tags, improve) + semantic search
+# + dynamic model loading from Ollama + persistent model preference
+
 import os
 import json
 import uuid
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
+
+# ---------- Embedding (semantic search) ----------
+try:
+    from sentence_transformers import SentenceTransformer
+    EMBED_AVAILABLE = True
+except ImportError:
+    EMBED_AVAILABLE = False
+    print("⚠️ sentence-transformers not installed. Run: pip install sentence-transformers")
+
+# ---------- LLM for AI assistance ----------
+from llm_providers import OllamaProvider
+import requests
 
 NOTES_FILE = "json_configuration/notes.json"
 os.makedirs(os.path.dirname(NOTES_FILE), exist_ok=True)
@@ -11,17 +26,47 @@ if not os.path.exists(NOTES_FILE):
     with open(NOTES_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f, indent=2)
 
+# ---------- Embedding model (lazy loaded) ----------
+_embed_model = None
+
+def get_embedder():
+    global _embed_model
+    if not EMBED_AVAILABLE:
+        return None
+    if _embed_model is None:
+        _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+    return _embed_model
+
+def embed_note(note):
+    """Generate embedding for a note (title + content). Returns list of floats or None."""
+    if not EMBED_AVAILABLE:
+        return None
+    model = get_embedder()
+    text = (note.get('title', '') + ' ' + note.get('content', '')).strip()[:1000]
+    if not text:
+        return None
+    return model.encode(text).tolist()
+
+
+# ---------- Load / Save with embeddings ----------
 def load_notes():
     with open(NOTES_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def save_notes(notes):
+    # Ensure every note has an embedding (if not present)
+    for nid, note in notes.items():
+        if 'embedding' not in note:
+            emb = embed_note(note)
+            if emb is not None:
+                note['embedding'] = emb
     with open(NOTES_FILE, "w", encoding="utf-8") as f:
         json.dump(notes, f, indent=2)
 
+# ---------- Flask Blueprint ----------
 notes_bp = Blueprint('notes', __name__, url_prefix='/notes')
 
-# ---------- Serve the notes HTML page ----------
+# Serve the notes HTML page
 @notes_bp.route('')
 def notes_page():
     return render_template_string(NOTES_HTML)
@@ -58,7 +103,6 @@ def update_note(note_id):
     if note_id not in notes:
         return jsonify({"error": "Note not found"}), 404
     note = notes[note_id]
-    # Update only provided fields
     if "title" in data:
         note["title"] = data["title"]
     if "content" in data:
@@ -70,6 +114,8 @@ def update_note(note_id):
     if "color" in data:
         note["color"] = data["color"]
     note["last_modified"] = datetime.now().isoformat()
+    # Remove old embedding so it will be regenerated on save
+    note.pop("embedding", None)
     save_notes(notes)
     return jsonify({"ok": True})
 
@@ -82,6 +128,7 @@ def delete_note(note_id):
     save_notes(notes)
     return jsonify({"ok": True})
 
+# ---------- Keyword search (kept for compatibility) ----------
 @notes_bp.route('/api/search', methods=['GET'])
 def search_notes():
     query = request.args.get('q', '').strip().lower()
@@ -89,10 +136,8 @@ def search_notes():
     notes = load_notes()
     results = {}
     for nid, note in notes.items():
-        # Filter by tag if provided
         if tag and tag not in [t.lower() for t in note.get("tags", [])]:
             continue
-        # Search query
         if query:
             title_match = query in note.get('title', '').lower()
             content_match = query in note.get('content', '').lower()
@@ -102,6 +147,106 @@ def search_notes():
         results[nid] = note
     return jsonify(results)
 
+# ---------- Semantic search (new) ----------
+@notes_bp.route('/api/semantic_search', methods=['GET'])
+def semantic_search_notes():
+    if not EMBED_AVAILABLE:
+        return jsonify({"error": "Embedding model not available"}), 503
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify([])
+    notes = load_notes()
+    if not notes:
+        return jsonify([])
+
+    model = get_embedder()
+    q_emb = model.encode(query).reshape(1, -1)
+
+    candidates = []
+    for nid, note in notes.items():
+        emb = note.get('embedding')
+        if emb is None:
+            # Generate on the fly and store
+            emb = embed_note(note)
+            if emb is not None:
+                note['embedding'] = emb
+        if emb:
+            candidates.append((nid, note, emb))
+
+    if not candidates:
+        return jsonify([])
+
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    emb_matrix = np.array([c[2] for c in candidates])
+    similarities = cosine_similarity(q_emb, emb_matrix).flatten()
+    sorted_idx = np.argsort(similarities)[::-1]
+
+    results = []
+    for idx in sorted_idx[:10]:
+        if similarities[idx] > 0.2:
+            nid, note, _ = candidates[idx]
+            results.append({
+                "id": nid,
+                "title": note["title"],
+                "content": note["content"][:200] + "..." if len(note["content"]) > 200 else note["content"],
+                "score": float(similarities[idx])
+            })
+    return jsonify(results)
+
+# ---------- AI Assistance (updated to accept model) ----------
+@notes_bp.route('/api/ai_assist', methods=['POST'])
+def ai_assist():
+    data = request.get_json()
+    note_id = data.get('note_id')
+    action = data.get('action')  # 'summarise', 'suggest_tags', 'improve'
+    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')  # default fallback
+    if not note_id or not action:
+        return jsonify({"error": "Missing note_id or action"}), 400
+
+    notes = load_notes()
+    note = notes.get(note_id)
+    if not note:
+        return jsonify({"error": "Note not found"}), 404
+
+    content = note.get('content', '').strip()
+    title = note.get('title', '').strip()
+    if not content and not title:
+        return jsonify({"error": "Note is empty"}), 400
+
+    # Build prompt based on action
+    prompts = {
+        "summarise": f"Summarise the following note in one short paragraph (max 50 words):\n\nTitle: {title}\nContent: {content}\n\nSummary:",
+        "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this note:\n\nTitle: {title}\nContent: {content}\n\nTags:",
+        "improve": f"Rewrite the following note to improve clarity, grammar, and flow. Keep the same meaning but make it more concise and professional:\n\n{content}\n\nImproved version:"
+    }
+    prompt = prompts.get(action)
+    if not prompt:
+        return jsonify({"error": "Invalid action"}), 400
+
+    # Use Ollama with the selected model
+    try:
+        ollama = OllamaProvider()
+        response = ollama.generate([
+            {"role": "system", "content": "You are a helpful assistant that helps improve notes."},
+            {"role": "user", "content": prompt}
+        ], model=model)
+        result = response.strip()
+    except Exception as e:
+        return jsonify({"error": f"AI service unavailable: {str(e)}"}), 503
+
+    # For 'suggest_tags', auto-apply tags
+    if action == 'suggest_tags' and result:
+        tags = [t.strip() for t in result.split(',') if t.strip()]
+        if tags:
+            note['tags'] = list(set(note.get('tags', []) + tags))
+            save_notes(notes)
+            return jsonify({"result": result, "tags": tags})
+
+    return jsonify({"result": result})
+
+# ---------- Clear all ----------
 @notes_bp.route('/api/clear_all', methods=['POST'])
 def clear_all_notes():
     save_notes({})
@@ -113,7 +258,6 @@ def reorder_notes():
     order_map = data.get('order')
     if not order_map or not isinstance(order_map, dict):
         return jsonify({'error': 'Invalid order data'}), 400
-
     notes = load_notes()
     for nid, new_order in order_map.items():
         if nid in notes:
@@ -121,17 +265,20 @@ def reorder_notes():
     save_notes(notes)
     return jsonify({'ok': True})
 
-# ---------- HTML template (improved) ----------
+
+# ===========================================================================
+# HTML TEMPLATE (with dynamic model list)
+# ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
-    <title>Notes · Advanced</title>
+    <title>Notes · Advanced + AI</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        /* ── base – same as before, but with extra styles ── */
+        /* ── base – same as before ── */
         * { margin:0; padding:0; box-sizing:border-box; }
         html, body {
             height:100%;
@@ -159,7 +306,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         }
         .app { display:flex; height:100%; backdrop-filter: blur(2px); }
 
-        /* ── Sidebar (same structure) ── */
+        /* ── Sidebar ── */
         .sidebar {
             width: 300px;
             background: rgba(18, 18, 26, 0.85);
@@ -197,6 +344,29 @@ NOTES_HTML = r"""<!DOCTYPE html>
         }
         .search-box input:focus { border-color: #58a6ff; }
         .search-box input::placeholder { color: #8b949e; }
+
+        .search-mode-toggle {
+            display: flex;
+            gap: 4px;
+            padding: 4px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .search-mode-toggle button {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 4px 14px;
+            font-size: 12px;
+            color: #8b949e;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .search-mode-toggle button.active {
+            background: #1f6feb;
+            border-color: #1f6feb;
+            color: #fff;
+        }
+        .search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
 
         .tag-filter {
             padding: 4px 16px 12px;
@@ -399,7 +569,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         }
         .clear-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
 
-        /* Theme toggle (exact copy from notes.py) */
+        /* Theme toggle (exact copy) */
         .theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
         .toggle-outer {
             position: relative; width: 140px; height: 56px; border-radius: 999px; background: hsl(220 18% 82%);
@@ -508,6 +678,30 @@ NOTES_HTML = r"""<!DOCTYPE html>
             color: #fff;
             border-color: #1f6feb;
         }
+        /* AI assist button & model selector */
+        .notes-panel .note-editor .editor-header .toolbar .ai-assist-btn {
+            background: #6f42c1;
+            border-color: #6f42c1;
+            color: #fff;
+        }
+        .notes-panel .note-editor .editor-header .toolbar .ai-assist-btn:hover {
+            background: #8b5cf6;
+        }
+        .notes-panel .note-editor .editor-header .toolbar select#aiModelSelect {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            color: #8b949e;
+            padding: 4px 8px;
+            font-size: 13px;
+            outline: none;
+            max-width: 160px;
+        }
+        body.light-mode .notes-panel .note-editor .editor-header .toolbar select#aiModelSelect {
+            background: rgba(0,0,0,0.04);
+            color: #24292f;
+        }
+
         .notes-panel .note-editor .editor-body {
             display:flex;
             gap:12px;
@@ -535,7 +729,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             color: #e1e4e8;
             font-size: 14px;
             line-height: 1.6;
-            display:none; /* hidden by default, toggled by preview button */
+            display:none;
         }
         .notes-panel .note-editor .editor-body .preview.visible {
             display:block;
@@ -677,7 +871,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         .notes-panel .note-item .note-actions .delete-note { color: #f85149; }
         .notes-panel .note-item .note-actions .delete-note:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
 
-        /* Light mode overrides (keep same as before but adapt) */
+        /* Light mode overrides */
         body.light-mode {
             background: #f6f8fa;
             color: #24292f;
@@ -719,6 +913,11 @@ NOTES_HTML = r"""<!DOCTYPE html>
         body.light-mode .tag-filter .tag-pill.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
         body.light-mode .tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149; }
         body.light-mode .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.08); }
+        .search-mode-toggle button { background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 4px 14px; font-size: 12px; color: #8b949e; cursor: pointer; transition: 0.2s; }
+        .search-mode-toggle button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+        .search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
+        body.light-mode .search-mode-toggle button { color: #57606a; border-color: rgba(0,0,0,0.1); }
+        body.light-mode .search-mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
     </style>
 </head>
 <body>
@@ -731,6 +930,11 @@ NOTES_HTML = r"""<!DOCTYPE html>
         </div>
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="🔍 Search notes..." oninput="searchNotes()">
+        </div>
+        <!-- Search mode toggle -->
+        <div class="search-mode-toggle">
+            <button id="searchModeKeyword" class="active" onclick="setSearchMode('keyword')">Keyword</button>
+            <button id="searchModeSemantic" onclick="setSearchMode('semantic')">🧠 Semantic</button>
         </div>
         <div class="tag-filter" id="tagFilterContainer"></div>
         <div class="notes-sidebar-list" id="notesSidebarList"></div>
@@ -770,7 +974,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
                                 <div class="cloud" style="width:26px;height:10px;bottom:14px;right:22px;opacity:.85;"></div>
                                 <div class="cloud" style="width:20px;height:8px;bottom:22px;left:4px;opacity:.7;"></div>
                             </div>
-                            <!-- ===== FIX: Astronaut & Biplane SVGs inserted ===== -->
                             <div class="astronaut">
                                 <svg viewBox="0 0 44 54" width="22" height="26" xmlns="http://www.w3.org/2000/svg">
                                     <ellipse cx="22" cy="36" rx="13" ry="14" fill="#e8e8e8"/>
@@ -814,7 +1017,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
                                     <circle cx="66" cy="22" r="2.5" fill="#6a5040"/>
                                 </svg>
                             </div>
-                            <!-- ===== END FIX ===== -->
                             <div class="knob" id="themeKnob">
                                 <div class="knob-moon">
                                     <div class="crater" style="width:10px;height:10px;top:8px;left:7px;"></div>
@@ -842,6 +1044,17 @@ NOTES_HTML = r"""<!DOCTYPE html>
                         <button data-cmd="list" title="Bullet list">•</button>
                         <button data-cmd="code" title="Code block">{ }</button>
                         <button data-cmd="preview" title="Toggle preview" id="previewToggle">👁️</button>
+                        <!-- AI Assist dropdown, model selector, and button -->
+                        <select id="aiActionSelect" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#8b949e; padding:4px 8px; font-size:13px;">
+                            <option value="summarise">Summarise</option>
+                            <option value="suggest_tags">Suggest Tags</option>
+                            <option value="improve">Improve Writing</option>
+                        </select>
+                        <!-- Model dropdown: populated dynamically by JavaScript -->
+                        <select id="aiModelSelect" title="Select model for AI assistance">
+                            <option value="">Loading models...</option>
+                        </select>
+                        <button class="ai-assist-btn" id="aiAssistBtn" title="Run AI assistance">✨ AI</button>
                     </div>
                 </div>
                 <div class="editor-body">
@@ -864,6 +1077,8 @@ NOTES_HTML = r"""<!DOCTYPE html>
                     <button class="save-note" id="saveNoteBtn">💾 Save Note</button>
                     <button id="cancelNoteBtn" style="display:none;">Cancel</button>
                 </div>
+                <!-- AI result area -->
+                <div id="aiResult" style="display:none; margin-top:12px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid rgba(255,255,255,0.1); color:#e1e4e8; font-size:14px; white-space:pre-wrap;"></div>
             </div>
             <div id="notesList"></div>
         </div>
@@ -983,7 +1198,8 @@ NOTES_HTML = r"""<!DOCTYPE html>
     var currentColor = 'default';
     var currentPinned = false;
     var searchTimeout = null;
-    var activeTagFilter = ''; // empty = all
+    var activeTagFilter = '';
+    var searchMode = 'keyword'; // 'keyword' or 'semantic'
 
     // ─── Markdown preview ──────────────────────────────
     function updatePreview() {
@@ -1022,6 +1238,96 @@ NOTES_HTML = r"""<!DOCTYPE html>
         });
     });
 
+    // ─── Load Ollama models dynamically ────────────────
+    function loadOllamaModels() {
+        const select = document.getElementById('aiModelSelect');
+        fetch('/providers/models?provider=ollama')
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    select.innerHTML = '<option value="">⚠️ Error loading models</option>';
+                    console.warn('Ollama API error:', data.error);
+                    return;
+                }
+                if (!data.models || data.models.length === 0) {
+                    select.innerHTML = '<option value="">No models found (pull one first)</option>';
+                    return;
+                }
+                // Build options
+                const saved = localStorage.getItem('notes_ai_model') || '';
+                let options = '';
+                data.models.forEach(m => {
+                    const selected = (m === saved) ? 'selected' : '';
+                    options += `<option value="${m}" ${selected}>${m}</option>`;
+                });
+                select.innerHTML = options;
+                // If no saved model or saved model not in list, select first
+                if (!saved || !data.models.includes(saved)) {
+                    if (data.models.length) {
+                        select.value = data.models[0];
+                        localStorage.setItem('notes_ai_model', data.models[0]);
+                    }
+                }
+            })
+            .catch(err => {
+                console.error('Failed to fetch Ollama models:', err);
+                select.innerHTML = '<option value="">⚠️ Cannot reach Ollama</option>';
+            });
+    }
+
+    // ─── Save model preference when user changes it ────
+    document.getElementById('aiModelSelect').addEventListener('change', function() {
+        localStorage.setItem('notes_ai_model', this.value);
+    });
+
+    // ─── AI Assist (sends selected model) ──────────────
+    document.getElementById('aiAssistBtn').addEventListener('click', function() {
+        if (!editingNoteId) {
+            alert('Please save the note first, then use AI assist.');
+            return;
+        }
+        var action = document.getElementById('aiActionSelect').value;
+        var modelSelect = document.getElementById('aiModelSelect');
+        var model = modelSelect.value;
+        if (!model) {
+            alert('No model selected. Please wait for models to load or select one.');
+            return;
+        }
+        var resultDiv = document.getElementById('aiResult');
+        resultDiv.style.display = 'block';
+        resultDiv.textContent = '⏳ Thinking...';
+        fetch('/notes/api/ai_assist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                note_id: editingNoteId,
+                action: action,
+                model: model
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                resultDiv.textContent = '❌ ' + data.error;
+                return;
+            }
+            if (action === 'suggest_tags' && data.tags) {
+                var tagsInput = document.getElementById('noteTagsInput');
+                var existing = tagsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+                var newTags = data.tags.filter(t => !existing.includes(t));
+                if (newTags.length) {
+                    tagsInput.value = existing.concat(newTags).join(', ');
+                }
+                resultDiv.textContent = '✅ Suggested tags: ' + data.tags.join(', ') + ' (added to tags field)';
+            } else {
+                resultDiv.textContent = data.result || 'Done.';
+            }
+        })
+        .catch(err => {
+            resultDiv.textContent = '❌ Error: ' + err;
+        });
+    });
+
     // ─── Color picker ──────────────────────────────────
     document.querySelectorAll('#colorPicker .color-option').forEach(el => {
         el.addEventListener('click', function() {
@@ -1042,16 +1348,61 @@ NOTES_HTML = r"""<!DOCTYPE html>
     function loadNotes() {
         var query = document.getElementById('searchInput').value.trim();
         var tag = activeTagFilter;
-        var url = '/notes/api/search?q=' + encodeURIComponent(query) + '&tag=' + encodeURIComponent(tag);
-        fetch(url)
+        var url;
+        if (query && searchMode === 'semantic') {
+            url = '/notes/api/semantic_search?q=' + encodeURIComponent(query);
+            fetch(url)
+                .then(r => r.json())
+                .then(results => {
+                    loadAllNotesAndFilter(query, tag, results);
+                })
+                .catch(e => {
+                    console.error('Semantic search failed:', e);
+                    loadAllNotesAndFilter(query, tag, null);
+                });
+        } else {
+            url = '/notes/api/search?q=' + encodeURIComponent(query) + '&tag=' + encodeURIComponent(tag);
+            fetch(url)
+                .then(r => r.json())
+                .then(notes => {
+                    notesData = notes;
+                    renderSidebar(notes);
+                    renderMain(notes);
+                    renderTagFilter(notes);
+                })
+                .catch(e => console.error('Failed to load notes:', e));
+        }
+    }
+
+    function loadAllNotesAndFilter(query, tag, semanticResults) {
+        fetch('/notes/api?q=&tag=')
             .then(r => r.json())
-            .then(notes => {
-                notesData = notes;
-                renderSidebar(notes);
-                renderMain(notes);
-                renderTagFilter(notes);
-            })
-            .catch(e => console.error('Failed to load notes:', e));
+            .then(allNotes => {
+                var filtered = {};
+                if (semanticResults && semanticResults.length) {
+                    var ids = semanticResults.map(r => r.id);
+                    ids.forEach(id => {
+                        if (allNotes[id]) filtered[id] = allNotes[id];
+                    });
+                } else {
+                    for (var nid in allNotes) {
+                        var note = allNotes[nid];
+                        var match = true;
+                        if (tag && !note.tags.map(t => t.toLowerCase()).includes(tag)) match = false;
+                        if (query && match) {
+                            var titleMatch = query.toLowerCase() in note.title.toLowerCase();
+                            var contentMatch = query.toLowerCase() in note.content.toLowerCase();
+                            var tagMatch = note.tags.some(t => t.toLowerCase().includes(query.toLowerCase()));
+                            if (!(titleMatch || contentMatch || tagMatch)) match = false;
+                        }
+                        if (match) filtered[nid] = note;
+                    }
+                }
+                notesData = filtered;
+                renderSidebar(filtered);
+                renderMain(filtered);
+                renderTagFilter(filtered);
+            });
     }
 
     function getDateGroup(dateStr) {
@@ -1080,14 +1431,12 @@ NOTES_HTML = r"""<!DOCTYPE html>
             listEl.innerHTML = '<div class="no-results">🔍 No notes found</div>';
             return;
         }
-        // Separate pinned and unpinned
         var pinned = [];
         var unpinned = [];
         ids.forEach(id => {
             if (notes[id].pinned) pinned.push(id);
             else unpinned.push(id);
         });
-        // Sort pinned by order, then unpinned by order
         var sortFn = (a, b) => {
             var orderA = notes[a].order || 0;
             var orderB = notes[b].order || 0;
@@ -1113,7 +1462,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
             var heading = document.createElement('div');
             heading.className = 'group-heading';
             heading.textContent = groupName;
-            // Show pinned count if any in this group
             var pinnedCount = items.filter(({note}) => note.pinned).length;
             if (pinnedCount) {
                 var badge = document.createElement('span');
@@ -1142,7 +1490,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
                 titleSpan.textContent = note.title || 'Untitled';
                 div.appendChild(titleSpan);
 
-                // tags mini
                 if (note.tags && note.tags.length) {
                     var tagSpan = document.createElement('span');
                     tagSpan.className = 'tags-mini';
@@ -1170,7 +1517,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
                 delBtn.onclick = function(e) { e.stopPropagation(); deleteNote(id); };
                 div.appendChild(delBtn);
 
-                // Drag & drop
                 div.addEventListener('dragstart', handleDragStart);
                 div.addEventListener('dragend', handleDragEnd);
                 div.addEventListener('dragover', handleDragOver);
@@ -1200,7 +1546,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
             const note = notes[id];
             const div = document.createElement('div');
             div.className = 'note-item';
-            // colour border
             if (note.color && note.color !== 'default') {
                 div.style.borderLeft = '4px solid ' + getColorHex(note.color);
             }
@@ -1250,7 +1595,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
     // ─── Tag filter ──────────────────────────────────────
     function renderTagFilter(notes) {
         const container = document.getElementById('tagFilterContainer');
-        // Collect all tags
         var tagSet = new Set();
         Object.values(notes).forEach(n => {
             if (n.tags) n.tags.forEach(t => tagSet.add(t));
@@ -1277,6 +1621,14 @@ NOTES_HTML = r"""<!DOCTYPE html>
         loadNotes();
     }
 
+    // ─── Search mode toggle ────────────────────────────
+    function setSearchMode(mode) {
+        searchMode = mode;
+        document.getElementById('searchModeKeyword').classList.toggle('active', mode === 'keyword');
+        document.getElementById('searchModeSemantic').classList.toggle('active', mode === 'semantic');
+        loadNotes();
+    }
+
     // ─── Search ──────────────────────────────────────────
     function searchNotes() {
         if (searchTimeout) clearTimeout(searchTimeout);
@@ -1292,6 +1644,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         document.getElementById('notePreview').innerHTML = '';
         document.getElementById('notePreview').classList.remove('visible');
         document.querySelector('#toolbar [data-cmd="preview"]').classList.remove('active');
+        document.getElementById('aiResult').style.display = 'none';
         editingNoteId = null;
         currentColor = 'default';
         document.querySelectorAll('#colorPicker .color-option').forEach(c => c.classList.remove('active'));
@@ -1312,6 +1665,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         document.getElementById('noteTitleInput').value = note.title || '';
         document.getElementById('noteContentInput').value = note.content || '';
         document.getElementById('noteTagsInput').value = (note.tags || []).join(', ');
+        document.getElementById('aiResult').style.display = 'none';
         editingNoteId = id;
         currentColor = note.color || 'default';
         document.querySelectorAll('#colorPicker .color-option').forEach(c => {
@@ -1333,7 +1687,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
 
     function selectNote(id) {
         editNoteFromSidebar(id);
-        // highlight in sidebar
         document.querySelectorAll('.note-item-sidebar').forEach(el => el.classList.toggle('active', el.dataset.id === id));
     }
 
@@ -1444,6 +1797,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
 
     // ─── Init ────────────────────────────────────────────
     window.addEventListener('load', function() {
+        loadOllamaModels();   // fetch models from Ollama
         loadNotes();
         document.getElementById('noteTitleInput').focus();
     });
