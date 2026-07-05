@@ -210,13 +210,29 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
         files = []
     if ts is None:
         ts = datetime.now().strftime("%H:%M")
-    file_meta = [{"name": f["name"], "mime": f.get("mime", "application/octet-stream")} for f in files]
-    image_meta = [{"name": img.get("name", "image")} for img in images]
+
+    # ── Store full image objects (with b64) ──
+    stored_images = []
+    for img in images:
+        stored_images.append({
+            "name": img.get("name", "image"),
+            "b64": img.get("b64", ""),
+            "mime": img.get("mime", "image/png")
+        })
+
+    stored_files = []
+    for f in files:
+        stored_files.append({
+            "name": f.get("name", "file"),
+            "b64": f.get("b64", ""),
+            "mime": f.get("mime", "application/octet-stream")
+        })
+
     _conversations_cache[cid]["messages"].append({
         "role": role,
         "text": text,
-        "images": image_meta,
-        "files": file_meta,
+        "images": stored_images,
+        "files": stored_files,
         "ts": ts
     })
     if role == "user" and len(_conversations_cache[cid]["messages"]) == 1:
@@ -928,6 +944,7 @@ body.light-mode .center-tabs .tab-btn.active {
     flex:1; overflow-y:auto; padding: 24px 40px;
     display:flex; flex-direction:column; gap: 16px;
     will-change: transform;
+    contain: layout style;  /* NEW: isolate layout to avoid recalculating whole page */
 }
 .chat-area::-webkit-scrollbar { width: 6px; }
 .chat-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
@@ -1644,6 +1661,8 @@ body.light-mode .vision-badge {
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
         <button class="clear-btn" onclick="clearAllChats()">🗑 Clear All</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
+        <!-- FIX: Added hidden modelInfo element to avoid JS errors -->
+        <span id="modelInfo" style="display:none;"></span>
       </div>
     </div>
 
@@ -1700,10 +1719,28 @@ var currentConv = null;
 var pending     = [];
 var conversations = [];
 var searchQuery = '';
-var searchEnabled = true;
+var searchEnabled = true;  // global flag used in actuallySend
 var unloadBtn = document.getElementById('unloadBtn');
 
-// ── New function to enrich code blocks with language label and copy button ──
+// ── Smooth scroll helper (called only when needed) ──
+function smoothScrollToBottom() {
+    chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+// ── Throttled resize for the textarea ────────────────────
+var resizePending = false;
+msgInput.addEventListener('input', function() {
+    if (resizePending) return;
+    resizePending = true;
+    requestAnimationFrame(function() {
+        resizePending = false;
+        var el = msgInput;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+    });
+});
+
+// ── New function to enrich code blocks ───────────────────
 function processCodeBlocks(root) {
     var codeBlocks = root.querySelectorAll('pre code');
     if (codeBlocks.length === 0) return;
@@ -1811,19 +1848,40 @@ unloadBtn.addEventListener('click', function() {
         .catch(() => status.textContent = '❌ Unload failed');
 });
 
-// ── DROP OVERLAY LOGIC ─────────────────────────
+// ── DROP OVERLAY LOGIC (only for file drags) ────────────
 var dropOverlay = document.getElementById('dropOverlay');
 var dragCounter = 0;
 function showDropOverlay() { dropOverlay.classList.add('active'); }
 function hideDropOverlay() { dropOverlay.classList.remove('active'); }
+
+function hasFiles(e) {
+    if (!e.dataTransfer) return false;
+    if (e.dataTransfer.types) {
+        for (var i = 0; i < e.dataTransfer.types.length; i++) {
+            if (e.dataTransfer.types[i] === 'Files') return true;
+        }
+    }
+    if (e.dataTransfer.items) {
+        for (var i = 0; i < e.dataTransfer.items.length; i++) {
+            if (e.dataTransfer.items[i].kind === 'file') return true;
+        }
+    }
+    return false;
+}
+
 document.addEventListener('dragenter', function(e) {
     e.preventDefault();
+    if (!hasFiles(e)) return;
     dragCounter++;
     if (dragCounter === 1) showDropOverlay();
 });
-document.addEventListener('dragover', function(e) { e.preventDefault(); });
+document.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    if (!hasFiles(e)) return;
+});
 document.addEventListener('dragleave', function(e) {
     e.preventDefault();
+    if (!hasFiles(e)) return;
     dragCounter--;
     if (dragCounter === 0) hideDropOverlay();
 });
@@ -1831,6 +1889,7 @@ document.addEventListener('drop', function(e) {
     e.preventDefault();
     dragCounter = 0;
     hideDropOverlay();
+    if (!hasFiles(e)) return;
     var items = e.dataTransfer.items;
     if (items) {
         processDropItems(items);
@@ -1843,6 +1902,7 @@ document.addEventListener('drop', function(e) {
         }
     }
 });
+
 function processDropItems(items) {
     var entries = [];
     for (var i = 0; i < items.length; i++) {
@@ -1909,6 +1969,7 @@ function processDropItems(items) {
         }
     }, 100);
 }
+
 function addDroppedFile(file) {
     var reader = new FileReader();
     reader.onload = function(ev) {
@@ -2061,11 +2122,6 @@ document.addEventListener('keydown', function(e) {
         chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
     }
 });
-function scrollToBottomIfNeeded() {
-    var threshold = 80;
-    var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
-    if (atBottom) chatArea.scrollTop = chatArea.scrollHeight;
-}
 
 // ─── Voice Output (TTS) ─────────────────────────
 var voiceEnabled = false;
@@ -2179,6 +2235,7 @@ function loadModels() {
             if (provider === 'deepseek' && modelSelect.value) {
                 checkDeepSeekStatus();
             } else {
+                // modelInfo is now present (hidden), safe to update
                 document.getElementById('modelInfo').textContent = '';
             }
         })
@@ -2463,7 +2520,7 @@ function selectConversation(id) {
             } else {
                 messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
             }
-            scrollToBottomIfNeeded();
+            smoothScrollToBottom();
         });
 }
 function newChat() {
@@ -2498,7 +2555,8 @@ function renderMsg(role, entry, msgIndex) {
     if (entry.images && entry.images.length) {
         entry.images.forEach(im => {
             var img = document.createElement('img');
-            img.src = 'data:image/png;base64,' + im.b64;
+            // b64 is now stored in the server JSON
+            img.src = 'data:image/png;base64,' + (im.b64 || '');
             div.appendChild(img);
         });
     }
@@ -2547,9 +2605,9 @@ function renderMsg(role, entry, msgIndex) {
     }
     chatArea.appendChild(div);
     if (role === 'bot') {
-        processCodeBlocks(div); // Process code blocks for this message
+        processCodeBlocks(div);
     }
-    scrollToBottomIfNeeded();
+    smoothScrollToBottom();
     return div;
 }
 function reloadCurrentChat() {
@@ -2563,8 +2621,8 @@ function reloadCurrentChat() {
             } else {
                 messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
             }
-            scrollToBottomIfNeeded();
-            processCodeBlocks(chatArea); // Global safety net
+            smoothScrollToBottom();
+            processCodeBlocks(chatArea);
         });
 }
 async function startEditMessage(msgDiv, role, entry, idx) {
@@ -2653,12 +2711,6 @@ fileInput.addEventListener('change', function() {
     });
     fileInput.value = '';
 });
-msgInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
-});
-msgInput.addEventListener('input', function() {
-    this.style.height = Math.min(this.scrollHeight, 140) + 'px';
-});
 sendBtn.addEventListener('click', doSend);
 document.getElementById('searchToggleBtn').addEventListener('click', function() {
     searchEnabled = !searchEnabled;
@@ -2685,6 +2737,7 @@ function doSend() {
 var tokenCount = 0;
 var startTimeToken = null;
 var speedInterval = null;
+
 function actuallySend(text) {
     var images = pending.filter(p => p.type === 'image');
     var files  = pending.filter(p => p.type === 'file');
@@ -2701,11 +2754,12 @@ function actuallySend(text) {
     pending = [];
     attachments.innerHTML = '';
     var botDiv = renderMsg('bot', { role:'bot', text:'⏳ Thinking...', ts:'' }, -1);
-    botDiv.querySelector('.body').classList.add('thinking-dots');
+    var bodyEl = botDiv.querySelector('.body');
+    bodyEl.classList.add('thinking-dots');
     busy = true;
     sendBtn.disabled = true;
     status.textContent = '⏳ Generating...';
-    var searchEnabled = window.searchEnabled;
+    // FIXED: Use the global searchEnabled directly (no shadowing)
     var provider = providerSelect.value;
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
@@ -2724,6 +2778,7 @@ function actuallySend(text) {
             tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens`;
         }
     }, 200);
+
     function handleSendError(errMsg) {
         clearInterval(speedInterval);
         if (userDiv && userDiv.parentNode) userDiv.remove();
@@ -2737,6 +2792,7 @@ function actuallySend(text) {
             chatArea.innerHTML = '<div class="msg bot">👋 Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
         }
     }
+
     fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2745,7 +2801,7 @@ function actuallySend(text) {
             message: text,
             images: images.map(i => ({ b64: i.b64, name: i.name })),
             files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime })),
-            search: searchEnabled,
+            search: searchEnabled,   // now uses the global flag
             provider: provider,
             model: model,
             api_key: apiKey
@@ -2763,22 +2819,47 @@ function actuallySend(text) {
             var decoder = new TextDecoder();
             var fullText = '';
             var sseBuffer = '';
+
+            // Throttle updates to every 50ms
+            var updateTimer = null;
+            var wasAtBottom = true;
+            var botBody = botDiv.querySelector('.body');
+
+            function performUpdate() {
+                updateTimer = null;
+                if (botBody) {
+                    botBody.textContent = fullText;
+                }
+                if (wasAtBottom) {
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                }
+                wasAtBottom = (chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight) < 100;
+            }
+
+            function scheduleUpdate() {
+                if (updateTimer) return;
+                wasAtBottom = (chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight) < 100;
+                updateTimer = setTimeout(performUpdate, 50);
+            }
+
             function readStream() {
                 reader.read().then(({done, value}) => {
                     if (done) {
-                        // Flush any trailing complete line left in the buffer
                         if (sseBuffer.startsWith('data: ')) {
                             try {
                                 var data = JSON.parse(sseBuffer.substring(6));
                                 if (data.token) { fullText += data.token; }
                             } catch(e) {}
                         }
+                        if (updateTimer) {
+                            clearTimeout(updateTimer);
+                            updateTimer = null;
+                        }
                         finishStream(fullText, botDiv);
                         return;
                     }
                     sseBuffer += decoder.decode(value, {stream: true});
                     var lines = sseBuffer.split('\n');
-                    // The last element may be an incomplete line — keep it in the buffer
                     sseBuffer = lines.pop();
                     for (var line of lines) {
                         if (line.startsWith('data: ')) {
@@ -2788,9 +2869,10 @@ function actuallySend(text) {
                                 if (data.token) {
                                     tokenCount++;
                                     fullText += data.token;
-                                    botDiv.querySelector('.body').classList.remove('thinking-dots');
-                                    botDiv.querySelector('.body').textContent = fullText;
-                                    scrollToBottomIfNeeded();
+                                    if (botBody) {
+                                        botBody.classList.remove('thinking-dots');
+                                    }
+                                    scheduleUpdate();
                                 }
                                 if (data.error) {
                                     handleSendError(data.error);
@@ -2815,7 +2897,7 @@ function actuallySend(text) {
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
                     botDiv.querySelector('.body').innerHTML = marked.parse(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
-                    processCodeBlocks(botDiv); // Process code blocks
+                    processCodeBlocks(botDiv);
                     status.textContent = '✅ Done';
                     loadConversations();
                     speakText(text);
@@ -2830,6 +2912,7 @@ function actuallySend(text) {
         handleSendError(err.message || 'Connection failed');
     });
 }
+
 function finalizeStats(usage) {
     clearInterval(speedInterval);
     var tokenSpeedSpan = document.getElementById('tokenSpeed');
@@ -2838,15 +2921,17 @@ function finalizeStats(usage) {
     var speed = secs > 0 ? (tokens / secs).toFixed(1) : '?';
     tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens`;
 }
+
 function finishStream(fullText, botDiv) {
-    botDiv.querySelector('.body').classList.remove('thinking-dots');
-    botDiv.querySelector('.body').innerHTML = marked.parse(fullText || '(empty response)');
+    var bodyEl = botDiv.querySelector('.body');
+    bodyEl.classList.remove('thinking-dots');
+    bodyEl.innerHTML = marked.parse(fullText || '(empty response)');
     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
-    processCodeBlocks(botDiv); // Process code blocks
+    processCodeBlocks(botDiv);
     status.textContent = '✅ Done';
     busy = false;
     sendBtn.disabled = false;
-    scrollToBottomIfNeeded();
+    smoothScrollToBottom();
     speakText(fullText);
     loadConversations();
 }
@@ -2868,13 +2953,11 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
             else {
                 msgInput.value = event.results[i][0].transcript;
-                msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
                 status.textContent = '🎤 Listening... (interim)';
             }
         }
         if (transcript) {
             msgInput.value = transcript;
-            msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
             status.textContent = '✅ Voice recognized!';
         }
     };
@@ -2927,7 +3010,7 @@ window.addEventListener('beforeunload', function() {
     if (resourceIntervalId) { clearInterval(resourceIntervalId); resourceIntervalId = null; }
     navigator.sendBeacon('/unload_model');
 });
-resourceIntervalId = setInterval(updateResources, 5000);
+resourceIntervalId = setInterval(updateResources, 15000);
 
 // ─── Initialisation ─────────────────────────────
 window.addEventListener('load', function() {
@@ -3455,9 +3538,9 @@ def chat_stream():
             "options": {
                 "temperature": 0.7,
                 "num_predict": 16384,
-                "num_ctx": 16384,          # reduced from 4096 for speed
+                "num_ctx": 16384,
                 "num_gpu": mem_settings['num_gpu'],
-                "low_vram": mem_settings['low_vram'],
+                # low_vram removed – not a valid Ollama API option
             }
         }
         if images:
@@ -3468,9 +3551,6 @@ def chat_stream():
                 if "," in b64:
                     b64 = b64.split(",", 1)[1]
                 b64_list.append(b64)
-            # Ollama's native /api/chat expects `content` as a plain string
-            # with a separate top-level `images` array of raw base64 strings
-            # (NOT OpenAI-style content=[{"type": "image_url", ...}]).
             payload["messages"][-1] = {
                 "role": "user",
                 "content": last_msg["content"],
@@ -3611,10 +3691,8 @@ UNCENSORED_VISION_MODELS = [
 # ── Add them to the existing Ollama vision list, robustly ──
 if "ollama" in VISION_MODELS:
     current = VISION_MODELS["ollama"]
-    # Convert to list if it's not already (could be a set)
     if not isinstance(current, list):
         current = list(current)
-    # Use a set for O(1) dedup
     current_set = set(current)
     for m in UNCENSORED_VISION_MODELS:
         if m not in current_set:
