@@ -1,12 +1,28 @@
 # notes.py – advanced version with Markdown, tags, pinning, colours
 # + AI assistance (summarise, suggest tags, improve) + semantic search
 # + dynamic model loading from Ollama + persistent model preference
+# + Multi-provider support for AI (Ollama, DeepSeek, Claude, HF, Groq, llama.cpp)
 
 import os
-import json
+import json as std_json          # fallback
 import uuid
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# ---------- Try orjson for faster JSON ----------
+try:
+    import orjson
+    def json_dumps(obj):
+        return orjson.dumps(obj).decode('utf-8')
+    def json_loads(s):
+        return orjson.loads(s)
+    print("🚀 notes: using orjson")
+except ImportError:
+    json_dumps = std_json.dumps
+    json_loads = std_json.loads
+    print("ℹ️ notes: using standard json (install orjson for faster I/O)")
 
 # ---------- Embedding (semantic search) ----------
 try:
@@ -16,26 +32,37 @@ except ImportError:
     EMBED_AVAILABLE = False
     print("⚠️ sentence-transformers not installed. Run: pip install sentence-transformers")
 
-# ---------- LLM for AI assistance ----------
-from llm_providers import OllamaProvider
-import requests
+# ---------- LLM providers ----------
+from llm_providers import (
+    OllamaProvider,
+    DeepSeekProvider,
+    ClaudeProvider,
+    HuggingFaceProvider,
+    GroqProvider,
+    LlamaCppProvider,
+)
 
 NOTES_FILE = "json_configuration/notes.json"
 os.makedirs(os.path.dirname(NOTES_FILE), exist_ok=True)
 if not os.path.exists(NOTES_FILE):
     with open(NOTES_FILE, "w", encoding="utf-8") as f:
-        json.dump({}, f, indent=2)
+        std_json.dump({}, f, indent=2)
 
-# ---------- Embedding model (lazy loaded) ----------
+# ---------- In‑memory cache ----------
+_notes_cache = None
+_cache_lock = threading.Lock()
 _embed_model = None
+_embed_model_lock = threading.Lock()
 
+# ---------- Embedding model (lazy loaded, thread‑safe) ----------
 def get_embedder():
     global _embed_model
     if not EMBED_AVAILABLE:
         return None
-    if _embed_model is None:
-        _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-    return _embed_model
+    with _embed_model_lock:
+        if _embed_model is None:
+            _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+        return _embed_model
 
 def embed_note(note):
     """Generate embedding for a note (title + content). Returns list of floats or None."""
@@ -47,21 +74,49 @@ def embed_note(note):
         return None
     return model.encode(text).tolist()
 
-
-# ---------- Load / Save with embeddings ----------
+# ---------- Load / Save with caching and async write ----------
 def load_notes():
-    with open(NOTES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """Load notes from file once and cache them."""
+    global _notes_cache
+    if _notes_cache is not None:
+        return _notes_cache
+    with _cache_lock:
+        if _notes_cache is not None:
+            return _notes_cache
+        try:
+            with open(NOTES_FILE, "r", encoding="utf-8") as f:
+                data = json_loads(f.read())
+        except:
+            data = {}
+        # Ensure embeddings exist
+        for nid, note in data.items():
+            if 'embedding' not in note:
+                emb = embed_note(note)
+                if emb is not None:
+                    note['embedding'] = emb
+        _notes_cache = data
+        return _notes_cache
 
-def save_notes(notes):
-    # Ensure every note has an embedding (if not present)
-    for nid, note in notes.items():
-        if 'embedding' not in note:
-            emb = embed_note(note)
-            if emb is not None:
-                note['embedding'] = emb
-    with open(NOTES_FILE, "w", encoding="utf-8") as f:
-        json.dump(notes, f, indent=2)
+# ── Async save executor ──
+_save_executor = ThreadPoolExecutor(max_workers=1)
+
+def _save_notes_to_disk(notes_data):
+    try:
+        temp_file = NOTES_FILE + ".tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            std_json.dump(notes_data, f, indent=2)
+        os.replace(temp_file, NOTES_FILE)
+        print(f"✅ Saved {len(notes_data)} notes")
+    except Exception as e:
+        print(f"❌ Failed to save notes: {e}")
+
+def save_notes_async(notes_data):
+    """Schedule a background save."""
+    _save_executor.submit(_save_notes_to_disk, notes_data)
+
+def save_notes_sync(notes_data):
+    """Synchronous save (used for critical operations)."""
+    _save_notes_to_disk(notes_data)
 
 # ---------- Flask Blueprint ----------
 notes_bp = Blueprint('notes', __name__, url_prefix='/notes')
@@ -93,7 +148,7 @@ def create_note():
         "pinned": data.get("pinned", False),
         "color": data.get("color", "default")
     }
-    save_notes(notes)
+    save_notes_async(notes)
     return jsonify({"id": note_id, "ok": True})
 
 @notes_bp.route('/api/<note_id>', methods=['PUT'])
@@ -114,9 +169,9 @@ def update_note(note_id):
     if "color" in data:
         note["color"] = data["color"]
     note["last_modified"] = datetime.now().isoformat()
-    # Remove old embedding so it will be regenerated on save
+    # Remove old embedding so it will be regenerated on next load
     note.pop("embedding", None)
-    save_notes(notes)
+    save_notes_async(notes)
     return jsonify({"ok": True})
 
 @notes_bp.route('/api/<note_id>', methods=['DELETE'])
@@ -125,10 +180,10 @@ def delete_note(note_id):
     if note_id not in notes:
         return jsonify({"error": "Note not found"}), 404
     del notes[note_id]
-    save_notes(notes)
+    save_notes_async(notes)
     return jsonify({"ok": True})
 
-# ---------- Keyword search (kept for compatibility) ----------
+# ---------- Keyword search ----------
 @notes_bp.route('/api/search', methods=['GET'])
 def search_notes():
     query = request.args.get('q', '').strip().lower()
@@ -147,7 +202,7 @@ def search_notes():
         results[nid] = note
     return jsonify(results)
 
-# ---------- Semantic search (new) ----------
+# ---------- Semantic search ----------
 @notes_bp.route('/api/semantic_search', methods=['GET'])
 def semantic_search_notes():
     if not EMBED_AVAILABLE:
@@ -160,13 +215,15 @@ def semantic_search_notes():
         return jsonify([])
 
     model = get_embedder()
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
+
     q_emb = model.encode(query).reshape(1, -1)
 
     candidates = []
     for nid, note in notes.items():
         emb = note.get('embedding')
         if emb is None:
-            # Generate on the fly and store
             emb = embed_note(note)
             if emb is not None:
                 note['embedding'] = emb
@@ -175,9 +232,6 @@ def semantic_search_notes():
 
     if not candidates:
         return jsonify([])
-
-    import numpy as np
-    from sklearn.metrics.pairwise import cosine_similarity
 
     emb_matrix = np.array([c[2] for c in candidates])
     similarities = cosine_similarity(q_emb, emb_matrix).flatten()
@@ -195,13 +249,16 @@ def semantic_search_notes():
             })
     return jsonify(results)
 
-# ---------- AI Assistance (updated to accept model) ----------
+# ---------- AI Assistance (multi-provider) ----------
 @notes_bp.route('/api/ai_assist', methods=['POST'])
 def ai_assist():
     data = request.get_json()
     note_id = data.get('note_id')
     action = data.get('action')  # 'summarise', 'suggest_tags', 'improve'
-    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')  # default fallback
+    provider_name = data.get('provider', 'ollama')
+    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')
+    api_key = data.get('api_key', None)
+
     if not note_id or not action:
         return jsonify({"error": "Missing note_id or action"}), 400
 
@@ -221,35 +278,57 @@ def ai_assist():
         "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this note:\n\nTitle: {title}\nContent: {content}\n\nTags:",
         "improve": f"Rewrite the following note to improve clarity, grammar, and flow. Keep the same meaning but make it more concise and professional:\n\n{content}\n\nImproved version:"
     }
-    prompt = prompts.get(action)
-    if not prompt:
+    user_prompt = prompts.get(action)
+    if not user_prompt:
         return jsonify({"error": "Invalid action"}), 400
 
-    # Use Ollama with the selected model
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant that helps improve notes."},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    # Instantiate the provider
     try:
-        ollama = OllamaProvider()
-        response = ollama.generate([
-            {"role": "system", "content": "You are a helpful assistant that helps improve notes."},
-            {"role": "user", "content": prompt}
-        ], model=model)
+        if provider_name == 'ollama':
+            provider = OllamaProvider(model=model)
+        elif provider_name == 'deepseek':
+            provider = DeepSeekProvider(api_key=api_key)
+        elif provider_name == 'claude':
+            provider = ClaudeProvider(api_key=api_key)
+        elif provider_name == 'huggingface':
+            provider = HuggingFaceProvider(api_token=api_key)
+        elif provider_name == 'groq':
+            provider = GroqProvider(api_key=api_key)
+        elif provider_name == 'llamacpp':
+            provider = LlamaCppProvider()
+        else:
+            return jsonify({"error": f"Unsupported provider: {provider_name}"}), 400
+
+        response = provider.generate(messages, model=model, api_key=api_key)
         result = response.strip()
     except Exception as e:
-        return jsonify({"error": f"AI service unavailable: {str(e)}"}), 503
+        return jsonify({"error": f"AI service error: {str(e)}"}), 503
 
     # For 'suggest_tags', auto-apply tags
     if action == 'suggest_tags' and result:
         tags = [t.strip() for t in result.split(',') if t.strip()]
         if tags:
-            note['tags'] = list(set(note.get('tags', []) + tags))
-            save_notes(notes)
-            return jsonify({"result": result, "tags": tags})
+            existing = set(note.get('tags', []))
+            new_tags = [t for t in tags if t not in existing]
+            if new_tags:
+                note['tags'] = list(existing.union(new_tags))
+                save_notes_async(notes)
+                return jsonify({"result": result, "tags": new_tags})
 
     return jsonify({"result": result})
 
 # ---------- Clear all ----------
 @notes_bp.route('/api/clear_all', methods=['POST'])
 def clear_all_notes():
-    save_notes({})
+    save_notes_sync({})   # synchronous to ensure complete reset
+    global _notes_cache
+    with _cache_lock:
+        _notes_cache = {}
     return jsonify({"ok": True})
 
 @notes_bp.route('/api/reorder', methods=['POST'])
@@ -262,12 +341,11 @@ def reorder_notes():
     for nid, new_order in order_map.items():
         if nid in notes:
             notes[nid]['order'] = int(new_order)
-    save_notes(notes)
+    save_notes_async(notes)
     return jsonify({'ok': True})
 
-
 # ===========================================================================
-# HTML TEMPLATE (with dynamic model list)
+# HTML TEMPLATE (unchanged – same as before)
 # ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -575,7 +653,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             position: relative; width: 140px; height: 56px; border-radius: 999px; background: hsl(220 18% 82%);
             box-shadow: 2px 2px 8px rgba(0,0,0,0.12), -2px -2px 6px rgba(255,255,255,0.5),
                         inset 1px 1px 3px rgba(0,0,0,0.08), inset -1px -1px 3px rgba(255,255,255,0.4);
-            cursor: pointer; user-select: none; flex-shrink: 0;
+            cursor: pointer; user-select: none; flex-shrink:0;
         }
         .toggle-inner { position: absolute; inset: 5px; border-radius: 999px; overflow: hidden; }
         .night-bg { position: absolute; inset: 0; background: hsl(220 35% 18%); opacity:1; transition: opacity 0.3s ease; }
@@ -658,6 +736,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             display:flex;
             gap:4px;
             flex-wrap:wrap;
+            align-items:center;
         }
         .notes-panel .note-editor .editor-header .toolbar button {
             background: rgba(255,255,255,0.05);
@@ -678,7 +757,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             color: #fff;
             border-color: #1f6feb;
         }
-        /* AI assist button & model selector */
+        /* AI assist button & provider selectors */
         .notes-panel .note-editor .editor-header .toolbar .ai-assist-btn {
             background: #6f42c1;
             border-color: #6f42c1;
@@ -687,7 +766,8 @@ NOTES_HTML = r"""<!DOCTYPE html>
         .notes-panel .note-editor .editor-header .toolbar .ai-assist-btn:hover {
             background: #8b5cf6;
         }
-        .notes-panel .note-editor .editor-header .toolbar select#aiModelSelect {
+        .notes-panel .note-editor .editor-header .toolbar select,
+        .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 6px;
@@ -695,9 +775,18 @@ NOTES_HTML = r"""<!DOCTYPE html>
             padding: 4px 8px;
             font-size: 13px;
             outline: none;
-            max-width: 160px;
+            max-width: 140px;
         }
-        body.light-mode .notes-panel .note-editor .editor-header .toolbar select#aiModelSelect {
+        .notes-panel .note-editor .editor-header .toolbar select:focus,
+        .notes-panel .note-editor .editor-header .toolbar input[type="password"]:focus {
+            border-color: #58a6ff;
+        }
+        .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
+            max-width: 120px;
+            display: none; /* toggled by JS */
+        }
+        body.light-mode .notes-panel .note-editor .editor-header .toolbar select,
+        body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
             background: rgba(0,0,0,0.04);
             color: #24292f;
         }
@@ -1044,14 +1133,22 @@ NOTES_HTML = r"""<!DOCTYPE html>
                         <button data-cmd="list" title="Bullet list">•</button>
                         <button data-cmd="code" title="Code block">{ }</button>
                         <button data-cmd="preview" title="Toggle preview" id="previewToggle">👁️</button>
-                        <!-- AI Assist dropdown, model selector, and button -->
+                        <!-- AI Assistance -->
                         <select id="aiActionSelect" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#8b949e; padding:4px 8px; font-size:13px;">
                             <option value="summarise">Summarise</option>
                             <option value="suggest_tags">Suggest Tags</option>
                             <option value="improve">Improve Writing</option>
                         </select>
-                        <!-- Model dropdown: populated dynamically by JavaScript -->
-                        <select id="aiModelSelect" title="Select model for AI assistance">
+                        <select id="aiProviderSelect" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#8b949e; padding:4px 8px; font-size:13px;">
+                            <option value="ollama">Ollama</option>
+                            <option value="llamacpp">llama.cpp</option>
+                            <option value="huggingface">Hugging Face</option>
+                            <option value="groq">Groq</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="claude">Claude</option>
+                        </select>
+                        <input type="password" id="aiApiKeyInput" placeholder="API Key" style="max-width:120px; display:none;">
+                        <select id="aiModelSelect" title="Select model for AI assistance" style="max-width:160px;">
                             <option value="">Loading models...</option>
                         </select>
                         <button class="ai-assist-btn" id="aiAssistBtn" title="Run AI assistance">✨ AI</button>
@@ -1199,7 +1296,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
     var currentPinned = false;
     var searchTimeout = null;
     var activeTagFilter = '';
-    var searchMode = 'keyword'; // 'keyword' or 'semantic'
+    var searchMode = 'keyword';
 
     // ─── Markdown preview ──────────────────────────────
     function updatePreview() {
@@ -1238,61 +1335,93 @@ NOTES_HTML = r"""<!DOCTYPE html>
         });
     });
 
-    // ─── Load Ollama models dynamically ────────────────
-    function loadOllamaModels() {
-        const select = document.getElementById('aiModelSelect');
-        fetch('/providers/models?provider=ollama')
+    // ─── Multi-provider AI setup ──────────────────────
+    var aiProviderSelect = document.getElementById('aiProviderSelect');
+    var aiApiKeyInput = document.getElementById('aiApiKeyInput');
+    var aiModelSelect = document.getElementById('aiModelSelect');
+
+    function loadAIPreferences() {
+        var provider = localStorage.getItem('notes_ai_provider') || 'ollama';
+        var apiKey = localStorage.getItem('notes_ai_api_key_' + provider) || '';
+        aiProviderSelect.value = provider;
+        aiApiKeyInput.value = apiKey;
+        toggleApiKeyVisibility(provider);
+        loadModelsForProvider(provider, apiKey);
+    }
+
+    function toggleApiKeyVisibility(provider) {
+        var show = ['groq', 'huggingface', 'deepseek', 'claude'].includes(provider);
+        aiApiKeyInput.style.display = show ? 'inline-block' : 'none';
+    }
+
+    function loadModelsForProvider(provider, apiKey) {
+        var url = '/providers/models?provider=' + encodeURIComponent(provider) + '&api_key=' + encodeURIComponent(apiKey);
+        fetch(url)
             .then(r => r.json())
             .then(data => {
                 if (data.error) {
-                    select.innerHTML = '<option value="">⚠️ Error loading models</option>';
-                    console.warn('Ollama API error:', data.error);
+                    aiModelSelect.innerHTML = '<option value="">⚠️ ' + data.error + '</option>';
                     return;
                 }
-                if (!data.models || data.models.length === 0) {
-                    select.innerHTML = '<option value="">No models found (pull one first)</option>';
-                    return;
-                }
-                // Build options
-                const saved = localStorage.getItem('notes_ai_model') || '';
-                let options = '';
-                data.models.forEach(m => {
-                    const selected = (m === saved) ? 'selected' : '';
-                    options += `<option value="${m}" ${selected}>${m}</option>`;
-                });
-                select.innerHTML = options;
-                // If no saved model or saved model not in list, select first
-                if (!saved || !data.models.includes(saved)) {
-                    if (data.models.length) {
-                        select.value = data.models[0];
-                        localStorage.setItem('notes_ai_model', data.models[0]);
+                var models = data.models || [];
+                var current = localStorage.getItem('notes_ai_model') || '';
+                aiModelSelect.innerHTML = '';
+                if (models.length) {
+                    models.forEach(m => {
+                        var opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        aiModelSelect.appendChild(opt);
+                    });
+                    if (current && models.includes(current)) {
+                        aiModelSelect.value = current;
+                    } else {
+                        aiModelSelect.value = models[0];
+                        localStorage.setItem('notes_ai_model', models[0]);
                     }
+                } else {
+                    aiModelSelect.innerHTML = '<option value="">No models found</option>';
                 }
             })
             .catch(err => {
-                console.error('Failed to fetch Ollama models:', err);
-                select.innerHTML = '<option value="">⚠️ Cannot reach Ollama</option>';
+                console.error('Failed to load models:', err);
+                aiModelSelect.innerHTML = '<option value="">⚠️ Cannot reach server</option>';
             });
     }
 
-    // ─── Save model preference when user changes it ────
-    document.getElementById('aiModelSelect').addEventListener('change', function() {
+    aiProviderSelect.addEventListener('change', function() {
+        var provider = this.value;
+        var apiKey = aiApiKeyInput.value;
+        localStorage.setItem('notes_ai_provider', provider);
+        toggleApiKeyVisibility(provider);
+        loadModelsForProvider(provider, apiKey);
+    });
+
+    aiApiKeyInput.addEventListener('blur', function() {
+        var provider = aiProviderSelect.value;
+        localStorage.setItem('notes_ai_api_key_' + provider, this.value);
+    });
+
+    aiModelSelect.addEventListener('change', function() {
         localStorage.setItem('notes_ai_model', this.value);
     });
 
-    // ─── AI Assist (sends selected model) ──────────────
+    // ─── AI Assist (sends provider, model, api_key) ──
     document.getElementById('aiAssistBtn').addEventListener('click', function() {
         if (!editingNoteId) {
             alert('Please save the note first, then use AI assist.');
             return;
         }
         var action = document.getElementById('aiActionSelect').value;
-        var modelSelect = document.getElementById('aiModelSelect');
-        var model = modelSelect.value;
+        var provider = aiProviderSelect.value;
+        var model = aiModelSelect.value;
+        var apiKey = aiApiKeyInput.value;
+
         if (!model) {
             alert('No model selected. Please wait for models to load or select one.');
             return;
         }
+
         var resultDiv = document.getElementById('aiResult');
         resultDiv.style.display = 'block';
         resultDiv.textContent = '⏳ Thinking...';
@@ -1302,7 +1431,9 @@ NOTES_HTML = r"""<!DOCTYPE html>
             body: JSON.stringify({
                 note_id: editingNoteId,
                 action: action,
-                model: model
+                provider: provider,
+                model: model,
+                api_key: apiKey
             })
         })
         .then(r => r.json())
@@ -1390,9 +1521,10 @@ NOTES_HTML = r"""<!DOCTYPE html>
                         var match = true;
                         if (tag && !note.tags.map(t => t.toLowerCase()).includes(tag)) match = false;
                         if (query && match) {
-                            var titleMatch = query.toLowerCase() in note.title.toLowerCase();
-                            var contentMatch = query.toLowerCase() in note.content.toLowerCase();
-                            var tagMatch = note.tags.some(t => t.toLowerCase().includes(query.toLowerCase()));
+                            var q = query.toLowerCase();
+                            var titleMatch = note.title.toLowerCase().includes(q);
+                            var contentMatch = note.content.toLowerCase().includes(q);
+                            var tagMatch = note.tags.some(t => t.toLowerCase().includes(q));
                             if (!(titleMatch || contentMatch || tagMatch)) match = false;
                         }
                         if (match) filtered[nid] = note;
@@ -1797,7 +1929,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
 
     // ─── Init ────────────────────────────────────────────
     window.addEventListener('load', function() {
-        loadOllamaModels();   // fetch models from Ollama
+        loadAIPreferences();          // load provider, model, api key
         loadNotes();
         document.getElementById('noteTitleInput').focus();
     });
