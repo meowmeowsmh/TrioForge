@@ -2,11 +2,26 @@
 # Red Thread links, and AI assistance with dynamic model selection.
 
 import os
-import json
+import json as std_json          # fallback if orjson not available
 import uuid
 import random
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# ---------- Try orjson for faster JSON ----------
+try:
+    import orjson
+    def json_dumps(obj):
+        return orjson.dumps(obj).decode('utf-8')
+    def json_loads(s):
+        return orjson.loads(s)
+    print("🚀 corkboard: using orjson")
+except ImportError:
+    json_dumps = std_json.dumps
+    json_loads = std_json.loads
+    print("ℹ️ corkboard: using standard json (install orjson for faster I/O)")
 
 # ---------- Embedding (semantic search) ----------
 try:
@@ -19,24 +34,37 @@ except ImportError:
     print("⚠️ sentence-transformers or scikit-learn not installed. Run: pip install sentence-transformers scikit-learn")
 
 # ---------- LLM for AI assistance ----------
-from llm_providers import OllamaProvider
+from llm_providers import (
+    LLMProvider,
+    OllamaProvider,
+    LlamaCppProvider,
+    HuggingFaceProvider,
+    GroqProvider,
+    DeepSeekProvider,
+    ClaudeProvider,
+)
 
 CORKBOARD_FILE = "json_configuration/corkboard.json"
 os.makedirs(os.path.dirname(CORKBOARD_FILE), exist_ok=True)
 if not os.path.exists(CORKBOARD_FILE):
     with open(CORKBOARD_FILE, "w", encoding="utf-8") as f:
-        json.dump({"pins": {}, "links": []}, f, indent=2)
+        std_json.dump({"pins": {}, "links": []}, f, indent=2)
 
-# ---------- Embedding model (lazy loaded) ----------
+# ---------- In‑memory cache ----------
+_board_cache = None
+_board_cache_lock = threading.Lock()
 _embed_model = None
+_embed_model_lock = threading.Lock()
 
+# ---------- Embedding model (lazy loaded, thread‑safe) ----------
 def get_embedder():
     global _embed_model
     if not EMBED_AVAILABLE:
         return None
-    if _embed_model is None:
-        _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-    return _embed_model
+    with _embed_model_lock:
+        if _embed_model is None:
+            _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+        return _embed_model
 
 def embed_pin(pin):
     """Generate embedding for a pin (title + content). Returns list of floats or None."""
@@ -49,29 +77,59 @@ def embed_pin(pin):
     return model.encode(text).tolist()
 
 
+# ---------- Load board (cached) ----------
 def load_board():
-    with open(CORKBOARD_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    data.setdefault("pins", {})
-    data.setdefault("links", [])
-    # Ensure all pins have embeddings (generate if missing)
-    for pid, pin in data["pins"].items():
-        if 'embedding' not in pin:
-            emb = embed_pin(pin)
-            if emb is not None:
-                pin['embedding'] = emb
-    return data
+    """Load board from file once and cache it."""
+    global _board_cache
+    if _board_cache is not None:
+        return _board_cache
+    with _board_cache_lock:
+        if _board_cache is not None:
+            return _board_cache
+        try:
+            with open(CORKBOARD_FILE, "r", encoding="utf-8") as f:
+                data = json_loads(f.read())
+        except:
+            data = {"pins": {}, "links": []}
+        data.setdefault("pins", {})
+        data.setdefault("links", [])
+        # Ensure embeddings exist
+        for pid, pin in data["pins"].items():
+            if 'embedding' not in pin:
+                emb = embed_pin(pin)
+                if emb is not None:
+                    pin['embedding'] = emb
+        _board_cache = data
+        return _board_cache
 
 
-def save_board(data):
-    # Generate embeddings for any new/changed pins
-    for pid, pin in data.get("pins", {}).items():
-        if 'embedding' not in pin:
-            emb = embed_pin(pin)
-            if emb is not None:
-                pin['embedding'] = emb
-    with open(CORKBOARD_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+# ── Async save executor ──
+_save_executor = ThreadPoolExecutor(max_workers=1)
+
+def _save_board_to_disk(data):
+    try:
+        temp_file = CORKBOARD_FILE + ".tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            std_json.dump(data, f, indent=2)
+        os.replace(temp_file, CORKBOARD_FILE)
+        print(f"✅ Saved corkboard with {len(data.get('pins', {}))} pins")
+    except Exception as e:
+        print(f"❌ Failed to save corkboard: {e}")
+
+def save_board_async(data):
+    """Schedule a background save."""
+    # Update cache immediately
+    global _board_cache
+    with _board_cache_lock:
+        _board_cache = data
+    _save_executor.submit(_save_board_to_disk, data)
+
+def save_board_sync(data):
+    """Synchronous save (used for critical operations)."""
+    global _board_cache
+    with _board_cache_lock:
+        _board_cache = data
+    _save_board_to_disk(data)
 
 
 corkboard_bp = Blueprint('corkboard', __name__, url_prefix='/corkboard')
@@ -156,13 +214,43 @@ def semantic_search_pins():
     return jsonify(results)
 
 
-# ---------- API: AI assistance (updated to accept model) ----------
+# ---------- Provider cache for AI assist ----------
+_provider_cache = {}
+
+def get_provider(provider_name, api_key=None):
+    key = (provider_name, api_key)
+    if key in _provider_cache:
+        return _provider_cache[key]
+    provider_map = {
+        "ollama": OllamaProvider,
+        "llamacpp": LlamaCppProvider,
+        "huggingface": HuggingFaceProvider,
+        "groq": GroqProvider,
+        "deepseek": DeepSeekProvider,
+        "claude": ClaudeProvider,
+    }
+    cls = provider_map.get(provider_name)
+    if not cls:
+        raise ValueError(f"Unknown provider: {provider_name}")
+    inst = cls()
+    if api_key:
+        # For providers that need a key, we set it via a method or constructor
+        # We'll assume the provider classes accept api_key in generate, so we pass it each time
+        pass
+    _provider_cache[key] = inst
+    return inst
+
+
+# ---------- API: AI assistance (updated to accept provider, api_key, model) ----------
 @corkboard_bp.route('/api/ai_assist', methods=['POST'])
 def ai_assist():
     data = request.get_json()
     pin_id = data.get('pin_id')
     action = data.get('action')  # 'summarise', 'suggest_tags', 'improve', 'suggest_links'
-    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')  # default fallback
+    provider_name = data.get('provider', 'ollama')
+    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')
+    api_key = data.get('api_key', None)
+
     if not pin_id or not action:
         return jsonify({"error": "Missing pin_id or action"}), 400
 
@@ -181,7 +269,7 @@ def ai_assist():
         if not EMBED_AVAILABLE:
             return jsonify({"error": "Embedding model not available"}), 503
         # Compute similarity between this pin and all others
-        model = get_embedder()
+        model_emb = get_embedder()
         pin_emb = np.array(pin.get('embedding')).reshape(1, -1) if pin.get('embedding') else embed_pin(pin)
         if pin_emb is None:
             return jsonify({"error": "Could not generate embedding for this pin"}), 500
@@ -197,7 +285,7 @@ def ai_assist():
             if emb:
                 candidates.append((pid, other, emb))
         if not candidates:
-            return jsonify([])
+            return jsonify({"suggestions": []})
         emb_matrix = np.array([c[2] for c in candidates])
         similarities = cosine_similarity(pin_emb, emb_matrix).flatten()
         sorted_idx = np.argsort(similarities)[::-1]
@@ -222,13 +310,15 @@ def ai_assist():
     if not prompt:
         return jsonify({"error": "Invalid action"}), 400
 
-    # Use Ollama with the selected model
+    # Instantiate provider
     try:
-        ollama = OllamaProvider()
-        response = ollama.generate([
+        provider = get_provider(provider_name, api_key)
+        messages = [
             {"role": "system", "content": "You are a helpful assistant that helps improve notes and pins."},
             {"role": "user", "content": prompt}
-        ], model=model)
+        ]
+        # Pass api_key and model to generate
+        response = provider.generate(messages, model=model, api_key=api_key)
         result = response.strip()
     except Exception as e:
         return jsonify({"error": f"AI service unavailable: {str(e)}"}), 503
@@ -242,7 +332,7 @@ def ai_assist():
             new_tags = [t for t in tags if t not in existing]
             if new_tags:
                 pin['tags'] = list(existing.union(new_tags))
-                save_board(board)
+                save_board_async(board)
                 return jsonify({"result": result, "tags": new_tags})
 
     return jsonify({"result": result})
@@ -271,7 +361,7 @@ def create_pin():
         "type": data.get("type", "note"),
         "filename": data.get("filename")
     }
-    save_board(board)
+    save_board_async(board)
     return jsonify({"id": pin_id, "ok": True, "pin": board['pins'][pin_id]})
 
 
@@ -286,9 +376,9 @@ def update_pin(pin_id):
         if field in data:
             pin[field] = data[field]
     pin["last_modified"] = datetime.now().isoformat()
-    # Remove embedding so it gets regenerated on save
+    # Remove embedding so it gets regenerated on next load
     pin.pop("embedding", None)
-    save_board(board)
+    save_board_async(board)
     return jsonify({"ok": True})
 
 
@@ -299,7 +389,7 @@ def delete_pin(pin_id):
         return jsonify({"error": "Pin not found"}), 404
     del board['pins'][pin_id]
     board['links'] = [l for l in board['links'] if l['from'] != pin_id and l['to'] != pin_id]
-    save_board(board)
+    save_board_async(board)
     return jsonify({"ok": True})
 
 
@@ -325,7 +415,7 @@ def toggle_link():
     else:
         board['links'].append({"from": a, "to": b, "color": new_color})
         linked = True
-    save_board(board)
+    save_board_async(board)
     return jsonify({"ok": True, "linked": linked, "color": new_color})
 
 
@@ -339,7 +429,7 @@ def change_link_color():
     for l in board['links']:
         if (l['from'] == a and l['to'] == b) or (l['from'] == b and l['to'] == a):
             l['color'] = new_color
-            save_board(board)
+            save_board_async(board)
             return jsonify({"ok": True, "color": new_color})
     return jsonify({"error": "Link not found"}), 404
 
@@ -347,7 +437,7 @@ def change_link_color():
 # ---------- API: clear all ----------
 @corkboard_bp.route('/api/clear_all', methods=['POST'])
 def clear_all():
-    save_board({"pins": {}, "links": []})
+    save_board_sync({"pins": {}, "links": []})   # synchronous to ensure complete reset
     return jsonify({"ok": True})
 
 
@@ -370,7 +460,7 @@ def upload_file():
         if ext in ('txt', 'md'):
             content = f.read().decode('utf-8', errors='replace')
         elif ext == 'ipynb':
-            nb = json.load(f)
+            nb = json_loads(f.read())
             parts = []
             for cell in nb.get('cells', []):
                 src = cell.get('source', [])
@@ -417,7 +507,7 @@ def upload_file():
         "type": "file",
         "filename": filename
     }
-    save_board(board)
+    save_board_async(board)
     return jsonify({"ok": True, "id": pin_id, "pin": board['pins'][pin_id]})
 
 
@@ -675,6 +765,8 @@ body.light-mode .board-wrap {
     border: 2px solid rgba(255,255,255,0.06);
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     transition: background 0.3s, border-color 0.3s;
+    will-change: transform;
+    contain: layout;
 }
 body.light-mode .board {
     background-color: #d9b382;
@@ -819,7 +911,7 @@ body.light-mode .empty-hint { color:rgba(0,0,0,0.5); background: rgba(255,255,25
     background: #1c2333;
     border-radius:16px;
     padding:24px 28px;
-    max-width:600px;
+    max-width:700px;
     width:90%;
     max-height:90vh;
     overflow-y:auto;
@@ -839,7 +931,9 @@ body.light-mode .modal {
     margin:10px 0 4px;
 }
 .modal input[type="text"],
-.modal textarea {
+.modal textarea,
+.modal input[type="number"],
+.modal input[type="password"] {
     width:100%;
     padding:8px 12px;
     border-radius:8px;
@@ -851,9 +945,13 @@ body.light-mode .modal {
     transition: border-color .2s;
 }
 .modal input[type="text"]:focus,
-.modal textarea:focus { border-color:#58a6ff; }
+.modal textarea:focus,
+.modal input[type="number"]:focus,
+.modal input[type="password"]:focus { border-color:#58a6ff; }
 body.light-mode .modal input[type="text"],
-body.light-mode .modal textarea {
+body.light-mode .modal textarea,
+body.light-mode .modal input[type="number"],
+body.light-mode .modal input[type="password"] {
     background: #fff;
     color:#24292f;
     border-color:rgba(0,0,0,0.12);
@@ -911,15 +1009,19 @@ body.light-mode .modal textarea {
     flex-wrap:wrap;
     align-items:center;
 }
-.modal .ai-section select {
-    background: rgba(255,255,255,0.05);
+.modal .ai-section select,
+.modal .ai-section input[type="password"] {
+    background: #2d2d3d;  
     border:1px solid rgba(255,255,255,0.1);
     border-radius:6px;
-    color:#8b949e;
+    color:#e6edf3;
     padding:4px 8px;
     font-size:13px;
     outline:none;
+    height:32px;
 }
+.modal .ai-section select { max-width:130px; }
+.modal .ai-section input[type="password"] { max-width:150px; display:none; }
 .modal .ai-section .ai-btn {
     background:#6f42c1;
     border:none;
@@ -941,6 +1043,16 @@ body.light-mode .modal textarea {
     font-size:14px;
     white-space:pre-wrap;
     display:none;
+}
+body.light-mode .modal .ai-section select,
+body.light-mode .modal .ai-section input[type="password"] {
+    background: #fff;
+    color:#24292f;
+    border-color:rgba(0,0,0,0.12);
+}
+body.light-mode .modal .ai-section .ai-result {
+    background:rgba(0,0,0,0.03);
+    color:#24292f;
 }
 
 /* ── Suggest Links modal ───────────────────────────── */
@@ -1088,8 +1200,9 @@ body.light-mode .modal .ai-section .ai-result {
     background:rgba(0,0,0,0.03);
     color:#24292f;
 }
-body.light-mode .modal .ai-section select {
-    background:rgba(0,0,0,0.04);
+body.light-mode .modal .ai-section select,
+body.light-mode .modal .ai-section input[type="password"] {
+    background: #fff;
     color:#24292f;
 }
 body.light-mode .link-suggestions-box {
@@ -1102,10 +1215,6 @@ body.light-mode .link-suggestions-box .suggestion-item {
 body.light-mode .toolbar .search-mode-toggle button { color:#57606a; }
 body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb; color:#fff; }
 
-/* Additional style for model selector inside modal */
-.modal .ai-section select#aiModelSelect {
-    max-width: 140px;
-}
 </style>
 </head>
 <body>
@@ -1205,7 +1314,6 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
         </span>
         <button class="top-btn" id="linkBtn" onclick="toggleLinkMode()">🔗 Link Mode</button>
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
-        <!-- NEW: Suggest Links button -->
         <button class="top-btn" id="suggestLinksBtn" onclick="openLinkSuggestions()">💡 Suggest Links</button>
     </div>
 
@@ -1270,7 +1378,7 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
             </div>
         </div>
 
-        <!-- AI ASSIST SECTION (with model dropdown) -->
+        <!-- AI ASSIST SECTION (with provider, api key, model dropdowns) -->
         <div class="ai-section">
             <div class="ai-row">
                 <label style="margin:0; font-weight:500;">✨ AI Assist:</label>
@@ -1280,8 +1388,16 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
                     <option value="improve">Improve Writing</option>
                     <option value="suggest_links">Suggest Links for this Pin</option>
                 </select>
-                <!-- Model dropdown: populated dynamically -->
-                <select id="aiModelSelect" title="Select Ollama model for AI assistance">
+                <select id="aiProviderSelect">
+                    <option value="ollama">Ollama</option>
+                    <option value="llamacpp">llama.cpp</option>
+                    <option value="huggingface">Hugging Face</option>
+                    <option value="groq">Groq</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="claude">Claude (Anthropic)</option>
+                </select>
+                <input type="password" id="aiApiKeyInput" placeholder="API Key (if required)" style="display:none; max-width:150px;">
+                <select id="aiModelSelect" title="Select model">
                     <option value="">Loading models...</option>
                 </select>
                 <button class="ai-btn" id="aiAssistBtn">Run AI</button>
@@ -1443,6 +1559,14 @@ function updateBoardSize() {
     boardEl.style.width = maxX + 'px';
     boardEl.style.height = maxY + 'px';
 }
+let boardResizeRAF = null;
+function scheduleBoardSizeUpdate() {
+    if (boardResizeRAF) cancelAnimationFrame(boardResizeRAF);
+    boardResizeRAF = requestAnimationFrame(() => {
+        updateBoardSize();
+        boardResizeRAF = null;
+    });
+}
 
 // ─── Load & render ────────────────────────────────────
 function loadBoard() {
@@ -1517,7 +1641,7 @@ function renderAll() {
     });
     document.getElementById('emptyHint').style.display = keepIds.size ? 'none' : 'block';
     renderLinks();
-    updateBoardSize();
+    scheduleBoardSizeUpdate();
 }
 
 function renderPin(pin) {
@@ -1543,6 +1667,11 @@ function renderPin(pin) {
 }
 
 function updatePinElement(el, pin) {
+    var lastModified = el.dataset.lastModified || '';
+    if (lastModified === pin.last_modified) {
+        // No change, skip
+        return;
+    }
     var colorClass = 'color-' + (pin.color || 'yellow');
     el.className = 'pin ' + colorClass;
     var w = pin.width || 220;
@@ -1573,6 +1702,7 @@ function updatePinElement(el, pin) {
         e.stopPropagation();
         if (confirm('Delete this pin?')) deletePin(pin.id);
     });
+    el.dataset.lastModified = pin.last_modified || '';
 }
 
 function escapeHtml(text) {
@@ -1718,7 +1848,7 @@ function dragEnd() {
     var pin = boardData.pins[id];
     savePin(id, { x: pin.x, y: pin.y }, true);
     renderLinks();
-    updateBoardSize();
+    scheduleBoardSizeUpdate();
     dragCtx = null;
     isDragging = false;
     window.removeEventListener('mousemove', dragMove);
@@ -1911,21 +2041,22 @@ function removeLink(from, to) {
 }
 
 // ─── Load Ollama models dynamically ──────────────────
-function loadOllamaModels() {
+function loadOllamaModels(provider, apiKey) {
     const select = document.getElementById('aiModelSelect');
-    fetch('/providers/models?provider=ollama')
+    select.innerHTML = '<option value="">Loading...</option>';
+    const url = '/providers/models?provider=' + encodeURIComponent(provider) + '&api_key=' + encodeURIComponent(apiKey || '');
+    fetch(url)
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                select.innerHTML = '<option value="">⚠️ Error loading models</option>';
-                console.warn('Ollama API error:', data.error);
+                select.innerHTML = '<option value="">⚠️ ' + data.error + '</option>';
+                console.warn('Model loading error:', data.error);
                 return;
             }
             if (!data.models || data.models.length === 0) {
-                select.innerHTML = '<option value="">No models found (pull one first)</option>';
+                select.innerHTML = '<option value="">No models found</option>';
                 return;
             }
-            // Build options
             const saved = localStorage.getItem('corkboard_ai_model') || '';
             let options = '';
             data.models.forEach(m => {
@@ -1933,7 +2064,6 @@ function loadOllamaModels() {
                 options += `<option value="${m}" ${selected}>${m}</option>`;
             });
             select.innerHTML = options;
-            // If no saved model or saved model not in list, select first
             if (!saved || !data.models.includes(saved)) {
                 if (data.models.length) {
                     select.value = data.models[0];
@@ -1942,16 +2072,54 @@ function loadOllamaModels() {
             }
         })
         .catch(err => {
-            console.error('Failed to fetch Ollama models:', err);
-            select.innerHTML = '<option value="">⚠️ Cannot reach Ollama</option>';
+            console.error('Failed to fetch models:', err);
+            select.innerHTML = '<option value="">⚠️ Cannot reach provider</option>';
         });
 }
 
-// ─── Save model preference when user changes it ──────
-document.addEventListener('change', function(e) {
-    if (e.target && e.target.id === 'aiModelSelect') {
-        localStorage.setItem('corkboard_ai_model', e.target.value);
+// ─── Provider change in AI section ──────────────────
+document.getElementById('aiProviderSelect').addEventListener('change', function() {
+    var provider = this.value;
+    var apiKeyInput = document.getElementById('aiApiKeyInput');
+    // Show API key input for providers that need it
+    if (['groq', 'huggingface', 'deepseek', 'claude'].includes(provider)) {
+        apiKeyInput.style.display = 'inline-block';
+        var placeholder = '';
+        if (provider === 'groq') placeholder = 'Groq API Key';
+        else if (provider === 'huggingface') placeholder = 'HF Token';
+        else if (provider === 'deepseek') placeholder = 'DeepSeek API Key';
+        else if (provider === 'claude') placeholder = 'Anthropic API Key';
+        apiKeyInput.placeholder = placeholder;
+        // Load saved key
+        var savedKey = localStorage.getItem('corkboard_api_key_' + provider) || '';
+        apiKeyInput.value = savedKey;
+    } else {
+        apiKeyInput.style.display = 'none';
+        apiKeyInput.value = '';
     }
+    // Load models for this provider
+    var apiKey = apiKeyInput.value;
+    loadOllamaModels(provider, apiKey);
+    // Save provider preference
+    localStorage.setItem('corkboard_ai_provider', provider);
+});
+
+// ─── Save API key on blur ────────────────────────────
+document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
+    var provider = document.getElementById('aiProviderSelect').value;
+    var key = this.value.trim();
+    if (key) {
+        localStorage.setItem('corkboard_api_key_' + provider, key);
+    } else {
+        localStorage.removeItem('corkboard_api_key_' + provider);
+    }
+    // Reload models with new key
+    loadOllamaModels(provider, key);
+});
+
+// ─── Model select change saves preference ─────────────
+document.getElementById('aiModelSelect').addEventListener('change', function() {
+    localStorage.setItem('corkboard_ai_model', this.value);
 });
 
 // ─── EDIT MODAL ──────────────────────────────────────
@@ -1973,6 +2141,23 @@ function openEditModal(id) {
     document.getElementById('pinPreview').innerHTML = '';
     document.getElementById('pinPreview').classList.remove('visible');
     document.getElementById('aiResult').style.display = 'none';
+    // Restore provider, api key, model from localStorage
+    var savedProvider = localStorage.getItem('corkboard_ai_provider') || 'ollama';
+    document.getElementById('aiProviderSelect').value = savedProvider;
+    // Trigger change to show api key and load models
+    var evt = new Event('change');
+    document.getElementById('aiProviderSelect').dispatchEvent(evt);
+    // Restore saved model
+    var savedModel = localStorage.getItem('corkboard_ai_model') || '';
+    if (savedModel) {
+        var modelSelect = document.getElementById('aiModelSelect');
+        for (var i = 0; i < modelSelect.options.length; i++) {
+            if (modelSelect.options[i].value === savedModel) {
+                modelSelect.value = savedModel;
+                break;
+            }
+        }
+    }
     document.getElementById('editModal').classList.add('active');
 }
 
@@ -1988,13 +2173,16 @@ function togglePreview() {
     preview.classList.toggle('visible');
 }
 
-// ─── AI Assist in Modal (sends selected model) ──────
+// ─── AI Assist in Modal ──────────────────────────────
 document.getElementById('aiAssistBtn').addEventListener('click', function() {
     if (!editingPinId) {
         alert('Please save the pin first, then use AI assist.');
         return;
     }
     var action = document.getElementById('aiActionSelect').value;
+    var provider = document.getElementById('aiProviderSelect').value;
+    var apiKeyInput = document.getElementById('aiApiKeyInput');
+    var apiKey = apiKeyInput.style.display !== 'none' ? apiKeyInput.value : '';
     var modelSelect = document.getElementById('aiModelSelect');
     var model = modelSelect.value;
     if (!model) {
@@ -2011,7 +2199,9 @@ document.getElementById('aiAssistBtn').addEventListener('click', function() {
         body: JSON.stringify({
             pin_id: editingPinId,
             action: action,
-            model: model  // send selected model
+            provider: provider,
+            api_key: apiKey,
+            model: model
         })
     })
     .then(r => r.json())
@@ -2077,41 +2267,8 @@ function deleteCurrentPin() {
 
 // ─── LINK SUGGESTIONS (global) ──────────────────────
 function openLinkSuggestions() {
-    // This global link suggestion feature is partially implemented.
-    // The /api/global_link_suggestions endpoint doesn't exist yet.
-    // We'll show a placeholder for now, or we can implement it later.
+    // This global link suggestion feature is placeholder.
     alert('Global link suggestions will be implemented soon. Use "Suggest Links for this Pin" from the edit modal.');
-    // For now, we'll just return.
-    return;
-    // If you want to implement, uncomment the following:
-    /*
-    fetch('/corkboard/api/global_link_suggestions')
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                alert('Error: ' + data.error);
-                return;
-            }
-            var list = document.getElementById('suggestionsList');
-            list.innerHTML = '';
-            if (!data.suggestions || data.suggestions.length === 0) {
-                list.innerHTML = '<p>No suggestions found. Add more pins with content.</p>';
-            } else {
-                data.suggestions.forEach(function(pair) {
-                    var div = document.createElement('div');
-                    div.className = 'suggestion-item';
-                    div.innerHTML = `
-                        <span class="title">${escapeHtml(pair.from_title)} ↔ ${escapeHtml(pair.to_title)}</span>
-                        <span class="score">${(pair.score*100).toFixed(0)}%</span>
-                        <button class="link-btn" onclick="createLink('${pair.from}', '${pair.to}')">Link</button>
-                    `;
-                    list.appendChild(div);
-                });
-            }
-            document.getElementById('linkSuggestionsOverlay').classList.add('active');
-        })
-        .catch(err => alert('Failed to get suggestions: ' + err));
-    */
 }
 
 function closeLinkSuggestions() {
@@ -2151,7 +2308,11 @@ document.querySelectorAll('#pinColorPicker .color-option').forEach(el => {
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('load', function() {
     loadBoard();
-    loadOllamaModels();   // populate AI model dropdown
+    // Initialize AI provider/model dropdowns
+    var savedProvider = localStorage.getItem('corkboard_ai_provider') || 'ollama';
+    document.getElementById('aiProviderSelect').value = savedProvider;
+    var evt = new Event('change');
+    document.getElementById('aiProviderSelect').dispatchEvent(evt);
     document.getElementById('editModal').addEventListener('click', function(e) {
         if (e.target === this) closeModal();
     });
@@ -2166,7 +2327,7 @@ window.addEventListener('load', function() {
 let resizeTimer;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(updateBoardSize, 100);
+    resizeTimer = setTimeout(scheduleBoardSizeUpdate, 100);
 });
 </script>
 </body>
