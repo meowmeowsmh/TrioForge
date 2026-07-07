@@ -1,5 +1,7 @@
 # cork_board.py – advanced with Markdown, tags, search, resizable pins, modal editor,
 # Red Thread links, and AI assistance with dynamic model selection.
+# OPTIMIZED: fast startup, lazy embedding, throttled drag updates.
+# + IMAGE UPLOAD support – drag/drop images to create picture pins.
 
 import os
 import json as std_json          # fallback if orjson not available
@@ -76,10 +78,9 @@ def embed_pin(pin):
         return None
     return model.encode(text).tolist()
 
-
-# ---------- Load board (cached) ----------
+# ---------- Load board (cached, NO embedding generation) ----------
 def load_board():
-    """Load board from file once and cache it."""
+    """Load board from file once and cache it. Does NOT compute embeddings."""
     global _board_cache
     if _board_cache is not None:
         return _board_cache
@@ -93,15 +94,8 @@ def load_board():
             data = {"pins": {}, "links": []}
         data.setdefault("pins", {})
         data.setdefault("links", [])
-        # Ensure embeddings exist
-        for pid, pin in data["pins"].items():
-            if 'embedding' not in pin:
-                emb = embed_pin(pin)
-                if emb is not None:
-                    pin['embedding'] = emb
         _board_cache = data
         return _board_cache
-
 
 # ── Async save executor ──
 _save_executor = ThreadPoolExecutor(max_workers=1)
@@ -117,20 +111,33 @@ def _save_board_to_disk(data):
         print(f"❌ Failed to save corkboard: {e}")
 
 def save_board_async(data):
-    """Schedule a background save."""
-    # Update cache immediately
     global _board_cache
     with _board_cache_lock:
         _board_cache = data
     _save_executor.submit(_save_board_to_disk, data)
 
 def save_board_sync(data):
-    """Synchronous save (used for critical operations)."""
     global _board_cache
     with _board_cache_lock:
         _board_cache = data
     _save_board_to_disk(data)
 
+# ---------- Optional background embedding precomputation ----------
+def compute_all_embeddings():
+    data = load_board()
+    changed = False
+    for pid, pin in data['pins'].items():
+        if 'embedding' not in pin:
+            emb = embed_pin(pin)
+            if emb is not None:
+                pin['embedding'] = emb
+                changed = True
+    if changed:
+        save_board_sync(data)
+        print("✅ Precomputed embeddings for all pins.")
+
+# (Uncomment to enable background precomputation)
+# threading.Thread(target=compute_all_embeddings, daemon=True).start()
 
 corkboard_bp = Blueprint('corkboard', __name__, url_prefix='/corkboard')
 
@@ -139,12 +146,10 @@ corkboard_bp = Blueprint('corkboard', __name__, url_prefix='/corkboard')
 def corkboard_page():
     return render_template_string(CORKBOARD_HTML)
 
-
 # ---------- API: full board ----------
 @corkboard_bp.route('/api', methods=['GET'])
 def get_board():
     return jsonify(load_board())
-
 
 # ---------- API: keyword search ----------
 @corkboard_bp.route('/api/search', methods=['GET'])
@@ -168,8 +173,7 @@ def search_pins():
     board['links'] = [l for l in board['links'] if l['from'] in results and l['to'] in results]
     return jsonify({"pins": results, "links": board['links']})
 
-
-# ---------- API: semantic search ----------
+# ---------- API: semantic search (lazy embedding) ----------
 @corkboard_bp.route('/api/semantic_search', methods=['GET'])
 def semantic_search_pins():
     if not EMBED_AVAILABLE:
@@ -211,8 +215,11 @@ def semantic_search_pins():
                 "content": pin["content"][:200] + "..." if len(pin["content"]) > 200 else pin["content"],
                 "score": float(similarities[idx])
             })
-    return jsonify(results)
 
+    if any(pin.get('embedding') for _, pin, _ in candidates if pin.get('embedding') is not None):
+        save_board_async(board)
+
+    return jsonify(results)
 
 # ---------- Provider cache for AI assist ----------
 _provider_cache = {}
@@ -233,22 +240,17 @@ def get_provider(provider_name, api_key=None):
     if not cls:
         raise ValueError(f"Unknown provider: {provider_name}")
     inst = cls()
-    if api_key:
-        # For providers that need a key, we set it via a method or constructor
-        # We'll assume the provider classes accept api_key in generate, so we pass it each time
-        pass
     _provider_cache[key] = inst
     return inst
 
-
-# ---------- API: AI assistance (updated to accept provider, api_key, model) ----------
+# ---------- API: AI assistance ----------
 @corkboard_bp.route('/api/ai_assist', methods=['POST'])
 def ai_assist():
     data = request.get_json()
     pin_id = data.get('pin_id')
-    action = data.get('action')  # 'summarise', 'suggest_tags', 'improve', 'suggest_links'
+    action = data.get('action')
     provider_name = data.get('provider', 'ollama')
-    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')
+    model = data.get('model', 'llama3.2')
     api_key = data.get('api_key', None)
 
     if not pin_id or not action:
@@ -264,15 +266,19 @@ def ai_assist():
     if not content and not title:
         return jsonify({"error": "Pin is empty"}), 400
 
-    # ----- Handle suggest_links separately (no LLM needed) -----
     if action == 'suggest_links':
         if not EMBED_AVAILABLE:
             return jsonify({"error": "Embedding model not available"}), 503
-        # Compute similarity between this pin and all others
         model_emb = get_embedder()
-        pin_emb = np.array(pin.get('embedding')).reshape(1, -1) if pin.get('embedding') else embed_pin(pin)
+        pin_emb = pin.get('embedding')
+        if pin_emb is None:
+            pin_emb = embed_pin(pin)
+            if pin_emb is not None:
+                pin['embedding'] = pin_emb
         if pin_emb is None:
             return jsonify({"error": "Could not generate embedding for this pin"}), 500
+        pin_emb = np.array(pin_emb).reshape(1, -1)
+
         candidates = []
         for pid, other in board['pins'].items():
             if pid == pin_id:
@@ -284,59 +290,87 @@ def ai_assist():
                     other['embedding'] = emb
             if emb:
                 candidates.append((pid, other, emb))
+
         if not candidates:
             return jsonify({"suggestions": []})
+
         emb_matrix = np.array([c[2] for c in candidates])
         similarities = cosine_similarity(pin_emb, emb_matrix).flatten()
         sorted_idx = np.argsort(similarities)[::-1]
         suggestions = []
         for idx in sorted_idx[:10]:
-            if similarities[idx] > 0.3:  # threshold
+            if similarities[idx] > 0.3:
                 pid, other, _ = candidates[idx]
                 suggestions.append({
                     "id": pid,
                     "title": other["title"],
                     "score": float(similarities[idx])
                 })
+        if any(pin.get('embedding') for _, pin, _ in candidates if pin.get('embedding') is not None):
+            save_board_async(board)
         return jsonify({"suggestions": suggestions})
 
-    # ----- LLM-based actions -----
-    prompts = {
-        "summarise": f"Summarise the following pin in one short paragraph (max 50 words):\n\nTitle: {title}\nContent: {content}\n\nSummary:",
-        "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this pin:\n\nTitle: {title}\nContent: {content}\n\nTags:",
-        "improve": f"Rewrite the following pin to improve clarity, grammar, and flow. Keep the same meaning but make it more concise and professional:\n\n{content}\n\nImproved version:"
-    }
-    prompt = prompts.get(action)
-    if not prompt:
+    # LLM actions
+    system_prompt = (
+        "You are a helpful assistant. Follow the user's instruction exactly. "
+        "Do not add extra commentary. Output only the requested information in the specified format."
+    )
+    if action == 'summarise':
+        user_prompt = f"""Summarise the following pin in one short paragraph (max 50 words). 
+Do not include any additional text, only the summary.
+
+Title: {title}
+Content: {content}
+
+Summary:"""
+    elif action == 'suggest_tags':
+        user_prompt = f"""Suggest up to 5 short tags (comma separated) for this pin. 
+Output only the tags, separated by commas. Do not include any other text.
+
+Title: {title}
+Content: {content}
+
+Tags:"""
+    elif action == 'improve':
+        user_prompt = f"""Rewrite the following pin to improve clarity, grammar, and flow. 
+Keep the same meaning but make it more concise and professional. 
+Output only the improved version.
+
+{content}
+
+Improved version:"""
+    else:
         return jsonify({"error": "Invalid action"}), 400
 
-    # Instantiate provider
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
     try:
         provider = get_provider(provider_name, api_key)
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant that helps improve notes and pins."},
-            {"role": "user", "content": prompt}
-        ]
-        # Pass api_key and model to generate
         response = provider.generate(messages, model=model, api_key=api_key)
         result = response.strip()
+        print(f"AI response for {action}: {result[:200]}...")
     except Exception as e:
-        return jsonify({"error": f"AI service unavailable: {str(e)}"}), 503
+        print(f"AI error: {e}")
+        return jsonify({"error": f"AI service error: {str(e)}"}), 503
 
-    # For 'suggest_tags', auto-apply tags
-    if action == 'suggest_tags' and result:
+    if not result:
+        return jsonify({"error": "AI returned an empty response. Try a different model or provider."}), 500
+
+    if action == 'suggest_tags':
         tags = [t.strip() for t in result.split(',') if t.strip()]
         if tags:
-            # Merge with existing tags
             existing = set(pin.get('tags', []))
             new_tags = [t for t in tags if t not in existing]
             if new_tags:
                 pin['tags'] = list(existing.union(new_tags))
                 save_board_async(board)
                 return jsonify({"result": result, "tags": new_tags})
+        return jsonify({"result": result, "tags": []})
 
     return jsonify({"result": result})
-
 
 # ---------- API: pins ----------
 @corkboard_bp.route('/api/pins', methods=['POST'])
@@ -359,11 +393,11 @@ def create_pin():
         "last_modified": now,
         "tags": data.get("tags", []),
         "type": data.get("type", "note"),
-        "filename": data.get("filename")
+        "filename": data.get("filename"),
+        "image_url": data.get("image_url")  # for image pins
     }
     save_board_async(board)
     return jsonify({"id": pin_id, "ok": True, "pin": board['pins'][pin_id]})
-
 
 @corkboard_bp.route('/api/pins/<pin_id>', methods=['PUT'])
 def update_pin(pin_id):
@@ -372,15 +406,13 @@ def update_pin(pin_id):
     if pin_id not in board['pins']:
         return jsonify({"error": "Pin not found"}), 404
     pin = board['pins'][pin_id]
-    for field in ("title", "content", "x", "y", "width", "height", "color", "rotation", "tags"):
+    for field in ("title", "content", "x", "y", "width", "height", "color", "rotation", "tags", "image_url"):
         if field in data:
             pin[field] = data[field]
     pin["last_modified"] = datetime.now().isoformat()
-    # Remove embedding so it gets regenerated on next load
     pin.pop("embedding", None)
     save_board_async(board)
     return jsonify({"ok": True})
-
 
 @corkboard_bp.route('/api/pins/<pin_id>', methods=['DELETE'])
 def delete_pin(pin_id):
@@ -391,7 +423,6 @@ def delete_pin(pin_id):
     board['links'] = [l for l in board['links'] if l['from'] != pin_id and l['to'] != pin_id]
     save_board_async(board)
     return jsonify({"ok": True})
-
 
 # ---------- API: links ----------
 @corkboard_bp.route('/api/links', methods=['POST'])
@@ -418,7 +449,6 @@ def toggle_link():
     save_board_async(board)
     return jsonify({"ok": True, "linked": linked, "color": new_color})
 
-
 @corkboard_bp.route('/api/links/color', methods=['PUT'])
 def change_link_color():
     data = request.get_json() or {}
@@ -433,16 +463,14 @@ def change_link_color():
             return jsonify({"ok": True, "color": new_color})
     return jsonify({"error": "Link not found"}), 404
 
-
 # ---------- API: clear all ----------
 @corkboard_bp.route('/api/clear_all', methods=['POST'])
 def clear_all():
-    save_board_sync({"pins": {}, "links": []})   # synchronous to ensure complete reset
+    save_board_sync({"pins": {}, "links": []})
     return jsonify({"ok": True})
 
-
-# ---------- API: file import ----------
-ALLOWED_EXT = {"txt", "md", "ipynb", "pdf"}
+# ---------- API: file upload (supports images) ----------
+ALLOWED_EXT = {"txt", "md", "ipynb", "pdf", "png", "jpg", "jpeg", "gif", "svg", "webp"}
 
 @corkboard_bp.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -453,8 +481,41 @@ def upload_file():
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
 
     if ext not in ALLOWED_EXT:
-        return jsonify({"error": f"Unsupported file type: .{ext}. Use md, txt, ipynb or pdf."}), 400
+        return jsonify({"error": f"Unsupported file type: .{ext}. Allowed: txt, md, ipynb, pdf, png, jpg, jpeg, gif, svg, webp."}), 400
 
+    # Handle images
+    if ext in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
+        upload_dir = os.path.join('static', 'uploads', 'corkboard')
+        os.makedirs(upload_dir, exist_ok=True)
+        unique = str(uuid.uuid4()) + '.' + ext
+        path = os.path.join(upload_dir, unique)
+        f.save(path)
+        image_url = f'/static/uploads/corkboard/{unique}'
+        # Create a pin with image
+        board = load_board()
+        pin_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        board['pins'][pin_id] = {
+            "id": pin_id,
+            "title": filename,
+            "content": f"![{filename}]({image_url})",  # markdown image
+            "x": random.randint(40, 480),
+            "y": random.randint(40, 280),
+            "width": 280,
+            "height": 200,
+            "color": "yellow",
+            "rotation": random.choice([-3, -2, -1, 0, 1, 2, 3]),
+            "created": now,
+            "last_modified": now,
+            "tags": ["image", ext],
+            "type": "image",
+            "filename": filename,
+            "image_url": image_url
+        }
+        save_board_async(board)
+        return jsonify({"ok": True, "id": pin_id, "pin": board['pins'][pin_id]})
+
+    # Text files (unchanged)
     content = ""
     try:
         if ext in ('txt', 'md'):
@@ -510,15 +571,14 @@ def upload_file():
     save_board_async(board)
     return jsonify({"ok": True, "id": pin_id, "pin": board['pins'][pin_id]})
 
-
-# ---------- HTML template with AI features ----------
+# ---------- HTML template (with image drag support) ----------
 CORKBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📌%3C/text%3E%3C/svg%3E">
-<title>Cork Board · AI‑Powered</title>
+<title>Trio-Forge Cork Board · AI‑Powered</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 /* ── Base (same as original) ─────────────────────────── */
@@ -844,6 +904,11 @@ svg.link-layer {
     word-break:break-word;
     outline:none;
     cursor:default;
+}
+.pin-content img {
+    max-width:100%;
+    height:auto;
+    border-radius:4px;
 }
 .pin-content p { margin:4px 0; }
 .pin-content ul, .pin-content ol { padding-left:18px; margin:4px 0; }
@@ -1310,7 +1375,7 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
         <button class="top-btn" onclick="createNewPin()">+ New Note</button>
         <span class="file-input-wrapper">
             <button class="top-btn">📎 Import File</button>
-            <input type="file" accept=".md,.txt,.ipynb,.pdf" onchange="handleFileUpload(event)">
+            <input type="file" accept=".md,.txt,.ipynb,.pdf,.png,.jpg,.jpeg,.gif,.svg,.webp" onchange="handleFileUpload(event)">
         </span>
         <button class="top-btn" id="linkBtn" onclick="toggleLinkMode()">🔗 Link Mode</button>
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
@@ -1320,8 +1385,8 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
     <!-- TAG FILTER -->
     <div class="tag-filter" id="tagFilterContainer"></div>
 
-    <!-- BOARD AREA -->
-    <div class="board-wrap" id="boardWrap">
+    <!-- BOARD AREA (with drag-and-drop support for images) -->
+    <div class="board-wrap" id="boardWrap" ondragover="event.preventDefault();" ondrop="handleDropFile(event)">
         <div class="board" id="board">
             <svg class="link-layer" id="linkLayer">
                 <defs>
@@ -1335,7 +1400,7 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
             </svg>
             <div class="empty-hint" id="emptyHint" style="display:none;">
                 📌 Empty board. Click "+ New Note" or "📎 Import File" to pin something.
-                Drag to arrange, double‑click to edit.
+                Drag to arrange, double‑click to edit. Drop an image here to add it.
                 <br><small>Right‑click a link line to remove it.</small>
             </div>
         </div>
@@ -1534,7 +1599,7 @@ var editingPinId = null;
 var redThreadMode = false;
 var isDragging = false;
 var searchDebounceTimer = null;
-var searchMode = 'keyword'; // 'keyword' or 'semantic'
+var searchMode = 'keyword';
 var linkElementMap = {};
 
 // ─── DYNAMIC BOARD SIZE ──────────────────────────────
@@ -1606,7 +1671,6 @@ function loadAllAndFilter(query, tag, semanticResults) {
                     if (allPins[item.id]) filteredPins[item.id] = allPins[item.id];
                 });
             } else {
-                // fallback to keyword
                 for (var pid in allPins) {
                     var pin = allPins[pid];
                     var match = true;
@@ -1668,10 +1732,7 @@ function renderPin(pin) {
 
 function updatePinElement(el, pin) {
     var lastModified = el.dataset.lastModified || '';
-    if (lastModified === pin.last_modified) {
-        // No change, skip
-        return;
-    }
+    if (lastModified === pin.last_modified) return;
     var colorClass = 'color-' + (pin.color || 'yellow');
     el.className = 'pin ' + colorClass;
     var w = pin.width || 220;
@@ -1838,7 +1899,6 @@ function applyDragMove() {
     dragCtx.el.style.transform = 'translate3d(' + x + 'px, ' + y + 'px, 0) rotate(' + (boardData.pins[dragCtx.id].rotation || 0) + 'deg)';
     boardData.pins[dragCtx.id].x = x;
     boardData.pins[dragCtx.id].y = y;
-    updateLinksForPin(dragCtx.id);
 }
 function dragEnd() {
     if (!dragCtx) return;
@@ -1847,6 +1907,7 @@ function dragEnd() {
     var id = dragCtx.id;
     var pin = boardData.pins[id];
     savePin(id, { x: pin.x, y: pin.y }, true);
+    updateLinksForPin(id);
     renderLinks();
     scheduleBoardSizeUpdate();
     dragCtx = null;
@@ -1923,10 +1984,21 @@ function clearAllPins() {
         });
 }
 
-// ─── FILE IMPORT ─────────────────────────────────────
+// ─── FILE UPLOAD ─────────────────────────────────────
 function handleFileUpload(e) {
     var file = e.target.files[0];
     if (!file) return;
+    uploadFile(file);
+    e.target.value = '';
+}
+
+function handleDropFile(e) {
+    e.preventDefault();
+    var files = e.dataTransfer.files;
+    if (files.length) uploadFile(files[0]);
+}
+
+function uploadFile(file) {
     var formData = new FormData();
     formData.append('file', file);
     fetch('/corkboard/api/upload', { method: 'POST', body: formData })
@@ -1939,7 +2011,6 @@ function handleFileUpload(e) {
             } else alert(data.error || 'Upload failed');
         })
         .catch(err => alert('Upload failed: ' + err));
-    e.target.value = '';
 }
 
 // ─── SEARCH & TAG FILTER ──────────────────────────────
@@ -2040,7 +2111,7 @@ function removeLink(from, to) {
     }).catch(e => console.error('Failed to remove link:', e));
 }
 
-// ─── Load Ollama models dynamically ──────────────────
+// ─── Load models dynamically ─────────────────────────
 function loadOllamaModels(provider, apiKey) {
     const select = document.getElementById('aiModelSelect');
     select.innerHTML = '<option value="">Loading...</option>';
@@ -2081,7 +2152,6 @@ function loadOllamaModels(provider, apiKey) {
 document.getElementById('aiProviderSelect').addEventListener('change', function() {
     var provider = this.value;
     var apiKeyInput = document.getElementById('aiApiKeyInput');
-    // Show API key input for providers that need it
     if (['groq', 'huggingface', 'deepseek', 'claude'].includes(provider)) {
         apiKeyInput.style.display = 'inline-block';
         var placeholder = '';
@@ -2090,21 +2160,17 @@ document.getElementById('aiProviderSelect').addEventListener('change', function(
         else if (provider === 'deepseek') placeholder = 'DeepSeek API Key';
         else if (provider === 'claude') placeholder = 'Anthropic API Key';
         apiKeyInput.placeholder = placeholder;
-        // Load saved key
         var savedKey = localStorage.getItem('corkboard_api_key_' + provider) || '';
         apiKeyInput.value = savedKey;
     } else {
         apiKeyInput.style.display = 'none';
         apiKeyInput.value = '';
     }
-    // Load models for this provider
     var apiKey = apiKeyInput.value;
     loadOllamaModels(provider, apiKey);
-    // Save provider preference
     localStorage.setItem('corkboard_ai_provider', provider);
 });
 
-// ─── Save API key on blur ────────────────────────────
 document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
     var provider = document.getElementById('aiProviderSelect').value;
     var key = this.value.trim();
@@ -2113,11 +2179,9 @@ document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
     } else {
         localStorage.removeItem('corkboard_api_key_' + provider);
     }
-    // Reload models with new key
     loadOllamaModels(provider, key);
 });
 
-// ─── Model select change saves preference ─────────────
 document.getElementById('aiModelSelect').addEventListener('change', function() {
     localStorage.setItem('corkboard_ai_model', this.value);
 });
@@ -2141,13 +2205,10 @@ function openEditModal(id) {
     document.getElementById('pinPreview').innerHTML = '';
     document.getElementById('pinPreview').classList.remove('visible');
     document.getElementById('aiResult').style.display = 'none';
-    // Restore provider, api key, model from localStorage
     var savedProvider = localStorage.getItem('corkboard_ai_provider') || 'ollama';
     document.getElementById('aiProviderSelect').value = savedProvider;
-    // Trigger change to show api key and load models
     var evt = new Event('change');
     document.getElementById('aiProviderSelect').dispatchEvent(evt);
-    // Restore saved model
     var savedModel = localStorage.getItem('corkboard_ai_model') || '';
     if (savedModel) {
         var modelSelect = document.getElementById('aiModelSelect');
@@ -2267,7 +2328,6 @@ function deleteCurrentPin() {
 
 // ─── LINK SUGGESTIONS (global) ──────────────────────
 function openLinkSuggestions() {
-    // This global link suggestion feature is placeholder.
     alert('Global link suggestions will be implemented soon. Use "Suggest Links for this Pin" from the edit modal.');
 }
 
@@ -2285,7 +2345,6 @@ function createLink(from, to) {
         if (data.ok && data.linked) {
             boardData.links.push({ from: from, to: to, color: color });
             renderLinks();
-            // Remove this suggestion from list
             var items = document.querySelectorAll('.suggestion-item');
             items.forEach(function(item) {
                 var btn = item.querySelector('.link-btn');
@@ -2308,7 +2367,6 @@ document.querySelectorAll('#pinColorPicker .color-option').forEach(el => {
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('load', function() {
     loadBoard();
-    // Initialize AI provider/model dropdowns
     var savedProvider = localStorage.getItem('corkboard_ai_provider') || 'ollama';
     document.getElementById('aiProviderSelect').value = savedProvider;
     var evt = new Event('change');
