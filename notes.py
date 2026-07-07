@@ -2,6 +2,8 @@
 # + AI assistance (summarise, suggest tags, improve) + semantic search
 # + dynamic model loading from Ollama + persistent model preference
 # + Multi-provider support for AI (Ollama, DeepSeek, Claude, HF, Groq, llama.cpp)
+# + IMAGE UPLOAD support for notes
+# + ENHANCED SPACING – much more room in sidebar items and main notes
 
 import os
 import json as std_json          # fallback
@@ -88,12 +90,7 @@ def load_notes():
                 data = json_loads(f.read())
         except:
             data = {}
-        # Ensure embeddings exist
-        for nid, note in data.items():
-            if 'embedding' not in note:
-                emb = embed_note(note)
-                if emb is not None:
-                    note['embedding'] = emb
+        # ✅ NO embedding generation here – page loads instantly
         _notes_cache = data
         return _notes_cache
 
@@ -169,7 +166,6 @@ def update_note(note_id):
     if "color" in data:
         note["color"] = data["color"]
     note["last_modified"] = datetime.now().isoformat()
-    # Remove old embedding so it will be regenerated on next load
     note.pop("embedding", None)
     save_notes_async(notes)
     return jsonify({"ok": True})
@@ -247,6 +243,8 @@ def semantic_search_notes():
                 "content": note["content"][:200] + "..." if len(note["content"]) > 200 else note["content"],
                 "score": float(similarities[idx])
             })
+    if any(note.get('embedding') for _, note, _ in candidates if note.get('embedding') is not None):
+        save_notes_async(notes)
     return jsonify(results)
 
 # ---------- AI Assistance (multi-provider) ----------
@@ -256,7 +254,7 @@ def ai_assist():
     note_id = data.get('note_id')
     action = data.get('action')  # 'summarise', 'suggest_tags', 'improve'
     provider_name = data.get('provider', 'ollama')
-    model = data.get('model', 'vaultbox/qwen3.5-uncensored:9b')
+    model = data.get('model', 'llama3.2')
     api_key = data.get('api_key', None)
 
     if not note_id or not action:
@@ -272,7 +270,6 @@ def ai_assist():
     if not content and not title:
         return jsonify({"error": "Note is empty"}), 400
 
-    # Build prompt based on action
     prompts = {
         "summarise": f"Summarise the following note in one short paragraph (max 50 words):\n\nTitle: {title}\nContent: {content}\n\nSummary:",
         "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this note:\n\nTitle: {title}\nContent: {content}\n\nTags:",
@@ -287,7 +284,6 @@ def ai_assist():
         {"role": "user", "content": user_prompt}
     ]
 
-    # Instantiate the provider
     try:
         if provider_name == 'ollama':
             provider = OllamaProvider(model=model)
@@ -309,7 +305,6 @@ def ai_assist():
     except Exception as e:
         return jsonify({"error": f"AI service error: {str(e)}"}), 503
 
-    # For 'suggest_tags', auto-apply tags
     if action == 'suggest_tags' and result:
         tags = [t.strip() for t in result.split(',') if t.strip()]
         if tags:
@@ -322,10 +317,29 @@ def ai_assist():
 
     return jsonify({"result": result})
 
+# ---------- IMAGE UPLOAD for notes ----------
+@notes_bp.route('/api/upload_image', methods=['POST'])
+def upload_image():
+    if 'image' not in request.files:
+        return jsonify({"error": "No image file"}), 400
+    f = request.files['image']
+    if f.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+    if ext not in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
+        return jsonify({"error": "Unsupported image format"}), 400
+    upload_dir = os.path.join('static', 'uploads', 'notes')
+    os.makedirs(upload_dir, exist_ok=True)
+    unique = str(uuid.uuid4()) + '.' + ext
+    path = os.path.join(upload_dir, unique)
+    f.save(path)
+    url = f'/static/uploads/notes/{unique}'
+    return jsonify({"url": url, "ok": True})
+
 # ---------- Clear all ----------
 @notes_bp.route('/api/clear_all', methods=['POST'])
 def clear_all_notes():
-    save_notes_sync({})   # synchronous to ensure complete reset
+    save_notes_sync({})
     global _notes_cache
     with _cache_lock:
         _notes_cache = {}
@@ -345,7 +359,7 @@ def reorder_notes():
     return jsonify({'ok': True})
 
 # ===========================================================================
-# HTML TEMPLATE (unchanged – same as before)
+# HTML TEMPLATE (with image upload button & ENHANCED SPACING)
 # ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -499,39 +513,68 @@ NOTES_HTML = r"""<!DOCTYPE html>
             color: #8b949e;
         }
 
+        /* ─── SIDEBAR NOTE ITEMS – ENHANCED SPACING ─── */
         .note-item-sidebar {
-            display:flex; align-items:center; padding: 8px 12px; cursor:grab;
-            border-radius: 10px; margin-bottom: 2px; transition: background 0.2s; gap: 6px;
-            background: transparent; user-select: none;
+            display:flex;
+            align-items:center;
+            padding: 12px 16px;          /* more padding */
+            cursor:grab;
+            border-radius: 10px;
+            margin-bottom: 4px;           /* more gap between items */
+            transition: background 0.2s;
+            gap: 10px;                   /* more space between elements */
+            background: transparent;
+            user-select: none;
+            min-height: 44px;            /* ensure consistent height */
         }
         .note-item-sidebar:hover { background: rgba(255,255,255,0.05); }
         .note-item-sidebar.active { background: rgba(31,111,235,0.15); border: 1px solid rgba(31,111,235,0.3); }
         .note-item-sidebar.dragging { opacity: 0.4; }
         .note-item-sidebar.drag-over { border: 2px dashed #58a6ff; }
-        .note-item-sidebar .pin-indicator { font-size: 12px; opacity: 0.4; margin-right: 2px; }
+        .note-item-sidebar .pin-indicator { font-size: 13px; opacity: 0.5; margin-right: 2px; }
         .note-item-sidebar .title {
-            flex:1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #c9d1d9;
+            flex:1;
+            font-size: 15px;             /* slightly larger */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #c9d1d9;
+            font-weight: 500;
         }
         .note-item-sidebar .tags-mini {
             font-size: 10px;
             color: #8b949e;
             margin-right: 4px;
-            max-width: 60px;
+            max-width: 70px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
             opacity: 0.6;
         }
-        .note-item-sidebar .rename-btn {
-            background: transparent; border: none; color: #8b949e; font-size: 13px;
-            cursor: pointer; opacity: 0.4; padding: 0 4px; transition: opacity 0.2s;
-        }
-        .note-item-sidebar .rename-btn:hover { opacity: 1; color: #58a6ff; }
+        .note-item-sidebar .rename-btn,
         .note-item-sidebar .del {
-            background: transparent; border: none; color: #f85149; font-size: 16px;
-            cursor: pointer; opacity: 0.4; padding: 0 4px; transition: opacity 0.2s;
+            background: transparent;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            opacity: 0.4;
+            padding: 4px 6px;           /* bigger click area */
+            transition: opacity 0.2s, color 0.2s;
+            border-radius: 4px;
         }
-        .note-item-sidebar .del:hover { opacity: 1; }
+        .note-item-sidebar .rename-btn:hover {
+            opacity: 1;
+            color: #58a6ff;
+            background: rgba(88,166,255,0.1);
+        }
+        .note-item-sidebar .del {
+            color: #f85149;
+            font-size: 18px;
+        }
+        .note-item-sidebar .del:hover {
+            opacity: 1;
+            background: rgba(248,81,73,0.15);
+        }
         .note-item-sidebar .time {
             font-size: 10px;
             color: #8b949e;
@@ -702,24 +745,24 @@ NOTES_HTML = r"""<!DOCTYPE html>
         .notes-panel {
             flex:1;
             overflow-y:auto;
-            padding: 24px 40px;
+            padding: 28px 40px 40px;
             display:flex;
             flex-direction:column;
-            gap:16px;
+            gap: 24px;
         }
         .notes-panel .note-editor {
             background: rgba(13,17,23,0.7);
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 10px;
+            border-radius: 14px;
+            padding: 24px 24px 20px;
+            margin-bottom: 8px;
             transition: background 0.3s, border-color 0.3s;
         }
         .notes-panel .note-editor .editor-header {
             display:flex;
             align-items:center;
-            gap:10px;
-            margin-bottom:8px;
+            gap: 12px;
+            margin-bottom: 12px;
             flex-wrap:wrap;
         }
         .notes-panel .note-editor .editor-header input[type="text"] {
@@ -728,13 +771,14 @@ NOTES_HTML = r"""<!DOCTYPE html>
             border: none;
             color: #e6edf3;
             font-weight: 600;
-            font-size: 18px;
+            font-size: 20px;
             outline: none;
             min-width: 120px;
+            padding: 4px 0;
         }
         .notes-panel .note-editor .editor-header .toolbar {
             display:flex;
-            gap:4px;
+            gap: 6px;
             flex-wrap:wrap;
             align-items:center;
         }
@@ -743,7 +787,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 6px;
             color: #8b949e;
-            padding: 4px 8px;
+            padding: 5px 10px;
             font-size: 13px;
             cursor: pointer;
             transition: 0.2s;
@@ -757,7 +801,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
             color: #fff;
             border-color: #1f6feb;
         }
-        /* AI assist button & provider selectors */
         .notes-panel .note-editor .editor-header .toolbar .ai-assist-btn {
             background: #6f42c1;
             border-color: #6f42c1;
@@ -772,7 +815,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 6px;
             color: #8b949e;
-            padding: 4px 8px;
+            padding: 5px 10px;
             font-size: 13px;
             outline: none;
             max-width: 140px;
@@ -783,7 +826,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         }
         .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
             max-width: 120px;
-            display: none; /* toggled by JS */
+            display: none;
         }
         body.light-mode .notes-panel .note-editor .editor-header .toolbar select,
         body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
@@ -793,8 +836,8 @@ NOTES_HTML = r"""<!DOCTYPE html>
 
         .notes-panel .note-editor .editor-body {
             display:flex;
-            gap:12px;
-            min-height:200px;
+            gap: 16px;
+            min-height: 220px;
         }
         .notes-panel .note-editor .editor-body textarea {
             flex:1;
@@ -805,19 +848,19 @@ NOTES_HTML = r"""<!DOCTYPE html>
             font-family: inherit;
             outline: none;
             resize: vertical;
-            min-height: 180px;
-            padding: 4px;
-            line-height: 1.6;
+            min-height: 200px;
+            padding: 8px 8px 4px;
+            line-height: 1.7;
         }
         .notes-panel .note-editor .editor-body .preview {
             flex:1;
             background: rgba(0,0,0,0.2);
             border-radius: 8px;
-            padding: 8px 12px;
+            padding: 12px 16px;
             overflow-y:auto;
             color: #e1e4e8;
             font-size: 14px;
-            line-height: 1.6;
+            line-height: 1.7;
             display:none;
         }
         .notes-panel .note-editor .editor-body .preview.visible {
@@ -826,8 +869,8 @@ NOTES_HTML = r"""<!DOCTYPE html>
         .notes-panel .note-editor .editor-footer {
             display:flex;
             align-items:center;
-            gap:12px;
-            margin-top:12px;
+            gap: 16px;
+            margin-top: 16px;
             flex-wrap:wrap;
         }
         .notes-panel .note-editor .editor-footer .tags-input {
@@ -835,7 +878,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 20px;
-            padding: 4px 12px;
+            padding: 6px 14px;
             color: #e6edf3;
             font-size: 13px;
             outline: none;
@@ -844,11 +887,11 @@ NOTES_HTML = r"""<!DOCTYPE html>
         .notes-panel .note-editor .editor-footer .tags-input:focus { border-color: #58a6ff; }
         .notes-panel .note-editor .editor-footer .color-picker {
             display:flex;
-            gap:6px;
+            gap: 8px;
         }
         .notes-panel .note-editor .editor-footer .color-picker .color-option {
-            width:22px;
-            height:22px;
+            width: 24px;
+            height: 24px;
             border-radius:50%;
             cursor:pointer;
             border:2px solid transparent;
@@ -870,7 +913,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 20px;
-            padding: 4px 14px;
+            padding: 6px 16px;
             color: #8b949e;
             font-size: 13px;
             cursor: pointer;
@@ -885,51 +928,53 @@ NOTES_HTML = r"""<!DOCTYPE html>
 
         .notes-panel .note-editor .note-actions {
             display:flex;
-            gap:8px;
+            gap: 10px;
             justify-content:flex-end;
-            margin-top:12px;
+            margin-top: 16px;
         }
         .notes-panel .note-editor .note-actions button {
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.1);
             color: #8b949e;
             border-radius: 8px;
-            padding: 6px 18px;
+            padding: 8px 22px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 14px;
             transition: 0.2s;
         }
         .notes-panel .note-editor .note-actions .save-note { background: #1f6feb; color: white; border-color: #1f6feb; }
         .notes-panel .note-editor .note-actions .save-note:hover { background: #388bfd; }
         .notes-panel .note-editor .note-actions button:hover { background: rgba(255,255,255,0.1); }
 
+        /* ─── MAIN NOTE ITEMS – MORE SPACING ─── */
         .notes-panel .note-item {
             background: rgba(28, 35, 51, 0.6);
             backdrop-filter: blur(8px);
             border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 12px;
-            padding: 16px 20px;
+            border-radius: 14px;
+            padding: 22px 28px;           /* more padding */
             transition: 0.2s;
+            margin-bottom: 16px;          /* ADD THIS LINE to create gaps */
             position:relative;
         }
         .notes-panel .note-item:hover { background: rgba(28, 35, 51, 0.8); }
         .notes-panel .note-item .note-title {
             font-weight: 600;
-            font-size: 16px;
-            margin-bottom: 4px;
+            font-size: 18px;              /* larger title */
+            margin-bottom: 8px;
             color: #e6edf3;
         }
         .notes-panel .note-item .note-meta {
-            font-size: 11px;
+            font-size: 12px;
             color: #8b949e;
-            margin-bottom: 6px;
+            margin-bottom: 10px;
             display:flex;
-            gap:8px;
+            gap: 12px;
             flex-wrap:wrap;
         }
         .notes-panel .note-item .note-meta .tag {
             background: rgba(255,255,255,0.06);
-            padding: 0 8px;
+            padding: 0 12px;
             border-radius: 12px;
             color: #58a6ff;
         }
@@ -938,22 +983,23 @@ NOTES_HTML = r"""<!DOCTYPE html>
             color: #8b949e;
             white-space: pre-wrap;
             word-wrap: break-word;
-            max-height: 120px;
+            max-height: 140px;
             overflow:hidden;
+            line-height: 1.7;
         }
         .notes-panel .note-item .note-actions {
-            margin-top: 10px;
+            margin-top: 14px;
             display: flex;
-            gap: 8px;
+            gap: 12px;
         }
         .notes-panel .note-item .note-actions button {
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.1);
             color: #8b949e;
             border-radius: 8px;
-            padding: 4px 12px;
+            padding: 6px 16px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 13px;
             transition: 0.2s;
         }
         .notes-panel .note-item .note-actions button:hover { background: rgba(255,255,255,0.1); color: #58a6ff; }
@@ -1007,6 +1053,15 @@ NOTES_HTML = r"""<!DOCTYPE html>
         .search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
         body.light-mode .search-mode-toggle button { color: #57606a; border-color: rgba(0,0,0,0.1); }
         body.light-mode .search-mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+        /* Image upload button */
+        .image-upload-btn {
+            background: rgba(88,166,255,0.15);
+            border-color: #58a6ff;
+            color: #58a6ff;
+        }
+        .image-upload-btn:hover {
+            background: rgba(88,166,255,0.25);
+        }
     </style>
 </head>
 <body>
@@ -1041,7 +1096,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
                         <line x1="9" y1="3" x2="9" y2="21"></line>
                     </svg>
                 </button>
-                <h1>📚 Trio-llama Custom Notes</h1>
+                <h1>📚 Trio-Forge Custom Notes</h1>
             </div>
 
             <div class="center-tabs">
@@ -1133,6 +1188,9 @@ NOTES_HTML = r"""<!DOCTYPE html>
                         <button data-cmd="list" title="Bullet list">•</button>
                         <button data-cmd="code" title="Code block">{ }</button>
                         <button data-cmd="preview" title="Toggle preview" id="previewToggle">👁️</button>
+                        <!-- Image Upload Button -->
+                        <button class="image-upload-btn" id="imageUploadBtn" title="Insert Image">🖼️</button>
+                        <input type="file" id="imageFileInput" accept="image/*" style="display:none;">
                         <!-- AI Assistance -->
                         <select id="aiActionSelect" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#8b949e; padding:4px 8px; font-size:13px;">
                             <option value="summarise">Summarise</option>
@@ -1335,6 +1393,40 @@ NOTES_HTML = r"""<!DOCTYPE html>
         });
     });
 
+    // ─── Image Upload ──────────────────────────────────
+    document.getElementById('imageUploadBtn').addEventListener('click', function() {
+        document.getElementById('imageFileInput').click();
+    });
+    document.getElementById('imageFileInput').addEventListener('change', function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var formData = new FormData();
+        formData.append('image', file);
+        var textarea = document.getElementById('noteContentInput');
+        var start = textarea.selectionStart;
+        var end = textarea.selectionEnd;
+        var filename = file.name.replace(/\.[^.]+$/, ''); // name without ext
+        fetch('/notes/api/upload_image', {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                var markdown = `![${filename}](${data.url})`;
+                textarea.value = textarea.value.substring(0, start) + markdown + textarea.value.substring(end);
+                textarea.focus();
+                textarea.selectionStart = start + markdown.length;
+                textarea.selectionEnd = start + markdown.length;
+                updatePreview();
+            } else {
+                alert('Image upload failed: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => alert('Upload error: ' + err));
+        e.target.value = ''; // reset
+    });
+
     // ─── Multi-provider AI setup ──────────────────────
     var aiProviderSelect = document.getElementById('aiProviderSelect');
     var aiApiKeyInput = document.getElementById('aiApiKeyInput');
@@ -1406,7 +1498,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         localStorage.setItem('notes_ai_model', this.value);
     });
 
-    // ─── AI Assist (sends provider, model, api_key) ──
+    // ─── AI Assist ──────────────────────────────────
     document.getElementById('aiAssistBtn').addEventListener('click', function() {
         if (!editingNoteId) {
             alert('Please save the note first, then use AI assist.');
@@ -1929,7 +2021,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
 
     // ─── Init ────────────────────────────────────────────
     window.addEventListener('load', function() {
-        loadAIPreferences();          // load provider, model, api key
+        loadAIPreferences();
         loadNotes();
         document.getElementById('noteTitleInput').focus();
     });

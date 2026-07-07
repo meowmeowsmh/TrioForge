@@ -17,6 +17,7 @@ from functools import lru_cache, wraps
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
+
 # ── Try to use orjson for faster JSON (optional) ──
 try:
     import orjson
@@ -47,6 +48,9 @@ from llm_providers import (
 from notes import notes_bp
 from cork_board import corkboard_bp
 
+# ── Import image viewer ──
+from zoompicleftandright import setup_viewer, get_viewer_html
+
 # ── NVIDIA GPU support (optional) ──
 try:
     import pynvml
@@ -59,6 +63,8 @@ except:
 app = Flask(__name__)
 app.register_blueprint(notes_bp)
 app.register_blueprint(corkboard_bp)
+
+
 
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
@@ -226,6 +232,9 @@ def create_conversation(title=None):
 def get_conversation(cid):
     _ensure_cache()
     return _conversations_cache.get(cid)
+
+# ── Setup image viewer ──
+setup_viewer(app, get_conversation)
 
 def add_message(cid, role, text, images=None, files=None, ts=None):
     _ensure_cache()
@@ -522,7 +531,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
 
 # ── Build HTML (exactly as originally provided) ──
 def build_html(model_name):
-    return r"""<!DOCTYPE html>
+    html = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -1569,7 +1578,7 @@ body.light-mode .vision-badge {
             <line x1="9" y1="3" x2="9" y2="21"></line>
           </svg>
         </button>
-        <h1>🧠 Trio-llama Custom Chat</h1>
+        <h1>🧠 Trio-Forge Custom Chat</h1>
       </div>
 
       <!-- CENTER TABS (pill style) – only Chat, Notes is a link -->
@@ -2554,8 +2563,12 @@ function renderMsg(role, entry, msgIndex) {
     if (entry.images && entry.images.length) {
         entry.images.forEach(im => {
             var img = document.createElement('img');
-            // b64 is now stored in the server JSON
             img.src = 'data:image/png;base64,' + (im.b64 || '');
+            // ── Click to open image viewer ──
+            img.style.cursor = 'pointer';
+            img.onclick = function() {
+                openImageViewerFromChat(im.b64, im.mime);
+            };
             div.appendChild(img);
         });
     }
@@ -3030,8 +3043,11 @@ window.addEventListener('load', function() {
     status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
 });
 </script>
+
+""" + get_viewer_html() + """
 </body>
 </html>"""
+    return html
 
 # ── Routes ──
 
