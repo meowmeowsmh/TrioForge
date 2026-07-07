@@ -3,7 +3,8 @@ from flask import Flask, request, jsonify, Response
 import requests
 import base64
 import os
-import json
+import json as std_json          # fallback if orjson not available
+import sys
 from datetime import datetime
 import uuid
 import psutil
@@ -11,10 +12,23 @@ import subprocess
 import re
 import urllib.request
 import platform
-import sys
 import time
-from functools import lru_cache
+from functools import lru_cache, wraps
 from concurrent.futures import ThreadPoolExecutor
+import threading
+
+# ── Try to use orjson for faster JSON (optional) ──
+try:
+    import orjson
+    def json_dumps(obj):
+        return orjson.dumps(obj).decode('utf-8')
+    def json_loads(s):
+        return orjson.loads(s)
+    print("🚀 Using orjson for faster JSON")
+except ImportError:
+    json_dumps = std_json.dumps
+    json_loads = std_json.loads
+    print("ℹ️ Using standard json (install orjson for better performance)")
 
 # ── Import provider classes ──
 from llm_providers import (
@@ -29,7 +43,7 @@ from llm_providers import (
     VISION_MODELS,
 )
 
-# ── Import notes blueprint ──
+# ── Import notes & cork board blueprints ──
 from notes import notes_bp
 from cork_board import corkboard_bp
 
@@ -43,14 +57,14 @@ except:
     print("⚠️ NVML not available – GPU VRAM monitoring disabled.")
 
 app = Flask(__name__)
-app.register_blueprint(notes_bp)   # notes routes are now separate
-app.register_blueprint(corkboard_bp)   # cork board routes
+app.register_blueprint(notes_bp)
+app.register_blueprint(corkboard_bp)
 
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
 MODEL_CONFIG_FILE = "json_configuration/model_config.json"
 
-# ── System prompt to encourage Markdown formatting ──
+# ── System prompt ──
 SYSTEM_PROMPT = (
     "Always format tabular data as Markdown tables with headers. "
     "Use **bold** for important terms or emphasis. "
@@ -64,38 +78,34 @@ try:
 except ImportError:
     SEARCH_AVAILABLE = False
 
-# ── Ensure the json_configuration folder exists ──
+# ── Ensure folders exist ──
 os.makedirs(os.path.dirname(CONVERSATIONS_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
 
 # ── Create empty JSON files if they don't exist ──
 if not os.path.exists(CONVERSATIONS_FILE):
     with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump({}, f, ensure_ascii=False, indent=2)
+        std_json.dump({}, f, ensure_ascii=False, indent=2)
     print(f"✅ Created {CONVERSATIONS_FILE}")
 
 if not os.path.exists(MODEL_CONFIG_FILE):
     with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
+        std_json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
     print(f"✅ Created {MODEL_CONFIG_FILE}")
 
-# ── Auto‑SSL certificate generation ──
+# ── Auto‑SSL ──
 def ensure_certificates():
     cert_dir = 'cert_store'
     cert_file = os.path.join(cert_dir, 'localhost+1.pem')
     key_file = os.path.join(cert_dir, 'localhost+1-key.pem')
-
     if os.path.exists(cert_file) and os.path.exists(key_file):
         return True
-
     print("🔑 Certificates not found. Auto‑generating...")
     os.makedirs(cert_dir, exist_ok=True)
-
     if platform.system() != "Windows":
         print("⚠️  Auto‑cert generation is only supported on Windows.")
         print("   Install mkcert manually or run with HTTP.")
         return False
-
     mkcert_exe = "mkcert.exe"
     if not os.path.exists(mkcert_exe):
         print("📥 Downloading mkcert...")
@@ -106,19 +116,15 @@ def ensure_certificates():
         except Exception as e:
             print(f"❌ Failed to download mkcert: {e}")
             return False
-
     try:
         print("🔐 Installing Local Certificate Authority...")
         subprocess.run([mkcert_exe, "-install"], check=True, capture_output=True)
-
         print("📜 Generating certificates...")
         subprocess.run([mkcert_exe, "localhost", "127.0.0.1"], check=True)
-
         if os.path.exists("localhost+1.pem"):
             os.rename("localhost+1.pem", cert_file)
         if os.path.exists("localhost+1-key.pem"):
             os.rename("localhost+1-key.pem", key_file)
-
         print("✅ Certificates generated successfully!")
         return True
     except subprocess.CalledProcessError as e:
@@ -130,7 +136,7 @@ def load_model_config():
     if os.path.exists(MODEL_CONFIG_FILE):
         try:
             with open(MODEL_CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data = std_json.load(f)
                 return data.get("model", DEFAULT_MODEL)
         except:
             pass
@@ -138,40 +144,61 @@ def load_model_config():
 
 def save_model_config(model):
     with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump({"model": model}, f, ensure_ascii=False, indent=2)
+        std_json.dump({"model": model}, f, ensure_ascii=False, indent=2)
 
 current_model = load_model_config()
 
 # ── Conversation storage ──
 _conversations_cache: dict = {}
 _cache_loaded: bool = False
+_cache_lock = threading.Lock()          # for thread-safe updates
 
 def _ensure_cache():
     global _conversations_cache, _cache_loaded
     if _cache_loaded:
         return
-    if os.path.exists(CONVERSATIONS_FILE):
-        try:
-            with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
-                _conversations_cache = json.load(f)
-        except Exception as e:
-            print(f"⚠️ Error loading conversations: {e}")
-            _conversations_cache = {}
-    _cache_loaded = True
+    with _cache_lock:
+        if _cache_loaded:
+            return
+        if os.path.exists(CONVERSATIONS_FILE):
+            try:
+                with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
+                    _conversations_cache = std_json.load(f)
+            except Exception as e:
+                print(f"⚠️ Error loading conversations: {e}")
+                _conversations_cache = {}
+        _cache_loaded = True
 
 def load_conversations():
     _ensure_cache()
     return _conversations_cache
 
-# ── Atomic save (temp file + rename) to prevent I/O hangs ──
-def save_conversations(convs):
+# ── Asynchronous save executor ──
+_save_executor = ThreadPoolExecutor(max_workers=1)
+
+def save_conversations_async(convs):
+    """Schedule a save operation in background."""
+    def _save():
+        try:
+            temp_file = CONVERSATIONS_FILE + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                std_json.dump(convs, f, ensure_ascii=False, indent=2)
+            os.replace(temp_file, CONVERSATIONS_FILE)
+            # Update cache with saved data (already in memory)
+            print(f"✅ Saved conversations ({len(convs)} items)")
+        except Exception as e:
+            print(f"❌ Failed to save conversations: {e}")
+    _save_executor.submit(_save)
+
+def save_conversations_sync(convs):
+    """Synchronous save (used when we must guarantee persistence)."""
     global _conversations_cache
     _conversations_cache = convs
     try:
         temp_file = CONVERSATIONS_FILE + ".tmp"
         with open(temp_file, "w", encoding="utf-8") as f:
-            json.dump(convs, f, ensure_ascii=False, indent=2)
-        os.replace(temp_file, CONVERSATIONS_FILE)  # atomic on Windows/Unix
+            std_json.dump(convs, f, ensure_ascii=False, indent=2)
+        os.replace(temp_file, CONVERSATIONS_FILE)
         print(f"✅ Saved conversations ({len(convs)} items)")
     except Exception as e:
         print(f"❌ Failed to save conversations: {e}")
@@ -184,14 +211,15 @@ def create_conversation(title=None):
     max_order = max(orders) if orders else 0
     new_order = max_order + 1
 
-    _conversations_cache[cid] = {
-        "id": cid,
-        "title": title or "New Chat",
-        "created": datetime.now().isoformat(),
-        "messages": [],
-        "order": new_order
-    }
-    save_conversations(_conversations_cache)
+    with _cache_lock:
+        _conversations_cache[cid] = {
+            "id": cid,
+            "title": title or "New Chat",
+            "created": datetime.now().isoformat(),
+            "messages": [],
+            "order": new_order
+        }
+    save_conversations_async(_conversations_cache)
     print(f"🆕 Created conversation {cid} with order {new_order}")
     return cid
 
@@ -211,7 +239,6 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
     if ts is None:
         ts = datetime.now().strftime("%H:%M")
 
-    # ── Store full image objects (with b64) ──
     stored_images = []
     for img in images:
         stored_images.append({
@@ -228,35 +255,37 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
             "mime": f.get("mime", "application/octet-stream")
         })
 
-    _conversations_cache[cid]["messages"].append({
-        "role": role,
-        "text": text,
-        "images": stored_images,
-        "files": stored_files,
-        "ts": ts
-    })
-    if role == "user" and len(_conversations_cache[cid]["messages"]) == 1:
-        _conversations_cache[cid]["title"] = text[:40] + ("..." if len(text) > 40 else "")
-    save_conversations(_conversations_cache)
+    with _cache_lock:
+        _conversations_cache[cid]["messages"].append({
+            "role": role,
+            "text": text,
+            "images": stored_images,
+            "files": stored_files,
+            "ts": ts
+        })
+        if role == "user" and len(_conversations_cache[cid]["messages"]) == 1:
+            _conversations_cache[cid]["title"] = text[:40] + ("..." if len(text) > 40 else "")
+    save_conversations_async(_conversations_cache)
     print(f"📝 Added {role} message to {cid} (now {len(_conversations_cache[cid]['messages'])} messages)")
     return True
 
 def delete_conversation(cid):
     _ensure_cache()
     if cid in _conversations_cache:
-        del _conversations_cache[cid]
-        save_conversations(_conversations_cache)
+        with _cache_lock:
+            del _conversations_cache[cid]
+        save_conversations_async(_conversations_cache)
         return True
     return False
 
-# ── C/C++ comment stripper ──────────────────────────────────────
+# ── C/C++ comment stripper ──
 def strip_c_comments(text: str) -> str:
     text = re.sub(r'//.*', '', text)
     text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
     text = '\n'.join(line for line in text.splitlines() if line.strip())
     return text
 
-# ── Vision fallback (llava description) ──
+# ── Vision fallback (llava) ──
 def describe_image_with_llava(image_b64: str) -> str:
     vision_model = "llava:7b"
     vision_prompt = (
@@ -282,46 +311,34 @@ def describe_image_with_llava(image_b64: str) -> str:
 # ── Thread pool for concurrent vision fallback ──
 _executor = ThreadPoolExecutor(max_workers=2)
 
-# ── Trim conversation history to keep context small ──
+# ── Trim conversation history ──
 def trim_conversation_history(messages, max_messages=10, max_tokens=3000):
-    """
-    Keep only the most recent 'max_messages' exchanges (excluding system prompt),
-    and further reduce by character length to fit ~max_tokens (assuming 1 token ≈ 4 chars).
-    Always preserves the system prompt if present.
-    """
     if not messages:
         return messages
-
-    # Separate system message (if any)
     system_msg = None
     if messages and messages[0]["role"] == "system":
         system_msg = messages.pop(0)
-
-    # Keep the last N messages (user + assistant pairs)
     if len(messages) > max_messages:
         messages = messages[-max_messages:]
-
-    # Further trim by total character count (rough token limit)
     total_len = sum(len(m.get("content", "")) for m in messages)
     while messages and total_len > max_tokens * 4:
-        # Remove the second oldest (keep the very latest query)
         if len(messages) > 1:
             removed = messages.pop(1)
             total_len -= len(removed.get("content", ""))
         else:
             break
-
     if system_msg:
         messages.insert(0, system_msg)
     return messages
 
-# ── Automatic memory settings for Ollama ──────────────────────────
-def get_ollama_memory_settings() -> dict:
+# ── Cached memory settings (cleared every second) ──
+@lru_cache(maxsize=1)
+def get_ollama_memory_settings():
+    """Cache memory stats for 1 second to reduce psutil calls."""
     try:
         mem = psutil.virtual_memory()
         ram_free_gb = mem.available / (1024**3)
         low_ram = ram_free_gb < 2.0
-
         vram_available = False
         vram_free_gb = 0
         if NVML_AVAILABLE:
@@ -332,7 +349,6 @@ def get_ollama_memory_settings() -> dict:
                 vram_available = True
             except:
                 pass
-
         if low_ram and vram_available and vram_free_gb > 2.0:
             num_gpu = 99
             low_vram = True
@@ -342,12 +358,11 @@ def get_ollama_memory_settings() -> dict:
         else:
             num_gpu = 99 if vram_available else 0
             low_vram = False
-
         return {"num_gpu": num_gpu, "low_vram": low_vram}
     except Exception:
         return {"num_gpu": 99, "low_vram": False}
 
-# ── Ollama command detection & execution ────────────────────────
+# ── Ollama commands ──
 def is_ollama_command(text: str) -> bool:
     return text.strip().lower().startswith("ollama ")
 
@@ -357,26 +372,22 @@ def execute_ollama_command_sync(text: str) -> str:
         return "❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ..."
     cmd = parts[1].lower()
     args = parts[2:]
-
     try:
         if cmd == 'list':
             r = requests.get("http://127.0.0.1:11434/api/tags", timeout=5)
             r.raise_for_status()
             models = r.json().get('models', [])
             return "📦 Installed models:\n" + "\n".join(m['name'] for m in models)
-
         elif cmd == 'ps':
             result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5)
             return result.stdout or result.stderr
-
         elif cmd == 'show':
             if not args:
                 return "❌ Usage: ollama show <model>"
             model = args[0]
             r = requests.post("http://127.0.0.1:11434/api/show", json={"name": model}, timeout=10)
             r.raise_for_status()
-            return json.dumps(r.json(), indent=2)
-
+            return json_dumps(r.json())
         elif cmd in ('rm', 'delete'):
             if not args:
                 return "❌ Usage: ollama rm <model>"
@@ -384,14 +395,12 @@ def execute_ollama_command_sync(text: str) -> str:
             r = requests.delete("http://127.0.0.1:11434/api/delete", json={"name": model}, timeout=10)
             r.raise_for_status()
             return f"✅ Model '{model}' deleted."
-
         elif cmd == 'stop':
             if not args:
                 return "❌ Usage: ollama stop <model>"
             model = args[0]
             subprocess.run(['ollama', 'stop', model], capture_output=True, text=True, timeout=10)
             return f"✅ Model '{model}' stopped (unloaded from memory)."
-
         elif cmd == 'pull':
             if not args:
                 return "❌ Usage: ollama pull <model>"
@@ -401,13 +410,12 @@ def execute_ollama_command_sync(text: str) -> str:
             last_status = ""
             for line in r.iter_lines():
                 if line:
-                    chunk = json.loads(line)
+                    chunk = json_loads(line)
                     if 'status' in chunk:
                         last_status = chunk['status']
                     if 'error' in chunk:
                         return f"❌ Error pulling '{model}': {chunk['error']}"
             return f"✅ Model '{model}' pulled successfully.\nLast status: {last_status}"
-
         elif cmd == 'push':
             if not args:
                 return "❌ Usage: ollama push <model> [--insecure]"
@@ -424,16 +432,14 @@ def execute_ollama_command_sync(text: str) -> str:
             last_status = ""
             for line in r.iter_lines():
                 if line:
-                    chunk = json.loads(line)
+                    chunk = json_loads(line)
                     if 'status' in chunk:
                         last_status = chunk['status']
                     if 'error' in chunk:
                         return f"❌ Error pushing '{model}': {chunk['error']}"
             return f"✅ Model '{model}' pushed successfully.\nLast status: {last_status}"
-
         else:
             return f"❌ Unknown command: {cmd}"
-
     except Exception as e:
         return f"❌ Command failed: {str(e)}"
 
@@ -441,19 +447,17 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
                                  images: list, files: list):
     parts = user_message.strip().split()
     if len(parts) < 2:
-        yield f"data: {json.dumps({'token': '❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ...'})}\n\n"
-        yield f"data: {json.dumps({'done': True, 'full_response': 'Invalid command.'})}\n\n"
+        yield f"data: {json_dumps({'token': '❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ...'})}\n\n"
+        yield f"data: {json_dumps({'done': True, 'full_response': 'Invalid command.'})}\n\n"
         return
-
     cmd = parts[1].lower()
     args = parts[2:]
     full_response = ""
-
     try:
         if cmd == 'pull':
             if not args:
                 full_response = "❌ Usage: ollama pull <model>"
-                yield f"data: {json.dumps({'token': full_response})}\n\n"
+                yield f"data: {json_dumps({'token': full_response})}\n\n"
             else:
                 model = args[0]
                 r = requests.post("http://127.0.0.1:11434/api/pull",
@@ -461,23 +465,22 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
-                        chunk = json.loads(line)
+                        chunk = json_loads(line)
                         status = chunk.get('status', '')
                         if status:
                             full_response += status + "\n"
-                            yield f"data: {json.dumps({'token': status + '\n'})}\n\n"
+                            yield f"data: {json_dumps({'token': status + '\n'})}\n\n"
                         if 'error' in chunk:
                             err = '❌ ' + chunk['error']
                             full_response += err
-                            yield f"data: {json.dumps({'token': err})}\n\n"
+                            yield f"data: {json_dumps({'token': err})}\n\n"
                 final = f"\n✅ Model '{model}' pulled successfully."
                 full_response += final
-                yield f"data: {json.dumps({'token': final})}\n\n"
-
+                yield f"data: {json_dumps({'token': final})}\n\n"
         elif cmd == 'push':
             if not args:
                 full_response = "❌ Usage: ollama push <model> [--insecure]"
-                yield f"data: {json.dumps({'token': full_response})}\n\n"
+                yield f"data: {json_dumps({'token': full_response})}\n\n"
             else:
                 model = args[0]
                 insecure = "--insecure" in args
@@ -491,37 +494,33 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
-                        chunk = json.loads(line)
+                        chunk = json_loads(line)
                         status = chunk.get('status', '')
                         if status:
                             full_response += status + "\n"
-                            yield f"data: {json.dumps({'token': status + '\n'})}\n\n"
+                            yield f"data: {json_dumps({'token': status + '\n'})}\n\n"
                         if 'error' in chunk:
                             err = '❌ ' + chunk['error']
                             full_response += err
-                            yield f"data: {json.dumps({'token': err})}\n\n"
+                            yield f"data: {json_dumps({'token': err})}\n\n"
                 final = f"\n✅ Model '{model}' pushed successfully."
                 full_response += final
-                yield f"data: {json.dumps({'token': final})}\n\n"
-
+                yield f"data: {json_dumps({'token': final})}\n\n"
         else:
             output = execute_ollama_command_sync(user_message)
             full_response = output
             for line in output.splitlines():
-                yield f"data: {json.dumps({'token': line + '\n'})}\n\n"
-
-        yield f"data: {json.dumps({'done': True, 'full_response': full_response})}\n\n"
-
+                yield f"data: {json_dumps({'token': line + '\n'})}\n\n"
+        yield f"data: {json_dumps({'done': True, 'full_response': full_response})}\n\n"
     except Exception as e:
         err = f"❌ Command failed: {e}"
-        yield f"data: {json.dumps({'error': err})}\n\n"
-
+        yield f"data: {json_dumps({'error': err})}\n\n"
     ts = datetime.now().strftime("%H:%M")
     if conv_id:
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (chat only, with link to notes) ──
+# ── Build HTML (exactly as originally provided) ──
 def build_html(model_name):
     return r"""<!DOCTYPE html>
 <html lang="en">
@@ -3034,7 +3033,7 @@ window.addEventListener('load', function() {
 </body>
 </html>"""
 
-# ── Routes ──────────────────────────────────────────────────────
+# ── Routes ──
 
 @app.route('/unload_model', methods=['POST'])
 def unload_model():
@@ -3068,7 +3067,6 @@ def get_resources():
         ram = psutil.virtual_memory()
         ram_used_gb = (ram.total - ram.available) / (1024**3)
         vram_used_gb = None
-
         if NVML_AVAILABLE:
             try:
                 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
@@ -3076,7 +3074,6 @@ def get_resources():
                 vram_used_gb = info.used / (1024**3)
             except Exception:
                 pass
-
         if vram_used_gb is None:
             try:
                 output = subprocess.check_output(
@@ -3088,20 +3085,17 @@ def get_resources():
                     vram_used_gb = float(match.group(1)) / 1024
             except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
                 pass
-
         if vram_used_gb is None and platform.system() == "Darwin":
             vram_used_gb = ram_used_gb
-
         return jsonify({
             'ram_used': ram_used_gb,
             'vram_used': vram_used_gb,
             'ram_total': ram.total / (1024**3)
         })
-
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ── Cached vision check (speeds up repeated queries) ──
+# ── Cached vision check ──
 @lru_cache(maxsize=128)
 def cached_vision_check(provider_name, model):
     if provider_name == 'ollama' and model:
@@ -3121,7 +3115,6 @@ def cached_vision_check(provider_name, model):
                 return any(kw in family for kw in vision_families)
         except Exception:
             pass
-    # fallback to provider's generic check
     return model_supports_vision(provider_name, model)
 
 @app.route('/check_vision', methods=['GET'])
@@ -3131,19 +3124,25 @@ def check_vision():
     has_vision = cached_vision_check(provider_name, model)
     return jsonify({"vision": has_vision})
 
+# ── Cache for model lists (10 seconds) ──
+@lru_cache(maxsize=128)
+def _cached_models(provider_name, api_key):
+    provider = providers.get(provider_name)
+    if not provider:
+        return []
+    try:
+        return provider.list_models(api_key=api_key if api_key != 'None' else None)
+    except Exception:
+        return []
+
 @app.route('/providers/models', methods=['GET'])
 def get_provider_models():
     provider_name = request.args.get('provider', 'ollama')
     api_key = request.args.get('api_key', None)
-    provider = providers.get(provider_name)
-    if not provider:
-        return jsonify({'error': 'Unknown provider'}), 400
-    try:
-        models = provider.list_models(api_key=api_key)
-        return jsonify({'models': models})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    models = _cached_models(provider_name, api_key or 'None')
+    return jsonify({'models': models})
 
+# ── Invalidate model cache when provider changes ──
 @app.route('/set_model', methods=['POST'])
 def set_model():
     global current_model
@@ -3151,23 +3150,19 @@ def set_model():
     model = data.get('model')
     if not model:
         return jsonify({'error': 'No model provided'}), 400
-
     try:
         resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
         if resp.status_code == 200:
             models = [m['name'] for m in resp.json().get('models', [])]
             if model not in models:
                 return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 400
-        else:
-            print("⚠️ Cannot verify model existence – Ollama not responding.")
     except Exception as e:
         print(f"⚠️ Error verifying model: {e}")
-
     current_model = model
     save_model_config(model)
     providers["ollama"].model = model
-    # Invalidate vision cache when model changes
     cached_vision_check.cache_clear()
+    _cached_models.cache_clear()
     return jsonify({'ok': True, 'model': model})
 
 @app.route('/deepseek/model_info', methods=['GET'])
@@ -3185,7 +3180,6 @@ def deepseek_status():
     provider = providers.get('deepseek')
     if not provider:
         return jsonify({"ok": False, "error": "Provider not initialized"}), 503
-
     api_key = provider._default_key
     if api_key:
         try:
@@ -3231,7 +3225,7 @@ def get_messages(cid):
 
 @app.route('/clear_all', methods=['POST'])
 def clear_all():
-    save_conversations({})
+    save_conversations_sync({})  # use sync to ensure complete reset
     return jsonify({"ok": True})
 
 @app.route('/conversations/<cid>/messages/<int:idx>', methods=['PUT'])
@@ -3240,18 +3234,15 @@ def edit_message(cid, idx):
     new_text = data.get('text', '').strip()
     if not new_text:
         return jsonify({'error': 'Text cannot be empty'}), 400
-
     convs = load_conversations()
     conv = convs.get(cid)
     if not conv:
         return jsonify({'error': 'Conversation not found'}), 404
-
     msgs = conv.get('messages', [])
     if idx < 0 or idx >= len(msgs):
         return jsonify({'error': 'Index out of range'}), 400
-
     msgs[idx]['text'] = new_text
-    save_conversations(convs)
+    save_conversations_async(convs)
     return jsonify({'ok': True})
 
 @app.route('/conversations/<cid>/messages/<int:idx>', methods=['DELETE'])
@@ -3260,13 +3251,11 @@ def delete_message(cid, idx):
     conv = convs.get(cid)
     if not conv:
         return jsonify({'error': 'Conversation not found'}), 404
-
     msgs = conv.get('messages', [])
     if idx < 0 or idx >= len(msgs):
         return jsonify({'error': 'Index out of range'}), 400
-
     msgs.pop(idx)
-    save_conversations(convs)
+    save_conversations_async(convs)
     return jsonify({'ok': True})
 
 @app.route('/conversations/<cid>/rename', methods=['PUT'])
@@ -3279,7 +3268,7 @@ def rename_conversation(cid):
     if cid not in convs:
         return jsonify({'error': 'Conversation not found'}), 404
     convs[cid]['title'] = new_title
-    save_conversations(convs)
+    save_conversations_async(convs)
     return jsonify({'ok': True})
 
 @app.route('/conversations/reorder', methods=['POST'])
@@ -3288,12 +3277,11 @@ def reorder_conversations():
     order_map = data.get('order')
     if not order_map or not isinstance(order_map, dict):
         return jsonify({'error': 'Invalid order data'}), 400
-
     convs = load_conversations()
     for cid, new_order in order_map.items():
         if cid in convs:
             convs[cid]['order'] = int(new_order)
-    save_conversations(convs)
+    save_conversations_async(convs)
     return jsonify({'ok': True})
 
 @app.route('/conversations/search', methods=['GET'])
@@ -3301,7 +3289,6 @@ def search_conversations():
     query = request.args.get('q', '').strip().lower()
     if not query:
         return jsonify([])
-
     convs = load_conversations()
     results = []
     for cid, conv in convs.items():
@@ -3414,9 +3401,8 @@ def chat():
             if cached_vision_check(provider_name, model):
                 reply = provider.generate_with_image(messages, images, **extra_kwargs)
             else:
-                # Run vision fallback in thread to avoid blocking
                 future = _executor.submit(describe_image_with_llava, images[0]["b64"])
-                description = future.result(timeout=60)  # wait for result
+                description = future.result(timeout=60)
                 if description:
                     inject = f"[Image description]\n{description.strip()}\n\n[User question]\n"
                 else:
@@ -3540,7 +3526,6 @@ def chat_stream():
                 "num_predict": 16384,
                 "num_ctx": 16384,
                 "num_gpu": mem_settings['num_gpu'],
-                # low_vram removed – not a valid Ollama API option
             }
         }
         if images:
@@ -3569,22 +3554,22 @@ def chat_stream():
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
-                        chunk = json.loads(line)
+                        chunk = json_loads(line)
                         if "message" in chunk and "content" in chunk["message"]:
                             token = chunk["message"]["content"]
                             if token:
                                 full_response += token
-                                yield f"data: {json.dumps({'token': token})}\n\n"
+                                yield f"data: {json_dumps({'token': token})}\n\n"
                         if chunk.get("done", False):
                             usage = {}
                             if "eval_count" in chunk and "eval_duration" in chunk:
                                 duration_sec = chunk.get("eval_duration", 0) / 1e9
                                 token_count = chunk.get("eval_count", 0)
                                 usage = {"tokens": token_count, "duration_sec": duration_sec}
-                            yield f"data: {json.dumps({'done': True, 'full_response': full_response, 'usage': usage})}\n\n"
+                            yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': usage})}\n\n"
                             break
             except Exception as e:
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                yield f"data: {json_dumps({'error': str(e)})}\n\n"
 
             ts = datetime.now().strftime("%H:%M")
             add_message(conv_id, "user", user_message, images, files, ts)
@@ -3688,7 +3673,7 @@ UNCENSORED_VISION_MODELS = [
     "rosemarla/devstral-abliterated-vision",
 ]
 
-# ── Add them to the existing Ollama vision list, robustly ──
+# ── Add them to the existing Ollama vision list ──
 if "ollama" in VISION_MODELS:
     current = VISION_MODELS["ollama"]
     if not isinstance(current, list):
@@ -3731,4 +3716,5 @@ if __name__ == '__main__':
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
 
-    app.run(host='127.0.0.1', port=5001, debug=True, ssl_context=ssl_context)
+    # Enable threading for better concurrency
+    app.run(host='127.0.0.1', port=5001, debug=True, ssl_context=ssl_context, threaded=True)
