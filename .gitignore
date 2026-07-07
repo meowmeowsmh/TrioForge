@@ -7,6 +7,7 @@ json_configuration/conversations.json
 json_configuration/model_config.json
 json_configuration/corkboard.json
 json_configuration/notes.json
+
 # SSL certificates (each user generates their own, or uses HTTP fallback)
 cert_store/
 
@@ -28,3 +29,6 @@ venv/
 
 # ignore personal file
 personal.txt
+
+# 🔥 NEW: uploaded images (keep out of Git)
+static/uploads/
