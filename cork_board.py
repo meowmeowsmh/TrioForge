@@ -839,25 +839,25 @@ svg.link-layer {
 }
 .link-line {
     fill:none;
-    stroke-width:2.5;
+    stroke-width:1.5;
     stroke-dasharray:6 4;
-    opacity:0.8;
+    opacity:0.75;
     cursor: pointer;
 }
 .link-line.red {
-    stroke:#ff3b30;
-    stroke-width:3.5;
+    stroke:#e0281c;
+    stroke-width:3;
     stroke-dasharray:none;
     opacity:0.95;
-    filter: drop-shadow(0 0 4px rgba(255,59,48,0.4));
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
 }
 .link-line.black {
     stroke:#e8d9b5;
-    stroke-width:2;
+    stroke-width:1.5;
     stroke-dasharray:6 4;
 }
 .arrow-marker { fill:#e8d9b5; }
-.arrow-marker.red { fill:#ff3b30; }
+.arrow-marker.red { fill:#c8281e; }
 
 /* ── Pins ──────────────────────────────────────────── */
 .pin {
@@ -1390,11 +1390,11 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
         <div class="board" id="board">
             <svg class="link-layer" id="linkLayer">
                 <defs>
-                    <marker id="arrowhead-black" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                        <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker" />
+                    <marker id="arrowhead-black" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+                        <polygon points="0 0, 6 2.5, 0 5" class="arrow-marker" />
                     </marker>
-                    <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                        <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker red" />
+                    <marker id="arrowhead-red" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+                        <polygon points="0 0, 6 2.5, 0 5" class="arrow-marker red" />
                     </marker>
                 </defs>
             </svg>
@@ -1800,11 +1800,11 @@ function renderLinks() {
     if (!defs) {
         defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         defs.innerHTML = `
-            <marker id="arrowhead-black" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker" />
+            <marker id="arrowhead-black" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+                <polygon points="0 0, 6 2.5, 0 5" class="arrow-marker" />
             </marker>
-            <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" class="arrow-marker red" />
+            <marker id="arrowhead-red" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+                <polygon points="0 0, 6 2.5, 0 5" class="arrow-marker red" />
             </marker>
         `;
         linkLayer.prepend(defs);
@@ -1843,7 +1843,7 @@ function renderLinks() {
         var curved = buildLinkPath(link, a, b);
         line.setAttribute('class', isRed ? 'link-line red' : 'link-line black');
         line.setAttribute('d', curved);
-        line.setAttribute('marker-end', isRed ? 'url(#arrowhead-red)' : 'url(#arrowhead-black)');
+
     });
     boardEl.addEventListener('contextmenu', function(e) {
         if (e.target.closest('.link-line')) e.preventDefault();
@@ -1899,6 +1899,7 @@ function applyDragMove() {
     dragCtx.el.style.transform = 'translate3d(' + x + 'px, ' + y + 'px, 0) rotate(' + (boardData.pins[dragCtx.id].rotation || 0) + 'deg)';
     boardData.pins[dragCtx.id].x = x;
     boardData.pins[dragCtx.id].y = y;
+    updateLinksForPin(dragCtx.id);
 }
 function dragEnd() {
     if (!dragCtx) return;
