@@ -30,5 +30,5 @@ venv/
 # ignore personal file
 personal.txt
 
-# 🔥 NEW: uploaded images (keep out of Git)
+# do not want to commit any uploaded files, they are user-specific and can be large
 static/uploads/
