@@ -164,9 +164,11 @@ class OllamaProvider(LLMProvider):
 # ================== IMPROVED LLAMA.CPP PROVIDER ==================
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: str = "./models",
-                 server_url: str = "http://127.0.0.1:8080/v1"):
+                 server_url: str = "http://127.0.0.1:8080/v1",
+                 context_length: int = 16384):   # <-- ADDED 16k context
         self.models_dir = os.path.abspath(models_dir)
         self.server_url = server_url.rstrip("/")
+        self.context_length = context_length      # <-- store it
         self._ensure_models_dir()
         self.available_models = self._discover_models()
 
@@ -226,12 +228,16 @@ class LlamaCppProvider(LLMProvider):
         self._check_server()
         model_path = self._resolve_model_path(model)
 
+        # Use context length from instance, allow override via kwargs
+        n_ctx = kwargs.get("n_ctx", self.context_length)
+
         payload = {
             "model": model_path,
             "messages": messages,
             "stream": False,
             "temperature": kwargs.get("temperature", 0.7),
             "max_tokens": kwargs.get("max_tokens", 2048),
+            "n_ctx": n_ctx,                     # <-- ADDED context size
         }
         try:
             resp = requests.post(
@@ -252,6 +258,9 @@ class LlamaCppProvider(LLMProvider):
                             images: List[Dict], **kwargs) -> str:
         self._check_server()
         model_path = self._resolve_model_path(kwargs.get("model"))
+
+        # Use context length from instance, allow override via kwargs
+        n_ctx = kwargs.get("n_ctx", self.context_length)
 
         content_parts = []
         for img in images:
@@ -276,6 +285,7 @@ class LlamaCppProvider(LLMProvider):
             "stream": False,
             "temperature": kwargs.get("temperature", 0.7),
             "max_tokens": kwargs.get("max_tokens", 2048),
+            "n_ctx": n_ctx,                     # <-- ADDED context size
         }
         try:
             resp = requests.post(
