@@ -69,7 +69,7 @@ to this:
 ### 1️⃣ Clone the Repository
 ```bash
 git clone https://github.com/meowmeowsmh/ollama-chat-interface.git
-cd ollama-chat-interface
+cd best_bot_vscode
 #ensure to download all requirement 
 pip install -r requirements.txt
 #to run the real application(ensure to get certificate): 
