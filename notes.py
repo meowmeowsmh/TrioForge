@@ -4,6 +4,7 @@
 # + Multi-provider support for AI (Ollama, DeepSeek, Claude, HF, Groq, llama.cpp)
 # + IMAGE UPLOAD support for notes
 # + ENHANCED SPACING – much more room in sidebar items and main notes
+# + SECURITY FIX: API keys sent in POST body, not URL
 
 import os
 import json as std_json          # fallback
@@ -1447,8 +1448,12 @@ NOTES_HTML = r"""<!DOCTYPE html>
     }
 
     function loadModelsForProvider(provider, apiKey) {
-        var url = '/providers/models?provider=' + encodeURIComponent(provider) + '&api_key=' + encodeURIComponent(apiKey);
-        fetch(url)
+        // --- FIX: use POST with JSON body, not GET with query params ---
+        fetch('/providers/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: provider, api_key: apiKey })
+        })
             .then(r => r.json())
             .then(data => {
                 if (data.error) {
