@@ -340,10 +340,9 @@ def trim_conversation_history(messages, max_messages=10, max_tokens=3000):
         messages.insert(0, system_msg)
     return messages
 
-# ── Cached memory settings (cleared every second) ──
-@lru_cache(maxsize=1)
+# ── FIXED: No lru_cache – always reads current memory stats ──
 def get_ollama_memory_settings():
-    """Cache memory stats for 1 second to reduce psutil calls."""
+    """Read current RAM/VRAM and return GPU offload settings."""
     try:
         mem = psutil.virtual_memory()
         ram_free_gb = mem.available / (1024**3)
@@ -2201,9 +2200,11 @@ function updateVisionBadge() {
     var model = modelSelect.value;
     if (!model) { visionBadge.classList.remove('visible'); return; }
     var apiKey = apiKeyInput.value;
-    fetch('/check_vision?provider=' + encodeURIComponent(provider)
-          + '&model=' + encodeURIComponent(model)
-          + '&api_key=' + encodeURIComponent(apiKey))
+    fetch('/check_vision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider, model: model, api_key: apiKey })
+    })
         .then(r => r.json())
         .then(data => {
             if (data.vision) visionBadge.classList.add('visible');
@@ -2216,7 +2217,11 @@ function updateVisionBadge() {
 function loadModels() {
     var provider = providerSelect.value;
     var apiKey = apiKeyInput.value;
-    fetch('/providers/models?provider=' + encodeURIComponent(provider) + '&api_key=' + encodeURIComponent(apiKey))
+    fetch('/providers/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider, api_key: apiKey })
+    })
         .then(r => r.json())
         .then(data => {
             if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
@@ -3133,12 +3138,25 @@ def cached_vision_check(provider_name, model):
             pass
     return model_supports_vision(provider_name, model)
 
-@app.route('/check_vision', methods=['GET'])
+# ── CHANGED: /check_vision now POST, reads api_key from body (though unused) ──
+@app.route('/check_vision', methods=['POST'])
 def check_vision():
-    provider_name = request.args.get('provider', 'ollama')
-    model = request.args.get('model', '')
+    data = request.get_json()
+    provider_name = data.get('provider', 'ollama')
+    model = data.get('model', '')
+    # api_key is not needed for vision check, but we accept it
     has_vision = cached_vision_check(provider_name, model)
     return jsonify({"vision": has_vision})
+
+# ── CHANGED: /providers/models now POST, reads api_key from body ──
+@app.route('/providers/models', methods=['POST'])
+def get_provider_models():
+    data = request.get_json()
+    provider_name = data.get('provider', 'ollama')
+    api_key = data.get('api_key', None)
+    # Call the cached function with the key (caching is per key, which is fine)
+    models = _cached_models(provider_name, api_key or 'None')
+    return jsonify({'models': models})
 
 # ── Cache for model lists (10 seconds) ──
 @lru_cache(maxsize=128)
@@ -3150,13 +3168,6 @@ def _cached_models(provider_name, api_key):
         return provider.list_models(api_key=api_key if api_key != 'None' else None)
     except Exception:
         return []
-
-@app.route('/providers/models', methods=['GET'])
-def get_provider_models():
-    provider_name = request.args.get('provider', 'ollama')
-    api_key = request.args.get('api_key', None)
-    models = _cached_models(provider_name, api_key or 'None')
-    return jsonify({'models': models})
 
 # ── Invalidate model cache when provider changes ──
 @app.route('/set_model', methods=['POST'])
