@@ -80,6 +80,21 @@ class LLMProvider:
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         return []
 
+    # ─── NEW: system prompt with Mermaid support ─────────────────────────────
+    def get_system_prompt(self) -> str:
+        """
+        Return the system prompt that should be prepended to every conversation.
+        Override in subclasses to add provider‑specific instructions.
+        """
+        return (
+            "Always format tabular data as Markdown tables with headers. "
+            "Use **bold** for important terms or emphasis. "
+            "Use bullet lists (- or *) for enumerations. "
+            "When the user asks for a flowchart, architecture, diagram, sequence diagram, "
+            "or any visual structure, output valid Mermaid.js syntax inside a ```mermaid code block. "
+            "Keep your responses clear, structured, and easy to read."
+        )
+
 
 class OllamaProvider(LLMProvider):
     """Ollama provider using /api/chat for all requests (preserves conversation history)."""
