@@ -645,7 +645,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (exactly as originally provided, but with improved streaming in the JS) ──
+# ── Build HTML (only Chat, Notes, Cork Board – no Logs) ──
 def build_html(model_name):
     html = r"""<!DOCTYPE html>
 <html lang="en">
@@ -853,7 +853,7 @@ body.light-mode::before { opacity: 0; }
     background-clip: text;
     font-weight: 700;
 }
-/* ── Centered tab buttons (pill style) ──────── */
+/* ── Centered tab buttons (pill style) ── only Chat, Notes, Cork Board ── */
 .top-bar .center-tabs {
     display: flex;
     gap: 4px;
@@ -1070,7 +1070,7 @@ body.light-mode .center-tabs .tab-btn.active {
     flex:1; overflow-y:auto; padding: 24px 40px;
     display:flex; flex-direction:column; gap: 16px;
     will-change: transform;
-    contain: layout style;  /* NEW: isolate layout to avoid recalculating whole page */
+    contain: layout style;
 }
 .chat-area::-webkit-scrollbar { width: 6px; }
 .chat-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
@@ -1175,7 +1175,7 @@ body.light-mode .msg.bot code {
     overflow: hidden;
     border: 1px solid rgba(255,255,255,0.1);
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    font-size: 0; /* Remove extra space */
+    font-size: 0;
 }
 .code-header {
     background: #2d2d2d;
@@ -1699,7 +1699,7 @@ body.light-mode .vision-badge {
         <h1>🧠 Trio-Forge Custom Chat</h1>
       </div>
 
-      <!-- CENTER TABS (pill style) – only Chat, Notes is a link -->
+      <!-- CENTER TABS – only Chat, Notes, Cork Board -->
       <div class="center-tabs">
         <button class="tab-btn active">💬 Chat</button>
         <a href="/notes" class="tab-btn" style="text-decoration:none;">📝 Notes</a>
@@ -1787,7 +1787,6 @@ body.light-mode .vision-badge {
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
         <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
-        <!-- FIX: Added hidden modelInfo element to avoid JS errors -->
         <span id="modelInfo" style="display:none;"></span>
       </div>
     </div>
@@ -1845,15 +1844,15 @@ var currentConv = null;
 var pending     = [];
 var conversations = [];
 var searchQuery = '';
-var searchEnabled = true;  // global flag used in actuallySend
+var searchEnabled = true;
 var unloadBtn = document.getElementById('unloadBtn');
 
-// ── Smooth scroll helper (called only when needed) ──
+// ── Smooth scroll helper ──────────────────────
 function smoothScrollToBottom() {
     chatArea.scrollTop = chatArea.scrollHeight;
 }
 
-// ── Throttled resize for the textarea ────────────────────
+// ── Throttled resize for textarea ──────────────
 var resizePending = false;
 msgInput.addEventListener('input', function() {
     if (resizePending) return;
@@ -1866,7 +1865,7 @@ msgInput.addEventListener('input', function() {
     });
 });
 
-// ── New function to enrich code blocks ───────────────────
+// ── Code blocks and Mermaid ────────────────────
 function processCodeBlocks(root) {
     var codeBlocks = root.querySelectorAll('pre code');
     if (codeBlocks.length === 0) return;
@@ -1874,15 +1873,12 @@ function processCodeBlocks(root) {
         var parentPre = codeBlock.parentElement;
         if (parentPre.classList.contains('processed')) return;
         parentPre.classList.add('processed');
-
         var lang = '';
         var classMatch = codeBlock.className.match(/language-(\w+)/);
         if (classMatch) lang = classMatch[1];
         if (!lang) lang = 'code';
-
         var wrapper = document.createElement('div');
         wrapper.className = 'code-block-wrapper';
-
         var header = document.createElement('div');
         header.className = 'code-header';
         var label = document.createElement('span');
@@ -1929,18 +1925,15 @@ function processCodeBlocks(root) {
         }
         header.appendChild(label);
         header.appendChild(copyBtn);
-
         parentPre.parentNode.insertBefore(wrapper, parentPre);
         wrapper.appendChild(header);
         wrapper.appendChild(parentPre);
-
         if (window.hljs) {
             hljs.highlightElement(codeBlock);
         }
     });
 }
 
-// ─── NEW: Mermaid diagram renderer ──────────────────────
 function renderMermaidDiagrams(root) {
     var mermaidBlocks = root.querySelectorAll('pre code.language-mermaid');
     if (mermaidBlocks.length === 0) return;
@@ -1992,12 +1985,11 @@ unloadBtn.addEventListener('click', function() {
         .catch(() => status.textContent = '❌ Unload failed');
 });
 
-// ── DROP OVERLAY LOGIC (only for file drags) ────────────
+// ── DROP OVERLAY ───────────────────────────────
 var dropOverlay = document.getElementById('dropOverlay');
 var dragCounter = 0;
 function showDropOverlay() { dropOverlay.classList.add('active'); }
 function hideDropOverlay() { dropOverlay.classList.remove('active'); }
-
 function hasFiles(e) {
     if (!e.dataTransfer) return false;
     if (e.dataTransfer.types) {
@@ -2012,7 +2004,6 @@ function hasFiles(e) {
     }
     return false;
 }
-
 document.addEventListener('dragenter', function(e) {
     e.preventDefault();
     if (!hasFiles(e)) return;
@@ -2391,7 +2382,6 @@ function loadModels() {
             if (provider === 'deepseek' && modelSelect.value) {
                 checkDeepSeekStatus();
             } else {
-                // modelInfo is now present (hidden), safe to update
                 document.getElementById('modelInfo').textContent = '';
             }
         })
@@ -2432,7 +2422,6 @@ modelSelect.addEventListener('change', function() {
     const provider = providerSelect.value;
     const model = this.value;
     updateVisionBadge();
-
     if (provider === 'ollama') {
         fetch('/set_model', {
             method: 'POST',
@@ -2449,9 +2438,9 @@ modelSelect.addEventListener('change', function() {
         })
         .catch(err => { status.textContent = '❌ Error: ' + err; });
     }
-    
     document.getElementById('modelInfo').textContent = '';
 });
+
 // ── Date grouping helpers ──────────────────────
 function getDateGroup(dateStr) {
     var now = new Date();
@@ -2720,7 +2709,6 @@ function renderMsg(role, entry, msgIndex) {
             img.loading = 'lazy';
             img.decoding = 'async';
             img.src = 'data:' + (im.mime || 'image/png') + ';base64,' + (im.b64 || '');
-            // ── Click to open image viewer ──
             img.style.cursor = 'pointer';
             img.onclick = function() {
                 openImageViewerFromChat(im.b64, im.mime);
@@ -2740,7 +2728,6 @@ function renderMsg(role, entry, msgIndex) {
     body.className = 'body';
     if (role === 'bot') {
         body.innerHTML = marked.parse(entry.text || '');
-        // Render Mermaid after Markdown
         renderMermaidDiagrams(body);
     } else {
         body.textContent = entry.text || '';
@@ -2776,7 +2763,6 @@ function renderMsg(role, entry, msgIndex) {
     chatArea.appendChild(div);
     if (role === 'bot') {
         processCodeBlocks(div);
-        // Also run Mermaid on the whole div (already done inside body, but double-check)
         renderMermaidDiagrams(div);
     }
     return div;
@@ -2911,7 +2897,6 @@ var tokenCount = 0;
 var startTimeToken = null;
 var speedInterval = null;
 
-/* ── THE IMPROVED STREAMING FUNCTION ── */
 function actuallySend(text) {
     var images = pending.filter(p => p.type === 'image');
     var files  = pending.filter(p => p.type === 'file');
@@ -2934,7 +2919,6 @@ function actuallySend(text) {
     busy = true;
     sendBtn.disabled = true;
     status.textContent = '⏳ Generating...';
-    // FIXED: Use the global searchEnabled directly (no shadowing)
     var provider = providerSelect.value;
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
@@ -2994,14 +2978,10 @@ function actuallySend(text) {
             var decoder = new TextDecoder();
             var fullText = '';
             var sseBuffer = '';
-
-            // ----- REQUEST ANIMATION FRAME BATCHING -----
             var tokenQueue = [];
             var rafId = null;
             var botBody = botDiv.querySelector('.body');
             var textNode = null;
-
-            // Clear placeholder and create a single text node
             botBody.innerHTML = '';
             textNode = document.createTextNode('');
             botBody.appendChild(textNode);
@@ -3009,32 +2989,26 @@ function actuallySend(text) {
             function flushTokens() {
                 rafId = null;
                 if (tokenQueue.length === 0) return;
-                // Append all queued tokens
                 for (var i = 0; i < tokenQueue.length; i++) {
                     fullText += tokenQueue[i];
                 }
                 tokenQueue.length = 0;
-                // Update the text node (very cheap)
                 textNode.textContent = fullText;
                 botBody.classList.remove('thinking-dots');
-                // Scroll if at bottom
                 var threshold = 80;
                 var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
                 if (atBottom) {
                     chatArea.scrollTop = chatArea.scrollHeight;
                 }
             }
-
             function scheduleFlush() {
                 if (!rafId) {
                     rafId = requestAnimationFrame(flushTokens);
                 }
             }
-
             function readStream() {
                 reader.read().then(({done, value}) => {
                     if (done) {
-                        // Process any leftover SSE data
                         if (sseBuffer.startsWith('data: ')) {
                             try {
                                 var data = JSON.parse(sseBuffer.substring(6));
@@ -3046,7 +3020,6 @@ function actuallySend(text) {
                             rafId = null;
                         }
                         flushTokens();
-                        // Final Markdown render
                         botBody.innerHTML = marked.parse(fullText || '(empty response)');
                         botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                         processCodeBlocks(botDiv);
@@ -3086,10 +3059,7 @@ function actuallySend(text) {
                 });
             }
             readStream();
-            // ----- END rAF BATCHING -----
-
         } else {
-            // Non-streaming fallback (unchanged)
             response.json().then(data => {
                 if (data.error) {
                     handleSendError(data.error);
@@ -3225,8 +3195,8 @@ window.addEventListener('load', function() {
 </html>"""
     return html
 
+
 # ── Routes ──
-# (all routes from your original file – unchanged)
 @app.route('/unload_model', methods=['POST'])
 def unload_model():
     try:
@@ -3309,27 +3279,22 @@ def cached_vision_check(provider_name, model):
             pass
     return model_supports_vision(provider_name, model)
 
-# ── CHANGED: /check_vision now POST, reads api_key from body (though unused) ──
 @app.route('/check_vision', methods=['POST'])
 def check_vision():
     data = request.get_json()
     provider_name = data.get('provider', 'ollama')
     model = data.get('model', '')
-    # api_key is not needed for vision check, but we accept it
     has_vision = cached_vision_check(provider_name, model)
     return jsonify({"vision": has_vision})
 
-# ── CHANGED: /providers/models now POST, reads api_key from body ──
 @app.route('/providers/models', methods=['POST'])
 def get_provider_models():
     data = request.get_json()
     provider_name = data.get('provider', 'ollama')
     api_key = data.get('api_key', None)
-    # Call the cached function with the key (caching is per key, which is fine)
     models = _cached_models(provider_name, api_key or 'None')
     return jsonify({'models': models})
 
-# ── Cache for model lists (10 seconds) ──
 @lru_cache(maxsize=128)
 def _cached_models(provider_name, api_key):
     provider = providers.get(provider_name)
@@ -3340,7 +3305,6 @@ def _cached_models(provider_name, api_key):
     except Exception:
         return []
 
-# ── Invalidate model cache when provider changes ──
 @app.route('/set_model', methods=['POST'])
 def set_model():
     global current_model
@@ -3423,9 +3387,6 @@ def get_messages(cid):
 
 @app.route('/clear_all', methods=['POST'])
 def clear_all():
-    # NOTE: despite the route name (kept for backwards compatibility with the
-    # front-end), this only clears the MESSAGES of one specific chat.
-    # It never deletes the chat itself and never touches any other chat.
     data = request.get_json(silent=True) or {}
     cid = data.get('cid') or request.args.get('cid')
     if not cid:
@@ -3514,6 +3475,98 @@ def search_conversations():
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
+# ── SQLite Logs API (JSON only, no UI) ──────────────────
+@app.route('/api/logs')
+def get_logs():
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    offset = (page - 1) * per_page
+
+    conv_filter = request.args.get('conv_id', '').strip()
+    date_from = request.args.get('from', '')
+    date_to = request.args.get('to', '')
+
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        query = "SELECT id, conversation_id, role, content, created_at FROM messages WHERE 1=1"
+        count_query = "SELECT COUNT(*) FROM messages WHERE 1=1"
+        params = []
+        count_params = []
+
+        if conv_filter:
+            query += " AND conversation_id = ?"
+            params.append(conv_filter)
+            count_query += " AND conversation_id = ?"
+            count_params.append(conv_filter)
+        if date_from:
+            query += " AND created_at >= ?"
+            params.append(date_from)
+            count_query += " AND created_at >= ?"
+            count_params.append(date_from)
+        if date_to:
+            query += " AND created_at <= ?"
+            params.append(date_to)
+            count_query += " AND created_at <= ?"
+            count_params.append(date_to)
+
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([per_page, offset])
+        cur.execute(query, params)
+        rows = cur.fetchall()
+
+        cur.execute(count_query, count_params)
+        total = cur.fetchone()[0]
+
+    logs = [{
+        'id': row[0],
+        'conversation_id': row[1],
+        'role': row[2],
+        'content': row[3],
+        'created_at': row[4]
+    } for row in rows]
+
+    return jsonify({
+        'logs': logs,
+        'total': total,
+        'page': page,
+        'per_page': per_page
+    })
+
+@app.route('/api/logs/export')
+def export_logs_csv():
+    conv_filter = request.args.get('conv_id', '').strip()
+    date_from = request.args.get('from', '')
+    date_to = request.args.get('to', '')
+
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        query = "SELECT id, conversation_id, role, content, created_at FROM messages WHERE 1=1"
+        params = []
+        if conv_filter:
+            query += " AND conversation_id = ?"
+            params.append(conv_filter)
+        if date_from:
+            query += " AND created_at >= ?"
+            params.append(date_from)
+        if date_to:
+            query += " AND created_at <= ?"
+            params.append(date_to)
+        query += " ORDER BY created_at DESC"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+
+    import csv
+    from io import StringIO
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', 'Conversation ID', 'Role', 'Content', 'Created At'])
+    for row in rows:
+        writer.writerow(row)
+    output.seek(0)
+    return Response(output.getvalue(), mimetype='text/csv',
+                    headers={'Content-Disposition': 'attachment; filename=conversation_logs.csv'})
+
+# ── Chat endpoints (unchanged) ───────────────────────────
 @app.route('/chat', methods=['POST'])
 def chat():
     global current_model
@@ -3560,9 +3613,7 @@ def chat():
         if not provider:
             return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
 
-        # ── Use provider's own system prompt ──
         system_prompt = provider.get_system_prompt()
-
         final_prompt = system_prompt + "\n\n"
         if search_context:
             final_prompt += (
@@ -3590,7 +3641,6 @@ def chat():
                 elif msg['role'] == 'bot':
                     messages.append({"role": "assistant", "content": msg['text']})
 
-        # Prepend system prompt and trim history for speed
         messages = [{"role": "system", "content": system_prompt}] + messages
         messages = trim_conversation_history(messages)
         messages.append({"role": "user", "content": final_prompt})
@@ -3696,9 +3746,7 @@ def chat_stream():
         if not provider:
             return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
 
-        # ── Use provider's own system prompt ──
         system_prompt = provider.get_system_prompt()
-
         final_prompt = system_prompt + "\n\n"
         if search_context:
             final_prompt += (
@@ -3804,7 +3852,7 @@ def chat_stream():
         print(f"❌ chat_stream error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ─── UNCENSORED VISION MODELS (extend built‑in list) ──────────
+# ─── UNCENSORED VISION MODELS ──────────────────
 UNCENSORED_VISION_MODELS = [
     "mikemikeok/Qwythos-9B-Uncensored",
     "baytout3/ultragemma4-12b-heretic-uncensored",
@@ -3888,7 +3936,6 @@ UNCENSORED_VISION_MODELS = [
     "rosemarla/devstral-abliterated-vision",
 ]
 
-# ── Add them to the existing Ollama vision list ──
 if "ollama" in VISION_MODELS:
     current = VISION_MODELS["ollama"]
     if not isinstance(current, list):
@@ -3904,7 +3951,7 @@ else:
 
 if __name__ == '__main__':
     print("\n" + "="*50)
-    print("🚀  AI CHAT Interfacing Loading... · Multi‑Conversation")
+    print("🚀  AI CHAT Interfacing Loading... · Multi-Conversation")
     print("="*50)
     print(f"  Default model : {DEFAULT_MODEL}")
     print(f"  Current model : {current_model}")
@@ -3931,8 +3978,4 @@ if __name__ == '__main__':
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
 
-    # Enable threading for better concurrency.
-    # use_reloader=False: the debug reloader restarts the whole process whenever a
-    # file changes, which kills any chat mid-stream if you're editing code while
-    # testing. debug=True still gives you tracebacks in the browser on errors.
     app.run(host='127.0.0.1', port=5001, debug=True, use_reloader=False, ssl_context=ssl_context, threaded=True)
