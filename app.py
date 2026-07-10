@@ -16,18 +16,23 @@ import time
 from functools import lru_cache, wraps
 from concurrent.futures import ThreadPoolExecutor
 import threading
-
+import sqlite3
 
 # ── Try to use orjson for faster JSON (optional) ──
 try:
     import orjson
     def json_dumps(obj):
         return orjson.dumps(obj).decode('utf-8')
+    def json_dumps_pretty(obj):
+        # human-readable version (indented) — used only when writing conversations.json to disk
+        return orjson.dumps(obj, option=orjson.OPT_INDENT_2).decode('utf-8')
     def json_loads(s):
         return orjson.loads(s)
     print("🚀 Using orjson for faster JSON")
 except ImportError:
     json_dumps = std_json.dumps
+    def json_dumps_pretty(obj):
+        return std_json.dumps(obj, ensure_ascii=False, indent=2)
     json_loads = std_json.loads
     print("ℹ️ Using standard json (install orjson for better performance)")
 
@@ -70,6 +75,8 @@ DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
 MODEL_CONFIG_FILE = "json_configuration/model_config.json"
 ATTACHMENTS_DIR = "json_configuration/attachments"   # image/file blobs live here instead of inline in conversations.json
+SQLITE_DIR = "sqlite_data"   # folder that holds .db / sqlite files
+SQLITE_DB_PATH = os.path.join(SQLITE_DIR, "conversations.db")
 
 try:
     from duckduckgo_search import DDGS
@@ -81,6 +88,48 @@ except ImportError:
 os.makedirs(os.path.dirname(CONVERSATIONS_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+os.makedirs(SQLITE_DIR, exist_ok=True)
+
+# ── SQLite: a fast, queryable log of every prompt/answer (separate from conversations.json) ──
+# conversations.json = live app state (nested, edited/deleted/reordered).
+# conversations.db   = flat append-only history: conversation_id, role, text, timestamp.
+#                       Great for searching/analyzing everything ever said, super fast to query.
+_sqlite_conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
+_sqlite_lock = threading.Lock()
+
+def _init_sqlite():
+    with _sqlite_lock:
+        _sqlite_conn.execute("PRAGMA journal_mode=WAL;")     # fast concurrent writes/reads
+        _sqlite_conn.execute("PRAGMA synchronous=NORMAL;")   # fast, still crash-safe with WAL
+        _sqlite_conn.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL,
+                role            TEXT NOT NULL,      -- 'user' or 'assistant'
+                content         TEXT,               -- the prompt or the answer
+                created_at      TEXT NOT NULL
+            );
+        """)
+        _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);")
+        _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);")
+        _sqlite_conn.commit()
+    print(f"🗄️  SQLite log ready at {SQLITE_DB_PATH}")
+
+_init_sqlite()
+
+def log_message_to_sqlite(cid, role, text):
+    """Append one row (fire-and-forget, off the request thread). Never touches conversations.json."""
+    def _write():
+        try:
+            with _sqlite_lock:
+                _sqlite_conn.execute(
+                    "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                    (cid, role, text, datetime.now().isoformat())
+                )
+                _sqlite_conn.commit()
+        except Exception as e:
+            print(f"⚠️ Failed to log message to sqlite: {e}")
+    _save_executor.submit(_write)
 
 # ── Create empty JSON files if they don't exist ──
 if not os.path.exists(CONVERSATIONS_FILE):
@@ -154,14 +203,7 @@ _cache_loaded: bool = False
 _cache_lock = threading.Lock()          # for thread-safe updates
 
 # ── Attachment blob storage ──────────────────────────────────────────
-# Images/files used to be embedded as base64 directly inside conversations.json.
-# That meant EVERY save rewrote the entire chat history's worth of base64 to
-# disk, over and over, getting slower as history grew. Now each blob is written
-# once to its own file here, and only a small filename reference is persisted
-# in conversations.json. In-memory (_conversations_cache), messages still carry
-# a "b64" key exactly like before, so nothing else reading messages has to change.
 def _save_attachment_to_disk(b64_data: str, hint_name: str = "") -> str:
-    """Write a base64 blob to disk once; return the stored filename (or '' on failure)."""
     if not b64_data:
         return ""
     ext = os.path.splitext(hint_name)[1] or ".bin"
@@ -177,7 +219,6 @@ def _save_attachment_to_disk(b64_data: str, hint_name: str = "") -> str:
         return ""
 
 def _load_attachment_from_disk(fname: str) -> str:
-    """Read a stored attachment back off disk and return it as base64."""
     if not fname:
         return ""
     path = os.path.join(ATTACHMENTS_DIR, fname)
@@ -189,9 +230,6 @@ def _load_attachment_from_disk(fname: str) -> str:
         return ""
 
 def _strip_blobs_for_disk(convs: dict) -> dict:
-    """Lightweight copy of convs for writing to conversations.json: any image/file
-    that already has a 'file' reference gets its inline 'b64' dropped, since it can
-    be re-read from disk. This is what keeps every save fast and small."""
     lean = {}
     for cid, conv in convs.items():
         lean_conv = dict(conv)
@@ -210,8 +248,6 @@ def _strip_blobs_for_disk(convs: dict) -> dict:
     return lean
 
 def _hydrate_blobs_from_disk(convs: dict) -> None:
-    """After loading conversations.json, fill 'b64' back in (in place) from the
-    attachment files on disk, so the rest of the app keeps reading 'b64' as before."""
     for conv in convs.values():
         for msg in conv.get("messages", []):
             for im in msg.get("images", []):
@@ -246,29 +282,26 @@ def load_conversations():
 _save_executor = ThreadPoolExecutor(max_workers=1)
 
 def save_conversations_async(convs):
-    """Schedule a save operation in background."""
     def _save():
         try:
             lean = _strip_blobs_for_disk(convs)
             temp_file = CONVERSATIONS_FILE + ".tmp"
             with open(temp_file, "w", encoding="utf-8") as f:
-                f.write(json_dumps(lean))
+                f.write(json_dumps_pretty(lean))
             os.replace(temp_file, CONVERSATIONS_FILE)
-            # Update cache with saved data (already in memory)
             print(f"✅ Saved conversations ({len(convs)} items)")
         except Exception as e:
             print(f"❌ Failed to save conversations: {e}")
     _save_executor.submit(_save)
 
 def save_conversations_sync(convs):
-    """Synchronous save (used when we must guarantee persistence)."""
     global _conversations_cache
     _conversations_cache = convs
     try:
         lean = _strip_blobs_for_disk(convs)
         temp_file = CONVERSATIONS_FILE + ".tmp"
         with open(temp_file, "w", encoding="utf-8") as f:
-            f.write(json_dumps(lean))
+            f.write(json_dumps_pretty(lean))
         os.replace(temp_file, CONVERSATIONS_FILE)
         print(f"✅ Saved conversations ({len(convs)} items)")
     except Exception as e:
@@ -319,9 +352,9 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
         fname = _save_attachment_to_disk(b64, img.get("name", "image.png"))
         stored_images.append({
             "name": img.get("name", "image"),
-            "b64": b64,          # kept in memory so nothing downstream has to change
+            "b64": b64,
             "mime": img.get("mime", "image/png"),
-            "file": fname        # what actually gets persisted to conversations.json
+            "file": fname
         })
 
     stored_files = []
@@ -346,6 +379,7 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
         if role == "user" and len(_conversations_cache[cid]["messages"]) == 1:
             _conversations_cache[cid]["title"] = text[:40] + ("..." if len(text) > 40 else "")
     save_conversations_async(_conversations_cache)
+    log_message_to_sqlite(cid, role, text)   # fast, non-blocking append to the sqlite history
     print(f"📝 Added {role} message to {cid} (now {len(_conversations_cache[cid]['messages'])} messages)")
     return True
 
@@ -357,6 +391,18 @@ def delete_conversation(cid):
         save_conversations_async(_conversations_cache)
         return True
     return False
+
+def clear_conversation_messages(cid):
+    """Empty out the messages of ONE specific chat only.
+    The chat itself (id/title/order) stays, and every other chat is untouched."""
+    _ensure_cache()
+    if cid not in _conversations_cache:
+        return False
+    with _cache_lock:
+        _conversations_cache[cid]["messages"] = []
+    save_conversations_async(_conversations_cache)
+    print(f"🧹 Cleared messages for {cid} only (other chats untouched)")
+    return True
 
 # ── C/C++ comment stripper ──
 def strip_c_comments(text: str) -> str:
@@ -599,7 +645,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (exactly as originally provided) ──
+# ── Build HTML (exactly as originally provided, but with improved streaming in the JS) ──
 def build_html(model_name):
     html = r"""<!DOCTYPE html>
 <html lang="en">
@@ -1739,7 +1785,7 @@ body.light-mode .vision-badge {
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
-        <button class="clear-btn" onclick="clearAllChats()">🗑 Clear All</button>
+        <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <!-- FIX: Added hidden modelInfo element to avoid JS errors -->
         <span id="modelInfo" style="display:none;"></span>
@@ -2651,12 +2697,18 @@ function deleteChat(id) {
         });
 }
 function clearAllChats() {
-    if (!confirm('Delete ALL conversations?')) return;
-    fetch('/clear_all', { method: 'POST' })
+    if (!currentConv) {
+        alert('Open a chat first, then Clear will empty that chat only.');
+        return;
+    }
+    if (!confirm('Clear all messages in this chat only? Other chats will not be affected.')) return;
+    fetch('/clear_all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cid: currentConv })
+    })
         .then(() => {
-            currentConv = null;
-            loadConversations();
-            chatArea.innerHTML = '<div class="msg bot">🗑 All chats cleared. Start a new one!</div>';
+            chatArea.innerHTML = '<div class="msg bot">🗑 This chat\'s messages were cleared. Other chats are untouched.</div>';
         });
 }
 function renderMsg(role, entry, msgIndex) {
@@ -2859,6 +2911,7 @@ var tokenCount = 0;
 var startTimeToken = null;
 var speedInterval = null;
 
+/* ── THE IMPROVED STREAMING FUNCTION ── */
 function actuallySend(text) {
     var images = pending.filter(p => p.type === 'image');
     var files  = pending.filter(p => p.type === 'file');
@@ -2923,7 +2976,7 @@ function actuallySend(text) {
             message: text,
             images: images.map(i => ({ b64: i.b64, name: i.name })),
             files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime })),
-            search: searchEnabled,   // now uses the global flag
+            search: searchEnabled,
             provider: provider,
             model: model,
             api_key: apiKey
@@ -2942,42 +2995,68 @@ function actuallySend(text) {
             var fullText = '';
             var sseBuffer = '';
 
-            // Throttle updates to every 50ms
-            var updateTimer = null;
-            var wasAtBottom = true;
+            // ----- REQUEST ANIMATION FRAME BATCHING -----
+            var tokenQueue = [];
+            var rafId = null;
             var botBody = botDiv.querySelector('.body');
+            var textNode = null;
 
-            function performUpdate() {
-                updateTimer = null;
-                if (botBody) {
-                    botBody.textContent = fullText;
+            // Clear placeholder and create a single text node
+            botBody.innerHTML = '';
+            textNode = document.createTextNode('');
+            botBody.appendChild(textNode);
+
+            function flushTokens() {
+                rafId = null;
+                if (tokenQueue.length === 0) return;
+                // Append all queued tokens
+                for (var i = 0; i < tokenQueue.length; i++) {
+                    fullText += tokenQueue[i];
                 }
-                if (wasAtBottom) {
+                tokenQueue.length = 0;
+                // Update the text node (very cheap)
+                textNode.textContent = fullText;
+                botBody.classList.remove('thinking-dots');
+                // Scroll if at bottom
+                var threshold = 80;
+                var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
+                if (atBottom) {
                     chatArea.scrollTop = chatArea.scrollHeight;
                 }
-                wasAtBottom = (chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight) < 100;
             }
 
-            function scheduleUpdate() {
-                if (updateTimer) return;
-                wasAtBottom = (chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight) < 100;
-                updateTimer = setTimeout(performUpdate, 50);
+            function scheduleFlush() {
+                if (!rafId) {
+                    rafId = requestAnimationFrame(flushTokens);
+                }
             }
 
             function readStream() {
                 reader.read().then(({done, value}) => {
                     if (done) {
+                        // Process any leftover SSE data
                         if (sseBuffer.startsWith('data: ')) {
                             try {
                                 var data = JSON.parse(sseBuffer.substring(6));
-                                if (data.token) { fullText += data.token; }
+                                if (data.token) tokenQueue.push(data.token);
                             } catch(e) {}
                         }
-                        if (updateTimer) {
-                            clearTimeout(updateTimer);
-                            updateTimer = null;
+                        if (rafId) {
+                            cancelAnimationFrame(rafId);
+                            rafId = null;
                         }
-                        finishStream(fullText, botDiv);
+                        flushTokens();
+                        // Final Markdown render
+                        botBody.innerHTML = marked.parse(fullText || '(empty response)');
+                        botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
+                        processCodeBlocks(botDiv);
+                        renderMermaidDiagrams(botDiv);
+                        status.textContent = '✅ Done';
+                        busy = false;
+                        sendBtn.disabled = false;
+                        smoothScrollToBottom();
+                        speakText(fullText);
+                        loadConversations();
                         return;
                     }
                     sseBuffer += decoder.decode(value, {stream: true});
@@ -2990,11 +3069,8 @@ function actuallySend(text) {
                                 var data = JSON.parse(jsonStr);
                                 if (data.token) {
                                     tokenCount++;
-                                    fullText += data.token;
-                                    if (botBody) {
-                                        botBody.classList.remove('thinking-dots');
-                                    }
-                                    scheduleUpdate();
+                                    tokenQueue.push(data.token);
+                                    scheduleFlush();
                                 }
                                 if (data.error) {
                                     handleSendError(data.error);
@@ -3010,7 +3086,10 @@ function actuallySend(text) {
                 });
             }
             readStream();
+            // ----- END rAF BATCHING -----
+
         } else {
+            // Non-streaming fallback (unchanged)
             response.json().then(data => {
                 if (data.error) {
                     handleSendError(data.error);
@@ -3043,21 +3122,6 @@ function finalizeStats(usage) {
     var secs = usage.duration_sec || ((Date.now() - startTimeToken) / 1000);
     var speed = secs > 0 ? (tokens / secs).toFixed(1) : '?';
     tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens`;
-}
-
-function finishStream(fullText, botDiv) {
-    var bodyEl = botDiv.querySelector('.body');
-    bodyEl.classList.remove('thinking-dots');
-    bodyEl.innerHTML = marked.parse(fullText || '(empty response)');
-    botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
-    processCodeBlocks(botDiv);
-    renderMermaidDiagrams(botDiv);
-    status.textContent = '✅ Done';
-    busy = false;
-    sendBtn.disabled = false;
-    smoothScrollToBottom();
-    speakText(fullText);
-    loadConversations();
 }
 
 // ── Voice recording ────────────────────────────
@@ -3162,7 +3226,7 @@ window.addEventListener('load', function() {
     return html
 
 # ── Routes ──
-
+# (all routes from your original file – unchanged)
 @app.route('/unload_model', methods=['POST'])
 def unload_model():
     try:
@@ -3359,8 +3423,15 @@ def get_messages(cid):
 
 @app.route('/clear_all', methods=['POST'])
 def clear_all():
-    save_conversations_sync({})  # use sync to ensure complete reset
-    return jsonify({"ok": True})
+    # NOTE: despite the route name (kept for backwards compatibility with the
+    # front-end), this only clears the MESSAGES of one specific chat.
+    # It never deletes the chat itself and never touches any other chat.
+    data = request.get_json(silent=True) or {}
+    cid = data.get('cid') or request.args.get('cid')
+    if not cid:
+        return jsonify({"ok": False, "message": "No conversation id (cid) provided"}), 400
+    ok = clear_conversation_messages(cid)
+    return jsonify({"ok": ok})
 
 @app.route('/conversations/<cid>/messages/<int:idx>', methods=['PUT'])
 def edit_message(cid, idx):
