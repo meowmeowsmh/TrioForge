@@ -69,6 +69,7 @@ app.register_blueprint(corkboard_bp)
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
 MODEL_CONFIG_FILE = "json_configuration/model_config.json"
+ATTACHMENTS_DIR = "json_configuration/attachments"   # image/file blobs live here instead of inline in conversations.json
 
 try:
     from duckduckgo_search import DDGS
@@ -79,6 +80,7 @@ except ImportError:
 # ── Ensure folders exist ──
 os.makedirs(os.path.dirname(CONVERSATIONS_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
+os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 
 # ── Create empty JSON files if they don't exist ──
 if not os.path.exists(CONVERSATIONS_FILE):
@@ -151,6 +153,74 @@ _conversations_cache: dict = {}
 _cache_loaded: bool = False
 _cache_lock = threading.Lock()          # for thread-safe updates
 
+# ── Attachment blob storage ──────────────────────────────────────────
+# Images/files used to be embedded as base64 directly inside conversations.json.
+# That meant EVERY save rewrote the entire chat history's worth of base64 to
+# disk, over and over, getting slower as history grew. Now each blob is written
+# once to its own file here, and only a small filename reference is persisted
+# in conversations.json. In-memory (_conversations_cache), messages still carry
+# a "b64" key exactly like before, so nothing else reading messages has to change.
+def _save_attachment_to_disk(b64_data: str, hint_name: str = "") -> str:
+    """Write a base64 blob to disk once; return the stored filename (or '' on failure)."""
+    if not b64_data:
+        return ""
+    ext = os.path.splitext(hint_name)[1] or ".bin"
+    fname = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(ATTACHMENTS_DIR, fname)
+    try:
+        raw = base64.b64decode(b64_data)
+        with open(path, "wb") as f:
+            f.write(raw)
+        return fname
+    except Exception as e:
+        print(f"⚠️ Failed to persist attachment to disk: {e}")
+        return ""
+
+def _load_attachment_from_disk(fname: str) -> str:
+    """Read a stored attachment back off disk and return it as base64."""
+    if not fname:
+        return ""
+    path = os.path.join(ATTACHMENTS_DIR, fname)
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        print(f"⚠️ Failed to read attachment {fname}: {e}")
+        return ""
+
+def _strip_blobs_for_disk(convs: dict) -> dict:
+    """Lightweight copy of convs for writing to conversations.json: any image/file
+    that already has a 'file' reference gets its inline 'b64' dropped, since it can
+    be re-read from disk. This is what keeps every save fast and small."""
+    lean = {}
+    for cid, conv in convs.items():
+        lean_conv = dict(conv)
+        lean_messages = []
+        for msg in conv.get("messages", []):
+            lean_msg = dict(msg)
+            lean_msg["images"] = [
+                ({**im, "b64": ""} if im.get("file") else im) for im in msg.get("images", [])
+            ]
+            lean_msg["files"] = [
+                ({**f, "b64": ""} if f.get("file") else f) for f in msg.get("files", [])
+            ]
+            lean_messages.append(lean_msg)
+        lean_conv["messages"] = lean_messages
+        lean[cid] = lean_conv
+    return lean
+
+def _hydrate_blobs_from_disk(convs: dict) -> None:
+    """After loading conversations.json, fill 'b64' back in (in place) from the
+    attachment files on disk, so the rest of the app keeps reading 'b64' as before."""
+    for conv in convs.values():
+        for msg in conv.get("messages", []):
+            for im in msg.get("images", []):
+                if im.get("file") and not im.get("b64"):
+                    im["b64"] = _load_attachment_from_disk(im["file"])
+            for f in msg.get("files", []):
+                if f.get("file") and not f.get("b64"):
+                    f["b64"] = _load_attachment_from_disk(f["file"])
+
 def _ensure_cache():
     global _conversations_cache, _cache_loaded
     if _cache_loaded:
@@ -161,7 +231,8 @@ def _ensure_cache():
         if os.path.exists(CONVERSATIONS_FILE):
             try:
                 with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
-                    _conversations_cache = std_json.load(f)
+                    _conversations_cache = json_loads(f.read())
+                _hydrate_blobs_from_disk(_conversations_cache)
             except Exception as e:
                 print(f"⚠️ Error loading conversations: {e}")
                 _conversations_cache = {}
@@ -178,9 +249,10 @@ def save_conversations_async(convs):
     """Schedule a save operation in background."""
     def _save():
         try:
+            lean = _strip_blobs_for_disk(convs)
             temp_file = CONVERSATIONS_FILE + ".tmp"
             with open(temp_file, "w", encoding="utf-8") as f:
-                std_json.dump(convs, f, ensure_ascii=False, indent=2)
+                f.write(json_dumps(lean))
             os.replace(temp_file, CONVERSATIONS_FILE)
             # Update cache with saved data (already in memory)
             print(f"✅ Saved conversations ({len(convs)} items)")
@@ -193,9 +265,10 @@ def save_conversations_sync(convs):
     global _conversations_cache
     _conversations_cache = convs
     try:
+        lean = _strip_blobs_for_disk(convs)
         temp_file = CONVERSATIONS_FILE + ".tmp"
         with open(temp_file, "w", encoding="utf-8") as f:
-            std_json.dump(convs, f, ensure_ascii=False, indent=2)
+            f.write(json_dumps(lean))
         os.replace(temp_file, CONVERSATIONS_FILE)
         print(f"✅ Saved conversations ({len(convs)} items)")
     except Exception as e:
@@ -242,18 +315,24 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
 
     stored_images = []
     for img in images:
+        b64 = img.get("b64", "")
+        fname = _save_attachment_to_disk(b64, img.get("name", "image.png"))
         stored_images.append({
             "name": img.get("name", "image"),
-            "b64": img.get("b64", ""),
-            "mime": img.get("mime", "image/png")
+            "b64": b64,          # kept in memory so nothing downstream has to change
+            "mime": img.get("mime", "image/png"),
+            "file": fname        # what actually gets persisted to conversations.json
         })
 
     stored_files = []
     for f in files:
+        b64 = f.get("b64", "")
+        fname = _save_attachment_to_disk(b64, f.get("name", "file.bin"))
         stored_files.append({
             "name": f.get("name", "file"),
-            "b64": f.get("b64", ""),
-            "mime": f.get("mime", "application/octet-stream")
+            "b64": b64,
+            "mime": f.get("mime", "application/octet-stream"),
+            "file": fname
         })
 
     with _cache_lock:
@@ -3772,5 +3851,8 @@ if __name__ == '__main__':
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
 
-    # Enable threading for better concurrency
-    app.run(host='127.0.0.1', port=5001, debug=True, ssl_context=ssl_context, threaded=True)
+    # Enable threading for better concurrency.
+    # use_reloader=False: the debug reloader restarts the whole process whenever a
+    # file changes, which kills any chat mid-stream if you're editing code while
+    # testing. debug=True still gives you tracebacks in the browser on errors.
+    app.run(host='127.0.0.1', port=5001, debug=True, use_reloader=False, ssl_context=ssl_context, threaded=True)
