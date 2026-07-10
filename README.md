@@ -47,6 +47,7 @@ Everything auto‑creates itself – just clone, run, and go.
 | 📊 **Now you are able to track your previous database if you want to recover your previous chat but can't find it in conversation.db** | help user to track back previous data after they clear previos message from html this help to prevent parent noticing your privacy search without knowing your browsing history of your previous data inside the chatbot interface information |
 ---
 notes that we are coming out decartion for our corkboard
+notes that you can download vscode try and error and install extension "SQLite IntelliView" so that you can check your database sqlite
 ---
 
 ## 📦 Prerequisites
