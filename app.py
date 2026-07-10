@@ -2206,10 +2206,16 @@ if (!sidebarVisible) sidebar.classList.add('hidden');
 
 // ── Scroll button ───────────────────────────────
 var scrollBtn = document.getElementById('scrollBottomBtn');
+var _scrollRaf = false;
 chatArea.addEventListener('scroll', function() {
-    var threshold = 80;
-    var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
-    scrollBtn.style.display = atBottom ? 'none' : 'block';
+    if (_scrollRaf) return;
+    _scrollRaf = true;
+    requestAnimationFrame(function() {
+        _scrollRaf = false;
+        var threshold = 80;
+        var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
+        scrollBtn.style.display = atBottom ? 'none' : 'block';
+    });
 });
 scrollBtn.addEventListener('click', function() {
     chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
@@ -2659,7 +2665,9 @@ function renderMsg(role, entry, msgIndex) {
     if (entry.images && entry.images.length) {
         entry.images.forEach(im => {
             var img = document.createElement('img');
-            img.src = 'data:image/png;base64,' + (im.b64 || '');
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            img.src = 'data:' + (im.mime || 'image/png') + ';base64,' + (im.b64 || '');
             // ── Click to open image viewer ──
             img.style.cursor = 'pointer';
             img.onclick = function() {
@@ -2719,7 +2727,6 @@ function renderMsg(role, entry, msgIndex) {
         // Also run Mermaid on the whole div (already done inside body, but double-check)
         renderMermaidDiagrams(div);
     }
-    smoothScrollToBottom();
     return div;
 }
 function reloadCurrentChat() {
@@ -2760,6 +2767,7 @@ async function startEditMessage(msgDiv, role, entry, idx) {
         chatArea.innerHTML = '';
         var remaining = await fetch(`/conversations/${currentConv}/messages`).then(r => r.json());
         remaining.forEach((msg, index) => renderMsg(msg.role, msg, index));
+        smoothScrollToBottom();
         msgInput.value = newText;
         pending = [];
         attachments.innerHTML = '';
@@ -2867,6 +2875,7 @@ function actuallySend(text) {
     pending = [];
     attachments.innerHTML = '';
     var botDiv = renderMsg('bot', { role:'bot', text:'⏳ Thinking...', ts:'' }, -1);
+    smoothScrollToBottom();
     var bodyEl = botDiv.querySelector('.body');
     bodyEl.classList.add('thinking-dots');
     busy = true;
