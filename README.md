@@ -44,6 +44,7 @@ Everything auto‑creates itself – just clone, run, and go.
 | 📖 **Corkboard that help people to related fact with fact** | Corkboard include to help to make notes. |
 | >_ **bat terminal to open application for the code** | help user to relief it the problem they have just one button to communicate with the server |
 | 🧠 **check out the instruction.md helps user to get onto llama.cpp style I recommend llama than ollama in terms of clearing cache** | reason,because it instantly cache out if you want to used ollama recommend cloud service for providing better and quality answer. |
+| 📊 **Now you are able to track your previous database if you want to recover your previous chat but can't find it in conversation.db** | help user to track back previous data after they clear previos message from html this help to prevent parent noticing your privacy search without knowing your browsing history of your previous data inside the chatbot interface information |
 ---
 notes that we are coming out decartion for our corkboard
 ---
