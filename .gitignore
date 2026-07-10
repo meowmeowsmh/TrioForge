@@ -33,11 +33,8 @@ personal.txt
 # do not want to commit any uploaded files, they are user-specific and can be large
 static/uploads/
 
-# ==========================
-# SQLite databases – do NOT commit
-# ==========================
-sqlite.db          # old name
-sqlite_data/       # entire directory
-conversations.db   # main conversation DB
-conversation.db    # possible variant
-conversation.db  # possible variant
+# Ignore SQLite database directory and database files
+sqlite_data/
+sqlite.db
+conversations.db
+conversation.db
