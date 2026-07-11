@@ -3166,7 +3166,12 @@ function updateResources() {
 }
 window.addEventListener('beforeunload', function() {
     if (resourceIntervalId) { clearInterval(resourceIntervalId); resourceIntervalId = null; }
-    navigator.sendBeacon('/unload_model');
+    // Only bother telling Ollama to free RAM if Ollama is actually the active provider —
+    // otherwise this fires on every page navigation and just logs a connection-refused
+    // warning when Ollama isn't running / isn't in use.
+    if (providerSelect && providerSelect.value === 'ollama') {
+        navigator.sendBeacon('/unload_model');
+    }
 });
 resourceIntervalId = setInterval(updateResources, 15000);
 
@@ -3206,6 +3211,9 @@ def unload_model():
             timeout=3
         )
         print(f"🧹 Unloaded '{current_model}' from Ollama RAM")
+    except requests.exceptions.ConnectionError:
+        # Ollama simply isn't running — expected/benign, not worth logging every time.
+        pass
     except Exception as e:
         print(f"⚠️ Could not unload model: {e}")
     return '', 204
