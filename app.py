@@ -2293,24 +2293,49 @@ function stopSpeaking() {
         stopSpeakBtn.style.display = 'none';
     }
 }
+
+// ========================================================
+// NEW: Clean text for speech – removes decorative separators
+// ========================================================
+function cleanForSpeech(text) {
+    var lines = text.split('\n');
+    var cleanedLines = [];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        // Skip entire lines that are only repeated punctuation: =, -, *, _, #
+        if (/^[=*_\-#]+$/.test(line)) {
+            continue;
+        }
+        // Replace runs of 3 or more same punctuation with a single space
+        line = line.replace(/([=*_\-#])\1{2,}/g, ' ');
+        cleanedLines.push(line);
+    }
+    return cleanedLines.join('\n').trim();
+}
+
+// ── Speak with cleaning ──────────────────────────
 function speakText(text) {
     if (!voiceEnabled || !text) return;
+    // Clean the text before speaking
+    var cleaned = cleanForSpeech(text);
+    if (!cleaned.trim()) return;  // nothing worth speaking
+
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
-    utterance.onstart = () => {
+    utterance.onstart = function() {
         speaking = true;
         stopSpeakBtn.style.display = 'flex';
         status.textContent = '🔊 Speaking...';
     };
-    utterance.onend = () => {
+    utterance.onend = function() {
         speaking = false;
         stopSpeakBtn.style.display = 'none';
         status.textContent = voiceEnabled ? '🔊 Voice output ON (idle)' : '✅ Done';
     };
-    utterance.onerror = (e) => {
+    utterance.onerror = function(e) {
         console.warn('TTS error:', e.error);
         speaking = false;
         stopSpeakBtn.style.display = 'none';
