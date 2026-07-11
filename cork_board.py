@@ -1,18 +1,21 @@
 # cork_board.py – advanced with Markdown, tags, search, resizable pins, modal editor,
 # Red Thread links, and AI assistance with dynamic model selection.
-# OPTIMIZED: fast startup, lazy embedding, throttled drag updates.
+# STORAGE: SQLite (sqlite_data/notes.db) — viewable offline with any SQLite browser
+# (DB Browser for SQLite, "SQLite Viewer" VSCode extension, etc.) while the app is closed.
+# OPTIMIZED: WAL mode, indexed lookups, targeted single-row writes (no full-board rewrites),
+# lazy embedding, throttled drag updates, AI action history log.
 # + IMAGE UPLOAD support – drag/drop images to create picture pins.
 
 import os
-import json as std_json          # fallback if orjson not available
+import json as std_json          # used for tags/embedding JSON columns + misc parsing
+import sqlite3
+import threading
 import uuid
 import random
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
-# ---------- Try orjson for faster JSON ----------
+# ---------- Try orjson for faster JSON (tags/embedding columns) ----------
 try:
     import orjson
     def json_dumps(obj):
@@ -46,19 +49,248 @@ from llm_providers import (
     ClaudeProvider,
 )
 
-CORKBOARD_FILE = "json_configuration/corkboard.json"
-os.makedirs(os.path.dirname(CORKBOARD_FILE), exist_ok=True)
-if not os.path.exists(CORKBOARD_FILE):
-    with open(CORKBOARD_FILE, "w", encoding="utf-8") as f:
-        std_json.dump({"pins": {}, "links": []}, f, indent=2)
+# ======================================================================
+# SQLite storage layer
+# ======================================================================
+DB_DIR = "sqlite_data"
+DB_PATH = os.path.join(DB_DIR, "notes.db")
+os.makedirs(DB_DIR, exist_ok=True)
 
-# ---------- In‑memory cache ----------
-_board_cache = None
-_board_cache_lock = threading.Lock()
+_local = threading.local()
+_write_lock = threading.Lock()  # SQLite allows 1 writer at a time; serialize writes only
+
+
+def get_conn():
+    """One connection per thread (SQLite connections aren't thread-safe to share)."""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")       # readers don't block writers
+        conn.execute("PRAGMA synchronous=NORMAL")     # fast + safe enough with WAL
+        conn.execute("PRAGMA foreign_keys=ON")
+        _local.conn = conn
+    return conn
+
+
+def init_db():
+    conn = get_conn()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS pins (
+            id            TEXT PRIMARY KEY,
+            title         TEXT NOT NULL DEFAULT '',
+            content       TEXT NOT NULL DEFAULT '',
+            x             REAL NOT NULL DEFAULT 0,
+            y             REAL NOT NULL DEFAULT 0,
+            width         INTEGER NOT NULL DEFAULT 220,
+            height        INTEGER NOT NULL DEFAULT 160,
+            color         TEXT NOT NULL DEFAULT 'yellow',
+            rotation      INTEGER NOT NULL DEFAULT 0,
+            created       TEXT NOT NULL,
+            last_modified TEXT NOT NULL,
+            tags          TEXT NOT NULL DEFAULT '[]',   -- JSON array
+            type          TEXT NOT NULL DEFAULT 'note',
+            filename      TEXT,
+            image_url     TEXT,
+            embedding     TEXT                          -- JSON array of floats, nullable
+        );
+
+        CREATE TABLE IF NOT EXISTS links (
+            from_id TEXT NOT NULL,
+            to_id   TEXT NOT NULL,
+            color   TEXT NOT NULL DEFAULT 'black',       -- 'red' = Red Thread
+            PRIMARY KEY (from_id, to_id)
+        );
+
+        -- Every AI action (summarise / suggest_tags / improve / suggest_links)
+        -- is logged here so past AI output survives even if a pin is later edited.
+        CREATE TABLE IF NOT EXISTS ai_history (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            pin_id   TEXT NOT NULL,
+            action   TEXT NOT NULL,
+            provider TEXT,
+            model    TEXT,
+            result   TEXT,
+            created  TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_links_from ON links(from_id);
+        CREATE INDEX IF NOT EXISTS idx_links_to   ON links(to_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_history_pin ON ai_history(pin_id);
+        CREATE INDEX IF NOT EXISTS idx_pins_modified ON pins(last_modified);
+    """)
+    conn.commit()
+
+
+init_db()
+
+# ---------- Row <-> dict helpers ----------
+def _pin_row_to_dict(row):
+    d = dict(row)
+    d["tags"] = json_loads(d["tags"]) if d.get("tags") else []
+    if d.get("embedding"):
+        d["embedding"] = json_loads(d["embedding"])
+    else:
+        d.pop("embedding", None)
+    return d
+
+
+def _pin_to_row_values(pin_id, data, now, existing=None):
+    """Build the full column tuple for an insert/replace, falling back to
+    existing values (or sane defaults) for anything not supplied in `data`."""
+    e = existing or {}
+    def g(key, default):
+        return data.get(key, e.get(key, default))
+    return {
+        "id": pin_id,
+        "title": g("title", "Untitled"),
+        "content": g("content", ""),
+        "x": g("x", random.randint(40, 480)),
+        "y": g("y", random.randint(40, 280)),
+        "width": g("width", 220),
+        "height": g("height", 160),
+        "color": g("color", "yellow"),
+        "rotation": g("rotation", random.choice([-3, -2, -1, 0, 1, 2, 3])),
+        "created": e.get("created", now),
+        "last_modified": now,
+        "tags": json_dumps(g("tags", [])),
+        "type": g("type", "note"),
+        "filename": g("filename", None),
+        "image_url": g("image_url", None),
+        "embedding": json_dumps(e["embedding"]) if e.get("embedding") else None,
+    }
+
+
+def load_board():
+    """Build the {"pins": {...}, "links": [...]} shape the rest of the app
+    (search / semantic search / ai_assist) works with, read straight from SQLite."""
+    conn = get_conn()
+    pins = {}
+    for row in conn.execute("SELECT * FROM pins"):
+        pin = _pin_row_to_dict(row)
+        pins[pin["id"]] = pin
+    links = [dict(row) for row in conn.execute("SELECT from_id AS 'from', to_id AS 'to', color FROM links")]
+    return {"pins": pins, "links": links}
+
+
+def get_pin(pin_id):
+    row = get_conn().execute("SELECT * FROM pins WHERE id = ?", (pin_id,)).fetchone()
+    return _pin_row_to_dict(row) if row else None
+
+
+def upsert_pin(pin_id, data, now=None, existing=None):
+    now = now or datetime.now().isoformat()
+    vals = _pin_to_row_values(pin_id, data, now, existing)
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("""
+            INSERT INTO pins (id, title, content, x, y, width, height, color, rotation,
+                               created, last_modified, tags, type, filename, image_url, embedding)
+            VALUES (:id, :title, :content, :x, :y, :width, :height, :color, :rotation,
+                    :created, :last_modified, :tags, :type, :filename, :image_url, :embedding)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, content=excluded.content, x=excluded.x, y=excluded.y,
+                width=excluded.width, height=excluded.height, color=excluded.color,
+                rotation=excluded.rotation, last_modified=excluded.last_modified,
+                tags=excluded.tags, type=excluded.type, filename=excluded.filename,
+                image_url=excluded.image_url, embedding=excluded.embedding
+        """, vals)
+        conn.commit()
+    return vals
+
+
+def update_pin_fields(pin_id, fields):
+    """Partial update of just the given columns (used by PUT /api/pins/<id>)."""
+    if not fields:
+        return
+    fields = dict(fields)
+    if "tags" in fields:
+        fields["tags"] = json_dumps(fields["tags"])
+    fields["last_modified"] = datetime.now().isoformat()
+    set_clause = ", ".join(f"{k} = :{k}" for k in fields)
+    fields["id"] = pin_id
+    with _write_lock:
+        conn = get_conn()
+        conn.execute(f"UPDATE pins SET {set_clause}, embedding = NULL WHERE id = :id", fields)
+        conn.commit()
+
+
+def set_pin_embedding(pin_id, embedding):
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("UPDATE pins SET embedding = ? WHERE id = ?",
+                      (json_dumps(embedding) if embedding is not None else None, pin_id))
+        conn.commit()
+
+
+def delete_pin_row(pin_id):
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("DELETE FROM pins WHERE id = ?", (pin_id,))
+        conn.execute("DELETE FROM links WHERE from_id = ? OR to_id = ?", (pin_id, pin_id))
+        conn.commit()
+
+
+def clear_all_rows():
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("DELETE FROM pins")
+        conn.execute("DELETE FROM links")
+        conn.commit()
+        # ai_history is kept intentionally as a durable log of past AI activity
+
+
+def find_link(a, b):
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT from_id AS 'from', to_id AS 'to', color FROM links
+        WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)
+    """, (a, b, b, a)).fetchone()
+    return dict(row) if row else None
+
+
+def add_link(a, b, color):
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("INSERT OR REPLACE INTO links (from_id, to_id, color) VALUES (?, ?, ?)", (a, b, color))
+        conn.commit()
+
+
+def remove_link(a, b):
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("DELETE FROM links WHERE (from_id=? AND to_id=?) OR (from_id=? AND to_id=?)", (a, b, b, a))
+        conn.commit()
+
+
+def update_link_color(a, b, color):
+    with _write_lock:
+        conn = get_conn()
+        cur = conn.execute("""
+            UPDATE links SET color = ?
+            WHERE (from_id=? AND to_id=?) OR (from_id=? AND to_id=?)
+        """, (color, a, b, b, a))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def log_ai_history(pin_id, action, provider, model, result):
+    """Persist every AI action (summarise, tag suggestions, rewrite, link suggestions)
+    to the database so it's kept even if the pin content later changes."""
+    with _write_lock:
+        conn = get_conn()
+        conn.execute(
+            "INSERT INTO ai_history (pin_id, action, provider, model, result, created) VALUES (?, ?, ?, ?, ?, ?)",
+            (pin_id, action, provider, model, result, datetime.now().isoformat())
+        )
+        conn.commit()
+
+
+# ---------- Embedding model (lazy loaded, thread‑safe) ----------
 _embed_model = None
 _embed_model_lock = threading.Lock()
 
-# ---------- Embedding model (lazy loaded, thread‑safe) ----------
+
 def get_embedder():
     global _embed_model
     if not EMBED_AVAILABLE:
@@ -67,6 +299,7 @@ def get_embedder():
         if _embed_model is None:
             _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
         return _embed_model
+
 
 def embed_pin(pin):
     """Generate embedding for a pin (title + content). Returns list of floats or None."""
@@ -78,63 +311,16 @@ def embed_pin(pin):
         return None
     return model.encode(text).tolist()
 
-# ---------- Load board (cached, NO embedding generation) ----------
-def load_board():
-    """Load board from file once and cache it. Does NOT compute embeddings."""
-    global _board_cache
-    if _board_cache is not None:
-        return _board_cache
-    with _board_cache_lock:
-        if _board_cache is not None:
-            return _board_cache
-        try:
-            with open(CORKBOARD_FILE, "r", encoding="utf-8") as f:
-                data = json_loads(f.read())
-        except:
-            data = {"pins": {}, "links": []}
-        data.setdefault("pins", {})
-        data.setdefault("links", [])
-        _board_cache = data
-        return _board_cache
 
-# ── Async save executor ──
-_save_executor = ThreadPoolExecutor(max_workers=1)
-
-def _save_board_to_disk(data):
-    try:
-        temp_file = CORKBOARD_FILE + ".tmp"
-        with open(temp_file, "w", encoding="utf-8") as f:
-            std_json.dump(data, f, indent=2)
-        os.replace(temp_file, CORKBOARD_FILE)
-        print(f"✅ Saved corkboard with {len(data.get('pins', {}))} pins")
-    except Exception as e:
-        print(f"❌ Failed to save corkboard: {e}")
-
-def save_board_async(data):
-    global _board_cache
-    with _board_cache_lock:
-        _board_cache = data
-    _save_executor.submit(_save_board_to_disk, data)
-
-def save_board_sync(data):
-    global _board_cache
-    with _board_cache_lock:
-        _board_cache = data
-    _save_board_to_disk(data)
-
-# ---------- Optional background embedding precomputation ----------
 def compute_all_embeddings():
-    data = load_board()
-    changed = False
-    for pid, pin in data['pins'].items():
-        if 'embedding' not in pin:
+    """Optional background precompute of embeddings for any pin missing one."""
+    board = load_board()
+    for pid, pin in board['pins'].items():
+        if pin.get('embedding') is None:
             emb = embed_pin(pin)
             if emb is not None:
-                pin['embedding'] = emb
-                changed = True
-    if changed:
-        save_board_sync(data)
-        print("✅ Precomputed embeddings for all pins.")
+                set_pin_embedding(pid, emb)
+    print("✅ Precomputed embeddings for all pins.")
 
 # (Uncomment to enable background precomputation)
 # threading.Thread(target=compute_all_embeddings, daemon=True).start()
@@ -170,8 +356,8 @@ def search_pins():
             if not (title_match or content_match or tag_match):
                 continue
         results[pid] = pin
-    board['links'] = [l for l in board['links'] if l['from'] in results and l['to'] in results]
-    return jsonify({"pins": results, "links": board['links']})
+    links = [l for l in board['links'] if l['from'] in results and l['to'] in results]
+    return jsonify({"pins": results, "links": links})
 
 # ---------- API: semantic search (lazy embedding) ----------
 @corkboard_bp.route('/api/semantic_search', methods=['GET'])
@@ -194,7 +380,7 @@ def semantic_search_pins():
         if emb is None:
             emb = embed_pin(pin)
             if emb is not None:
-                pin['embedding'] = emb
+                set_pin_embedding(pid, emb)
         if emb:
             candidates.append((pid, pin, emb))
 
@@ -215,9 +401,6 @@ def semantic_search_pins():
                 "content": pin["content"][:200] + "..." if len(pin["content"]) > 200 else pin["content"],
                 "score": float(similarities[idx])
             })
-
-    if any(pin.get('embedding') for _, pin, _ in candidates if pin.get('embedding') is not None):
-        save_board_async(board)
 
     return jsonify(results)
 
@@ -256,8 +439,7 @@ def ai_assist():
     if not pin_id or not action:
         return jsonify({"error": "Missing pin_id or action"}), 400
 
-    board = load_board()
-    pin = board['pins'].get(pin_id)
+    pin = get_pin(pin_id)
     if not pin:
         return jsonify({"error": "Pin not found"}), 404
 
@@ -269,12 +451,12 @@ def ai_assist():
     if action == 'suggest_links':
         if not EMBED_AVAILABLE:
             return jsonify({"error": "Embedding model not available"}), 503
-        model_emb = get_embedder()
+        board = load_board()
         pin_emb = pin.get('embedding')
         if pin_emb is None:
             pin_emb = embed_pin(pin)
             if pin_emb is not None:
-                pin['embedding'] = pin_emb
+                set_pin_embedding(pin_id, pin_emb)
         if pin_emb is None:
             return jsonify({"error": "Could not generate embedding for this pin"}), 500
         pin_emb = np.array(pin_emb).reshape(1, -1)
@@ -287,7 +469,7 @@ def ai_assist():
             if emb is None:
                 emb = embed_pin(other)
                 if emb is not None:
-                    other['embedding'] = emb
+                    set_pin_embedding(pid, emb)
             if emb:
                 candidates.append((pid, other, emb))
 
@@ -306,8 +488,7 @@ def ai_assist():
                     "title": other["title"],
                     "score": float(similarities[idx])
                 })
-        if any(pin.get('embedding') for _, pin, _ in candidates if pin.get('embedding') is not None):
-            save_board_async(board)
+        log_ai_history(pin_id, action, provider_name, model, json_dumps(suggestions))
         return jsonify({"suggestions": suggestions})
 
     # LLM actions
@@ -359,72 +540,63 @@ Improved version:"""
     if not result:
         return jsonify({"error": "AI returned an empty response. Try a different model or provider."}), 500
 
+    # Persist every AI action to the ai_history table (summaries, tag suggestions, rewrites)
+    log_ai_history(pin_id, action, provider_name, model, result)
+
     if action == 'suggest_tags':
         tags = [t.strip() for t in result.split(',') if t.strip()]
         if tags:
             existing = set(pin.get('tags', []))
             new_tags = [t for t in tags if t not in existing]
             if new_tags:
-                pin['tags'] = list(existing.union(new_tags))
-                save_board_async(board)
+                update_pin_fields(pin_id, {"tags": list(existing.union(new_tags))})
                 return jsonify({"result": result, "tags": new_tags})
         return jsonify({"result": result, "tags": []})
 
     return jsonify({"result": result})
 
+# ---------- API: AI history for a pin (view past summaries / suggestions) ----------
+@corkboard_bp.route('/api/ai_history/<pin_id>', methods=['GET'])
+def get_ai_history(pin_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, pin_id, action, provider, model, result, created FROM ai_history "
+        "WHERE pin_id = ? ORDER BY created DESC", (pin_id,)
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
 # ---------- API: pins ----------
 @corkboard_bp.route('/api/pins', methods=['POST'])
 def create_pin():
     data = request.get_json() or {}
-    board = load_board()
     pin_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
-    board['pins'][pin_id] = {
-        "id": pin_id,
-        "title": data.get("title", "Untitled"),
-        "content": data.get("content", ""),
-        "x": data.get("x", random.randint(40, 480)),
-        "y": data.get("y", random.randint(40, 280)),
-        "width": data.get("width", 220),
-        "height": data.get("height", 160),
-        "color": data.get("color", "yellow"),
-        "rotation": data.get("rotation", random.choice([-3, -2, -1, 0, 1, 2, 3])),
-        "created": now,
-        "last_modified": now,
-        "tags": data.get("tags", []),
-        "type": data.get("type", "note"),
-        "filename": data.get("filename"),
-        "image_url": data.get("image_url")  # for image pins
-    }
-    save_board_async(board)
-    return jsonify({"id": pin_id, "ok": True, "pin": board['pins'][pin_id]})
+    vals = upsert_pin(pin_id, data, now)
+    pin = get_pin(pin_id)
+    return jsonify({"id": pin_id, "ok": True, "pin": pin})
 
 @corkboard_bp.route('/api/pins/<pin_id>', methods=['PUT'])
 def update_pin(pin_id):
     data = request.get_json() or {}
-    board = load_board()
-    if pin_id not in board['pins']:
+    existing = get_pin(pin_id)
+    if not existing:
         return jsonify({"error": "Pin not found"}), 404
-    pin = board['pins'][pin_id]
+    fields = {}
     for field in ("title", "content", "x", "y", "width", "height", "color", "rotation", "tags", "image_url"):
         if field in data:
-            pin[field] = data[field]
-    pin["last_modified"] = datetime.now().isoformat()
-    pin.pop("embedding", None)
-    save_board_async(board)
+            fields[field] = data[field]
+    update_pin_fields(pin_id, fields)
     return jsonify({"ok": True})
 
 @corkboard_bp.route('/api/pins/<pin_id>', methods=['DELETE'])
 def delete_pin(pin_id):
-    board = load_board()
-    if pin_id not in board['pins']:
+    existing = get_pin(pin_id)
+    if not existing:
         return jsonify({"error": "Pin not found"}), 404
-    del board['pins'][pin_id]
-    board['links'] = [l for l in board['links'] if l['from'] != pin_id and l['to'] != pin_id]
-    save_board_async(board)
+    delete_pin_row(pin_id)
     return jsonify({"ok": True})
 
-# ---------- API: links ----------
+# ---------- API: links (Red Thread = color: 'red') ----------
 @corkboard_bp.route('/api/links', methods=['POST'])
 def toggle_link():
     data = request.get_json() or {}
@@ -432,21 +604,15 @@ def toggle_link():
     new_color = data.get('color', 'black')
     if not a or not b or a == b:
         return jsonify({"error": "Invalid link"}), 400
-    board = load_board()
-    if a not in board['pins'] or b not in board['pins']:
+    if not get_pin(a) or not get_pin(b):
         return jsonify({"error": "Pin not found"}), 404
-    existing = None
-    for l in board['links']:
-        if (l['from'] == a and l['to'] == b) or (l['from'] == b and l['to'] == a):
-            existing = l
-            break
+    existing = find_link(a, b)
     if existing:
-        board['links'].remove(existing)
+        remove_link(a, b)
         linked = False
     else:
-        board['links'].append({"from": a, "to": b, "color": new_color})
+        add_link(a, b, new_color)
         linked = True
-    save_board_async(board)
     return jsonify({"ok": True, "linked": linked, "color": new_color})
 
 @corkboard_bp.route('/api/links/color', methods=['PUT'])
@@ -455,18 +621,14 @@ def change_link_color():
     a, b, new_color = data.get('from'), data.get('to'), data.get('color', 'red')
     if not a or not b:
         return jsonify({"error": "Missing from/to"}), 400
-    board = load_board()
-    for l in board['links']:
-        if (l['from'] == a and l['to'] == b) or (l['from'] == b and l['to'] == a):
-            l['color'] = new_color
-            save_board_async(board)
-            return jsonify({"ok": True, "color": new_color})
+    if update_link_color(a, b, new_color):
+        return jsonify({"ok": True, "color": new_color})
     return jsonify({"error": "Link not found"}), 404
 
 # ---------- API: clear all ----------
 @corkboard_bp.route('/api/clear_all', methods=['POST'])
 def clear_all():
-    save_board_sync({"pins": {}, "links": []})
+    clear_all_rows()
     return jsonify({"ok": True})
 
 # ---------- API: file upload (supports images) ----------
@@ -491,29 +653,21 @@ def upload_file():
         path = os.path.join(upload_dir, unique)
         f.save(path)
         image_url = f'/static/uploads/corkboard/{unique}'
-        # Create a pin with image
-        board = load_board()
         pin_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
-        board['pins'][pin_id] = {
-            "id": pin_id,
+        data = {
             "title": filename,
-            "content": f"![{filename}]({image_url})",  # markdown image
-            "x": random.randint(40, 480),
-            "y": random.randint(40, 280),
+            "content": f"![{filename}]({image_url})",
             "width": 280,
             "height": 200,
             "color": "yellow",
-            "rotation": random.choice([-3, -2, -1, 0, 1, 2, 3]),
-            "created": now,
-            "last_modified": now,
             "tags": ["image", ext],
             "type": "image",
             "filename": filename,
-            "image_url": image_url
+            "image_url": image_url,
         }
-        save_board_async(board)
-        return jsonify({"ok": True, "id": pin_id, "pin": board['pins'][pin_id]})
+        upsert_pin(pin_id, data, now)
+        return jsonify({"ok": True, "id": pin_id, "pin": get_pin(pin_id)})
 
     # Text files (unchanged)
     content = ""
@@ -548,28 +702,21 @@ def upload_file():
     except Exception as e:
         return jsonify({"error": f"Failed to parse file: {e}"}), 400
 
-    board = load_board()
     pin_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     color = {"pdf": "pink", "ipynb": "green", "md": "blue", "txt": "yellow"}.get(ext, "yellow")
-    board['pins'][pin_id] = {
-        "id": pin_id,
+    data = {
         "title": filename,
         "content": content[:30000],
-        "x": random.randint(40, 480),
-        "y": random.randint(40, 280),
         "width": 280,
         "height": 200,
         "color": color,
-        "rotation": random.choice([-3, -2, -1, 0, 1, 2, 3]),
-        "created": now,
-        "last_modified": now,
         "tags": [ext],
         "type": "file",
-        "filename": filename
+        "filename": filename,
     }
-    save_board_async(board)
-    return jsonify({"ok": True, "id": pin_id, "pin": board['pins'][pin_id]})
+    upsert_pin(pin_id, data, now)
+    return jsonify({"ok": True, "id": pin_id, "pin": get_pin(pin_id)})
 
 # ---------- HTML template (with image drag support) ----------
 CORKBOARD_HTML = r"""<!DOCTYPE html>
@@ -2116,8 +2263,11 @@ function removeLink(from, to) {
 function loadOllamaModels(provider, apiKey) {
     const select = document.getElementById('aiModelSelect');
     select.innerHTML = '<option value="">Loading...</option>';
-    const url = '/providers/models?provider=' + encodeURIComponent(provider) + '&api_key=' + encodeURIComponent(apiKey || '');
-    fetch(url)
+    fetch('/providers/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider, api_key: apiKey || '' })
+    })
         .then(r => r.json())
         .then(data => {
             if (data.error) {
@@ -2372,8 +2522,17 @@ window.addEventListener('load', function() {
     document.getElementById('aiProviderSelect').value = savedProvider;
     var evt = new Event('change');
     document.getElementById('aiProviderSelect').dispatchEvent(evt);
-    document.getElementById('editModal').addEventListener('click', function(e) {
-        if (e.target === this) closeModal();
+    // Close the edit modal ONLY on an actual double-click on the dark background —
+    // never on a single click, and never as a side-effect of a text-selection drag
+    // that happens to release near/past the edge (mousedown target is checked too,
+    // so a drag that starts inside the textarea and ends on the backdrop won't close it).
+    var editModalEl = document.getElementById('editModal');
+    var overlayMouseDownOnSelf = false;
+    editModalEl.addEventListener('mousedown', function(e) {
+        overlayMouseDownOnSelf = (e.target === this);
+    });
+    editModalEl.addEventListener('dblclick', function(e) {
+        if (e.target === this && overlayMouseDownOnSelf) closeModal();
     });
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeModal();
