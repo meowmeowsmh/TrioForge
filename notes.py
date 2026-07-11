@@ -1,17 +1,15 @@
-# notes.py – advanced version with Markdown, tags, pinning, colours
-# + AI assistance (summarise, suggest tags, improve) + semantic search
-# + dynamic model loading from Ollama + persistent model preference
-# + Multi-provider support for AI (Ollama, DeepSeek, Claude, HF, Groq, llama.cpp)
-# + IMAGE UPLOAD support for notes
-# + ENHANCED SPACING – much more room in sidebar items and main notes
-# + SECURITY FIX: API keys sent in POST body, not URL
+# notes.py – advanced with Markdown, tags, pinning, colours, AI assistance, semantic search
+# STORAGE: SQLite (sqlite_data/notes.db) + JSON backup (json_configuration/notes.json)
+# JSON is written on every change as a human‑readable backup.
 
 import os
-import json as std_json          # fallback
+import json as std_json
+import sqlite3
+import threading
 import uuid
+import random
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 # ---------- Try orjson for faster JSON ----------
@@ -30,10 +28,12 @@ except ImportError:
 # ---------- Embedding (semantic search) ----------
 try:
     from sentence_transformers import SentenceTransformer
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
     EMBED_AVAILABLE = True
 except ImportError:
     EMBED_AVAILABLE = False
-    print("⚠️ sentence-transformers not installed. Run: pip install sentence-transformers")
+    print("⚠️ sentence-transformers or scikit-learn not installed. Run: pip install sentence-transformers scikit-learn")
 
 # ---------- LLM providers ----------
 from llm_providers import (
@@ -45,19 +45,235 @@ from llm_providers import (
     LlamaCppProvider,
 )
 
-NOTES_FILE = "json_configuration/notes.json"
-os.makedirs(os.path.dirname(NOTES_FILE), exist_ok=True)
-if not os.path.exists(NOTES_FILE):
-    with open(NOTES_FILE, "w", encoding="utf-8") as f:
-        std_json.dump({}, f, indent=2)
+# ======================================================================
+# SQLite storage layer
+# ======================================================================
+DB_DIR = "sqlite_data"
+DB_PATH = os.path.join(DB_DIR, "notes.db")
+os.makedirs(DB_DIR, exist_ok=True)
 
-# ---------- In‑memory cache ----------
+# JSON backup path
+NOTES_JSON = "json_configuration/notes.json"
+os.makedirs(os.path.dirname(NOTES_JSON), exist_ok=True)
+
+_local = threading.local()
+_write_lock = threading.Lock()
+
+def get_conn():
+    """One connection per thread (SQLite connections aren't thread-safe to share)."""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")       # readers don't block writers
+        conn.execute("PRAGMA synchronous=NORMAL")     # fast + safe enough with WAL
+        conn.execute("PRAGMA foreign_keys=ON")
+        _local.conn = conn
+    return conn
+
+def init_db():
+    conn = get_conn()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS notes (
+            id            TEXT PRIMARY KEY,
+            title         TEXT NOT NULL DEFAULT '',
+            content       TEXT NOT NULL DEFAULT '',
+            created       TEXT NOT NULL,
+            last_modified TEXT NOT NULL,
+            order_idx     INTEGER NOT NULL DEFAULT 0,
+            pinned        INTEGER NOT NULL DEFAULT 0,
+            color         TEXT NOT NULL DEFAULT 'default',
+            tags          TEXT NOT NULL DEFAULT '[]',
+            embedding     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_notes_modified ON notes(last_modified);
+    """)
+    conn.commit()
+    print("✅ SQLite notes table ready.")
+
+init_db()
+
+# ---------- Row <-> dict helpers ----------
+def _note_row_to_dict(row):
+    d = dict(row)
+    d["tags"] = json_loads(d["tags"]) if d.get("tags") else []
+    d["embedding"] = json_loads(d["embedding"]) if d.get("embedding") else None
+    d["pinned"] = bool(d["pinned"])
+    d["order"] = d.pop("order_idx", 0)
+    return d
+
+def _note_to_row_values(note_id, data, created=None, existing=None):
+    now = datetime.now().isoformat()
+    if existing:
+        created = existing.get("created", now)
+    else:
+        created = created or data.get("created", now)
+    tags = data.get("tags", [])
+    if not isinstance(tags, list):
+        tags = []
+    embedding = data.get("embedding")
+    return {
+        "id": note_id,
+        "title": data.get("title", "Untitled"),
+        "content": data.get("content", ""),
+        "created": created,
+        "last_modified": now,
+        "order_idx": data.get("order", 0),
+        "pinned": 1 if data.get("pinned", False) else 0,
+        "color": data.get("color", "default"),
+        "tags": json_dumps(tags),
+        "embedding": json_dumps(embedding) if embedding is not None else None
+    }
+
+# ---------- Core DB operations ----------
+def upsert_note(note_id, data, created=None):
+    """Insert or replace a note. `created` can be passed for migrations."""
+    vals = _note_to_row_values(note_id, data, created)
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("""
+            INSERT INTO notes (id, title, content, created, last_modified, order_idx, pinned, color, tags, embedding)
+            VALUES (:id, :title, :content, :created, :last_modified, :order_idx, :pinned, :color, :tags, :embedding)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title,
+                content=excluded.content,
+                last_modified=excluded.last_modified,
+                order_idx=excluded.order_idx,
+                pinned=excluded.pinned,
+                color=excluded.color,
+                tags=excluded.tags,
+                embedding=excluded.embedding
+        """, vals)
+        conn.commit()
+    write_json_backup()
+
+def get_note_from_db(note_id):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+    return _note_row_to_dict(row) if row else None
+
+def get_all_notes():
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM notes ORDER BY order_idx, created").fetchall()
+    notes = {}
+    for row in rows:
+        n = _note_row_to_dict(row)
+        notes[n["id"]] = n
+    return notes
+
+def delete_note_from_db(note_id):
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        conn.commit()
+    write_json_backup()
+
+def clear_all_notes_db():
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("DELETE FROM notes")
+        conn.commit()
+    write_json_backup()
+
+def set_note_embedding_db(note_id, embedding):
+    with _write_lock:
+        conn = get_conn()
+        conn.execute("UPDATE notes SET embedding = ? WHERE id = ?",
+                     (json_dumps(embedding) if embedding is not None else None, note_id))
+        conn.commit()
+    write_json_backup()
+
+def update_note_fields_db(note_id, fields):
+    """Partial update of note fields."""
+    if not fields:
+        return
+    fields = dict(fields)
+    if "tags" in fields:
+        fields["tags"] = json_dumps(fields["tags"])
+    if "pinned" in fields:
+        fields["pinned"] = 1 if fields["pinned"] else 0
+    if "order" in fields:
+        fields["order_idx"] = fields.pop("order")
+    fields["last_modified"] = datetime.now().isoformat()
+    set_clause = ", ".join(f"{k} = :{k}" for k in fields if k != "id")
+    fields["id"] = note_id
+    with _write_lock:
+        conn = get_conn()
+        conn.execute(f"UPDATE notes SET {set_clause}, embedding = NULL WHERE id = :id", fields)
+        conn.commit()
+    write_json_backup()
+
+# ---------- JSON backup writer ----------
+def write_json_backup():
+    """Write the entire notes dictionary to the JSON file (sync)."""
+    notes = get_all_notes()
+    try:
+        with open(NOTES_JSON, "w", encoding="utf-8") as f:
+            std_json.dump(notes, f, indent=2)
+    except Exception as e:
+        print(f"❌ Failed to write JSON backup: {e}")
+
+# ---------- Migration from JSON (if DB empty) ----------
+def migrate_from_json_if_needed():
+    """If SQLite has no notes and JSON file exists, import all notes."""
+    conn = get_conn()
+    count = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+    if count > 0:
+        return
+    if not os.path.exists(NOTES_JSON):
+        return
+    try:
+        with open(NOTES_JSON, "r", encoding="utf-8") as f:
+            data = json_loads(f.read())
+        if not data:
+            return
+        for note_id, note in data.items():
+            # Recreate the note in SQLite, preserving created date
+            upsert_note(note_id, note, created=note.get("created"))
+        print(f"✅ Migrated {len(data)} notes from JSON to SQLite")
+    except Exception as e:
+        print(f"❌ Migration failed: {e}")
+
+# ---------- In‑memory cache (optional) ----------
 _notes_cache = None
 _cache_lock = threading.Lock()
+
+def load_notes():
+    """Load notes into cache from SQLite (or JSON fallback)."""
+    global _notes_cache
+    if _notes_cache is not None:
+        return _notes_cache
+    with _cache_lock:
+        if _notes_cache is not None:
+            return _notes_cache
+        # Try SQLite first
+        notes = get_all_notes()
+        if not notes:
+            # fallback to JSON (if DB empty and JSON exists)
+            if os.path.exists(NOTES_JSON):
+                try:
+                    with open(NOTES_JSON, "r", encoding="utf-8") as f:
+                        notes = json_loads(f.read())
+                    # re-insert into DB
+                    for nid, n in notes.items():
+                        upsert_note(nid, n, created=n.get("created"))
+                    print("ℹ️ Loaded notes from JSON backup into SQLite")
+                except:
+                    pass
+        _notes_cache = notes
+        return _notes_cache
+
+# (Compatibility wrappers for old async/sync save functions)
+def save_notes_async(notes_data=None):
+    write_json_backup()
+
+def save_notes_sync(notes_data=None):
+    write_json_backup()
+
+# ---------- Embedding model (lazy) ----------
 _embed_model = None
 _embed_model_lock = threading.Lock()
 
-# ---------- Embedding model (lazy loaded, thread‑safe) ----------
 def get_embedder():
     global _embed_model
     if not EMBED_AVAILABLE:
@@ -68,7 +284,6 @@ def get_embedder():
         return _embed_model
 
 def embed_note(note):
-    """Generate embedding for a note (title + content). Returns list of floats or None."""
     if not EMBED_AVAILABLE:
         return None
     model = get_embedder()
@@ -77,49 +292,10 @@ def embed_note(note):
         return None
     return model.encode(text).tolist()
 
-# ---------- Load / Save with caching and async write ----------
-def load_notes():
-    """Load notes from file once and cache them."""
-    global _notes_cache
-    if _notes_cache is not None:
-        return _notes_cache
-    with _cache_lock:
-        if _notes_cache is not None:
-            return _notes_cache
-        try:
-            with open(NOTES_FILE, "r", encoding="utf-8") as f:
-                data = json_loads(f.read())
-        except:
-            data = {}
-        # ✅ NO embedding generation here – page loads instantly
-        _notes_cache = data
-        return _notes_cache
-
-# ── Async save executor ──
-_save_executor = ThreadPoolExecutor(max_workers=1)
-
-def _save_notes_to_disk(notes_data):
-    try:
-        temp_file = NOTES_FILE + ".tmp"
-        with open(temp_file, "w", encoding="utf-8") as f:
-            std_json.dump(notes_data, f, indent=2)
-        os.replace(temp_file, NOTES_FILE)
-        print(f"✅ Saved {len(notes_data)} notes")
-    except Exception as e:
-        print(f"❌ Failed to save notes: {e}")
-
-def save_notes_async(notes_data):
-    """Schedule a background save."""
-    _save_executor.submit(_save_notes_to_disk, notes_data)
-
-def save_notes_sync(notes_data):
-    """Synchronous save (used for critical operations)."""
-    _save_notes_to_disk(notes_data)
-
 # ---------- Flask Blueprint ----------
 notes_bp = Blueprint('notes', __name__, url_prefix='/notes')
 
-# Serve the notes HTML page
+# Serve the notes HTML page (unchanged)
 @notes_bp.route('')
 def notes_page():
     return render_template_string(NOTES_HTML)
@@ -132,52 +308,52 @@ def get_notes():
 @notes_bp.route('/api', methods=['POST'])
 def create_note():
     data = request.get_json()
-    notes = load_notes()
     note_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
-    notes[note_id] = {
+    note = {
         "id": note_id,
         "title": data.get("title", "Untitled"),
         "content": data.get("content", ""),
         "created": now,
         "last_modified": now,
-        "order": len(notes),
+        "order": len(load_notes()),
         "tags": data.get("tags", []),
         "pinned": data.get("pinned", False),
         "color": data.get("color", "default")
     }
-    save_notes_async(notes)
+    upsert_note(note_id, note, created=now)
+    # Invalidate cache
+    global _notes_cache
+    with _cache_lock:
+        _notes_cache = None
     return jsonify({"id": note_id, "ok": True})
 
 @notes_bp.route('/api/<note_id>', methods=['PUT'])
 def update_note(note_id):
     data = request.get_json()
-    notes = load_notes()
-    if note_id not in notes:
+    note = get_note_from_db(note_id)
+    if not note:
         return jsonify({"error": "Note not found"}), 404
-    note = notes[note_id]
-    if "title" in data:
-        note["title"] = data["title"]
-    if "content" in data:
-        note["content"] = data["content"]
-    if "tags" in data:
-        note["tags"] = data["tags"]
-    if "pinned" in data:
-        note["pinned"] = data["pinned"]
-    if "color" in data:
-        note["color"] = data["color"]
-    note["last_modified"] = datetime.now().isoformat()
-    note.pop("embedding", None)
-    save_notes_async(notes)
+    fields = {}
+    for key in ("title", "content", "tags", "pinned", "color", "order"):
+        if key in data:
+            fields[key] = data[key]
+    if fields:
+        update_note_fields_db(note_id, fields)
+        global _notes_cache
+        with _cache_lock:
+            _notes_cache = None
     return jsonify({"ok": True})
 
 @notes_bp.route('/api/<note_id>', methods=['DELETE'])
 def delete_note(note_id):
-    notes = load_notes()
-    if note_id not in notes:
+    note = get_note_from_db(note_id)
+    if not note:
         return jsonify({"error": "Note not found"}), 404
-    del notes[note_id]
-    save_notes_async(notes)
+    delete_note_from_db(note_id)
+    global _notes_cache
+    with _cache_lock:
+        _notes_cache = None
     return jsonify({"ok": True})
 
 # ---------- Keyword search ----------
@@ -212,9 +388,6 @@ def semantic_search_notes():
         return jsonify([])
 
     model = get_embedder()
-    import numpy as np
-    from sklearn.metrics.pairwise import cosine_similarity
-
     q_emb = model.encode(query).reshape(1, -1)
 
     candidates = []
@@ -224,6 +397,7 @@ def semantic_search_notes():
             emb = embed_note(note)
             if emb is not None:
                 note['embedding'] = emb
+                set_note_embedding_db(nid, emb)
         if emb:
             candidates.append((nid, note, emb))
 
@@ -244,16 +418,14 @@ def semantic_search_notes():
                 "content": note["content"][:200] + "..." if len(note["content"]) > 200 else note["content"],
                 "score": float(similarities[idx])
             })
-    if any(note.get('embedding') for _, note, _ in candidates if note.get('embedding') is not None):
-        save_notes_async(notes)
     return jsonify(results)
 
-# ---------- AI Assistance (multi-provider) ----------
+# ---------- AI Assistance ----------
 @notes_bp.route('/api/ai_assist', methods=['POST'])
 def ai_assist():
     data = request.get_json()
     note_id = data.get('note_id')
-    action = data.get('action')  # 'summarise', 'suggest_tags', 'improve'
+    action = data.get('action')
     provider_name = data.get('provider', 'ollama')
     model = data.get('model', 'llama3.2')
     api_key = data.get('api_key', None)
@@ -261,8 +433,7 @@ def ai_assist():
     if not note_id or not action:
         return jsonify({"error": "Missing note_id or action"}), 400
 
-    notes = load_notes()
-    note = notes.get(note_id)
+    note = get_note_from_db(note_id)
     if not note:
         return jsonify({"error": "Note not found"}), 404
 
@@ -312,13 +483,15 @@ def ai_assist():
             existing = set(note.get('tags', []))
             new_tags = [t for t in tags if t not in existing]
             if new_tags:
-                note['tags'] = list(existing.union(new_tags))
-                save_notes_async(notes)
+                update_note_fields_db(note_id, {"tags": list(existing.union(new_tags))})
+                global _notes_cache
+                with _cache_lock:
+                    _notes_cache = None
                 return jsonify({"result": result, "tags": new_tags})
 
     return jsonify({"result": result})
 
-# ---------- IMAGE UPLOAD for notes ----------
+# ---------- Image upload ----------
 @notes_bp.route('/api/upload_image', methods=['POST'])
 def upload_image():
     if 'image' not in request.files:
@@ -340,730 +513,754 @@ def upload_image():
 # ---------- Clear all ----------
 @notes_bp.route('/api/clear_all', methods=['POST'])
 def clear_all_notes():
-    save_notes_sync({})
+    clear_all_notes_db()
     global _notes_cache
     with _cache_lock:
         _notes_cache = {}
     return jsonify({"ok": True})
 
+# ---------- Reorder ----------
 @notes_bp.route('/api/reorder', methods=['POST'])
 def reorder_notes():
     data = request.get_json()
     order_map = data.get('order')
     if not order_map or not isinstance(order_map, dict):
         return jsonify({'error': 'Invalid order data'}), 400
-    notes = load_notes()
     for nid, new_order in order_map.items():
-        if nid in notes:
-            notes[nid]['order'] = int(new_order)
-    save_notes_async(notes)
+        update_note_fields_db(nid, {"order": int(new_order)})
+    global _notes_cache
+    with _cache_lock:
+        _notes_cache = None
     return jsonify({'ok': True})
 
+# ---------- Run migration on startup ----------
+migrate_from_json_if_needed()
+
 # ===========================================================================
-# HTML TEMPLATE (with image upload button & ENHANCED SPACING)
+# HTML TEMPLATE (unchanged – copy exactly from your original notes.py)
 # ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
-    <title>Notes · Advanced + AI</title>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        /* ── base – same as before ── */
-        * { margin:0; padding:0; box-sizing:border-box; }
-        html, body {
-            height:100%;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #0a0a0f;
-            color: #e1e4e8;
-            overflow: hidden;
-            transition: background 0.3s ease, color 0.3s ease;
-        }
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: radial-gradient(ellipse at 20% 50%, #1a1a2e 0%, transparent 50%),
-                        radial-gradient(ellipse at 80% 20%, #16213e 0%, transparent 50%);
-            animation: bgMove 20s ease infinite;
-            z-index: -1;
-            transition: opacity 0.4s ease;
-        }
-        body.light-mode::before { opacity: 0; }
-        @keyframes bgMove {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-        .app { display:flex; height:100%; backdrop-filter: blur(2px); }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
+<title>Notes · Advanced + AI</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+/* ── base – same as before ── */
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body {
+    height:100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: #0a0a0f;
+    color: #e1e4e8;
+    overflow: hidden;
+    transition: background 0.3s ease, color 0.3s ease;
+}
+body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at 20% 50%, #1a1a2e 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, #16213e 0%, transparent 50%);
+    animation: bgMove 20s ease infinite;
+    z-index: -1;
+    transition: opacity 0.4s ease;
+}
+body.light-mode::before { opacity: 0; }
+@keyframes bgMove {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+.app { display:flex; height:100%; backdrop-filter: blur(2px); }
 
-        /* ── Sidebar ── */
-        .sidebar {
-            width: 300px;
-            background: rgba(18, 18, 26, 0.85);
-            backdrop-filter: blur(20px);
-            border-right: 1px solid rgba(255,255,255,0.05);
-            display:flex; flex-direction:column; flex-shrink:0;
-            box-shadow: 0 0 20px rgba(0,0,0,0.4);
-            transition: width 0.25s ease, margin 0.25s ease, background 0.3s ease;
-            overflow: hidden;
-        }
-        .sidebar.hidden { width: 0; margin: 0; border: none; overflow: hidden; padding: 0; }
-        .sidebar-header {
-            padding: 20px 16px 12px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-        }
-        .sidebar-header h2 {
-            font-size: 17px; font-weight: 600;
-            background: linear-gradient(135deg, #58a6ff, #3fb950);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .new-note-btn {
-            background: linear-gradient(135deg, #1f6feb, #388bfd);
-            color: white; border: none; border-radius: 10px; padding: 8px 16px;
-            font-size: 13px; font-weight: 600; cursor: pointer; margin-left: auto; white-space: nowrap;
-            box-shadow: 0 4px 12px rgba(31,111,235,0.4); transition: all 0.2s;
-        }
-        .new-note-btn:hover { box-shadow: 0 6px 16px rgba(31,111,235,0.6); transform: translateY(-1px); }
-        .search-box { padding: 8px 16px; }
-        .search-box input {
-            width: 100%; padding: 8px 12px; border-radius: 20px;
-            border: 1px solid rgba(255,255,255,0.1); background: rgba(13,17,23,0.7);
-            color: #e6edf3; font-size: 13px; outline: none;
-            transition: border-color 0.2s, background 0.3s, color 0.3s;
-        }
-        .search-box input:focus { border-color: #58a6ff; }
-        .search-box input::placeholder { color: #8b949e; }
+/* ── Sidebar ── */
+.sidebar {
+    width: 300px;
+    background: rgba(18, 18, 26, 0.85);
+    backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255,255,255,0.05);
+    display:flex; flex-direction:column; flex-shrink:0;
+    box-shadow: 0 0 20px rgba(0,0,0,0.4);
+    transition: width 0.25s ease, margin 0.25s ease, background 0.3s ease;
+    overflow: hidden;
+}
+.sidebar.hidden { width: 0; margin: 0; border: none; overflow: hidden; padding: 0; }
+.sidebar-header {
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.sidebar-header h2 {
+    font-size: 17px; font-weight: 600;
+    background: linear-gradient(135deg, #58a6ff, #3fb950);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.new-note-btn {
+    background: linear-gradient(135deg, #1f6feb, #388bfd);
+    color: white; border: none; border-radius: 10px; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer; margin-left: auto; white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(31,111,235,0.4); transition: all 0.2s;
+}
+.new-note-btn:hover { box-shadow: 0 6px 16px rgba(31,111,235,0.6); transform: translateY(-1px); }
+.search-box { padding: 8px 16px; }
+.search-box input {
+    width: 100%; padding: 8px 12px; border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(13,17,23,0.7);
+    color: #e6edf3; font-size: 13px; outline: none;
+    transition: border-color 0.2s, background 0.3s, color 0.3s;
+}
+.search-box input:focus { border-color: #58a6ff; }
+.search-box input::placeholder { color: #8b949e; }
 
-        .search-mode-toggle {
-            display: flex;
-            gap: 4px;
-            padding: 4px 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        .search-mode-toggle button {
-            background: transparent;
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 16px;
-            padding: 4px 14px;
-            font-size: 12px;
-            color: #8b949e;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .search-mode-toggle button.active {
-            background: #1f6feb;
-            border-color: #1f6feb;
-            color: #fff;
-        }
-        .search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
+.search-mode-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 4px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.search-mode-toggle button {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 4px 14px;
+    font-size: 12px;
+    color: #8b949e;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.search-mode-toggle button.active {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #fff;
+}
+.search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
 
-        .tag-filter {
-            padding: 4px 16px 12px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        .tag-filter .tag-pill {
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 20px;
-            padding: 4px 12px;
-            font-size: 12px;
-            color: #8b949e;
-            cursor: pointer;
-            transition: all 0.2s;
-            user-select: none;
-        }
-        .tag-filter .tag-pill:hover { background: rgba(255,255,255,0.12); }
-        .tag-filter .tag-pill.active {
-            background: #1f6feb;
-            color: #fff;
-            border-color: #1f6feb;
-        }
-        .tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149; }
-        .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.15); }
+.tag-filter {
+    padding: 4px 16px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.tag-filter .tag-pill {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: #8b949e;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+.tag-filter .tag-pill:hover { background: rgba(255,255,255,0.12); }
+.tag-filter .tag-pill.active {
+    background: #1f6feb;
+    color: #fff;
+    border-color: #1f6feb;
+}
+.tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149; }
+.tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.15); }
 
-        .notes-sidebar-list {
-            flex:1;
-            overflow-y:auto;
-            padding: 8px;
-        }
-        .notes-sidebar-list::-webkit-scrollbar { width: 4px; }
-        .notes-sidebar-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.notes-sidebar-list {
+    flex:1;
+    overflow-y:auto;
+    padding: 8px;
+}
+.notes-sidebar-list::-webkit-scrollbar { width: 4px; }
+.notes-sidebar-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
-        .group-heading {
-            font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e;
-            padding: 12px 12px 6px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            margin-top: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .group-heading:first-of-type { margin-top: 0; }
-        .group-heading .badge {
-            font-size: 10px;
-            background: rgba(255,255,255,0.06);
-            padding: 0 8px;
-            border-radius: 10px;
-            color: #8b949e;
-        }
+.group-heading {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e;
+    padding: 12px 12px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.group-heading:first-of-type { margin-top: 0; }
+.group-heading .badge {
+    font-size: 10px;
+    background: rgba(255,255,255,0.06);
+    padding: 0 8px;
+    border-radius: 10px;
+    color: #8b949e;
+}
 
-        /* ─── SIDEBAR NOTE ITEMS – ENHANCED SPACING ─── */
-        .note-item-sidebar {
-            display:flex;
-            align-items:center;
-            padding: 12px 16px;          /* more padding */
-            cursor:grab;
-            border-radius: 10px;
-            margin-bottom: 4px;           /* more gap between items */
-            transition: background 0.2s;
-            gap: 10px;                   /* more space between elements */
-            background: transparent;
-            user-select: none;
-            min-height: 44px;            /* ensure consistent height */
-        }
-        .note-item-sidebar:hover { background: rgba(255,255,255,0.05); }
-        .note-item-sidebar.active { background: rgba(31,111,235,0.15); border: 1px solid rgba(31,111,235,0.3); }
-        .note-item-sidebar.dragging { opacity: 0.4; }
-        .note-item-sidebar.drag-over { border: 2px dashed #58a6ff; }
-        .note-item-sidebar .pin-indicator { font-size: 13px; opacity: 0.5; margin-right: 2px; }
-        .note-item-sidebar .title {
-            flex:1;
-            font-size: 15px;             /* slightly larger */
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: #c9d1d9;
-            font-weight: 500;
-        }
-        .note-item-sidebar .tags-mini {
-            font-size: 10px;
-            color: #8b949e;
-            margin-right: 4px;
-            max-width: 70px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            opacity: 0.6;
-        }
-        .note-item-sidebar .rename-btn,
-        .note-item-sidebar .del {
-            background: transparent;
-            border: none;
-            font-size: 14px;
-            cursor: pointer;
-            opacity: 0.4;
-            padding: 4px 6px;           /* bigger click area */
-            transition: opacity 0.2s, color 0.2s;
-            border-radius: 4px;
-        }
-        .note-item-sidebar .rename-btn:hover {
-            opacity: 1;
-            color: #58a6ff;
-            background: rgba(88,166,255,0.1);
-        }
-        .note-item-sidebar .del {
-            color: #f85149;
-            font-size: 18px;
-        }
-        .note-item-sidebar .del:hover {
-            opacity: 1;
-            background: rgba(248,81,73,0.15);
-        }
-        .note-item-sidebar .time {
-            font-size: 10px;
-            color: #8b949e;
-            margin-right: 4px;
-            white-space: nowrap;
-        }
-        .sidebar-footer {
-            padding: 12px 16px;
-            border-top: 1px solid rgba(255,255,255,0.05);
-            font-size: 12px;
-            color: #8b949e;
-            text-align: center;
-            backdrop-filter: blur(10px);
-            transition: background 0.3s, color 0.3s;
-        }
+/* ─── SIDEBAR NOTE ITEMS – ENHANCED SPACING ─── */
+.note-item-sidebar {
+    display:flex;
+    align-items:center;
+    padding: 12px 16px;
+    cursor:grab;
+    border-radius: 10px;
+    margin-bottom: 4px;
+    transition: background 0.2s;
+    gap: 10px;
+    background: transparent;
+    user-select: none;
+    min-height: 44px;
+}
+.note-item-sidebar:hover { background: rgba(255,255,255,0.05); }
+.note-item-sidebar.active { background: rgba(31,111,235,0.15); border: 1px solid rgba(31,111,235,0.3); }
+.note-item-sidebar.dragging { opacity: 0.4; }
+.note-item-sidebar.drag-over { border: 2px dashed #58a6ff; }
+.note-item-sidebar .pin-indicator { font-size: 13px; opacity: 0.5; margin-right: 2px; }
+.note-item-sidebar .title {
+    flex:1;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #c9d1d9;
+    font-weight: 500;
+}
+.note-item-sidebar .tags-mini {
+    font-size: 10px;
+    color: #8b949e;
+    margin-right: 4px;
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.6;
+}
+.note-item-sidebar .rename-btn,
+.note-item-sidebar .del {
+    background: transparent;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0.4;
+    padding: 4px 6px;
+    transition: opacity 0.2s, color 0.2s;
+    border-radius: 4px;
+}
+.note-item-sidebar .rename-btn:hover {
+    opacity: 1;
+    color: #58a6ff;
+    background: rgba(88,166,255,0.1);
+}
+.note-item-sidebar .del {
+    color: #f85149;
+    font-size: 18px;
+}
+.note-item-sidebar .del:hover {
+    opacity: 1;
+    background: rgba(248,81,73,0.15);
+}
+.note-item-sidebar .time {
+    font-size: 10px;
+    color: #8b949e;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+.sidebar-footer {
+    padding: 12px 16px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    font-size: 12px;
+    color: #8b949e;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    transition: background 0.3s, color 0.3s;
+}
 
-        /* ── Main panel ── */
-        .main {
-            flex:1;
-            display:flex;
-            flex-direction:column;
-            min-width:0;
-            background: rgba(10,10,15,0.7);
-            backdrop-filter: blur(10px);
-            transition: background 0.3s ease;
-        }
+/* ── Main panel ── */
+.main {
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+    background: rgba(10,10,15,0.7);
+    backdrop-filter: blur(10px);
+    transition: background 0.3s ease;
+}
 
-        /* Top bar (same as before) */
-        .top-bar {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            align-items: center;
-            background: rgba(22, 27, 34, 0.7);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            padding: 12px 24px;
-            gap: 12px;
-            flex-shrink: 0;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            transition: background 0.3s, border-color 0.3s;
-        }
-        .top-bar .left { display: flex; align-items: center; gap: 12px; justify-self: start; }
-        .top-bar .left h1 {
-            font-size: 19px;
-            background: linear-gradient(135deg, #58a6ff, #a371f7);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            font-weight: 700;
-        }
-        .sidebar-toggle {
-            background: transparent;
-            border: none;
-            color: #8b949e;
-            cursor: pointer;
-            padding: 6px;
-            transition: color 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            outline: none;
-        }
-        .sidebar-toggle:hover { color: #58a6ff; background: rgba(255,255,255,0.05); }
-        .top-bar .center-tabs {
-            display: flex;
-            gap: 4px;
-            background: rgba(255,255,255,0.06);
-            padding: 4px;
-            border-radius: 30px;
-            backdrop-filter: blur(5px);
-            border: 1px solid rgba(255,255,255,0.06);
-            justify-self: center;
-        }
-        .center-tabs .tab-btn {
-            background: transparent;
-            border: none;
-            padding: 6px 18px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: 500;
-            color: #8b949e;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-            text-decoration: none;
-            display: inline-block;
-        }
-        .center-tabs .tab-btn:hover { color: #c9d1d9; background: rgba(255,255,255,0.05); }
-        .center-tabs .tab-btn.active { background: #1f6feb; color: #fff; box-shadow: 0 2px 8px rgba(31,111,235,0.3); }
-        body.light-mode .center-tabs { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.06); }
-        body.light-mode .center-tabs .tab-btn { color: #57606a; }
-        body.light-mode .center-tabs .tab-btn:hover { background: rgba(0,0,0,0.04); color: #1f6feb; }
-        body.light-mode .center-tabs .tab-btn.active { background: #1f6feb; color: #fff; }
-        .top-bar .right {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            justify-self: end;
-            justify-content: flex-end;
-        }
-        .clear-btn {
-            background: rgba(33,38,45,0.7);
-            border: 1px solid rgba(248,81,73,0.3);
-            color: #f85149;
-            border-radius: 10px;
-            padding: 6px 14px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-            backdrop-filter: blur(5px);
-        }
-        .clear-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
+/* Top bar */
+.top-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    background: rgba(22, 27, 34, 0.7);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding: 12px 24px;
+    gap: 12px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    transition: background 0.3s, border-color 0.3s;
+}
+.top-bar .left { display: flex; align-items: center; gap: 12px; justify-self: start; }
+.top-bar .left h1 {
+    font-size: 19px;
+    background: linear-gradient(135deg, #58a6ff, #a371f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+}
+.sidebar-toggle {
+    background: transparent;
+    border: none;
+    color: #8b949e;
+    cursor: pointer;
+    padding: 6px;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    outline: none;
+}
+.sidebar-toggle:hover { color: #58a6ff; background: rgba(255,255,255,0.05); }
+.top-bar .center-tabs {
+    display: flex;
+    gap: 4px;
+    background: rgba(255,255,255,0.06);
+    padding: 4px;
+    border-radius: 30px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255,255,255,0.06);
+    justify-self: center;
+}
+.center-tabs .tab-btn {
+    background: transparent;
+    border: none;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #8b949e;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    text-decoration: none;
+    display: inline-block;
+}
+.center-tabs .tab-btn:hover { color: #c9d1d9; background: rgba(255,255,255,0.05); }
+.center-tabs .tab-btn.active { background: #1f6feb; color: #fff; box-shadow: 0 2px 8px rgba(31,111,235,0.3); }
+body.light-mode .center-tabs { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.06); }
+body.light-mode .center-tabs .tab-btn { color: #57606a; }
+body.light-mode .center-tabs .tab-btn:hover { background: rgba(0,0,0,0.04); color: #1f6feb; }
+body.light-mode .center-tabs .tab-btn.active { background: #1f6feb; color: #fff; }
+.top-bar .right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-self: end;
+    justify-content: flex-end;
+}
+.clear-btn {
+    background: rgba(33,38,45,0.7);
+    border: 1px solid rgba(248,81,73,0.3);
+    color: #f85149;
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+}
+.clear-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
 
-        /* Theme toggle (exact copy) */
-        .theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
-        .toggle-outer {
-            position: relative; width: 140px; height: 56px; border-radius: 999px; background: hsl(220 18% 82%);
-            box-shadow: 2px 2px 8px rgba(0,0,0,0.12), -2px -2px 6px rgba(255,255,255,0.5),
-                        inset 1px 1px 3px rgba(0,0,0,0.08), inset -1px -1px 3px rgba(255,255,255,0.4);
-            cursor: pointer; user-select: none; flex-shrink:0;
-        }
-        .toggle-inner { position: absolute; inset: 5px; border-radius: 999px; overflow: hidden; }
-        .night-bg { position: absolute; inset: 0; background: hsl(220 35% 18%); opacity:1; transition: opacity 0.3s ease; }
-        .stars-layer { position: absolute; inset: 0; opacity:1; transition: opacity 0.3s ease; pointer-events:none; }
-        .star { position: absolute; background: white; border-radius:50%; }
-        .sparkle { position: absolute; color: white; font-size: 7px; line-height:1; }
-        .day-bg { position: absolute; inset: 0; opacity:0; transition: opacity 0.3s ease; pointer-events:none; }
-        .sky-layer { position: absolute; inset: 0; background: hsl(205 70% 62%); }
-        .sky-mid { position: absolute; bottom:0; left:0; right:0; height:50%; background: hsl(205 60% 72%); border-radius: 40% 40% 0 0 / 30% 30% 0 0; }
-        .cloud { position: absolute; background: rgba(255,255,255,0.88); border-radius: 999px; }
-        .astronaut, .biplane { position: absolute; z-index: 4; pointer-events: none; transition: opacity 0.3s ease; }
-        .astronaut { left: 48px; top: 50%; transform: translateY(-55%); width: 22px; height: 26px; opacity:1; animation: float 3s ease-in-out infinite; }
-        .biplane { left: 44px; top: 38%; transform: translateY(-50%); width: 30px; height: 18px; opacity:0; animation: fly 3s ease-in-out infinite; }
-        @keyframes float { 0%,100% { transform: translateY(-55%); } 50% { transform: translateY(-65%); } }
-        @keyframes fly { 0%,100% { transform: translateY(-50%) rotate(-1deg); } 50% { transform: translateY(-60%) rotate(1deg); } }
-        .knob {
-            position: absolute; top: 50%; width: 40px; height: 40px; border-radius: 50%; transform: translateY(-50%);
-            z-index: 10; cursor: grab; transition: left 0.4s cubic-bezier(0.34, 1.2, 0.64, 1); left: 3px;
-        }
-        .knob:active { cursor: grabbing; }
-        .knob-moon {
-            position: absolute; inset:0; border-radius:50%; background: hsl(220 10% 82%);
-            box-shadow: 2px 2px 4px rgba(255,255,255,0.9) inset, -2px -2px 4px rgba(0,0,0,0.18) inset;
-            transition: opacity 0.3s ease;
-        }
-        .knob-moon .crater {
-            position: absolute; border-radius:50%; background: hsl(220 8% 67%);
-            box-shadow: 1px 1px 2px rgba(255,255,255,0.4) inset, -1px -1px 2px rgba(0,0,0,0.2) inset;
-        }
-        .knob-sun {
-            position: absolute; inset:0; border-radius:50%; background: hsl(44 100% 58%);
-            box-shadow: 2px 2px 6px rgba(255,255,180,0.9) inset, -2px -2px 4px rgba(180,100,0,0.3) inset,
-                        0 0 12px hsl(44 100% 70% / 0.5);
-            opacity: 0; transition: opacity 0.3s ease;
-        }
-        .toggle-outer.day .night-bg { opacity: 0; }
-        .toggle-outer.day .stars-layer { opacity: 0; }
-        .toggle-outer.day .day-bg { opacity: 1; }
-        .toggle-outer.day .knob { left: 93px; }
-        .toggle-outer.day .knob-moon { opacity: 0; }
-        .toggle-outer.day .knob-sun { opacity: 1; }
-        .toggle-outer.day .astronaut { opacity: 0; }
-        .toggle-outer.day .biplane { opacity: 1; }
+/* Theme toggle */
+.theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
+.toggle-outer {
+    position: relative; width: 140px; height: 56px; border-radius: 999px; background: hsl(220 18% 82%);
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.12), -2px -2px 6px rgba(255,255,255,0.5),
+                inset 1px 1px 3px rgba(0,0,0,0.08), inset -1px -1px 3px rgba(255,255,255,0.4);
+    cursor: pointer; user-select: none; flex-shrink:0;
+}
+.toggle-inner { position: absolute; inset: 5px; border-radius: 999px; overflow: hidden; }
+.night-bg { position: absolute; inset: 0; background: hsl(220 35% 18%); opacity:1; transition: opacity 0.3s ease; }
+.stars-layer { position: absolute; inset: 0; opacity:1; transition: opacity 0.3s ease; pointer-events:none; }
+.star { position: absolute; background: white; border-radius:50%; }
+.sparkle { position: absolute; color: white; font-size: 7px; line-height:1; }
+.day-bg { position: absolute; inset: 0; opacity:0; transition: opacity 0.3s ease; pointer-events:none; }
+.sky-layer { position: absolute; inset: 0; background: hsl(205 70% 62%); }
+.sky-mid { position: absolute; bottom:0; left:0; right:0; height:50%; background: hsl(205 60% 72%); border-radius: 40% 40% 0 0 / 30% 30% 0 0; }
+.cloud { position: absolute; background: rgba(255,255,255,0.88); border-radius: 999px; }
+.astronaut, .biplane { position: absolute; z-index: 4; pointer-events: none; transition: opacity 0.3s ease; }
+.astronaut { left: 48px; top: 50%; transform: translateY(-55%); width: 22px; height: 26px; opacity:1; animation: float 3s ease-in-out infinite; }
+.biplane { left: 44px; top: 38%; transform: translateY(-50%); width: 30px; height: 18px; opacity:0; animation: fly 3s ease-in-out infinite; }
+@keyframes float { 0%,100% { transform: translateY(-55%); } 50% { transform: translateY(-65%); } }
+@keyframes fly { 0%,100% { transform: translateY(-50%) rotate(-1deg); } 50% { transform: translateY(-60%) rotate(1deg); } }
+.knob {
+    position: absolute; top: 50%; width: 40px; height: 40px; border-radius: 50%; transform: translateY(-50%);
+    z-index: 10; cursor: grab; transition: left 0.4s cubic-bezier(0.34, 1.2, 0.64, 1); left: 3px;
+}
+.knob:active { cursor: grabbing; }
+.knob-moon {
+    position: absolute; inset:0; border-radius:50%; background: hsl(220 10% 82%);
+    box-shadow: 2px 2px 4px rgba(255,255,255,0.9) inset, -2px -2px 4px rgba(0,0,0,0.18) inset;
+    transition: opacity 0.3s ease;
+}
+.knob-moon .crater {
+    position: absolute; border-radius:50%; background: hsl(220 8% 67%);
+    box-shadow: 1px 1px 2px rgba(255,255,255,0.4) inset, -1px -1px 2px rgba(0,0,0,0.2) inset;
+}
+.knob-sun {
+    position: absolute; inset:0; border-radius:50%; background: hsl(44 100% 58%);
+    box-shadow: 2px 2px 6px rgba(255,255,180,0.9) inset, -2px -2px 4px rgba(180,100,0,0.3) inset,
+                0 0 12px hsl(44 100% 70% / 0.5);
+    opacity: 0; transition: opacity 0.3s ease;
+}
+.toggle-outer.day .night-bg { opacity: 0; }
+.toggle-outer.day .stars-layer { opacity: 0; }
+.toggle-outer.day .day-bg { opacity: 1; }
+.toggle-outer.day .knob { left: 93px; }
+.toggle-outer.day .knob-moon { opacity: 0; }
+.toggle-outer.day .knob-sun { opacity: 1; }
+.toggle-outer.day .astronaut { opacity: 0; }
+.toggle-outer.day .biplane { opacity: 1; }
 
-        /* ── Notes editor & preview ── */
-        .notes-panel {
-            flex:1;
-            overflow-y:auto;
-            padding: 28px 40px 40px;
-            display:flex;
-            flex-direction:column;
-            gap: 24px;
-        }
-        .notes-panel .note-editor {
-            background: rgba(13,17,23,0.7);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 14px;
-            padding: 24px 24px 20px;
-            margin-bottom: 8px;
-            transition: background 0.3s, border-color 0.3s;
-        }
-        .notes-panel .note-editor .editor-header {
-            display:flex;
-            align-items:center;
-            gap: 12px;
-            margin-bottom: 12px;
-            flex-wrap:wrap;
-        }
-        .notes-panel .note-editor .editor-header input[type="text"] {
-            flex:1;
-            background: transparent;
-            border: none;
-            color: #e6edf3;
-            font-weight: 600;
-            font-size: 20px;
-            outline: none;
-            min-width: 120px;
-            padding: 4px 0;
-        }
-        .notes-panel .note-editor .editor-header .toolbar {
-            display:flex;
-            gap: 6px;
-            flex-wrap:wrap;
-            align-items:center;
-        }
-        .notes-panel .note-editor .editor-header .toolbar button {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 6px;
-            color: #8b949e;
-            padding: 5px 10px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .notes-panel .note-editor .editor-header .toolbar button:hover {
-            background: rgba(255,255,255,0.12);
-            color: #e6edf3;
-        }
-        .notes-panel .note-editor .editor-header .toolbar button.active {
-            background: #1f6feb;
-            color: #fff;
-            border-color: #1f6feb;
-        }
-        .notes-panel .note-editor .editor-header .toolbar .ai-assist-btn {
-            background: #6f42c1;
-            border-color: #6f42c1;
-            color: #fff;
-        }
-        .notes-panel .note-editor .editor-header .toolbar .ai-assist-btn:hover {
-            background: #8b5cf6;
-        }
-        .notes-panel .note-editor .editor-header .toolbar select,
-        .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 6px;
-            color: #8b949e;
-            padding: 5px 10px;
-            font-size: 13px;
-            outline: none;
-            max-width: 140px;
-        }
-        .notes-panel .note-editor .editor-header .toolbar select:focus,
-        .notes-panel .note-editor .editor-header .toolbar input[type="password"]:focus {
-            border-color: #58a6ff;
-        }
-        .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
-            max-width: 120px;
-            display: none;
-        }
-        body.light-mode .notes-panel .note-editor .editor-header .toolbar select,
-        body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
-            background: rgba(0,0,0,0.04);
-            color: #24292f;
-        }
+/* ── Notes editor & preview ── */
+.notes-panel {
+    flex:1;
+    overflow-y:auto;
+    padding: 28px 40px 40px;
+    display:flex;
+    flex-direction:column;
+    gap: 24px;
+}
+.notes-panel .note-editor {
+    background: rgba(13,17,23,0.7);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 24px 24px 20px;
+    margin-bottom: 8px;
+    transition: background 0.3s, border-color 0.3s;
+}
+.notes-panel .note-editor .editor-header {
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap:wrap;
+}
+.notes-panel .note-editor .editor-header input[type="text"] {
+    flex:1;
+    background: transparent;
+    border: none;
+    color: #e6edf3;
+    font-weight: 600;
+    font-size: 20px;
+    outline: none;
+    min-width: 120px;
+    padding: 4px 0;
+}
+.notes-panel .note-editor .editor-header .toolbar {
+    display:flex;
+    gap: 6px;
+    flex-wrap:wrap;
+    align-items:center;
+}
+.notes-panel .note-editor .editor-header .toolbar button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    color: #8b949e;
+    padding: 5px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.notes-panel .note-editor .editor-header .toolbar button:hover {
+    background: rgba(255,255,255,0.12);
+    color: #e6edf3;
+}
+.notes-panel .note-editor .editor-header .toolbar button.active {
+    background: #1f6feb;
+    color: #fff;
+    border-color: #1f6feb;
+}
+.notes-panel .note-editor .editor-header .toolbar .ai-assist-btn {
+    background: #6f42c1;
+    border-color: #6f42c1;
+    color: #fff;
+}
+.notes-panel .note-editor .editor-header .toolbar .ai-assist-btn:hover {
+    background: #8b5cf6;
+}
+.notes-panel .note-editor .editor-header .toolbar select,
+.notes-panel .note-editor .editor-header .toolbar input[type="password"] {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: #8b949e;
+    padding: 5px 10px;
+    font-size: 13px;
+    outline: none;
+    max-width: 140px;
+}
+.notes-panel .note-editor .editor-header .toolbar select:focus,
+.notes-panel .note-editor .editor-header .toolbar input[type="password"]:focus {
+    border-color: #58a6ff;
+}
+.notes-panel .note-editor .editor-header .toolbar input[type="password"] {
+    max-width: 120px;
+    display: none;
+}
+body.light-mode .notes-panel .note-editor .editor-header .toolbar select,
+body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
+    background: rgba(0,0,0,0.04);
+    color: #24292f;
+}
 
-        .notes-panel .note-editor .editor-body {
-            display:flex;
-            gap: 16px;
-            min-height: 220px;
-        }
-        .notes-panel .note-editor .editor-body textarea {
-            flex:1;
-            background: transparent;
-            border: none;
-            color: #e6edf3;
-            font-size: 14px;
-            font-family: inherit;
-            outline: none;
-            resize: vertical;
-            min-height: 200px;
-            padding: 8px 8px 4px;
-            line-height: 1.7;
-        }
-        .notes-panel .note-editor .editor-body .preview {
-            flex:1;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-            padding: 12px 16px;
-            overflow-y:auto;
-            color: #e1e4e8;
-            font-size: 14px;
-            line-height: 1.7;
-            display:none;
-        }
-        .notes-panel .note-editor .editor-body .preview.visible {
-            display:block;
-        }
-        .notes-panel .note-editor .editor-footer {
-            display:flex;
-            align-items:center;
-            gap: 16px;
-            margin-top: 16px;
-            flex-wrap:wrap;
-        }
-        .notes-panel .note-editor .editor-footer .tags-input {
-            flex:1;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 20px;
-            padding: 6px 14px;
-            color: #e6edf3;
-            font-size: 13px;
-            outline: none;
-            min-width: 80px;
-        }
-        .notes-panel .note-editor .editor-footer .tags-input:focus { border-color: #58a6ff; }
-        .notes-panel .note-editor .editor-footer .color-picker {
-            display:flex;
-            gap: 8px;
-        }
-        .notes-panel .note-editor .editor-footer .color-picker .color-option {
-            width: 24px;
-            height: 24px;
-            border-radius:50%;
-            cursor:pointer;
-            border:2px solid transparent;
-            transition: 0.2s;
-        }
-        .notes-panel .note-editor .editor-footer .color-picker .color-option:hover { transform:scale(1.15); }
-        .notes-panel .note-editor .editor-footer .color-picker .color-option.active {
-            border-color: #58a6ff;
-            box-shadow: 0 0 8px rgba(88,166,255,0.4);
-        }
-        .color-default { background: #8b949e; }
-        .color-yellow { background: #fdec8f; }
-        .color-blue   { background: #9fd3ff; }
-        .color-green  { background: #a9e6a1; }
-        .color-pink   { background: #ffb3cd; }
-        .color-orange { background: #ffc27a; }
+.notes-panel .note-editor .editor-body {
+    display:flex;
+    gap: 16px;
+    min-height: 220px;
+}
+.notes-panel .note-editor .editor-body textarea {
+    flex:1;
+    background: transparent;
+    border: none;
+    color: #e6edf3;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    resize: vertical;
+    min-height: 200px;
+    padding: 8px 8px 4px;
+    line-height: 1.7;
+}
+.notes-panel .note-editor .editor-body .preview {
+    flex:1;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    overflow-y:auto;
+    color: #e1e4e8;
+    font-size: 14px;
+    line-height: 1.7;
+    display:none;
+}
+.notes-panel .note-editor .editor-body .preview.visible {
+    display:block;
+}
+.notes-panel .note-editor .editor-footer {
+    display:flex;
+    align-items:center;
+    gap: 16px;
+    margin-top: 16px;
+    flex-wrap:wrap;
+}
+.notes-panel .note-editor .editor-footer .tags-input {
+    flex:1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 6px 14px;
+    color: #e6edf3;
+    font-size: 13px;
+    outline: none;
+    min-width: 80px;
+}
+.notes-panel .note-editor .editor-footer .tags-input:focus { border-color: #58a6ff; }
+.notes-panel .note-editor .editor-footer .color-picker {
+    display:flex;
+    gap: 8px;
+}
+.notes-panel .note-editor .editor-footer .color-picker .color-option {
+    width: 24px;
+    height: 24px;
+    border-radius:50%;
+    cursor:pointer;
+    border:2px solid transparent;
+    transition: 0.2s;
+}
+.notes-panel .note-editor .editor-footer .color-picker .color-option:hover { transform:scale(1.15); }
+.notes-panel .note-editor .editor-footer .color-picker .color-option.active {
+    border-color: #58a6ff;
+    box-shadow: 0 0 8px rgba(88,166,255,0.4);
+}
+.color-default { background: #8b949e; }
+.color-yellow { background: #fdec8f; }
+.color-blue   { background: #9fd3ff; }
+.color-green  { background: #a9e6a1; }
+.color-pink   { background: #ffb3cd; }
+.color-orange { background: #ffc27a; }
 
-        .notes-panel .note-editor .editor-footer .pin-toggle {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 20px;
-            padding: 6px 16px;
-            color: #8b949e;
-            font-size: 13px;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .notes-panel .note-editor .editor-footer .pin-toggle.active {
-            background: rgba(31,111,235,0.2);
-            border-color: #1f6feb;
-            color: #58a6ff;
-        }
-        .notes-panel .note-editor .editor-footer .pin-toggle:hover { background: rgba(255,255,255,0.1); }
+.notes-panel .note-editor .editor-footer .pin-toggle {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 6px 16px;
+    color: #8b949e;
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.notes-panel .note-editor .editor-footer .pin-toggle.active {
+    background: rgba(31,111,235,0.2);
+    border-color: #1f6feb;
+    color: #58a6ff;
+}
+.notes-panel .note-editor .editor-footer .pin-toggle:hover { background: rgba(255,255,255,0.1); }
 
-        .notes-panel .note-editor .note-actions {
-            display:flex;
-            gap: 10px;
-            justify-content:flex-end;
-            margin-top: 16px;
-        }
-        .notes-panel .note-editor .note-actions button {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            color: #8b949e;
-            border-radius: 8px;
-            padding: 8px 22px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: 0.2s;
-        }
-        .notes-panel .note-editor .note-actions .save-note { background: #1f6feb; color: white; border-color: #1f6feb; }
-        .notes-panel .note-editor .note-actions .save-note:hover { background: #388bfd; }
-        .notes-panel .note-editor .note-actions button:hover { background: rgba(255,255,255,0.1); }
+.notes-panel .note-editor .note-actions {
+    display:flex;
+    gap: 10px;
+    justify-content:flex-end;
+    margin-top: 16px;
+}
+.notes-panel .note-editor .note-actions button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 8px;
+    padding: 8px 22px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: 0.2s;
+}
+.notes-panel .note-editor .note-actions .save-note { background: #1f6feb; color: white; border-color: #1f6feb; }
+.notes-panel .note-editor .note-actions .save-note:hover { background: #388bfd; }
+.notes-panel .note-editor .note-actions button:hover { background: rgba(255,255,255,0.1); }
 
-        /* ─── MAIN NOTE ITEMS – MORE SPACING ─── */
-        .notes-panel .note-item {
-            background: rgba(28, 35, 51, 0.6);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 14px;
-            padding: 22px 28px;           /* more padding */
-            transition: 0.2s;
-            margin-bottom: 16px;          /* ADD THIS LINE to create gaps */
-            position:relative;
-        }
-        .notes-panel .note-item:hover { background: rgba(28, 35, 51, 0.8); }
-        .notes-panel .note-item .note-title {
-            font-weight: 600;
-            font-size: 18px;              /* larger title */
-            margin-bottom: 8px;
-            color: #e6edf3;
-        }
-        .notes-panel .note-item .note-meta {
-            font-size: 12px;
-            color: #8b949e;
-            margin-bottom: 10px;
-            display:flex;
-            gap: 12px;
-            flex-wrap:wrap;
-        }
-        .notes-panel .note-item .note-meta .tag {
-            background: rgba(255,255,255,0.06);
-            padding: 0 12px;
-            border-radius: 12px;
-            color: #58a6ff;
-        }
-        .notes-panel .note-item .note-content {
-            font-size: 14px;
-            color: #8b949e;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            max-height: 140px;
-            overflow:hidden;
-            line-height: 1.7;
-        }
-        .notes-panel .note-item .note-actions {
-            margin-top: 14px;
-            display: flex;
-            gap: 12px;
-        }
-        .notes-panel .note-item .note-actions button {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            color: #8b949e;
-            border-radius: 8px;
-            padding: 6px 16px;
-            cursor: pointer;
-            font-size: 13px;
-            transition: 0.2s;
-        }
-        .notes-panel .note-item .note-actions button:hover { background: rgba(255,255,255,0.1); color: #58a6ff; }
-        .notes-panel .note-item .note-actions .delete-note { color: #f85149; }
-        .notes-panel .note-item .note-actions .delete-note:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
+/* ─── MAIN NOTE ITEMS – MORE SPACING ─── */
+.notes-panel .note-item {
+    background: rgba(28, 35, 51, 0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 22px 28px;
+    transition: 0.2s;
+    margin-bottom: 16px;
+    position:relative;
+}
+.notes-panel .note-item:hover { background: rgba(28, 35, 51, 0.8); }
+.notes-panel .note-item .note-title {
+    font-weight: 600;
+    font-size: 18px;
+    margin-bottom: 8px;
+    color: #e6edf3;
+}
+.notes-panel .note-item .note-meta {
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 10px;
+    display:flex;
+    gap: 12px;
+    flex-wrap:wrap;
+}
+.notes-panel .note-item .note-meta .tag {
+    background: rgba(255,255,255,0.06);
+    padding: 0 12px;
+    border-radius: 12px;
+    color: #58a6ff;
+}
+.notes-panel .note-item .note-content {
+    font-size: 14px;
+    color: #8b949e;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 140px;
+    overflow:hidden;
+    line-height: 1.7;
+}
+.notes-panel .note-item .note-actions {
+    margin-top: 14px;
+    display: flex;
+    gap: 12px;
+}
+.notes-panel .note-item .note-actions button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 8px;
+    padding: 6px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: 0.2s;
+}
+.notes-panel .note-item .note-actions button:hover { background: rgba(255,255,255,0.1); color: #58a6ff; }
+.notes-panel .note-item .note-actions .delete-note { color: #f85149; }
+.notes-panel .note-item .note-actions .delete-note:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
 
-        /* Light mode overrides */
-        body.light-mode {
-            background: #f6f8fa;
-            color: #24292f;
-        }
-        body.light-mode .sidebar { background: rgba(255, 255, 255, 0.92); border-right-color: rgba(0,0,0,0.08); }
-        body.light-mode .sidebar .sidebar-header { border-bottom-color: rgba(0,0,0,0.06); }
-        body.light-mode .sidebar .group-heading { color: #57606a; border-bottom-color: rgba(0,0,0,0.06); }
-        body.light-mode .note-item-sidebar:hover { background: rgba(0,0,0,0.04); }
-        body.light-mode .note-item-sidebar.active { background: rgba(31,111,235,0.12); border-color: rgba(31,111,235,0.3); }
-        body.light-mode .note-item-sidebar .title { color: #24292f; }
-        body.light-mode .note-item-sidebar .time { color: #57606a; }
-        body.light-mode .note-item-sidebar .rename-btn { color: #57606a; }
-        body.light-mode .sidebar-footer { color: #57606a; border-top-color: rgba(0,0,0,0.06); }
-        body.light-mode .main { background: rgba(255,255,255,0.85); }
-        body.light-mode .top-bar { background: rgba(255, 255, 255, 0.9); border-bottom-color: rgba(0,0,0,0.08); box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
-        body.light-mode .top-bar .left h1 {
-            background: linear-gradient(135deg, #1f6feb, #a371f7);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        body.light-mode .clear-btn { background: rgba(0,0,0,0.05); border-color: rgba(248,81,73,0.3); color: #f85149; }
-        body.light-mode .clear-btn:hover { background: rgba(248,81,73,0.08); }
-        body.light-mode .search-box input { background: rgba(255,255,255,0.8); color: #24292f; border-color: rgba(0,0,0,0.12); }
-        body.light-mode .search-box input::placeholder { color: #8b949e; }
-        body.light-mode .notes-panel .note-item { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.06); }
-        body.light-mode .notes-panel .note-item:hover { background: rgba(255,255,255,0.95); }
-        body.light-mode .notes-panel .note-title { color: #24292f; }
-        body.light-mode .notes-panel .note-content { color: #57606a; }
-        body.light-mode .notes-panel .note-editor { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.08); }
-        body.light-mode .notes-panel .note-editor input,
-        body.light-mode .notes-panel .note-editor textarea,
-        body.light-mode .notes-panel .note-editor .editor-body .preview { color: #24292f; }
-        body.light-mode .notes-panel .note-editor .editor-body .preview { background: rgba(0,0,0,0.03); }
-        body.light-mode .notes-panel .note-editor .editor-header .toolbar button { color: #57606a; }
-        body.light-mode .notes-panel .note-editor .editor-header .toolbar button:hover { background: rgba(0,0,0,0.06); }
-        body.light-mode .notes-panel .note-editor .editor-footer .tags-input { background: rgba(0,0,0,0.04); color: #24292f; }
-        body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle { color: #57606a; }
-        body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle.active { background: rgba(31,111,235,0.1); color: #1f6feb; }
-        body.light-mode .tag-filter .tag-pill { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #57606a; }
-        body.light-mode .tag-filter .tag-pill.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-        body.light-mode .tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149; }
-        body.light-mode .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.08); }
-        .search-mode-toggle button { background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 4px 14px; font-size: 12px; color: #8b949e; cursor: pointer; transition: 0.2s; }
-        .search-mode-toggle button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
-        .search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
-        body.light-mode .search-mode-toggle button { color: #57606a; border-color: rgba(0,0,0,0.1); }
-        body.light-mode .search-mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-        /* Image upload button */
-        .image-upload-btn {
-            background: rgba(88,166,255,0.15);
-            border-color: #58a6ff;
-            color: #58a6ff;
-        }
-        .image-upload-btn:hover {
-            background: rgba(88,166,255,0.25);
-        }
-    </style>
+/* Light mode overrides */
+body.light-mode {
+    background: #f6f8fa;
+    color: #24292f;
+}
+body.light-mode .sidebar { background: rgba(255, 255, 255, 0.92); border-right-color: rgba(0,0,0,0.08); }
+body.light-mode .sidebar .sidebar-header { border-bottom-color: rgba(0,0,0,0.06); }
+body.light-mode .sidebar .group-heading { color: #57606a; border-bottom-color: rgba(0,0,0,0.06); }
+body.light-mode .note-item-sidebar:hover { background: rgba(0,0,0,0.04); }
+body.light-mode .note-item-sidebar.active { background: rgba(31,111,235,0.12); border-color: rgba(31,111,235,0.3); }
+body.light-mode .note-item-sidebar .title { color: #24292f; }
+body.light-mode .note-item-sidebar .time { color: #57606a; }
+body.light-mode .note-item-sidebar .rename-btn { color: #57606a; }
+body.light-mode .sidebar-footer { color: #57606a; border-top-color: rgba(0,0,0,0.06); }
+body.light-mode .main { background: rgba(255,255,255,0.85); }
+body.light-mode .top-bar { background: rgba(255, 255, 255, 0.9); border-bottom-color: rgba(0,0,0,0.08); box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+body.light-mode .top-bar .left h1 {
+    background: linear-gradient(135deg, #1f6feb, #a371f7);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+body.light-mode .clear-btn { background: rgba(0,0,0,0.05); border-color: rgba(248,81,73,0.3); color: #f85149; }
+body.light-mode .clear-btn:hover { background: rgba(248,81,73,0.08); }
+body.light-mode .search-box input { background: rgba(255,255,255,0.8); color: #24292f; border-color: rgba(0,0,0,0.12); }
+body.light-mode .search-box input::placeholder { color: #8b949e; }
+body.light-mode .notes-panel .note-item { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.06); }
+body.light-mode .notes-panel .note-item:hover { background: rgba(255,255,255,0.95); }
+body.light-mode .notes-panel .note-title { color: #24292f; }
+body.light-mode .notes-panel .note-content { color: #57606a; }
+body.light-mode .notes-panel .note-editor { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.08); }
+body.light-mode .notes-panel .note-editor input,
+body.light-mode .notes-panel .note-editor textarea,
+body.light-mode .notes-panel .note-editor .editor-body .preview { color: #24292f; }
+body.light-mode .notes-panel .note-editor .editor-body .preview { background: rgba(0,0,0,0.03); }
+body.light-mode .notes-panel .note-editor .editor-header .toolbar button { color: #57606a; }
+body.light-mode .notes-panel .note-editor .editor-header .toolbar button:hover { background: rgba(0,0,0,0.06); }
+body.light-mode .notes-panel .note-editor .editor-footer .tags-input { background: rgba(0,0,0,0.04); color: #24292f; }
+body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle { color: #57606a; }
+body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle.active { background: rgba(31,111,235,0.1); color: #1f6feb; }
+body.light-mode .tag-filter .tag-pill { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #57606a; }
+body.light-mode .tag-filter .tag-pill.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+body.light-mode .tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149; }
+body.light-mode .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.08); }
+.search-mode-toggle button { background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 4px 14px; font-size: 12px; color: #8b949e; cursor: pointer; transition: 0.2s; }
+.search-mode-toggle button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
+body.light-mode .search-mode-toggle button { color: #57606a; border-color: rgba(0,0,0,0.1); }
+body.light-mode .search-mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+
+/* Fix for Edit & Delete buttons in light mode */
+body.light-mode .notes-panel .note-item .note-actions button {
+    background: rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    color: #24292f;
+}
+body.light-mode .notes-panel .note-item .note-actions button:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #1f6feb;
+    border-color: #1f6feb;
+}
+body.light-mode .notes-panel .note-item .note-actions .delete-note {
+    color: #f85149;
+}
+body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
+    background: rgba(248, 81, 73, 0.1);
+    border-color: #f85149;
+}
+
+/* Image upload button */
+.image-upload-btn {
+    background: rgba(88,166,255,0.15);
+    border-color: #58a6ff;
+    color: #58a6ff;
+}
+.image-upload-btn:hover {
+    background: rgba(88,166,255,0.25);
+}
+</style>
 </head>
 <body>
 <div class="app">
@@ -1242,7 +1439,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
 </div>
 
 <script>
-    // ─── Theme (same as before) ───────────────────────────
+    // ─── Theme ───────────────────────────
     var themeOuter = document.getElementById('themeToggleOuter');
     var themeKnob = document.getElementById('themeKnob');
     var isLight = localStorage.getItem('theme') === 'light';
@@ -1406,7 +1603,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
         var textarea = document.getElementById('noteContentInput');
         var start = textarea.selectionStart;
         var end = textarea.selectionEnd;
-        var filename = file.name.replace(/\.[^.]+$/, ''); // name without ext
+        var filename = file.name.replace(/\.[^.]+$/, '');
         fetch('/notes/api/upload_image', {
             method: 'POST',
             body: formData
@@ -1425,7 +1622,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
             }
         })
         .catch(err => alert('Upload error: ' + err));
-        e.target.value = ''; // reset
+        e.target.value = '';
     });
 
     // ─── Multi-provider AI setup ──────────────────────
@@ -1448,7 +1645,6 @@ NOTES_HTML = r"""<!DOCTYPE html>
     }
 
     function loadModelsForProvider(provider, apiKey) {
-        // --- FIX: use POST with JSON body, not GET with query params ---
         fetch('/providers/models', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2034,3 +2230,5 @@ NOTES_HTML = r"""<!DOCTYPE html>
 </body>
 </html>
 """
+
+# (End of NOTES_HTML)
