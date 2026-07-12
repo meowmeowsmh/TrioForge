@@ -49,11 +49,11 @@ Everything auto‑creates itself – just clone, run, and go.
 notes that we are coming out decartion for our corkboard
 ---
 Also season drawing might include whatever feature will be in by the winter has winter season football has it own christmas etc 
-I am going to follow malaysia calendar so it would worked perfect 
+I am going to follow malaysia calendar so it would worked perfect for the future release
 ---
-notes that actively track based on your os weather system it would be display in html current weather to check out 
+notes that actively track based on your os weather system it would be display in html current weather to check out for future if happen release 
 ---
-might be building for apocalpyse for this project 
+might be building for apocalpyse for this project for the future release
 ---
 notes that you can download vscode try and error and install extension "SQLite IntelliView" so that you can check your database sqlite
 ---
