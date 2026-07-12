@@ -46,13 +46,7 @@ Everything auto‑creates itself – just clone, run, and go.
 | 🧠 **check out the instruction.md helps user to get onto llama.cpp style I recommend llama than ollama in terms of clearing cache** | reason,because it instantly cache out if you want to used ollama recommend cloud service for providing better and quality answer. |
 | 📊 **Now you are able to track your previous database if you want to recover your previous chat but can't find it in conversation.db and cork_board.py** | help user to track back previous data after they clear previos message from html this help to prevent parent noticing your privacy search without knowing your browsing history of your previous data inside the chatbot interface information |
 |**notes that we are coming out decartion for our corkboard** | offline mode|
----
-notes that we are coming out decartion for our corkboard
----
-Also season drawing might include whatever feature will be in by the winter has winter season football has it own christmas etc 
-I am going to follow malaysia calendar so it would worked perfect for the future release
----
-notes that actively track based on your os weather system it would be display in html current weather to check out for future if happen release 
+
 ---
 notes that you can download vscode try and error and install extension "SQLite IntelliView" so that you can check your database sqlite
 ---
