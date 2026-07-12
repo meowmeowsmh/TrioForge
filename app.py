@@ -1934,6 +1934,26 @@ function processCodeBlocks(root) {
     });
 }
 
+// Diagram-type declarations mermaid recognizes as a valid first line.
+// If a code block is missing one of these (models sometimes drop it when
+// showing a short snippet), we prepend "graph LR" so it still renders
+// instead of throwing "Syntax error in text".
+var MERMAID_DECLARATION_RE = /^\s*(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|sankey-beta|block-beta|xychart-beta)\b/i;
+
+function ensureMermaidDeclaration(text) {
+    var trimmed = text.replace(/^\s+/, '');
+    if (MERMAID_DECLARATION_RE.test(trimmed)) {
+        return text; // already has a valid header, leave untouched
+    }
+    // Only auto-fix if it actually looks like flowchart node/edge syntax
+    // (has an arrow like --> / --- / -.-> ), otherwise leave it alone so
+    // the real error still surfaces for anything we don't recognize.
+    if (/--[->.]|===>/.test(trimmed)) {
+        return 'graph LR\n' + text;
+    }
+    return text;
+}
+
 function renderMermaidDiagrams(root) {
     var mermaidBlocks = root.querySelectorAll('pre code.language-mermaid');
     if (mermaidBlocks.length === 0) return;
@@ -1941,7 +1961,7 @@ function renderMermaidDiagrams(root) {
         var pre = code.parentElement;
         var div = document.createElement('div');
         div.className = 'mermaid';
-        div.textContent = code.textContent;
+        div.textContent = ensureMermaidDeclaration(code.textContent);
         pre.replaceWith(div);
     });
     if (mermaidBlocks.length > 0) {
