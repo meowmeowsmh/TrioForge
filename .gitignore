@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 
 # Local user data (EVERYONE keeps their own)
+json_configuration/attachments
 json_configuration/conversations.json
 json_configuration/model_config.json
 json_configuration/corkboard.json
