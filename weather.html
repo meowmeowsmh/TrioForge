@@ -244,70 +244,6 @@
             flex-wrap: wrap;
             justify-content: center;
         }
-        .controls-row .btn {
-            background: transparent;
-            border: none;
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 22px;
-            padding: 6px 12px;
-            border-radius: 40px;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-family: inherit;
-            line-height: 1;
-            white-space: nowrap;
-        }
-        .controls-row .btn .label {
-            font-size: 13px;
-            font-weight: 500;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            color: rgba(255, 255, 255, 0.7);
-        }
-        .controls-row .btn:hover .label {
-            opacity: 1;
-        }
-        .controls-row .btn:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: #fff;
-            transform: scale(1.05);
-        }
-        .controls-row .btn.active {
-            color: #fff;
-            background: rgba(255, 255, 255, 0.12);
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.05);
-        }
-        .controls-row .btn.active .label {
-            opacity: 1;
-        }
-        .controls-row .divider {
-            width: 1px;
-            background: rgba(255, 255, 255, 0.08);
-            margin: 4px 2px;
-        }
-        .controls-row .season-indicator {
-            font-size: 22px;
-            padding: 6px 10px;
-            line-height: 1;
-            display: flex;
-            align-items: center;
-        }
-        .controls-row .btn-spring.active {
-            color: #f06292;
-        }
-        .controls-row .btn-summer.active {
-            color: #fdd835;
-        }
-        .controls-row .btn-autumn.active {
-            color: #ff8a65;
-        }
-        .controls-row .btn-winter.active {
-            color: #90caf9;
-        }
 
         .controls-row select {
             background: rgba(0, 0, 0, 0.4);
@@ -319,7 +255,7 @@
             font-family: inherit;
             cursor: pointer;
             outline: none;
-            max-width: 200px;
+            max-width: 220px;
             appearance: none;
             -webkit-appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
@@ -334,22 +270,6 @@
         .controls-row select:hover {
             border-color: rgba(255, 255, 255, 0.3);
         }
-        .controls-row .detect-btn {
-            background: rgba(88, 166, 255, 0.2);
-            border: 1px solid rgba(88, 166, 255, 0.3);
-            color: #58a6ff;
-            border-radius: 40px;
-            padding: 6px 16px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-family: inherit;
-            white-space: nowrap;
-        }
-        .controls-row .detect-btn:hover {
-            background: rgba(88, 166, 255, 0.3);
-            border-color: #58a6ff;
-        }
 
         @media (max-width: 600px) {
             .controls {
@@ -360,24 +280,10 @@
                 padding: 6px 12px;
                 gap: 4px;
             }
-            .controls-row .btn {
-                font-size: 18px;
-                padding: 4px 8px;
-            }
-            .controls-row .btn .label {
-                display: none;
-            }
-            .controls-row .btn:hover .label {
-                display: none;
-            }
             .controls-row select {
-                font-size: 12px;
-                max-width: 120px;
-                padding: 4px 28px 4px 12px;
-            }
-            .controls-row .detect-btn {
-                font-size: 12px;
-                padding: 4px 10px;
+                font-size: 13px;
+                max-width: 160px;
+                padding: 5px 28px 5px 14px;
             }
             .toast-container {
                 top: 16px;
@@ -406,20 +312,6 @@
                 background: rgba(255, 255, 255, 0.85);
                 border-color: rgba(0, 0, 0, 0.06);
             }
-            .controls-row .btn {
-                color: rgba(0, 0, 0, 0.4);
-            }
-            .controls-row .btn:hover {
-                background: rgba(0, 0, 0, 0.05);
-                color: #000;
-            }
-            .controls-row .btn.active {
-                background: rgba(0, 0, 0, 0.06);
-                color: #000;
-            }
-            .controls-row .divider {
-                background: rgba(0, 0, 0, 0.08);
-            }
             .controls-row select {
                 background-color: rgba(255, 255, 255, 0.8);
                 color: #1a1a2e;
@@ -428,14 +320,6 @@
             .controls-row select option {
                 background: #fff;
                 color: #1a1a2e;
-            }
-            .controls-row .detect-btn {
-                color: #0066cc;
-                border-color: rgba(0, 102, 204, 0.3);
-                background: rgba(0, 102, 204, 0.08);
-            }
-            .controls-row .detect-btn:hover {
-                background: rgba(0, 102, 204, 0.15);
             }
             .toast-text .main .highlight {
                 color: #000;
@@ -457,14 +341,6 @@
     <!-- Controls -->
     <div class="controls" id="controls">
         <div class="controls-row">
-            <!-- Season selector buttons -->
-            <button class="btn btn-spring" data-season="spring" title="Spring">🌸<span class="label">Spring</span></button>
-            <button class="btn btn-summer active" data-season="summer" title="Summer">☀️<span class="label">Summer</span></button>
-            <button class="btn btn-autumn" data-season="autumn" title="Autumn">🍂<span class="label">Autumn</span></button>
-            <button class="btn btn-winter" data-season="winter" title="Winter">❄️<span class="label">Winter</span></button>
-            <div class="divider"></div>
-            <span class="season-indicator" id="seasonIndicator" title="Current season">☀️</span>
-            <div class="divider"></div>
             <select id="countrySelect" aria-label="Select country"></select>
         </div>
     </div>
@@ -913,19 +789,6 @@
 
         const container = document.getElementById('toastContainer');
         const countrySelect = document.getElementById('countrySelect');
-        const seasonIndicator = document.getElementById('seasonIndicator');
-
-        // ── Season button references ──
-        const seasonBtns = document.querySelectorAll('[data-season]');
-
-        function updateSeasonIndicator(season) {
-            const emoji = season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : '❄️';
-            if (seasonIndicator) seasonIndicator.textContent = emoji;
-            // Update active state on buttons
-            seasonBtns.forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.season === season);
-            });
-        }
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  TOAST CONTROLLER
@@ -1092,14 +955,11 @@
                 walkCycle: Math.random() * 100,
                 armSwing: 0,
                 legOffset: 0,
-                // for random pauses
                 pauseTimer: 0,
                 isPaused: false,
                 pauseDuration: 0,
-                // unique look
                 eyeColor: '#2b2b2b',
                 blush: true,
-                // drink behavior
                 hasDrink: false,
                 isDrinking: false,
                 drinkTimer: 0,
@@ -1113,7 +973,6 @@
 
             const spd = blob.speed * speedMul * 0.6;
 
-            // Drinking behavior (takes priority over walking/pausing)
             if (blob.hasDrink) {
                 if (blob.isDrinking) {
                     blob.drinkTimer += 1;
@@ -1137,19 +996,16 @@
                 }
             }
 
-            // Random pause behavior
             if (blob.isPaused) {
                 blob.pauseTimer += 1;
                 if (blob.pauseTimer > blob.pauseDuration) {
                     blob.isPaused = false;
                     blob.pauseTimer = 0;
-                    // Maybe change direction after pause
                     if (Math.random() > 0.5) blob.direction *= -1;
                 }
                 return;
             }
 
-            // Random chance to pause
             if (Math.random() < 0.003) {
                 blob.isPaused = true;
                 blob.pauseTimer = 0;
@@ -1163,14 +1019,10 @@
             blob.armSwing = Math.sin(blob.walkCycle) * 0.3;
             blob.legOffset = Math.sin(blob.walkCycle);
 
-            // Bob up and down with walking
             const bobAmt = 2.5 + Math.abs(Math.sin(blob.walkCycle)) * 2;
             blob.y = blob.baseY + Math.sin(blob.walkCycle) * bobAmt;
-
-            // Head tilt based on direction
             blob.headTilt = Math.sin(blob.walkCycle * 0.5) * 0.04;
 
-            // Bounds
             const margin = 30 + blob.size;
             if (blob.x > w - margin) { blob.direction = -1;
                 blob.x = w - margin; }
@@ -1179,17 +1031,15 @@
         }
 
         function drawWalkingBlob(ctx, blob, t) {
-            const { x, y, size: r, color, emoji, direction, stepPhase, walkCycle, armSwing, legOffset, baseY } = blob;
+            const { x, y, size: r, color, emoji, direction, walkCycle } = blob;
             const d = direction;
             const drinking = blob.isDrinking;
-            // Ease in/out for the can lifting to "mouth" and back down
             const liftT = blob.drinkProgress <= 0.5 ? blob.drinkProgress * 2 : (1 - blob.drinkProgress) * 2;
             const lift = drinking ? Math.max(0, Math.min(1, liftT * 1.3)) : 0;
 
             ctx.save();
             ctx.translate(x, y);
 
-            // ── Shadow ──
             ctx.shadowColor = 'rgba(0,0,0,0.15)';
             ctx.shadowBlur = 12;
             ctx.shadowOffsetX = 0;
@@ -1202,7 +1052,6 @@
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
 
-            // ── Legs ── (stand still while drinking)
             const legLen = r * 0.7;
             const legThick = r * 0.16;
             const legPhase = drinking ? 0.3 : walkCycle;
@@ -1210,7 +1059,6 @@
             ctx.lineWidth = legThick;
             ctx.lineCap = 'round';
 
-            // Left leg
             const lx1 = -r * 0.2,
                 ly1 = r * 0.75;
             const lx2 = lx1 + Math.sin(legPhase + 0.3) * r * 0.4 * d * (drinking ? 0 : 1);
@@ -1220,7 +1068,6 @@
             ctx.quadraticCurveTo((lx1 + lx2) / 2 + Math.sin(legPhase + 0.3) * r * 0.2 * d * (drinking ? 0 : 1), ly1 + legLen * 0.5, lx2, ly2);
             ctx.stroke();
 
-            // Right leg
             const rx1 = r * 0.2,
                 ry1 = r * 0.75;
             const rx2 = rx1 + Math.sin(legPhase + 0.3 + Math.PI) * r * 0.4 * d * (drinking ? 0 : 1);
@@ -1231,20 +1078,16 @@
                 ry2);
             ctx.stroke();
 
-            // ── Feet ──
             ctx.fillStyle = color;
             ctx.shadowBlur = 4;
             ctx.shadowOffsetY = 2;
-            // Left foot
             ctx.beginPath();
             ctx.ellipse(lx2, ly2 + legThick * 0.5, r * 0.2, r * 0.12, 0, 0, Math.PI * 2);
             ctx.fill();
-            // Right foot
             ctx.beginPath();
             ctx.ellipse(rx2, ry2 + legThick * 0.5, r * 0.2, r * 0.12, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // ── Body ──
             ctx.shadowBlur = 10;
             ctx.shadowOffsetY = 3;
             const squash = drinking ? 1 : 1 + Math.sin(walkCycle) * 0.04;
@@ -1253,20 +1096,17 @@
             ctx.ellipse(0, 0, r, r * 1.05 * squash, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // ── Body highlight ──
             ctx.shadowBlur = 0;
             ctx.fillStyle = 'rgba(255,255,255,0.20)';
             ctx.beginPath();
             ctx.ellipse(-r * 0.3 * d, -r * 0.35, r * 0.25, r * 0.15, -0.3 * d, 0, Math.PI * 2);
             ctx.fill();
 
-            // ── Arms ──
             ctx.strokeStyle = color;
             ctx.lineWidth = r * 0.14;
             ctx.lineCap = 'round';
 
-            // "Free" arm — swings normally, or hangs relaxed while drinking
-            const freeArmSide = -d; // opposite side from the drinking hand when facing d
+            const freeArmSide = -d;
             const flx1 = freeArmSide * r * 0.85,
                 fly1 = -r * 0.15;
             const flx2 = flx1 + (drinking ? 0 : Math.sin(walkCycle + 0.8) * r * 0.45 * freeArmSide);
@@ -1280,13 +1120,11 @@
             ctx.arc(flx2, fly2, r * 0.1, 0, Math.PI * 2);
             ctx.fill();
 
-            // "Drink" arm — bends up toward the mouth when drinking, otherwise swings like normal
             const drinkSide = d;
             const dax1 = drinkSide * r * 0.85,
                 day1 = -r * 0.15;
             let dax2, day2;
             if (blob.hasDrink) {
-                // interpolate from resting position to "can at mouth" position
                 const restX = dax1 + Math.sin(walkCycle + 0.8 + Math.PI) * r * 0.45 * drinkSide;
                 const restY = day1 + r * 0.5 + Math.abs(Math.sin(walkCycle + 0.8 + Math.PI)) * r * 0.1;
                 const raisedX = drinkSide * r * 0.35;
@@ -1306,15 +1144,12 @@
             ctx.arc(dax2, day2, r * 0.1, 0, Math.PI * 2);
             ctx.fill();
 
-            // ── Soda can (only for blobs that carry one) ──
             if (blob.hasDrink) {
                 ctx.save();
                 ctx.translate(dax2, day2);
-                // tilt the can toward the mouth as it lifts
                 ctx.rotate(-drinkSide * (0.15 + lift * 0.9));
                 const canW = r * 0.22,
                     canH = r * 0.5;
-                // can body
                 const canGrad = ctx.createLinearGradient(-canW / 2, 0, canW / 2, 0);
                 canGrad.addColorStop(0, '#e53935');
                 canGrad.addColorStop(0.5, '#ff6f60');
@@ -1325,18 +1160,15 @@
                 ctx.beginPath();
                 ctx.roundRect(-canW / 2, -canH * 0.75, canW, canH, canW * 0.25);
                 ctx.fill();
-                // pull tab
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = '#c0c0c0';
                 ctx.beginPath();
                 ctx.ellipse(0, -canH * 0.75, canW * 0.28, canW * 0.12, 0, 0, Math.PI * 2);
                 ctx.fill();
-                // label stripe
                 ctx.fillStyle = 'rgba(255,255,255,0.85)';
                 ctx.fillRect(-canW / 2, -canH * 0.15, canW, canH * 0.16);
                 ctx.restore();
 
-                // little "fizz" sparkle bubbles while actually sipping (near peak lift)
                 if (lift > 0.7) {
                     ctx.fillStyle = 'rgba(255,255,255,0.7)';
                     for (let i = 0; i < 3; i++) {
@@ -1349,19 +1181,15 @@
                 }
             }
 
-            // ── Eyes ──
             ctx.shadowBlur = 0;
             const eyeY = -r * 0.05;
             const eyeSpacing = r * 0.32;
             const eyeR = r * 0.22;
             const pupilR = r * 0.11;
             const lookX = d * 0.15;
-
-            // Blink (eyes happily close a bit while drinking)
             const blinkCycle = Math.sin(t * 0.03 + 2.3);
             const eyeSquash = drinking ? (0.3 + (1 - lift) * 0.5) : (blinkCycle > 0.965 ? 0.12 : 1);
 
-            // White of eyes
             ctx.fillStyle = '#fff';
             ctx.shadowBlur = 2;
             ctx.shadowOffsetY = 1;
@@ -1373,7 +1201,6 @@
             ctx.fill();
 
             if (eyeSquash > 0.4) {
-                // Pupils
                 ctx.fillStyle = blob.eyeColor || '#2b2b2b';
                 ctx.shadowBlur = 0;
                 ctx.beginPath();
@@ -1383,7 +1210,6 @@
                 ctx.arc(eyeSpacing + lookX * eyeR * 0.5, eyeY, pupilR, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Eye shine
                 ctx.fillStyle = 'rgba(255,255,255,0.5)';
                 ctx.beginPath();
                 ctx.arc(-eyeSpacing + lookX * eyeR * 0.5 - pupilR * 0.3, eyeY - pupilR * 0.35, pupilR * 0.3, 0, Math.PI * 2);
@@ -1393,7 +1219,6 @@
                 ctx.fill();
             }
 
-            // ── Blush ──
             if (blob.blush !== false) {
                 ctx.fillStyle = 'rgba(255,110,110,0.25)';
                 ctx.shadowBlur = 0;
@@ -1405,12 +1230,10 @@
                 ctx.fill();
             }
 
-            // ── Mouth ──
             ctx.strokeStyle = '#2b2b2b';
             ctx.lineWidth = Math.max(1.5, r * 0.06);
             ctx.shadowBlur = 0;
             if (drinking && lift > 0.5) {
-                // small "o" sipping mouth near the peak of the lift
                 ctx.beginPath();
                 ctx.arc(0, r * 0.28, r * 0.09, 0, Math.PI * 2);
                 ctx.stroke();
@@ -1420,7 +1243,6 @@
                 ctx.stroke();
             }
 
-            // ── Emoji above head ──
             ctx.shadowBlur = 6;
             ctx.shadowOffsetY = 2;
             ctx.font = `${Math.round(r * 0.9)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
@@ -1461,7 +1283,6 @@
             ctx.arc(sunX, sunY, 28, 0, Math.PI * 2);
             ctx.fill();
 
-            // ── Sea ──
             const seaTop = h * 0.50;
             const seaBottom = h * 0.68;
             const sea = ctx.createLinearGradient(0, seaTop, 0, seaBottom);
@@ -1471,7 +1292,6 @@
             ctx.fillStyle = sea;
             ctx.fillRect(0, seaTop, w, seaBottom - seaTop);
 
-            // ── Wave lines (slower: t * 0.02 instead of 0.03) ──
             for (let i = 0; i < 4; i++) {
                 const wy = seaTop + (i + 1) * (seaBottom - seaTop) / 5;
                 ctx.strokeStyle = `rgba(255,255,255,${0.35 - i * 0.06})`;
@@ -1485,13 +1305,11 @@
                 ctx.stroke();
             }
 
-            // ── Fish leaping (slower: t * 0.01 instead of 0.02) ──
             const fishCycle = (t * 0.01) % 200;
             if (fishCycle < 40) {
                 const progress = fishCycle / 40;
                 const fx = w * 0.38 + progress * 70;
                 const fy = seaTop + (seaBottom - seaTop) * 0.35 - Math.sin(progress * Math.PI) * 34;
-                // Draw the fish
                 ctx.save();
                 ctx.translate(fx, fy);
                 ctx.rotate(-0.5 + progress * 1.0);
@@ -1511,19 +1329,15 @@
                 ctx.fill();
                 ctx.restore();
 
-                // ── Improved splash: fade in/out with progress ──
-                // Splash appears near the start (emerging) and near the end (diving)
-                const splashAlpha = Math.sin(progress * Math.PI) * 0.6; // 0 at edges, peak at 0.5
+                const splashAlpha = Math.sin(progress * Math.PI) * 0.6;
                 if (splashAlpha > 0.05) {
-                    const splashX = w * 0.38 - 4; // fixed position where fish takes off
+                    const splashX = w * 0.38 - 4;
                     const splashY = seaTop + (seaBottom - seaTop) * 0.35;
-                    // Main splash ellipse
                     ctx.globalAlpha = splashAlpha;
                     ctx.fillStyle = 'rgba(255,255,255,0.7)';
                     ctx.beginPath();
                     ctx.ellipse(splashX, splashY, 6 + progress * 4, 2.5 + progress * 2, 0, 0, Math.PI * 2);
                     ctx.fill();
-                    // Some droplets
                     for (let i = 0; i < 5; i++) {
                         const angle = i * 1.2 + progress * 2;
                         const dist = 6 + Math.sin(progress * 10 + i) * 4;
@@ -1538,7 +1352,6 @@
                 }
             }
 
-            // ── Shoreline foam (slower: t * 0.025 instead of 0.05) ──
             ctx.fillStyle = 'rgba(255,255,255,0.55)';
             ctx.beginPath();
             for (let x = 0; x <= w; x += 8) {
@@ -1551,7 +1364,6 @@
             ctx.closePath();
             ctx.fill();
 
-            // ── Sand / beach ──
             ctx.fillStyle = '#f0d9a8';
             ctx.fillRect(0, seaBottom, w, h - seaBottom);
             for (let i = 0; i < 25; i++) {
@@ -1567,7 +1379,6 @@
             drawHouse(ctx, w * 0.22, seaBottom + (h - seaBottom) * 0.62, 0.85, t, { wall: '#f5e6ca', roof: '#4fc3f7', trim: '#e8d5b5', flowers: true,
                 lights: false });
 
-            // Update and draw blobs
             blobs.forEach(b => {
                 updateBlob(b, w, h, t, 0.9);
                 drawWalkingBlob(ctx, b, t);
@@ -1627,7 +1438,6 @@
 
         // ── WINTER — snowy scene, NO beach ──
         function drawWinter(ctx, w, h, t, blobs) {
-            // Deep winter sky
             const sky = ctx.createLinearGradient(0, 0, 0, h);
             sky.addColorStop(0, '#0b1a2e');
             sky.addColorStop(0.3, '#1a2a4a');
@@ -1636,7 +1446,6 @@
             ctx.fillStyle = sky;
             ctx.fillRect(0, 0, w, h);
 
-            // Stars
             for (let i = 0; i < 28; i++) {
                 const x = (i * 37 + 13) % w;
                 const y = (i * 29 + 7) % (h * 0.5);
@@ -1647,7 +1456,6 @@
                 ctx.fill();
             }
 
-            // Moon
             const moonX = w * 0.85,
                 moonY = h * 0.12;
             const moonGlow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 50);
@@ -1662,7 +1470,6 @@
             ctx.beginPath();
             ctx.arc(moonX, moonY, 16, 0, Math.PI * 2);
             ctx.fill();
-            // moon crater details
             ctx.fillStyle = 'rgba(200,190,170,0.25)';
             ctx.beginPath();
             ctx.arc(moonX - 5, moonY - 4, 3, 0, Math.PI * 2);
@@ -1674,7 +1481,6 @@
             ctx.arc(moonX + 2, moonY - 7, 2, 0, Math.PI * 2);
             ctx.fill();
 
-            // Snow-covered ground
             const groundY = h * 0.70;
             ctx.fillStyle = '#e8edf2';
             ctx.beginPath();
@@ -1688,7 +1494,6 @@
             ctx.closePath();
             ctx.fill();
 
-            // Snow mounds
             for (let i = 0; i < 5; i++) {
                 const mx = (i * 73 + 29) % w;
                 const my = groundY + 4 + Math.sin(i * 1.7 + t * 0.01) * 3;
@@ -1699,17 +1504,11 @@
                 ctx.fill();
             }
 
-            // Snowman
             drawSnowman(ctx, w * 0.72, groundY + 4, 0.6, t);
-
-            // House with snow on roof
             drawHouse(ctx, w * 0.22, groundY + 6, 0.85, t, { wall: '#d5c8b0', roof: '#6d4c2f', trim: '#c9b89a', snow: true,
                 lights: true, smoke: true });
-
-            // Snowy pine tree
             drawSnowyTree(ctx, w * 0.55, groundY + 4, 0.7, t);
 
-            // Falling snow
             for (let i = 0; i < 40; i++) {
                 const sx = (i * 53 + 17 * Math.sin(i * 0.7)) % (w + 20) - 10;
                 const sy = (i * 31 + t * 0.8 * (0.5 + Math.sin(i) * 0.5)) % (groundY + 10);
@@ -1722,7 +1521,6 @@
             }
 
             blobs.forEach(b => {
-                // Make blobs move slower in snow
                 updateBlob(b, w, h, t, 0.6);
                 drawWalkingBlob(ctx, b, t);
             });
@@ -1732,24 +1530,20 @@
             ctx.save();
             ctx.translate(x, y);
 
-            // shadow
             ctx.fillStyle = 'rgba(0,0,0,0.08)';
             ctx.beginPath();
             ctx.ellipse(2 * s, 6 * s, 22 * s, 6 * s, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // trunk
             ctx.fillStyle = '#5d4037';
             ctx.fillRect(-3 * s, -6 * s, 6 * s, 14 * s);
 
-            // pine tiers with snow caps
             const tiers = [
                 { w: 44, h: 24, y: -8 },
                 { w: 34, h: 22, y: -28 },
                 { w: 24, h: 20, y: -46 }
             ];
-            tiers.forEach((tier, idx) => {
-                // tree green
+            tiers.forEach((tier) => {
                 ctx.fillStyle = '#2e5a3a';
                 ctx.beginPath();
                 ctx.moveTo(0, (tier.y - tier.h) * s);
@@ -1758,7 +1552,6 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // snow on branches (white cap)
                 ctx.fillStyle = 'rgba(255,255,255,0.85)';
                 ctx.beginPath();
                 ctx.moveTo(0, (tier.y - tier.h * 0.85) * s);
@@ -1770,7 +1563,6 @@
                 ctx.fill();
             });
 
-            // star on top
             ctx.fillStyle = '#ffd54f';
             ctx.shadowColor = 'rgba(255,213,79,0.6)';
             ctx.shadowBlur = 8 * s;
@@ -1786,13 +1578,11 @@
 
             const wobble = Math.sin(t * 0.015) * 1.2;
 
-            // shadow
             ctx.fillStyle = 'rgba(0,0,0,0.08)';
             ctx.beginPath();
             ctx.ellipse(0, 38 * s, 24 * s, 6 * s, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // bottom ball
             ctx.fillStyle = '#f0f4f8';
             ctx.shadowColor = 'rgba(0,0,0,0.08)';
             ctx.shadowBlur = 6 * s;
@@ -1801,29 +1591,24 @@
             ctx.arc(0, 24 * s + wobble * 0.3, 22 * s, 0, Math.PI * 2);
             ctx.fill();
 
-            // middle ball
             ctx.beginPath();
             ctx.arc(0, 4 * s + wobble * 0.5, 16 * s, 0, Math.PI * 2);
             ctx.fill();
 
-            // head
             ctx.beginPath();
             ctx.arc(0, -16 * s + wobble * 0.7, 11 * s, 0, Math.PI * 2);
             ctx.fill();
 
             ctx.shadowBlur = 0;
 
-            // hat
             ctx.fillStyle = '#37474f';
             ctx.fillRect(-16 * s, -26 * s, 32 * s, 5 * s);
             ctx.fillRect(-10 * s, -38 * s, 20 * s, 14 * s);
 
-            // scarf
             ctx.fillStyle = '#e53935';
             ctx.fillRect(-18 * s, -6 * s + wobble * 0.4, 36 * s, 5 * s);
             ctx.fillRect(-16 * s, -4 * s + wobble * 0.4, 6 * s, 10 * s);
 
-            // eyes (coal)
             ctx.fillStyle = '#1a1a1a';
             ctx.beginPath();
             ctx.arc(-5 * s, -18 * s + wobble * 0.6, 2 * s, 0, Math.PI * 2);
@@ -1832,7 +1617,6 @@
             ctx.arc(5 * s, -18 * s + wobble * 0.6, 2 * s, 0, Math.PI * 2);
             ctx.fill();
 
-            // carrot nose
             ctx.fillStyle = '#ff8a65';
             ctx.beginPath();
             ctx.moveTo(0, -14 * s + wobble * 0.6);
@@ -1841,14 +1625,12 @@
             ctx.closePath();
             ctx.fill();
 
-            // smile (coal)
             ctx.strokeStyle = '#1a1a1a';
             ctx.lineWidth = 1.5 * s;
             ctx.beginPath();
             ctx.arc(0, -12 * s + wobble * 0.5, 6 * s, 0.1 * Math.PI, 0.9 * Math.PI);
             ctx.stroke();
 
-            // buttons (coal)
             ctx.fillStyle = '#1a1a1a';
             for (let i = -1; i <= 1; i++) {
                 ctx.beginPath();
@@ -1868,14 +1650,12 @@
             ctx.fillStyle = sky;
             ctx.fillRect(0, 0, w, h);
 
-            // Green grassy ground (greeny)
             const grd = ctx.createLinearGradient(0, h * 0.74, 0, h);
             grd.addColorStop(0, '#7cb342');
             grd.addColorStop(1, '#558b2f');
             ctx.fillStyle = grd;
             ctx.fillRect(0, h * 0.74, w, h * 0.26);
 
-            // Grass blades
             for (let i = 0; i < 60; i++) {
                 const gx = (i * 19 + 7) % w;
                 const gy = h * 0.74 + 2 + (i * 7) % 18;
@@ -1887,14 +1667,10 @@
                 ctx.stroke();
             }
 
-            // Maple tree (fading autumn colors)
             drawTree(ctx, w * 0.78, h * 0.74, 1.0, t, 'maple');
-
-            // House with green surroundings
             drawHouse(ctx, w * 0.22, h * 0.72, 0.9, t, { wall: '#e8d5b5', roof: '#8d6e63', trim: '#d4a373', flowers: true,
                 lights: false });
 
-            // Some scattered autumn leaves on the ground
             for (let i = 0; i < 12; i++) {
                 const lx = (i * 47 + 23) % w;
                 const ly = h * 0.74 + 6 + (i * 13) % 20;
@@ -1929,7 +1705,6 @@
             ctx.fillStyle = grd;
             ctx.fillRect(0, h * 0.73, w, h * 0.27);
 
-            // Flowers in the grass
             for (let i = 0; i < 30; i++) {
                 const fx = (i * 41 + t * 0.1) % (w + 20) - 10;
                 const fy = h * 0.73 + 4 + i * 4 + Math.sin(i * 2.1 + t * 0.02) * 3;
@@ -1943,9 +1718,7 @@
                 ctx.fillRect(fx - 0.5, fy + fr, 1, fr * 1.5);
             }
 
-            // Sakura tree
             drawTree(ctx, w * 0.78, h * 0.725, 1.0, t, 'sakura');
-
             drawHouse(ctx, w * 0.22, h * 0.71, 0.9, t, { wall: '#f5e6ca', roof: '#6d4c2f', trim: '#d7ccc8', flowers: true,
                 lights: false });
 
@@ -1965,7 +1738,6 @@
             const sway = Math.sin(t * 0.012) * 0.035;
             ctx.rotate(sway);
 
-            // ── ground shadow ──
             ctx.shadowColor = 'rgba(0,0,0,0.15)';
             ctx.shadowBlur = 14 * s;
             ctx.shadowOffsetY = 4 * s;
@@ -1976,7 +1748,6 @@
             ctx.shadowBlur = 0;
             ctx.shadowOffsetY = 0;
 
-            // ── trunk ──
             const trunkH = 42 * s;
             ctx.strokeStyle = '#6d4c2f';
             ctx.lineWidth = 7 * s;
@@ -1986,7 +1757,6 @@
             ctx.lineTo(-2 * s, -trunkH);
             ctx.stroke();
 
-            // ── branches ──
             ctx.lineWidth = 4 * s;
             ctx.beginPath();
             ctx.moveTo(-1 * s, -trunkH * 0.55);
@@ -1997,18 +1767,15 @@
             ctx.quadraticCurveTo(14 * s, -trunkH * 0.92, 20 * s, -trunkH * 1.1);
             ctx.stroke();
 
-            // ── foliage colors ──
             let colors, highlight;
             if (type === 'maple') {
                 colors = ['#b23b3b', '#d84315', '#e64a19', '#a0392f', '#c62828'];
                 highlight = 'rgba(255,200,150,0.18)';
             } else {
-                // sakura
                 colors = ['#f8bbd0', '#f48fb1', '#fce4ec', '#f06292', '#f5c1d9'];
                 highlight = 'rgba(255,255,255,0.35)';
             }
 
-            // ── canopy: layered soft blobs ──
             const canopyY = -trunkH - 6 * s;
             const clusters = [
                 { dx: 0, dy: -8, r: 24 },
@@ -2030,7 +1797,6 @@
                 ctx.fill();
             });
 
-            // ── soft highlight ──
             ctx.shadowBlur = 0;
             ctx.fillStyle = highlight;
             ctx.beginPath();
@@ -2039,7 +1805,6 @@
 
             ctx.restore();
 
-            // ── falling particles (leaves / petals) ──
             const particleCount = type === 'maple' ? 12 : 18;
             for (let i = 0; i < particleCount; i++) {
                 const seed = i * 13.7;
@@ -2307,7 +2072,7 @@
                 const drinkerIdx = Math.floor(Math.random() * blobInstances.length);
                 blobInstances[drinkerIdx].hasDrink = true;
                 blobInstances[drinkerIdx].drinkCooldown = 60 + Math.random() * 120;
-                blobInstances.forEach((b, i) => {
+                blobInstances.forEach((b) => {
                     b.x = 30 + Math.random() * (w - 60);
                     b.baseY = h * 0.70 + Math.random() * 0.12 * h;
                     b.y = b.baseY;
@@ -2598,43 +2363,12 @@
                 }, 10000);
             }
 
-            updateSeasonIndicator(season);
-
             if (code) {
                 const option = countrySelect.querySelector(`option[value="${code}"]`);
                 if (option) countrySelect.value = code;
             }
 
             return toast;
-        }
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        //  MANUAL SEASON SWITCH
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        function switchToSeason(season) {
-            if (activeToast) {
-                const canvas = activeToast.canvas;
-                blobInstances = [];
-                animateScene(canvas, season);
-                const emoji = season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : '❄️';
-                const name = season.charAt(0).toUpperCase() + season.slice(1);
-                const flag = getFlagFromCode(currentCountryCode) || '🌍';
-                let locationDisplay = currentCity;
-                if (currentRegion && currentRegion !== currentCity && currentRegion !== 'Unknown') {
-                    locationDisplay += `, ${currentRegion}`;
-                }
-                const mainText = `${flag} ${locationDisplay} · ${currentCountry}`;
-                const subText = `${emoji} ${name}`;
-                activeToast.update(mainText, subText, emoji, 100);
-                if (currentTemp !== null && currentTemp !== undefined) {
-                    activeToast.updateWeather(currentTemp, currentCondition || '', currentWeatherEmoji || '🌤️');
-                    activeToast.setStatus('✅ Weather loaded');
-                }
-                updateSeasonIndicator(season);
-                activeSeason = season;
-                return;
-            }
-            showSeasonToast(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
         }
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2795,14 +2529,6 @@
                 if (code) {
                     updateFromCountry(code);
                 }
-            });
-
-            // Season button click handlers
-            seasonBtns.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const season = btn.dataset.season;
-                    if (season) switchToSeason(season);
-                });
             });
 
             await detectLocation();

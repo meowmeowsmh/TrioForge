@@ -5,6 +5,7 @@
 # OPTIMIZED: WAL mode, indexed lookups, targeted single-row writes (no full-board rewrites),
 # lazy embedding, throttled drag updates, AI action history log.
 # + IMAGE UPLOAD support – drag/drop images to create picture pins.
+# + WEATHER WIDGET integrated at top‑right corner (persistent across pages).
 
 import os
 import json as std_json          # used for tags/embedding JSON columns + misc parsing
@@ -718,7 +719,7 @@ def upload_file():
     upsert_pin(pin_id, data, now)
     return jsonify({"ok": True, "id": pin_id, "pin": get_pin(pin_id)})
 
-# ---------- HTML template (with image drag support) ----------
+# ---------- HTML template (with image drag support and weather widget) ----------
 CORKBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -789,6 +790,38 @@ body.light-mode::before { opacity: 0; }
     border-radius:10px; padding:6px 14px; font-size:12px; cursor:pointer; transition: all .2s; backdrop-filter: blur(5px);
 }
 .clear-btn:hover { background: rgba(248,81,73,0.15); border-color:#f85149; }
+
+/* ── Weather toggle button ── */
+.weather-toggle-btn {
+    background: rgba(33,38,45,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 12px;
+    width: 46px;
+    height: 46px;
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+}
+.weather-toggle-btn:hover {
+    color: #58a6ff;
+    border-color: #58a6ff;
+    background: rgba(88,166,255,0.1);
+}
+body.light-mode .weather-toggle-btn {
+    background: rgba(255,255,255,0.6);
+    border-color: rgba(0,0,0,0.1);
+    color: #57606a;
+}
+body.light-mode .weather-toggle-btn:hover {
+    color: #1f6feb;
+    border-color: #1f6feb;
+    background: rgba(31,111,235,0.05);
+}
 
 /* ── Theme toggle ───────────────────────────────────── */
 .theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
@@ -1427,6 +1460,260 @@ body.light-mode .link-suggestions-box .suggestion-item {
 body.light-mode .toolbar .search-mode-toggle button { color:#57606a; }
 body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb; color:#fff; }
 
+/* ── WEATHER WIDGET (compact, fixed top‑right, toggleable) ── */
+.weather-widget {
+    position: fixed;
+    top: 70px;
+    right: 16px;
+    z-index: 99999;
+    max-width: 280px;
+    width: auto;
+    pointer-events: none;
+}
+.weather-widget .toast {
+    background: rgba(22, 27, 34, 0.94);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+    color: #e1e4e8;
+    pointer-events: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    position: relative;     /* for absolute child positioning */
+}
+.weather-widget .toast-scene {
+    height: 90px;
+    flex-shrink: 0;
+    background: #1a1a2e;
+    position: relative;
+    overflow: hidden;
+}
+.weather-widget .toast-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: block;
+}
+.weather-widget .toast-scene::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 20px;
+    background: linear-gradient(to bottom, rgba(22, 27, 34, 0), rgba(22, 27, 34, 0.95));
+    pointer-events: none;
+    z-index: 2;
+}
+.weather-widget .toast-content {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 10px 12px;
+}
+.weather-widget .toast-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.4);
+}
+.weather-widget .toast-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0px;
+    min-width: 0;
+}
+.weather-widget .toast-text .main {
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 500;
+    color: #e1e4e8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.weather-widget .toast-text .main .highlight {
+    font-weight: 700;
+    color: #fff;
+}
+.weather-widget .toast-text .sub {
+    font-size: 10px;
+    color: rgba(255,255,255,0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.weather-widget .toast-text .time-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+.weather-widget .toast-text .time-row .clock {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.3px;
+    font-variant-numeric: tabular-nums;
+}
+.weather-widget .toast-text .time-row .date {
+    font-size: 9px;
+    color: rgba(255,255,255,0.5);
+}
+.weather-widget .toast-text .weather-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.8);
+}
+.weather-widget .toast-text .weather-row .temp {
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+}
+.weather-widget .toast-text .weather-row .condition {
+    font-size: 10px;
+    color: rgba(255,255,255,0.6);
+}
+.weather-widget .toast-text .weather-row .weather-emoji {
+    font-size: 14px;
+}
+.weather-widget .toast-text .fetch-status {
+    font-size: 9px;
+    color: rgba(255,255,255,0.4);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.weather-widget .toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0%;
+    height: 3px;
+    background: linear-gradient(90deg, #58a6ff, #3fb950);
+    border-radius: 0;                /* rely on parent clipping */
+    transition: width 0.4s ease;
+    z-index: 3;
+    pointer-events: none;
+    max-width: 100%;
+    will-change: width;
+}
+.weather-widget .close-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0,0,0,0.35);
+    border: none;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 20px;
+    transition: background 0.2s;
+    line-height: 1;
+    z-index: 4;
+}
+.weather-widget .close-btn:hover {
+    background: rgba(255,0,0,0.35);
+    color: #fff;
+}
+.weather-widget .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,0.15);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Weather controls – placed inside top bar */
+.weather-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.weather-controls select {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #e1e4e8;
+    border-radius: 40px;
+    padding: 4px 12px 4px 16px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    max-width: 150px;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 28px;
+}
+.weather-controls select option {
+    background: #1a1a2e;
+    color: #e1e4e8;
+}
+.weather-controls select:hover {
+    border-color: rgba(255,255,255,0.3);
+}
+body.light-mode .weather-widget .toast {
+    background: rgba(255,255,255,0.92);
+    border-color: rgba(0,0,0,0.06);
+    color: #24292f;
+}
+body.light-mode .weather-widget .toast-text .main { color: #24292f; }
+body.light-mode .weather-widget .toast-text .main .highlight { color: #000; }
+body.light-mode .weather-widget .toast-text .time-row .clock { color: #000; }
+body.light-mode .weather-widget .toast-text .weather-row .temp { color: #000; }
+body.light-mode .weather-controls select {
+    background: rgba(255,255,255,0.8);
+    color: #1a1a2e;
+    border-color: rgba(0,0,0,0.15);
+}
+body.light-mode .weather-controls select option {
+    background: #fff;
+    color: #1a1a2e;
+}
+
+@media (max-width: 600px) {
+    .weather-widget {
+        top: 60px;
+        right: 8px;
+        max-width: 94vw;
+    }
+    .weather-widget .toast-scene {
+        height: 70px;
+    }
+    .weather-widget .toast-content {
+        padding: 6px 10px 8px 8px;
+    }
+    .weather-widget .toast-text .main { font-size: 11px; }
+    .weather-widget .toast-text .weather-row .temp { font-size: 12px; }
+    .weather-controls select {
+        max-width: 120px;
+        font-size: 12px;
+        padding: 3px 24px 3px 10px;
+    }
+}
 </style>
 </head>
 <body>
@@ -1442,6 +1729,12 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
             <button class="tab-btn active">📌 Cork Board</button>
         </div>
         <div class="right">
+            <!-- Weather country selector -->
+            <div class="weather-controls">
+                <select id="countrySelect" aria-label="Select country"></select>
+            </div>
+            <!-- Weather toggle button -->
+            <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
             <div class="theme-toggle-wrapper">
                 <div class="toggle-outer" id="themeToggleOuter" onclick="handleThemeClick(event)">
                     <div class="toggle-inner">
@@ -1633,6 +1926,34 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
         <div class="close-suggestions">
             <button onclick="closeLinkSuggestions()">Close</button>
         </div>
+    </div>
+</div>
+
+<!-- ─── WEATHER WIDGET (fixed top‑right, compact) ─── -->
+<div class="weather-widget" id="weatherWidget" style="display:block;">
+    <div class="toast" id="weatherToast">
+        <div class="toast-scene">
+            <canvas class="toast-canvas" id="sceneCanvas"></canvas>
+        </div>
+        <div class="toast-content">
+            <div class="toast-icon" id="toastIcon"><div class="spinner"></div></div>
+            <div class="toast-text">
+                <div class="main" id="toastMain">⏳ Detecting...</div>
+                <div class="sub" id="toastSub"></div>
+                <div class="time-row" id="timeRow">
+                    <span class="clock" id="clockText">--:--</span>
+                    <span class="date" id="dateText"></span>
+                </div>
+                <div class="weather-row" id="weatherRow" style="display:none;">
+                    <span class="weather-emoji" id="weatherEmoji">🌤️</span>
+                    <span class="temp" id="weatherTemp">--°C</span>
+                    <span class="condition" id="weatherCondition">--</span>
+                </div>
+                <div class="fetch-status" id="fetchStatus"></div>
+            </div>
+            <button class="close-btn" id="closeToastBtn">✕</button>
+        </div>
+        <div class="toast-progress" id="toastProgress"></div>
     </div>
 </div>
 
@@ -2515,6 +2836,1347 @@ document.querySelectorAll('#pinColorPicker .color-option').forEach(el => {
     });
 });
 
+// ─── WEATHER WIDGET ──────────────────────────────────────
+// POLYFILL for roundRect
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, radii) {
+        const r = typeof radii === 'number' ? radii : (radii || 0);
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        return this;
+    };
+}
+
+// Country data (simplified)
+const countryList = [
+    { code: 'AF', name: 'Afghanistan' }, { code: 'AL', name: 'Albania' }, { code: 'DZ', name: 'Algeria' },
+    { code: 'AD', name: 'Andorra' }, { code: 'AO', name: 'Angola' }, { code: 'AG', name: 'Antigua and Barbuda' },
+    { code: 'AR', name: 'Argentina' }, { code: 'AM', name: 'Armenia' }, { code: 'AU', name: 'Australia' },
+    { code: 'AT', name: 'Austria' }, { code: 'AZ', name: 'Azerbaijan' }, { code: 'BS', name: 'Bahamas' },
+    { code: 'BH', name: 'Bahrain' }, { code: 'BD', name: 'Bangladesh' }, { code: 'BB', name: 'Barbados' },
+    { code: 'BY', name: 'Belarus' }, { code: 'BE', name: 'Belgium' }, { code: 'BZ', name: 'Belize' },
+    { code: 'BJ', name: 'Benin' }, { code: 'BT', name: 'Bhutan' }, { code: 'BO', name: 'Bolivia' },
+    { code: 'BA', name: 'Bosnia and Herzegovina' }, { code: 'BW', name: 'Botswana' }, { code: 'BR', name: 'Brazil' },
+    { code: 'BN', name: 'Brunei' }, { code: 'BG', name: 'Bulgaria' }, { code: 'BF', name: 'Burkina Faso' },
+    { code: 'BI', name: 'Burundi' }, { code: 'KH', name: 'Cambodia' }, { code: 'CM', name: 'Cameroon' },
+    { code: 'CA', name: 'Canada' }, { code: 'CV', name: 'Cape Verde' }, { code: 'CF', name: 'Central African Republic' },
+    { code: 'TD', name: 'Chad' }, { code: 'CL', name: 'Chile' }, { code: 'CN', name: 'China' },
+    { code: 'CO', name: 'Colombia' }, { code: 'KM', name: 'Comoros' }, { code: 'CG', name: 'Congo' },
+    { code: 'CD', name: 'DR Congo' }, { code: 'CR', name: 'Costa Rica' }, { code: 'HR', name: 'Croatia' },
+    { code: 'CU', name: 'Cuba' }, { code: 'CY', name: 'Cyprus' }, { code: 'CZ', name: 'Czech Republic' },
+    { code: 'DK', name: 'Denmark' }, { code: 'DJ', name: 'Djibouti' }, { code: 'DM', name: 'Dominica' },
+    { code: 'DO', name: 'Dominican Republic' }, { code: 'EC', name: 'Ecuador' }, { code: 'EG', name: 'Egypt' },
+    { code: 'SV', name: 'El Salvador' }, { code: 'GQ', name: 'Equatorial Guinea' }, { code: 'ER', name: 'Eritrea' },
+    { code: 'EE', name: 'Estonia' }, { code: 'SZ', name: 'Eswatini' }, { code: 'ET', name: 'Ethiopia' },
+    { code: 'FJ', name: 'Fiji' }, { code: 'FI', name: 'Finland' }, { code: 'FR', name: 'France' },
+    { code: 'GA', name: 'Gabon' }, { code: 'GM', name: 'Gambia' }, { code: 'GE', name: 'Georgia' },
+    { code: 'DE', name: 'Germany' }, { code: 'GH', name: 'Ghana' }, { code: 'GR', name: 'Greece' },
+    { code: 'GD', name: 'Grenada' }, { code: 'GT', name: 'Guatemala' }, { code: 'GN', name: 'Guinea' },
+    { code: 'GW', name: 'Guinea-Bissau' }, { code: 'GY', name: 'Guyana' }, { code: 'HT', name: 'Haiti' },
+    { code: 'HN', name: 'Honduras' }, { code: 'HU', name: 'Hungary' }, { code: 'IS', name: 'Iceland' },
+    { code: 'IN', name: 'India' }, { code: 'ID', name: 'Indonesia' }, { code: 'IR', name: 'Iran' },
+    { code: 'IQ', name: 'Iraq' }, { code: 'IE', name: 'Ireland' }, { code: 'IL', name: 'Israel' },
+    { code: 'IT', name: 'Italy' }, { code: 'JM', name: 'Jamaica' }, { code: 'JP', name: 'Japan' },
+    { code: 'JO', name: 'Jordan' }, { code: 'KZ', name: 'Kazakhstan' }, { code: 'KE', name: 'Kenya' },
+    { code: 'KI', name: 'Kiribati' }, { code: 'KP', name: 'North Korea' }, { code: 'KR', name: 'South Korea' },
+    { code: 'KW', name: 'Kuwait' }, { code: 'KG', name: 'Kyrgyzstan' }, { code: 'LA', name: 'Laos' },
+    { code: 'LV', name: 'Latvia' }, { code: 'LB', name: 'Lebanon' }, { code: 'LS', name: 'Lesotho' },
+    { code: 'LR', name: 'Liberia' }, { code: 'LY', name: 'Libya' }, { code: 'LI', name: 'Liechtenstein' },
+    { code: 'LT', name: 'Lithuania' }, { code: 'LU', name: 'Luxembourg' }, { code: 'MG', name: 'Madagascar' },
+    { code: 'MW', name: 'Malawi' }, { code: 'MY', name: 'Malaysia' }, { code: 'MV', name: 'Maldives' },
+    { code: 'ML', name: 'Mali' }, { code: 'MT', name: 'Malta' }, { code: 'MH', name: 'Marshall Islands' },
+    { code: 'MR', name: 'Mauritania' }, { code: 'MU', name: 'Mauritius' }, { code: 'MX', name: 'Mexico' },
+    { code: 'FM', name: 'Micronesia' }, { code: 'MD', name: 'Moldova' }, { code: 'MC', name: 'Monaco' },
+    { code: 'MN', name: 'Mongolia' }, { code: 'ME', name: 'Montenegro' }, { code: 'MA', name: 'Morocco' },
+    { code: 'MZ', name: 'Mozambique' }, { code: 'MM', name: 'Myanmar' }, { code: 'NA', name: 'Namibia' },
+    { code: 'NR', name: 'Nauru' }, { code: 'NP', name: 'Nepal' }, { code: 'NL', name: 'Netherlands' },
+    { code: 'NZ', name: 'New Zealand' }, { code: 'NI', name: 'Nicaragua' }, { code: 'NE', name: 'Niger' },
+    { code: 'NG', name: 'Nigeria' }, { code: 'MK', name: 'North Macedonia' }, { code: 'NO', name: 'Norway' },
+    { code: 'OM', name: 'Oman' }, { code: 'PK', name: 'Pakistan' }, { code: 'PW', name: 'Palau' },
+    { code: 'PA', name: 'Panama' }, { code: 'PG', name: 'Papua New Guinea' }, { code: 'PY', name: 'Paraguay' },
+    { code: 'PE', name: 'Peru' }, { code: 'PH', name: 'Philippines' }, { code: 'PL', name: 'Poland' },
+    { code: 'PT', name: 'Portugal' }, { code: 'QA', name: 'Qatar' }, { code: 'RO', name: 'Romania' },
+    { code: 'RU', name: 'Russia' }, { code: 'RW', name: 'Rwanda' }, { code: 'KN', name: 'Saint Kitts and Nevis' },
+    { code: 'LC', name: 'Saint Lucia' }, { code: 'VC', name: 'Saint Vincent and the Grenadines' },
+    { code: 'WS', name: 'Samoa' }, { code: 'SM', name: 'San Marino' }, { code: 'ST', name: 'Sao Tome and Principe' },
+    { code: 'SA', name: 'Saudi Arabia' }, { code: 'SN', name: 'Senegal' }, { code: 'RS', name: 'Serbia' },
+    { code: 'SC', name: 'Seychelles' }, { code: 'SL', name: 'Sierra Leone' }, { code: 'SG', name: 'Singapore' },
+    { code: 'SK', name: 'Slovakia' }, { code: 'SI', name: 'Slovenia' }, { code: 'SB', name: 'Solomon Islands' },
+    { code: 'SO', name: 'Somalia' }, { code: 'ZA', name: 'South Africa' }, { code: 'SS', name: 'South Sudan' },
+    { code: 'ES', name: 'Spain' }, { code: 'LK', name: 'Sri Lanka' }, { code: 'SD', name: 'Sudan' },
+    { code: 'SR', name: 'Suriname' }, { code: 'SE', name: 'Sweden' }, { code: 'CH', name: 'Switzerland' },
+    { code: 'SY', name: 'Syria' }, { code: 'TW', name: 'Taiwan' }, { code: 'TJ', name: 'Tajikistan' },
+    { code: 'TZ', name: 'Tanzania' }, { code: 'TH', name: 'Thailand' }, { code: 'TL', name: 'Timor-Leste' },
+    { code: 'TG', name: 'Togo' }, { code: 'TO', name: 'Tonga' }, { code: 'TT', name: 'Trinidad and Tobago' },
+    { code: 'TN', name: 'Tunisia' }, { code: 'TR', name: 'Turkey' }, { code: 'TM', name: 'Turkmenistan' },
+    { code: 'TV', name: 'Tuvalu' }, { code: 'UG', name: 'Uganda' }, { code: 'UA', name: 'Ukraine' },
+    { code: 'AE', name: 'United Arab Emirates' }, { code: 'GB', name: 'United Kingdom' },
+    { code: 'US', name: 'United States' }, { code: 'UY', name: 'Uruguay' }, { code: 'UZ', name: 'Uzbekistan' },
+    { code: 'VU', name: 'Vanuatu' }, { code: 'VA', name: 'Vatican City' }, { code: 'VE', name: 'Venezuela' },
+    { code: 'VN', name: 'Vietnam' }, { code: 'YE', name: 'Yemen' }, { code: 'ZM', name: 'Zambia' },
+    { code: 'ZW', name: 'Zimbabwe' }
+];
+
+const flagMap = {};
+countryList.forEach(c => {
+    const code = c.code.toUpperCase();
+    const flag = String.fromCodePoint(0x1F1E6 + code.charCodeAt(0) - 65, 0x1F1E6 + code.charCodeAt(1) - 65);
+    flagMap[c.code] = flag;
+});
+
+const countryLatMap = {
+    'AF':33.9,'AL':41.2,'DZ':28.0,'AD':42.5,'AO':-12.5,'AG':17.1,'AR':-35.0,'AM':40.2,'AU':-25.0,'AT':47.5,
+    'AZ':40.5,'BS':25.0,'BH':26.0,'BD':24.0,'BB':13.2,'BY':53.0,'BE':50.8,'BZ':17.2,'BJ':9.5,'BT':27.5,
+    'BO':-17.0,'BA':44.0,'BW':-22.0,'BR':-14.0,'BN':4.5,'BG':42.7,'BF':12.0,'BI':-3.5,'KH':13.0,'CM':6.0,
+    'CA':56.0,'CV':15.0,'CF':6.5,'TD':15.0,'CL':-30.0,'CN':35.0,'CO':4.0,'KM':-12.2,'CG':-1.0,'CD':-4.0,
+    'CR':10.0,'HR':45.2,'CU':22.0,'CY':35.0,'CZ':49.8,'DK':56.0,'DJ':11.8,'DM':15.4,'DO':18.7,'EC':-2.0,
+    'EG':26.0,'SV':13.8,'GQ':1.5,'ER':15.0,'EE':58.5,'SZ':-26.5,'ET':8.0,'FJ':-17.0,'FI':63.0,'FR':46.6,
+    'GA':-1.0,'GM':13.5,'GE':42.0,'DE':51.0,'GH':7.8,'GR':38.0,'GD':12.1,'GT':15.8,'GN':10.0,'GW':12.0,
+    'GY':5.0,'HT':19.0,'HN':14.0,'HU':47.0,'IS':65.0,'IN':20.0,'ID':-5.0,'IR':32.0,'IQ':33.0,'IE':53.0,
+    'IL':31.5,'IT':42.0,'JM':18.1,'JP':36.0,'JO':31.0,'KZ':48.0,'KE':0.0,'KI':1.0,'KP':40.0,'KR':36.5,
+    'KW':29.5,'KG':41.5,'LA':18.0,'LV':57.0,'LB':34.0,'LS':-29.5,'LR':6.5,'LY':26.0,'LI':47.2,'LT':55.0,
+    'LU':49.8,'MG':-19.0,'MW':-13.5,'MY':2.5,'MV':3.2,'ML':17.0,'MT':35.9,'MH':7.0,'MR':20.0,'MU':-20.2,
+    'MX':23.0,'FM':7.0,'MD':47.0,'MC':43.7,'MN':46.0,'ME':42.5,'MA':31.0,'MZ':-18.0,'MM':22.0,'NA':-22.0,
+    'NR':-0.5,'NP':28.0,'NL':52.3,'NZ':-41.0,'NI':13.0,'NE':17.0,'NG':9.0,'MK':41.6,'NO':61.0,'OM':21.0,
+    'PK':30.0,'PW':7.5,'PA':8.5,'PG':-6.0,'PY':-23.0,'PE':-9.0,'PH':13.0,'PL':52.0,'PT':39.5,'QA':25.5,
+    'RO':46.0,'RU':61.0,'RW':-2.0,'KN':17.3,'LC':13.9,'VC':13.2,'WS':-13.5,'SM':43.9,'ST':0.2,'SA':24.0,
+    'SN':14.0,'RS':44.0,'SC':-4.6,'SL':8.5,'SG':1.3,'SK':48.7,'SI':46.0,'SB':-9.0,'SO':6.0,'ZA':-30.0,
+    'SS':7.0,'ES':40.0,'LK':7.5,'SD':15.0,'SR':4.0,'SE':62.0,'CH':46.8,'SY':35.0,'TW':23.5,'TJ':39.0,
+    'TZ':-6.0,'TH':14.0,'TL':-8.9,'TG':8.5,'TO':-21.0,'TT':10.5,'TN':34.0,'TR':39.0,'TM':40.0,'TV':-7.0,
+    'UG':1.0,'UA':49.0,'AE':24.0,'GB':54.0,'US':38.0,'UY':-33.0,'UZ':41.0,'VU':-16.0,'VA':41.9,'VE':7.0,
+    'VN':16.0,'YE':15.5,'ZM':-14.0,'ZW':-19.0
+};
+
+// Weather widget state
+let currentCity = 'Unknown';
+let currentCountry = 'Unknown';
+let currentCountryCode = '';
+let currentRegion = '';
+let currentTemp = null;
+let currentCondition = '';
+let currentWeatherEmoji = '🌤️';
+let currentFlag = '🌍';
+let currentLat = 0;
+let currentLon = 0;
+let currentTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+let blobInstances = [];
+let canvasAnimId = null;
+let toastTimer = null;
+let activeToast = null; // we'll use the widget directly
+
+// DOM references for weather
+const container = document.getElementById('weatherWidget');
+const canvas = document.getElementById('sceneCanvas');
+const ctx = canvas.getContext('2d');
+const toast = document.getElementById('weatherToast');
+const iconEl = document.getElementById('toastIcon');
+const mainEl = document.getElementById('toastMain');
+const subEl = document.getElementById('toastSub');
+const progressEl = document.getElementById('toastProgress');
+const weatherRow = document.getElementById('weatherRow');
+const weatherEmoji = document.getElementById('weatherEmoji');
+const weatherTemp = document.getElementById('weatherTemp');
+const weatherCondition = document.getElementById('weatherCondition');
+const fetchStatus = document.getElementById('fetchStatus');
+const clockText = document.getElementById('clockText');
+const dateText = document.getElementById('dateText');
+const closeBtn = document.getElementById('closeToastBtn');
+const countrySelect = document.getElementById('countrySelect');
+
+// ─── Toggle weather visibility ─────────────────────
+function toggleWeather() {
+    if (container.style.display === 'none') {
+        container.style.display = 'block';
+        // If no active data, re-detect location
+        if (!currentCountryCode) {
+            detectLocation();
+        } else {
+            // Re-show the toast (if hidden)
+            toast.style.display = 'flex';
+            // Optionally refresh weather
+            updateFromCountry(currentCountryCode);
+        }
+    } else {
+        container.style.display = 'none';
+        if (activeToast) activeToast.close();
+    }
+}
+
+// ─── Clock update ──────────────────────────────────
+function startClock() {
+    const tick = () => {
+        const now = new Date();
+        let timeStr, dateStr;
+        try {
+            timeStr = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: currentTimezone }).format(now);
+            dateStr = new Intl.DateTimeFormat([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: currentTimezone }).format(now);
+        } catch (e) {
+            timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            dateStr = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+        clockText.textContent = timeStr;
+        dateText.textContent = dateStr;
+    };
+    tick();
+    setInterval(tick, 1000);
+}
+startClock();
+
+// ─── Update widget UI ──────────────────────────────
+function updateWidget(mainText, subText = '', iconHtml = null, progress = null) {
+    mainEl.textContent = mainText;
+    if (subText) {
+        subEl.textContent = subText;
+        subEl.style.opacity = '1';
+    } else {
+        subEl.style.opacity = '0';
+    }
+    if (iconHtml !== null) iconEl.innerHTML = iconHtml;
+    // Update progress bar – hide when not active
+    if (progress !== null && progress > 0) {
+        progressEl.style.width = Math.min(progress, 100) + '%';
+        progressEl.style.display = 'block';
+    } else {
+        progressEl.style.width = '0%';
+        progressEl.style.display = 'none';
+    }
+}
+
+function updateWeather(tempC, condition, emoji) {
+    weatherRow.style.display = 'flex';
+    weatherTemp.textContent = `${Math.round(tempC)}°C`;
+    weatherCondition.textContent = condition || '';
+    weatherEmoji.textContent = emoji || '🌤️';
+}
+
+function setStatus(text) {
+    fetchStatus.textContent = text;
+}
+
+// ─── Canvas sizing ──────────────────────────────────
+function sizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = rect.width, cssH = rect.height;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: cssW, h: cssH };
+}
+
+// ─── Blob drawing (simplified) ─────────────────────
+function createBlob(x, y, emoji, color, speed = 1.0, size = 22) {
+    return {
+        x, y, baseY: y, emoji, color, speed: speed * (0.6 + Math.random() * 0.5), size,
+        direction: Math.random() > 0.5 ? 1 : -1,
+        stepPhase: Math.random() * Math.PI * 2,
+        walkCycle: Math.random() * 100,
+        armSwing: 0, legOffset: 0,
+        pauseTimer: 0, isPaused: false, pauseDuration: 0,
+        eyeColor: '#2b2b2b', blush: true,
+        hasDrink: Math.random() > 0.7,
+        isDrinking: false, drinkTimer: 0, drinkCooldown: 100 + Math.random() * 200, drinkProgress: 0
+    };
+}
+
+function updateBlob(blob, w, h, t, speedMul = 1) {
+    if (!blob) return;
+    const spd = blob.speed * speedMul * 0.6;
+    if (blob.hasDrink && blob.isDrinking) {
+        blob.drinkTimer += 1;
+        blob.drinkProgress = Math.min(1, blob.drinkTimer / 30);
+        if (blob.drinkTimer > 70) {
+            blob.isDrinking = false;
+            blob.drinkTimer = 0;
+            blob.drinkProgress = 0;
+            blob.drinkCooldown = 150 + Math.random() * 250;
+        }
+        return;
+    }
+    if (blob.hasDrink && !blob.isDrinking) {
+        blob.drinkCooldown -= 1;
+        if (blob.drinkCooldown <= 0) {
+            blob.isDrinking = true;
+            blob.isPaused = false;
+            blob.drinkTimer = 0;
+            blob.drinkProgress = 0;
+            return;
+        }
+    }
+    if (blob.isPaused) {
+        blob.pauseTimer += 1;
+        if (blob.pauseTimer > blob.pauseDuration) {
+            blob.isPaused = false;
+            blob.pauseTimer = 0;
+            if (Math.random() > 0.5) blob.direction *= -1;
+        }
+        return;
+    }
+    if (Math.random() < 0.003) {
+        blob.isPaused = true;
+        blob.pauseTimer = 0;
+        blob.pauseDuration = 40 + Math.random() * 80;
+        return;
+    }
+    blob.x += blob.direction * spd * 1.2;
+    blob.stepPhase += spd * 0.06;
+    blob.walkCycle += spd * 0.04;
+    blob.armSwing = Math.sin(blob.walkCycle) * 0.3;
+    blob.legOffset = Math.sin(blob.walkCycle);
+    const bobAmt = 2.5 + Math.abs(Math.sin(blob.walkCycle)) * 2;
+    blob.y = blob.baseY + Math.sin(blob.walkCycle) * bobAmt;
+    const margin = 30 + blob.size;
+    if (blob.x > w - margin) { blob.direction = -1; blob.x = w - margin; }
+    if (blob.x < margin) { blob.direction = 1; blob.x = margin; }
+}
+
+function drawWalkingBlob(ctx, blob, t) {
+    const { x, y, size: r, color, emoji, direction, walkCycle, isDrinking } = blob;
+    const d = direction;
+    const drinking = isDrinking;
+    const lift = drinking ? Math.min(1, blob.drinkProgress * 1.3) : 0;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.beginPath();
+    ctx.ellipse(0, r * 1.15, r * 0.8, r * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // legs
+    const legLen = r * 0.7;
+    const legThick = r * 0.16;
+    const legPhase = drinking ? 0.3 : walkCycle;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = legThick;
+    ctx.lineCap = 'round';
+    const lx1 = -r * 0.2, ly1 = r * 0.75;
+    const lx2 = lx1 + Math.sin(legPhase + 0.3) * r * 0.4 * d * (drinking ? 0 : 1);
+    const ly2 = ly1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3)) * r * 0.15 * (drinking ? 0.3 : 1);
+    ctx.beginPath();
+    ctx.moveTo(lx1, ly1);
+    ctx.quadraticCurveTo((lx1+lx2)/2 + Math.sin(legPhase+0.3)*r*0.2*d*(drinking?0:1), ly1+legLen*0.5, lx2, ly2);
+    ctx.stroke();
+
+    const rx1 = r * 0.2, ry1 = r * 0.75;
+    const rx2 = rx1 + Math.sin(legPhase + 0.3 + Math.PI) * r * 0.4 * d * (drinking ? 0 : 1);
+    const ry2 = ry1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3 + Math.PI)) * r * 0.15 * (drinking ? 0.3 : 1);
+    ctx.beginPath();
+    ctx.moveTo(rx1, ry1);
+    ctx.quadraticCurveTo((rx1+rx2)/2 + Math.sin(legPhase+0.3+Math.PI)*r*0.2*d*(drinking?0:1), ry1+legLen*0.5, rx2, ry2);
+    ctx.stroke();
+
+    // feet
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(lx2, ly2 + legThick*0.5, r*0.2, r*0.12, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(rx2, ry2 + legThick*0.5, r*0.2, r*0.12, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // body
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r, r * 1.05 * (1 + Math.sin(walkCycle)*0.04), 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // highlight
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.beginPath();
+    ctx.ellipse(-r*0.3*d, -r*0.35, r*0.25, r*0.15, -0.3*d, 0, Math.PI*2);
+    ctx.fill();
+
+    // arms
+    ctx.strokeStyle = color;
+    ctx.lineWidth = r * 0.14;
+    ctx.lineCap = 'round';
+    const freeArmSide = -d;
+    const flx1 = freeArmSide * r * 0.85, fly1 = -r * 0.15;
+    const flx2 = flx1 + (drinking ? 0 : Math.sin(walkCycle+0.8) * r * 0.45 * freeArmSide);
+    const fly2 = fly1 + r * 0.5 + (drinking ? 0 : Math.abs(Math.sin(walkCycle+0.8)) * r * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(flx1, fly1);
+    ctx.quadraticCurveTo((flx1+flx2)/2, fly1+r*0.3, flx2, fly2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(flx2, fly2, r*0.1, 0, Math.PI*2);
+    ctx.fill();
+
+    const drinkSide = d;
+    const dax1 = drinkSide * r * 0.85, day1 = -r * 0.15;
+    let dax2, day2;
+    if (blob.hasDrink) {
+        const restX = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.45 * drinkSide;
+        const restY = day1 + r * 0.5 + Math.abs(Math.sin(walkCycle+0.8+Math.PI)) * r * 0.1;
+        const raisedX = drinkSide * r * 0.35;
+        const raisedY = -r * 0.55;
+        dax2 = restX + (raisedX - restX) * lift;
+        day2 = restY + (raisedY - restY) * lift;
+    } else {
+        dax2 = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.45 * drinkSide;
+        day2 = day1 + r * 0.5 + Math.abs(Math.sin(walkCycle+0.8+Math.PI)) * r * 0.1;
+    }
+    ctx.beginPath();
+    ctx.moveTo(dax1, day1);
+    ctx.quadraticCurveTo((dax1+dax2)/2 + (lift>0?0:Math.sin(walkCycle+0.8+Math.PI)*r*0.2*drinkSide), day1+r*0.3, dax2, day2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(dax2, day2, r*0.1, 0, Math.PI*2);
+    ctx.fill();
+
+    // drink can
+    if (blob.hasDrink) {
+        ctx.save();
+        ctx.translate(dax2, day2);
+        ctx.rotate(-drinkSide * (0.15 + lift * 0.9));
+        const canW = r*0.22, canH = r*0.5;
+        const canGrad = ctx.createLinearGradient(-canW/2, 0, canW/2, 0);
+        canGrad.addColorStop(0, '#e53935');
+        canGrad.addColorStop(0.5, '#ff6f60');
+        canGrad.addColorStop(1, '#c62828');
+        ctx.fillStyle = canGrad;
+        ctx.shadowColor = 'rgba(0,0,0,0.25)';
+        ctx.shadowBlur = 3;
+        ctx.beginPath();
+        ctx.roundRect(-canW/2, -canH*0.75, canW, canH, canW*0.25);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#c0c0c0';
+        ctx.beginPath();
+        ctx.ellipse(0, -canH*0.75, canW*0.28, canW*0.12, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillRect(-canW/2, -canH*0.15, canW, canH*0.16);
+        ctx.restore();
+        if (lift > 0.7) {
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            for (let i=0; i<3; i++) {
+                const bx = dax2 + Math.sin(t*0.1 + i) * r * 0.15;
+                const by = day2 - r*0.3 - i*r*0.12 - (t*0.05) % (r*0.3);
+                ctx.beginPath();
+                ctx.arc(bx, by, r*0.03, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+    }
+
+    // eyes
+    const eyeY = -r * 0.05;
+    const eyeSpacing = r * 0.32;
+    const eyeR = r * 0.22;
+    const pupilR = r * 0.11;
+    const lookX = d * 0.15;
+    const blinkCycle = Math.sin(t * 0.03 + 2.3);
+    const eyeSquash = drinking ? (0.3 + (1-lift)*0.5) : (blinkCycle > 0.965 ? 0.12 : 1);
+
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetY = 1;
+    ctx.beginPath();
+    ctx.ellipse(-eyeSpacing, eyeY, eyeR, eyeR * eyeSquash, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(eyeSpacing, eyeY, eyeR, eyeR * eyeSquash, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    if (eyeSquash > 0.4) {
+        ctx.fillStyle = blob.eyeColor || '#2b2b2b';
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(-eyeSpacing + lookX*eyeR*0.5, eyeY, pupilR, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(eyeSpacing + lookX*eyeR*0.5, eyeY, pupilR, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath();
+        ctx.arc(-eyeSpacing + lookX*eyeR*0.5 - pupilR*0.3, eyeY - pupilR*0.35, pupilR*0.3, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(eyeSpacing + lookX*eyeR*0.5 - pupilR*0.3, eyeY - pupilR*0.35, pupilR*0.3, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    // blush
+    if (blob.blush !== false) {
+        ctx.fillStyle = 'rgba(255,110,110,0.25)';
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.ellipse(-eyeSpacing - r*0.25, r*0.2, r*0.2, r*0.12, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(eyeSpacing + r*0.25, r*0.2, r*0.2, r*0.12, 0, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    // mouth
+    ctx.strokeStyle = '#2b2b2b';
+    ctx.lineWidth = Math.max(1.5, r*0.06);
+    ctx.shadowBlur = 0;
+    if (drinking && lift > 0.5) {
+        ctx.beginPath();
+        ctx.arc(0, r*0.28, r*0.09, 0, Math.PI*2);
+        ctx.stroke();
+    } else {
+        ctx.beginPath();
+        ctx.arc(0, r*0.25, r*0.2, 0.15*Math.PI, 0.85*Math.PI);
+        ctx.stroke();
+    }
+
+    // emoji
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
+    ctx.font = `${Math.round(r*0.9)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.fillText(emoji, 0, -r*1.2 - Math.abs(Math.sin(walkCycle))*2);
+
+    ctx.restore();
+}
+
+// ─── Season drawing functions ──────────────────────
+function drawSummer(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#4a90d9');
+    sky.addColorStop(0.6, '#87CEEB');
+    sky.addColorStop(1, '#cdeffd');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    const sunX = w*0.82, sunY = h*0.18;
+    const grd = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 60);
+    grd.addColorStop(0, 'rgba(255,240,150,1)');
+    grd.addColorStop(0.5, 'rgba(255,200,50,0.8)');
+    grd.addColorStop(1, 'rgba(255,200,50,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 60, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fdd835';
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 28, 0, Math.PI*2);
+    ctx.fill();
+
+    const seaTop = h*0.50, seaBottom = h*0.68;
+    const sea = ctx.createLinearGradient(0, seaTop, 0, seaBottom);
+    sea.addColorStop(0, '#1e88e5');
+    sea.addColorStop(0.5, '#29b6f6');
+    sea.addColorStop(1, '#4fc3f7');
+    ctx.fillStyle = sea;
+    ctx.fillRect(0, seaTop, w, seaBottom - seaTop);
+    for (let i=0; i<4; i++) {
+        const wy = seaTop + (i+1)*(seaBottom-seaTop)/5;
+        ctx.strokeStyle = `rgba(255,255,255,${0.35 - i*0.06})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let x=0; x<=w; x+=6) {
+            const yy = wy + Math.sin(x*0.05 + t*0.02 + i) * 2.2;
+            if (x===0) ctx.moveTo(x, yy);
+            else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+    }
+    ctx.fillStyle = '#f0d9a8';
+    ctx.fillRect(0, seaBottom, w, h - seaBottom);
+    drawHouse(ctx, w*0.22, seaBottom + (h-seaBottom)*0.62, 0.85, t, { wall:'#f5e6ca', roof:'#4fc3f7', trim:'#e8d5b5', flowers:true, lights:false });
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 0.9);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+function drawWinter(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#0b1a2e');
+    sky.addColorStop(0.3, '#1a2a4a');
+    sky.addColorStop(0.6, '#2d4a6a');
+    sky.addColorStop(1, '#4a6a8a');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    for (let i=0; i<20; i++) {
+        const x = (i*37+13)%w;
+        const y = (i*29+7)%(h*0.5);
+        const tw = 0.3 + Math.abs(Math.sin(t*0.015 + i*1.3))*0.7;
+        ctx.fillStyle = `rgba(255,255,255,${tw})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 0.8+tw*0.6, 0, Math.PI*2);
+        ctx.fill();
+    }
+    const groundY = h*0.70;
+    ctx.fillStyle = '#e8edf2';
+    ctx.beginPath();
+    ctx.moveTo(0, groundY);
+    for (let x=0; x<=w; x+=6) {
+        const yOff = Math.sin(x*0.04 + t*0.008)*3 + Math.sin(x*0.07 + t*0.015)*1.5;
+        ctx.lineTo(x, groundY + yOff);
+    }
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fill();
+
+    drawHouse(ctx, w*0.22, groundY+6, 0.85, t, { wall:'#d5c8b0', roof:'#6d4c2f', trim:'#c9b89a', snow:true, lights:true, smoke:true });
+    drawSnowman(ctx, w*0.72, groundY+4, 0.6, t);
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 0.6);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+function drawAutumn(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#9bb7d4');
+    sky.addColorStop(0.5, '#c9d9e8');
+    sky.addColorStop(1, '#e8f0e8');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    const grd = ctx.createLinearGradient(0, h*0.74, 0, h);
+    grd.addColorStop(0, '#7cb342');
+    grd.addColorStop(1, '#558b2f');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, h*0.74, w, h*0.26);
+
+    drawTree(ctx, w*0.78, h*0.74, 1.0, t, 'maple');
+    drawHouse(ctx, w*0.22, h*0.72, 0.9, t, { wall:'#e8d5b5', roof:'#8d6e63', trim:'#d4a373', flowers:true, lights:false });
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 0.85);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+function drawSpring(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#81c784');
+    sky.addColorStop(0.5, '#b2dfdb');
+    sky.addColorStop(1, '#e0f7fa');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    const grd = ctx.createLinearGradient(0, h*0.73, 0, h);
+    grd.addColorStop(0, '#7cb342');
+    grd.addColorStop(1, '#4caf50');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, h*0.73, w, h*0.27);
+
+    drawTree(ctx, w*0.78, h*0.725, 1.0, t, 'sakura');
+    drawHouse(ctx, w*0.22, h*0.71, 0.9, t, { wall:'#f5e6ca', roof:'#6d4c2f', trim:'#d7ccc8', flowers:true, lights:false });
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 1.0);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+// ─── Drawing helpers ──────────────────────────────
+function drawHouse(ctx, x, y, s, t, opts) {
+    const wall = opts.wall || '#f5e6ca';
+    const roof = opts.roof || '#b23b3b';
+    const trim = opts.trim || '#e8d5b5';
+    const hasSnow = opts.snow || false;
+    const hasLights = opts.lights || false;
+    const chimneySmoke = opts.smoke || false;
+
+    ctx.save();
+    ctx.translate(x, y);
+    const W = 58*s, H = 48*s;
+    const hw = W/2, hh = H/2;
+
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 16*s;
+    ctx.shadowOffsetY = 4*s;
+
+    ctx.fillStyle = wall;
+    ctx.shadowColor = 'rgba(0,0,0,0.10)';
+    ctx.shadowBlur = 12*s;
+    ctx.shadowOffsetY = 3*s;
+    ctx.beginPath();
+    ctx.roundRect(-hw, -hh+4*s, W, H-4*s, 2*s);
+    ctx.fill();
+
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 10*s;
+    ctx.shadowOffsetY = 4*s;
+    ctx.fillStyle = roof;
+    ctx.beginPath();
+    ctx.moveTo(-hw-10*s, -hh+4*s);
+    ctx.lineTo(0, -hh-22*s);
+    ctx.lineTo(hw+10*s, -hh+4*s);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.shadowBlur = 6*s;
+    ctx.fillStyle = trim;
+    ctx.beginPath();
+    ctx.moveTo(-hw-11*s, -hh+6*s);
+    ctx.lineTo(-hw-6*s, -hh+2*s);
+    ctx.lineTo(hw+6*s, -hh+2*s);
+    ctx.lineTo(hw+11*s, -hh+6*s);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.shadowBlur = 6*s;
+    ctx.shadowOffsetY = 2*s;
+    ctx.fillStyle = '#8a6a52';
+    ctx.beginPath();
+    ctx.roundRect(hw-10*s, -hh-18*s, 7*s, 16*s, 1*s);
+    ctx.fill();
+    ctx.fillStyle = '#7a5a42';
+    ctx.fillRect(hw-11*s, -hh-20*s, 9*s, 3*s);
+
+    if (chimneySmoke) {
+        ctx.shadowBlur = 0;
+        for (let i=0; i<4; i++) {
+            const st = t*0.02 + i*1.7;
+            const sx = hw-6*s + Math.sin(st)*5*s;
+            const sy = -hh-22*s - i*7*s - (t*0.01)%6*s;
+            const sr = 3*s + i*2.5*s + Math.sin(st*0.5)*2*s;
+            const alpha = 0.25 - i*0.05;
+            ctx.fillStyle = `rgba(200,200,200,${Math.max(0, alpha)})`;
+            ctx.beginPath();
+            ctx.arc(sx, sy, sr, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
+
+    ctx.shadowBlur = 4*s;
+    ctx.shadowOffsetY = 2*s;
+    ctx.fillStyle = '#6d4c2f';
+    ctx.beginPath();
+    ctx.roundRect(-5*s, -hh+18*s, 10*s, 18*s, 1.5*s);
+    ctx.fill();
+    ctx.fillStyle = '#5a3d2b';
+    ctx.fillRect(-4*s, -hh+20*s, 3.5*s, 6*s);
+    ctx.fillRect(0.5*s, -hh+20*s, 3.5*s, 6*s);
+    ctx.fillRect(-4*s, -hh+28*s, 3.5*s, 6*s);
+    ctx.fillRect(0.5*s, -hh+28*s, 3.5*s, 6*s);
+    ctx.fillStyle = '#f0c040';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(4*s, -hh+25*s, 1.2*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.shadowBlur = 4*s;
+    ctx.shadowOffsetY = 2*s;
+    const winColor = hasLights ? '#ffdd77' : '#b3d9ff';
+    ctx.fillStyle = winColor;
+    ctx.beginPath();
+    ctx.roundRect(-hw+6*s, -hh+12*s, 11*s, 12*s, 1*s);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+    ctx.lineWidth = 1.5*s;
+    ctx.strokeRect(-hw+6*s, -hh+12*s, 11*s, 12*s);
+    ctx.beginPath();
+    ctx.moveTo(-hw+6*s, -hh+18*s);
+    ctx.lineTo(-hw+17*s, -hh+18*s);
+    ctx.moveTo(-hw+11.5*s, -hh+12*s);
+    ctx.lineTo(-hw+11.5*s, -hh+24*s);
+    ctx.stroke();
+
+    ctx.fillStyle = winColor;
+    ctx.beginPath();
+    ctx.roundRect(hw-17*s, -hh+12*s, 11*s, 12*s, 1*s);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+    ctx.lineWidth = 1.5*s;
+    ctx.strokeRect(hw-17*s, -hh+12*s, 11*s, 12*s);
+    ctx.beginPath();
+    ctx.moveTo(hw-17*s, -hh+18*s);
+    ctx.lineTo(hw-6*s, -hh+18*s);
+    ctx.moveTo(hw-11.5*s, -hh+12*s);
+    ctx.lineTo(hw-11.5*s, -hh+24*s);
+    ctx.stroke();
+
+    if (hasLights) {
+        ctx.shadowBlur = 0;
+        const glow = ctx.createRadialGradient(x, y-hh+18*s, 0, x, y-hh+18*s, 20*s);
+        glow.addColorStop(0, 'rgba(255,220,100,0.15)');
+        glow.addColorStop(1, 'rgba(255,220,100,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x, y-hh+18*s, 20*s, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    if (hasSnow) {
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath();
+        ctx.moveTo(-hw-8*s, -hh+5*s);
+        ctx.quadraticCurveTo(-hw*0.4, -hh-16*s, 0, -hh-20*s);
+        ctx.quadraticCurveTo(hw*0.4, -hh-16*s, hw+8*s, -hh+5*s);
+        ctx.quadraticCurveTo(hw*0.6, -hh+2*s, 0, -hh+4*s);
+        ctx.quadraticCurveTo(-hw*0.6, -hh+2*s, -hw-8*s, -hh+5*s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.beginPath();
+        ctx.ellipse(hw-6.5*s, -hh-20*s, 6*s, 2.5*s, 0, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    if (opts.flowers) {
+        ctx.shadowBlur = 0;
+        const flowerColors = ['#e91e63','#ff5722','#ffeb3b','#4caf50','#9c27b0'];
+        for (let side=-1; side<=1; side+=2) {
+            const bx = side * (hw-14*s);
+            ctx.fillStyle = '#6d4c2f';
+            ctx.fillRect(bx-3*s, -hh+10*s, 6*s, 3*s);
+            for (let f=0; f<3; f++) {
+                const fx = bx + (f-1)*2*s + Math.sin(t*0.02+f+side)*0.3*s;
+                const fy = -hh+8*s + Math.sin(t*0.025+f*1.2+side)*0.5*s;
+                ctx.fillStyle = flowerColors[(f+side)%flowerColors.length];
+                ctx.beginPath();
+                ctx.arc(fx, fy, 1.8*s, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = '#4caf50';
+                ctx.fillRect(fx-0.3*s, fy+1.5*s, 0.6*s, 2*s);
+            }
+        }
+    }
+
+    ctx.restore();
+}
+
+function drawTree(ctx, x, y, s, t, type) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    const sway = Math.sin(t*0.012)*0.035;
+    ctx.rotate(sway);
+
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 14*s;
+    ctx.shadowOffsetY = 4*s;
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.ellipse(0, 4*s, 26*s, 8*s, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    const trunkH = 42*s;
+    ctx.strokeStyle = '#6d4c2f';
+    ctx.lineWidth = 7*s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 4*s);
+    ctx.lineTo(-2*s, -trunkH);
+    ctx.stroke();
+
+    ctx.lineWidth = 4*s;
+    ctx.beginPath();
+    ctx.moveTo(-1*s, -trunkH*0.55);
+    ctx.quadraticCurveTo(-16*s, -trunkH*0.7, -20*s, -trunkH*0.95);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-1.5*s, -trunkH*0.8);
+    ctx.quadraticCurveTo(14*s, -trunkH*0.92, 20*s, -trunkH*1.1);
+    ctx.stroke();
+
+    let colors, highlight;
+    if (type === 'maple') {
+        colors = ['#b23b3b','#d84315','#e64a19','#a0392f','#c62828'];
+        highlight = 'rgba(255,200,150,0.18)';
+    } else {
+        colors = ['#f8bbd0','#f48fb1','#fce4ec','#f06292','#f5c1d9'];
+        highlight = 'rgba(255,255,255,0.35)';
+    }
+
+    const canopyY = -trunkH - 6*s;
+    const clusters = [
+        { dx:0, dy:-8, r:24 },
+        { dx:-20, dy:2, r:17 },
+        { dx:20, dy:0, r:18 },
+        { dx:-10, dy:14, r:15 },
+        { dx:12, dy:15, r:15 },
+        { dx:0, dy:6, r:20 }
+    ];
+
+    clusters.forEach((c, i) => {
+        const wob = Math.sin(t*0.01 + i*1.7)*1.2*s;
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.shadowColor = 'rgba(0,0,0,0.10)';
+        ctx.shadowBlur = 6*s;
+        ctx.shadowOffsetY = 2*s;
+        ctx.beginPath();
+        ctx.arc(c.dx*s + wob, canopyY + c.dy*s, c.r*s, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = highlight;
+    ctx.beginPath();
+    ctx.arc(-8*s, canopyY-10*s, 14*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.restore();
+
+    const particleCount = type === 'maple' ? 12 : 18;
+    for (let i=0; i<particleCount; i++) {
+        const seed = i*13.7;
+        const fallT = (t*0.02 + seed) % 40;
+        const px = x + Math.sin(seed)*34*s + Math.sin(t*0.006+seed)*10*s;
+        const py = y - trunkH*0.6 + (fallT/40)*(trunkH*1.15);
+        const drift = Math.sin(t*0.03 + seed*2)*6*s;
+        const alpha = Math.max(0, 1 - fallT/40);
+        if (alpha <= 0) continue;
+        ctx.save();
+        ctx.translate(px + drift, py);
+        ctx.rotate(t*0.02 + seed);
+        ctx.globalAlpha = alpha * 0.85;
+        ctx.fillStyle = colors[i % colors.length];
+        if (type === 'maple') {
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 2.6*s, 1.6*s, 0, 0, Math.PI*2);
+            ctx.fill();
+        } else {
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 2*s, 1.3*s, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(0, -1.6*s, 1.6*s, 1*s, 0, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+}
+
+function drawSnowman(ctx, x, y, s, t) {
+    ctx.save();
+    ctx.translate(x, y);
+    const wobble = Math.sin(t*0.015)*1.2;
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.beginPath();
+    ctx.ellipse(0, 38*s, 24*s, 6*s, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#f0f4f8';
+    ctx.shadowColor = 'rgba(0,0,0,0.08)';
+    ctx.shadowBlur = 6*s;
+    ctx.shadowOffsetY = 2*s;
+    ctx.beginPath();
+    ctx.arc(0, 24*s + wobble*0.3, 22*s, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 4*s + wobble*0.5, 16*s, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -16*s + wobble*0.7, 11*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#37474f';
+    ctx.fillRect(-16*s, -26*s, 32*s, 5*s);
+    ctx.fillRect(-10*s, -38*s, 20*s, 14*s);
+
+    ctx.fillStyle = '#e53935';
+    ctx.fillRect(-18*s, -6*s + wobble*0.4, 36*s, 5*s);
+    ctx.fillRect(-16*s, -4*s + wobble*0.4, 6*s, 10*s);
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.arc(-5*s, -18*s + wobble*0.6, 2*s, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(5*s, -18*s + wobble*0.6, 2*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ff8a65';
+    ctx.beginPath();
+    ctx.moveTo(0, -14*s + wobble*0.6);
+    ctx.lineTo(12*s, -15*s + wobble*0.5);
+    ctx.lineTo(0, -16*s + wobble*0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 1.5*s;
+    ctx.beginPath();
+    ctx.arc(0, -12*s + wobble*0.5, 6*s, 0.1*Math.PI, 0.9*Math.PI);
+    ctx.stroke();
+
+    ctx.fillStyle = '#1a1a1a';
+    for (let i=-1; i<=1; i++) {
+        ctx.beginPath();
+        ctx.arc(0, (2+i*6)*s + wobble*0.4, 1.8*s, 0, Math.PI*2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+// ─── Render scene ──────────────────────────────────
+function renderScene(ctx, w, h, season, time) {
+    ctx.clearRect(0, 0, w, h);
+
+    if (blobInstances.length === 0) {
+        const blobConfigs = [
+            { x: w*0.7, y: h*0.72, emoji: '🌻', color: '#ffb74d', speed: 1.0, size: 20 },
+            { x: w*0.15, y: h*0.78, emoji: '🐸', color: '#a5d6a7', speed: 0.8, size: 16 },
+            { x: w*0.45, y: h*0.76, emoji: '🐝', color: '#fdd835', speed: 1.2, size: 15 },
+        ];
+        blobInstances = blobConfigs.map(cfg => createBlob(cfg.x, cfg.y, cfg.emoji, cfg.color, cfg.speed, cfg.size));
+        blobInstances.forEach(b => {
+            b.x = 30 + Math.random() * (w - 60);
+            b.baseY = h*0.70 + Math.random()*0.12*h;
+            b.y = b.baseY;
+        });
+    }
+
+    blobInstances.forEach(b => {
+        if (Math.abs(b.baseY - h*0.73) > 20) {
+            b.baseY = h*0.70 + (b.baseY % (h*0.12));
+            b.y = b.baseY;
+        }
+    });
+
+    switch (season) {
+        case 'summer': drawSummer(ctx, w, h, time, blobInstances); break;
+        case 'winter': drawWinter(ctx, w, h, time, blobInstances); break;
+        case 'autumn': drawAutumn(ctx, w, h, time, blobInstances); break;
+        case 'spring': drawSpring(ctx, w, h, time, blobInstances); break;
+        default: drawSummer(ctx, w, h, time, blobInstances);
+    }
+}
+
+// ─── Animation loop ─────────────────────────────────
+function animateScene() {
+    if (canvasAnimId) cancelAnimationFrame(canvasAnimId);
+    if (!canvas) return;
+    let { w, h } = sizeCanvas();
+    const onResize = () => {
+        if (canvas && document.body.contains(canvas)) {
+            ({ w, h } = sizeCanvas());
+            blobInstances.forEach(b => {
+                b.baseY = h*0.70 + (b.baseY % (h*0.12));
+                b.y = b.baseY;
+            });
+        }
+    };
+    window.addEventListener('resize', onResize);
+
+    let start = performance.now();
+    let season = 'summer'; // will be updated
+
+    function frame(now) {
+        if (!canvas || !document.body.contains(canvas)) {
+            cancelAnimationFrame(canvasAnimId);
+            window.removeEventListener('resize', onResize);
+            return;
+        }
+        const t = (now - start) * 0.6;
+        renderScene(ctx, w, h, season, t);
+        canvasAnimId = requestAnimationFrame(frame);
+    }
+    frame(start);
+    window._setSeason = (s) => { season = s; };
+}
+
+// ─── Weather API helpers ────────────────────────────
+function getFlagFromCode(code) {
+    if (!code) return '🌍';
+    const upper = code.toUpperCase();
+    if (upper.length === 2) {
+        try {
+            return String.fromCodePoint(0x1F1E6 + upper.charCodeAt(0) - 65, 0x1F1E6 + upper.charCodeAt(1) - 65);
+        } catch (e) { return '🌍'; }
+    }
+    return '🌍';
+}
+
+function getSeasonForCountry(country, code, lat) {
+    const month = new Date().getMonth() + 1;
+    let effectiveLat = lat;
+    if (!effectiveLat || Math.abs(effectiveLat) < 0.01) {
+        if (code && countryLatMap[code]) {
+            effectiveLat = countryLatMap[code];
+        } else {
+            effectiveLat = 30;
+        }
+    }
+    const isNorth = effectiveLat > 0;
+    if (Math.abs(effectiveLat) < 10) {
+        if (month >= 11 || month <= 2) return 'winter';
+        if (month >= 3 && month <= 5) return 'spring';
+        if (month >= 6 && month <= 8) return 'summer';
+        return 'autumn';
+    }
+    if (isNorth) {
+        if (month >= 3 && month <= 5) return 'spring';
+        if (month >= 6 && month <= 8) return 'summer';
+        if (month >= 9 && month <= 11) return 'autumn';
+        return 'winter';
+    } else {
+        if (month >= 3 && month <= 5) return 'autumn';
+        if (month >= 6 && month <= 8) return 'winter';
+        if (month >= 9 && month <= 11) return 'spring';
+        return 'summer';
+    }
+}
+
+function weatherEmojiFromCode(code) {
+    if (code === 0) return '☀️';
+    if (code >= 1 && code <= 3) return '⛅';
+    if (code === 45 || code === 48) return '🌫️';
+    if (code >= 51 && code <= 67) return '🌧️';
+    if (code >= 71 && code <= 77) return '❄️';
+    if (code >= 80 && code <= 82) return '🌧️';
+    if (code >= 85 && code <= 86) return '❄️';
+    if (code >= 95) return '⛈️';
+    return '🌤️';
+}
+
+function weatherDescFromCode(code) {
+    const map = {
+        0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+        45:'Fog',48:'Rime fog',51:'Light drizzle',53:'Drizzle',55:'Dense drizzle',
+        56:'Freezing drizzle',57:'Freezing drizzle',61:'Slight rain',63:'Rain',65:'Heavy rain',
+        66:'Freezing rain',67:'Freezing rain',71:'Slight snow',73:'Snow',75:'Heavy snow',
+        77:'Snow grains',80:'Rain showers',81:'Rain showers',82:'Violent showers',
+        85:'Snow showers',86:'Snow showers',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'
+    };
+    return map[code] || '--';
+}
+
+async function fetchWeather(lat, lon) {
+    try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Weather API error');
+        const data = await res.json();
+        const current = data.current || {};
+        const tempC = typeof current.temperature_2m === 'number' ? current.temperature_2m : null;
+        const code = current.weather_code;
+        return {
+            tempC,
+            condition: weatherDescFromCode(code),
+            emoji: weatherEmojiFromCode(code),
+            lat, lon,
+            timezone: data.timezone || null
+        };
+    } catch (err) {
+        return null;
+    }
+}
+
+async function fetchWeatherByCity(city) {
+    try {
+        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+        const geoRes = await fetch(geoUrl);
+        if (!geoRes.ok) throw new Error('Geocoding error');
+        const geoData = await geoRes.json();
+        const place = geoData.results?.[0];
+        if (!place) return null;
+        const lat = place.latitude, lon = place.longitude;
+        const wUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
+        const wRes = await fetch(wUrl);
+        if (!wRes.ok) throw new Error('Weather API error');
+        const wData = await wRes.json();
+        const current = wData.current || {};
+        const tempC = typeof current.temperature_2m === 'number' ? current.temperature_2m : null;
+        const code = current.weather_code;
+        return {
+            tempC,
+            condition: weatherDescFromCode(code),
+            emoji: weatherEmojiFromCode(code),
+            region: place.admin1 || '',
+            city: place.name || city,
+            country: place.country || '',
+            lat, lon,
+            timezone: wData.timezone || null
+        };
+    } catch (err) {
+        return null;
+    }
+}
+
+// ─── Show weather widget ────────────────────────────
+async function showWeatherWidget(season, city, country, code, region, lat, manual = false) {
+    const flag = getFlagFromCode(code) || '🌍';
+    // Avoid duplication: if country is already in city, skip it
+    let locationDisplay = city;
+    if (region && region !== city && region !== 'Unknown') {
+        locationDisplay += `, ${region}`;
+    }
+    const mainText = `${flag} ${locationDisplay}`;
+    const subText = `${season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : '❄️'} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
+    updateWidget(mainText, subText, subText.split(' ')[0], 80);
+
+    if (currentTemp !== null && currentTemp !== undefined) {
+        updateWeather(currentTemp, currentCondition || '', currentWeatherEmoji || '🌤️');
+        setStatus('✅ Weather loaded');
+    } else {
+        setStatus('⏳ Loading weather...');
+        try {
+            let wData = null;
+            if (city && city !== 'Unknown') {
+                wData = await fetchWeatherByCity(city);
+            }
+            if ((!wData || wData.tempC === null) && lat) {
+                wData = await fetchWeather(lat, 0);
+            }
+            if (wData && wData.tempC !== null) {
+                currentTemp = wData.tempC;
+                currentCondition = wData.condition || '';
+                currentWeatherEmoji = wData.emoji || '🌤️';
+                if (wData.region) currentRegion = wData.region;
+                if (wData.city && wData.city !== 'Unknown') currentCity = wData.city;
+                if (wData.country) currentCountry = wData.country;
+                if (wData.lat) currentLat = wData.lat;
+                if (wData.lon) currentLon = wData.lon;
+                updateWeather(currentTemp, currentCondition, currentWeatherEmoji);
+                setStatus('✅ Weather loaded');
+            } else {
+                setStatus('⚠️ Weather unavailable');
+            }
+        } catch (e) {
+            setStatus('⚠️ Weather unavailable');
+        }
+    }
+
+    if (window._setSeason) window._setSeason(season);
+
+    if (code) {
+        const option = countrySelect.querySelector(`option[value="${code}"]`);
+        if (option) countrySelect.value = code;
+    }
+}
+
+// ─── Update from country select ─────────────────────
+async function updateFromCountry(code) {
+    const country = countryList.find(c => c.code === code);
+    if (!country) return;
+    const name = country.name;
+
+    const wData = await fetchWeatherByCity(name);
+
+    let city = name;
+    let region = '';
+    let temp = null, cond = '', emoji = '🌤️';
+    let lat = 0, lon = 0;
+    let countryName = name;
+
+    if (wData && wData.tempC !== null) {
+        temp = wData.tempC;
+        cond = wData.condition || '';
+        emoji = wData.emoji || '🌤️';
+        if (wData.city && wData.city !== name) city = wData.city;
+        if (wData.region) region = wData.region;
+        if (wData.country) countryName = wData.country;
+        lat = wData.lat || 0;
+        lon = wData.lon || 0;
+        if (wData.timezone) currentTimezone = wData.timezone;
+    }
+
+    if (!lat || Math.abs(lat) < 0.01) {
+        lat = countryLatMap[code] || 30;
+    }
+
+    currentCity = city;
+    currentCountry = countryName;
+    currentCountryCode = code;
+    currentRegion = region;
+    currentTemp = temp;
+    currentCondition = cond;
+    currentWeatherEmoji = emoji;
+    currentFlag = getFlagFromCode(code);
+    currentLat = lat;
+    currentLon = lon;
+
+    const season = getSeasonForCountry(countryName, code, lat);
+    blobInstances = [];
+    await showWeatherWidget(season, city, countryName, code, region, lat, true);
+}
+
+// ─── Detect location ────────────────────────────────
+async function detectLocation() {
+    try {
+        const res = await fetch('https://ip-api.com/json/');
+        if (!res.ok) throw new Error('IP API error');
+        const data = await res.json();
+        if (data.status === 'success') {
+            const code = data.countryCode;
+            const country = countryList.find(c => c.code === code);
+            if (country) {
+                currentCountryCode = code;
+                currentCountry = country.name;
+                currentCity = data.city || country.name;
+                currentRegion = data.regionName || '';
+                currentFlag = getFlagFromCode(code);
+                currentLat = data.lat || 0;
+                currentLon = data.lon || 0;
+                if (!currentLat || Math.abs(currentLat) < 0.01) {
+                    currentLat = countryLatMap[code] || 30;
+                }
+                const wData = await fetchWeather(data.lat || currentLat, data.lon || 0);
+                if (wData && wData.tempC !== null) {
+                    currentTemp = wData.tempC;
+                    currentCondition = wData.condition || '';
+                    currentWeatherEmoji = wData.emoji || '🌤️';
+                    if (wData.lat) currentLat = wData.lat;
+                    if (wData.lon) currentLon = wData.lon;
+                }
+                currentTimezone = (wData && wData.timezone) || data.timezone || currentTimezone;
+
+                const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
+                blobInstances = [];
+                await showWeatherWidget(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
+                return;
+            }
+        }
+    } catch (e) {
+        console.warn('IP geolocation failed:', e);
+    }
+
+    const fallbackCode = 'US';
+    await updateFromCountry(fallbackCode);
+}
+
+// ─── Init weather widget ────────────────────────────
+function initWeatherWidget() {
+    countryList.sort((a, b) => a.name.localeCompare(b.name));
+    countryList.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.code;
+        const flag = getFlagFromCode(c.code);
+        opt.textContent = `${flag} ${c.name}`;
+        countrySelect.appendChild(opt);
+    });
+
+    countrySelect.addEventListener('change', (e) => {
+        const code = e.target.value;
+        if (code) {
+            updateFromCountry(code);
+        }
+    });
+
+    closeBtn.addEventListener('click', function() {
+        // Hide the toast but keep container visible – user can toggle back
+        toast.style.display = 'none';
+        if (activeToast) activeToast.close();
+    });
+
+    animateScene();
+    detectLocation();
+}
+
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('load', function() {
     loadBoard();
@@ -2540,6 +4202,9 @@ window.addEventListener('load', function() {
     document.getElementById('redThreadBtn').classList.remove('red-thread-active');
     document.getElementById('redThreadBtn').title = 'Red Thread OFF';
     redThreadMode = false;
+
+    // Init weather widget after board loads
+    initWeatherWidget();
 });
 
 let resizeTimer;

@@ -1,9 +1,9 @@
-# app.py – chat only, notes moved to notes.py
+# app.py – chat + notes + cork board + integrated weather toast (full animation – guaranteed working)
 from flask import Flask, request, jsonify, Response
 import requests
 import base64
 import os
-import json as std_json          # fallback if orjson not available
+import json as std_json
 import sys
 from datetime import datetime
 import uuid
@@ -13,18 +13,17 @@ import re
 import urllib.request
 import platform
 import time
-from functools import lru_cache, wraps
+from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import sqlite3
 
-# ── Try to use orjson for faster JSON (optional) ──
+# ── Try orjson ──
 try:
     import orjson
     def json_dumps(obj):
         return orjson.dumps(obj).decode('utf-8')
     def json_dumps_pretty(obj):
-        # human-readable version (indented) — used only when writing conversations.json to disk
         return orjson.dumps(obj, option=orjson.OPT_INDENT_2).decode('utf-8')
     def json_loads(s):
         return orjson.loads(s)
@@ -36,7 +35,7 @@ except ImportError:
     json_loads = std_json.loads
     print("ℹ️ Using standard json (install orjson for better performance)")
 
-# ── Import provider classes ──
+# ── Imports ──
 from llm_providers import (
     LLMProvider,
     OllamaProvider,
@@ -48,34 +47,26 @@ from llm_providers import (
     model_supports_vision,
     VISION_MODELS,
 )
-
-# ── Import notes & cork board blueprints ──
 from notes import notes_bp
 from cork_board import corkboard_bp
-
-# ── Import image viewer ──
 from zoompicleftandright import setup_viewer, get_viewer_html
 
-# ── NVIDIA GPU support (optional) ──
 try:
     import pynvml
     pynvml.nvmlInit()
     NVML_AVAILABLE = True
 except:
     NVML_AVAILABLE = False
-    print("⚠️ NVML not available – GPU VRAM monitoring disabled.")
 
 app = Flask(__name__)
 app.register_blueprint(notes_bp)
 app.register_blueprint(corkboard_bp)
 
-
-
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
 MODEL_CONFIG_FILE = "json_configuration/model_config.json"
-ATTACHMENTS_DIR = "json_configuration/attachments"   # image/file blobs live here instead of inline in conversations.json
-SQLITE_DIR = "sqlite_data"   # folder that holds .db / sqlite files
+ATTACHMENTS_DIR = "json_configuration/attachments"
+SQLITE_DIR = "sqlite_data"
 SQLITE_DB_PATH = os.path.join(SQLITE_DIR, "conversations.db")
 
 try:
@@ -84,41 +75,33 @@ try:
 except ImportError:
     SEARCH_AVAILABLE = False
 
-# ── Ensure folders exist ──
 os.makedirs(os.path.dirname(CONVERSATIONS_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 os.makedirs(SQLITE_DIR, exist_ok=True)
 
-# ── SQLite: a fast, queryable log of every prompt/answer (separate from conversations.json) ──
-# conversations.json = live app state (nested, edited/deleted/reordered).
-# conversations.db   = flat append-only history: conversation_id, role, text, timestamp.
-#                       Great for searching/analyzing everything ever said, super fast to query.
+# ── SQLite ──
 _sqlite_conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
 _sqlite_lock = threading.Lock()
-
 def _init_sqlite():
     with _sqlite_lock:
-        _sqlite_conn.execute("PRAGMA journal_mode=WAL;")     # fast concurrent writes/reads
-        _sqlite_conn.execute("PRAGMA synchronous=NORMAL;")   # fast, still crash-safe with WAL
+        _sqlite_conn.execute("PRAGMA journal_mode=WAL;")
+        _sqlite_conn.execute("PRAGMA synchronous=NORMAL;")
         _sqlite_conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 conversation_id TEXT NOT NULL,
-                role            TEXT NOT NULL,      -- 'user' or 'assistant'
-                content         TEXT,               -- the prompt or the answer
+                role            TEXT NOT NULL,
+                content         TEXT,
                 created_at      TEXT NOT NULL
             );
         """)
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);")
         _sqlite_conn.commit()
-    print(f"🗄️  SQLite log ready at {SQLITE_DB_PATH}")
-
 _init_sqlite()
 
 def log_message_to_sqlite(cid, role, text):
-    """Append one row (fire-and-forget, off the request thread). Never touches conversations.json."""
     def _write():
         try:
             with _sqlite_lock:
@@ -131,18 +114,15 @@ def log_message_to_sqlite(cid, role, text):
             print(f"⚠️ Failed to log message to sqlite: {e}")
     _save_executor.submit(_write)
 
-# ── Create empty JSON files if they don't exist ──
+# ── Create JSON files if missing ──
 if not os.path.exists(CONVERSATIONS_FILE):
     with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
         std_json.dump({}, f, ensure_ascii=False, indent=2)
-    print(f"✅ Created {CONVERSATIONS_FILE}")
-
 if not os.path.exists(MODEL_CONFIG_FILE):
     with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
         std_json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
-    print(f"✅ Created {MODEL_CONFIG_FILE}")
 
-# ── Auto‑SSL ──
+# ── SSL ──
 def ensure_certificates():
     cert_dir = 'cert_store'
     cert_file = os.path.join(cert_dir, 'localhost+1.pem')
@@ -153,7 +133,6 @@ def ensure_certificates():
     os.makedirs(cert_dir, exist_ok=True)
     if platform.system() != "Windows":
         print("⚠️  Auto‑cert generation is only supported on Windows.")
-        print("   Install mkcert manually or run with HTTP.")
         return False
     mkcert_exe = "mkcert.exe"
     if not os.path.exists(mkcert_exe):
@@ -161,23 +140,19 @@ def ensure_certificates():
         url = "https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-windows-amd64.exe"
         try:
             urllib.request.urlretrieve(url, mkcert_exe)
-            print("✅ mkcert downloaded")
         except Exception as e:
             print(f"❌ Failed to download mkcert: {e}")
             return False
     try:
-        print("🔐 Installing Local Certificate Authority...")
         subprocess.run([mkcert_exe, "-install"], check=True, capture_output=True)
-        print("📜 Generating certificates...")
         subprocess.run([mkcert_exe, "localhost", "127.0.0.1"], check=True)
         if os.path.exists("localhost+1.pem"):
             os.rename("localhost+1.pem", cert_file)
         if os.path.exists("localhost+1-key.pem"):
             os.rename("localhost+1-key.pem", key_file)
-        print("✅ Certificates generated successfully!")
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Certificate generation failed: {e.stderr.decode() if e.stderr else ''}")
+    except Exception as e:
+        print(f"❌ Certificate generation failed: {e}")
         return False
 
 # ── Model persistence ──
@@ -190,35 +165,31 @@ def load_model_config():
         except:
             pass
     return DEFAULT_MODEL
-
 def save_model_config(model):
     with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
         std_json.dump({"model": model}, f, ensure_ascii=False, indent=2)
-
 current_model = load_model_config()
 
 # ── Conversation storage ──
-_conversations_cache: dict = {}
-_cache_loaded: bool = False
-_cache_lock = threading.Lock()          # for thread-safe updates
+_conversations_cache = {}
+_cache_loaded = False
+_cache_lock = threading.Lock()
 
-# ── Attachment blob storage ──────────────────────────────────────────
-def _save_attachment_to_disk(b64_data: str, hint_name: str = "") -> str:
+def _save_attachment_to_disk(b64_data, hint_name=""):
     if not b64_data:
         return ""
     ext = os.path.splitext(hint_name)[1] or ".bin"
     fname = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join(ATTACHMENTS_DIR, fname)
     try:
-        raw = base64.b64decode(b64_data)
         with open(path, "wb") as f:
-            f.write(raw)
+            f.write(base64.b64decode(b64_data))
         return fname
     except Exception as e:
-        print(f"⚠️ Failed to persist attachment to disk: {e}")
+        print(f"⚠️ Failed to persist attachment: {e}")
         return ""
 
-def _load_attachment_from_disk(fname: str) -> str:
+def _load_attachment_from_disk(fname):
     if not fname:
         return ""
     path = os.path.join(ATTACHMENTS_DIR, fname)
@@ -229,7 +200,7 @@ def _load_attachment_from_disk(fname: str) -> str:
         print(f"⚠️ Failed to read attachment {fname}: {e}")
         return ""
 
-def _strip_blobs_for_disk(convs: dict) -> dict:
+def _strip_blobs_for_disk(convs):
     lean = {}
     for cid, conv in convs.items():
         lean_conv = dict(conv)
@@ -247,7 +218,7 @@ def _strip_blobs_for_disk(convs: dict) -> dict:
         lean[cid] = lean_conv
     return lean
 
-def _hydrate_blobs_from_disk(convs: dict) -> None:
+def _hydrate_blobs_from_disk(convs):
     for conv in convs.values():
         for msg in conv.get("messages", []):
             for im in msg.get("images", []):
@@ -278,7 +249,6 @@ def load_conversations():
     _ensure_cache()
     return _conversations_cache
 
-# ── Asynchronous save executor ──
 _save_executor = ThreadPoolExecutor(max_workers=1)
 
 def save_conversations_async(convs):
@@ -289,24 +259,9 @@ def save_conversations_async(convs):
             with open(temp_file, "w", encoding="utf-8") as f:
                 f.write(json_dumps_pretty(lean))
             os.replace(temp_file, CONVERSATIONS_FILE)
-            print(f"✅ Saved conversations ({len(convs)} items)")
         except Exception as e:
             print(f"❌ Failed to save conversations: {e}")
     _save_executor.submit(_save)
-
-def save_conversations_sync(convs):
-    global _conversations_cache
-    _conversations_cache = convs
-    try:
-        lean = _strip_blobs_for_disk(convs)
-        temp_file = CONVERSATIONS_FILE + ".tmp"
-        with open(temp_file, "w", encoding="utf-8") as f:
-            f.write(json_dumps_pretty(lean))
-        os.replace(temp_file, CONVERSATIONS_FILE)
-        print(f"✅ Saved conversations ({len(convs)} items)")
-    except Exception as e:
-        print(f"❌ Failed to save conversations: {e}")
-        raise
 
 def create_conversation(title=None):
     _ensure_cache()
@@ -314,7 +269,6 @@ def create_conversation(title=None):
     orders = [c.get('order', 0) for c in _conversations_cache.values()]
     max_order = max(orders) if orders else 0
     new_order = max_order + 1
-
     with _cache_lock:
         _conversations_cache[cid] = {
             "id": cid,
@@ -324,28 +278,21 @@ def create_conversation(title=None):
             "order": new_order
         }
     save_conversations_async(_conversations_cache)
-    print(f"🆕 Created conversation {cid} with order {new_order}")
     return cid
 
 def get_conversation(cid):
     _ensure_cache()
     return _conversations_cache.get(cid)
 
-# ── Setup image viewer ──
 setup_viewer(app, get_conversation)
 
 def add_message(cid, role, text, images=None, files=None, ts=None):
     _ensure_cache()
     if cid not in _conversations_cache:
-        print(f"❌ add_message: conversation {cid} not found")
         return False
-    if images is None:
-        images = []
-    if files is None:
-        files = []
-    if ts is None:
-        ts = datetime.now().strftime("%H:%M")
-
+    if images is None: images = []
+    if files is None: files = []
+    if ts is None: ts = datetime.now().strftime("%H:%M")
     stored_images = []
     for img in images:
         b64 = img.get("b64", "")
@@ -356,7 +303,6 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
             "mime": img.get("mime", "image/png"),
             "file": fname
         })
-
     stored_files = []
     for f in files:
         b64 = f.get("b64", "")
@@ -367,7 +313,6 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
             "mime": f.get("mime", "application/octet-stream"),
             "file": fname
         })
-
     with _cache_lock:
         _conversations_cache[cid]["messages"].append({
             "role": role,
@@ -379,8 +324,7 @@ def add_message(cid, role, text, images=None, files=None, ts=None):
         if role == "user" and len(_conversations_cache[cid]["messages"]) == 1:
             _conversations_cache[cid]["title"] = text[:40] + ("..." if len(text) > 40 else "")
     save_conversations_async(_conversations_cache)
-    log_message_to_sqlite(cid, role, text)   # fast, non-blocking append to the sqlite history
-    print(f"📝 Added {role} message to {cid} (now {len(_conversations_cache[cid]['messages'])} messages)")
+    log_message_to_sqlite(cid, role, text)
     return True
 
 def delete_conversation(cid):
@@ -393,31 +337,23 @@ def delete_conversation(cid):
     return False
 
 def clear_conversation_messages(cid):
-    """Empty out the messages of ONE specific chat only.
-    The chat itself (id/title/order) stays, and every other chat is untouched."""
     _ensure_cache()
     if cid not in _conversations_cache:
         return False
     with _cache_lock:
         _conversations_cache[cid]["messages"] = []
     save_conversations_async(_conversations_cache)
-    print(f"🧹 Cleared messages for {cid} only (other chats untouched)")
     return True
 
-# ── C/C++ comment stripper ──
-def strip_c_comments(text: str) -> str:
+def strip_c_comments(text):
     text = re.sub(r'//.*', '', text)
     text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
     text = '\n'.join(line for line in text.splitlines() if line.strip())
     return text
 
-# ── Vision fallback (llava) ──
-def describe_image_with_llava(image_b64: str) -> str:
+def describe_image_with_llava(image_b64):
     vision_model = "llava:7b"
-    vision_prompt = (
-        "Describe this image in detail. "
-        "Include objects, colors, layout, text, and any notable features."
-    )
+    vision_prompt = "Describe this image in detail. Include objects, colors, layout, text, and any notable features."
     payload = {
         "model": vision_model,
         "prompt": vision_prompt,
@@ -426,18 +362,15 @@ def describe_image_with_llava(image_b64: str) -> str:
         "options": {"temperature": 0.3}
     }
     try:
-        resp = requests.post("http://127.0.0.1:11434/api/generate",
-                             json=payload, timeout=60)
+        resp = requests.post("http://127.0.0.1:11434/api/generate", json=payload, timeout=60)
         resp.raise_for_status()
         return resp.json().get("response", "")
     except Exception as e:
         print(f"⚠️ llava fallback failed: {e}")
         return ""
 
-# ── Thread pool for concurrent vision fallback ──
 _executor = ThreadPoolExecutor(max_workers=2)
 
-# ── Trim conversation history ──
 def trim_conversation_history(messages, max_messages=10, max_tokens=3000):
     if not messages:
         return messages
@@ -457,9 +390,7 @@ def trim_conversation_history(messages, max_messages=10, max_tokens=3000):
         messages.insert(0, system_msg)
     return messages
 
-# ── FIXED: No lru_cache – always reads current memory stats ──
 def get_ollama_memory_settings():
-    """Read current RAM/VRAM and return GPU offload settings."""
     try:
         mem = psutil.virtual_memory()
         ram_free_gb = mem.available / (1024**3)
@@ -475,23 +406,18 @@ def get_ollama_memory_settings():
             except:
                 pass
         if low_ram and vram_available and vram_free_gb > 2.0:
-            num_gpu = 99
-            low_vram = True
+            return {"num_gpu": 99, "low_vram": True}
         elif low_ram and not vram_available:
-            num_gpu = 0
-            low_vram = True
+            return {"num_gpu": 0, "low_vram": True}
         else:
-            num_gpu = 99 if vram_available else 0
-            low_vram = False
-        return {"num_gpu": num_gpu, "low_vram": low_vram}
+            return {"num_gpu": 99 if vram_available else 0, "low_vram": False}
     except Exception:
         return {"num_gpu": 99, "low_vram": False}
 
-# ── Ollama commands ──
-def is_ollama_command(text: str) -> bool:
+def is_ollama_command(text):
     return text.strip().lower().startswith("ollama ")
 
-def execute_ollama_command_sync(text: str) -> str:
+def execute_ollama_command_sync(text):
     parts = text.strip().split()
     if len(parts) < 2:
         return "❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ..."
@@ -551,8 +477,7 @@ def execute_ollama_command_sync(text: str) -> str:
             token = os.environ.get("OLLAMA_REGISTRY_TOKEN")
             if token:
                 headers["Authorization"] = f"Bearer {token}"
-            r = requests.post("http://127.0.0.1:11434/api/push",
-                              json=payload, headers=headers, stream=True, timeout=600)
+            r = requests.post("http://127.0.0.1:11434/api/push", json=payload, headers=headers, stream=True, timeout=600)
             r.raise_for_status()
             last_status = ""
             for line in r.iter_lines():
@@ -568,8 +493,7 @@ def execute_ollama_command_sync(text: str) -> str:
     except Exception as e:
         return f"❌ Command failed: {str(e)}"
 
-def handle_ollama_command_stream(conv_id: str, user_message: str,
-                                 images: list, files: list):
+def handle_ollama_command_stream(conv_id, user_message, images, files):
     parts = user_message.strip().split()
     if len(parts) < 2:
         yield f"data: {json_dumps({'token': '❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ...'})}\n\n"
@@ -585,8 +509,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
                 yield f"data: {json_dumps({'token': full_response})}\n\n"
             else:
                 model = args[0]
-                r = requests.post("http://127.0.0.1:11434/api/pull",
-                                  json={"name": model}, stream=True, timeout=600)
+                r = requests.post("http://127.0.0.1:11434/api/pull", json={"name": model}, stream=True, timeout=600)
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
@@ -614,8 +537,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
                 token = os.environ.get("OLLAMA_REGISTRY_TOKEN")
                 if token:
                     headers["Authorization"] = f"Bearer {token}"
-                r = requests.post("http://127.0.0.1:11434/api/push",
-                                  json=payload, headers=headers, stream=True, timeout=600)
+                r = requests.post("http://127.0.0.1:11434/api/push", json=payload, headers=headers, stream=True, timeout=600)
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
@@ -645,7 +567,7 @@ def handle_ollama_command_stream(conv_id: str, user_message: str,
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (only Chat, Notes, Cork Board – no Logs) ──
+# ── Build HTML (Chat, Notes, Cork Board, plus integrated Weather) ──
 def build_html(model_name):
     html = r"""<!DOCTYPE html>
 <html lang="en">
@@ -655,9 +577,7 @@ def build_html(model_name):
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>TrioForge chat interface</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<!-- Mermaid for diagrams -->
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<!-- Highlight.js for code blocks -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <style>
@@ -1166,8 +1086,7 @@ body.light-mode .msg.bot b {
 body.light-mode .msg.bot code {
     background: rgba(0,0,0,0.06);
 }
-
-/* ===== NEW: CODE BLOCK ENHANCEMENTS (Highlight + Copy) ===== */
+/* ===== CODE BLOCK ENHANCEMENTS ===== */
 .code-block-wrapper {
     background: #1e1e1e;
     border-radius: 8px;
@@ -1233,8 +1152,6 @@ body.light-mode .language-label { color: #57606a; }
 body.light-mode .copy-code-btn { background: rgba(0,0,0,0.05); color: #24292f; }
 body.light-mode .copy-code-btn:hover { background: rgba(0,0,0,0.1); }
 /* ========================================================== */
-
-/* ── Message actions ─────────────────────────── */
 .msg .msg-actions {
     display: none;
     position: absolute;
@@ -1273,7 +1190,6 @@ body.light-mode .copy-code-btn:hover { background: rgba(0,0,0,0.1); }
 .msg.bot .msg-actions {
     display: none !important;
 }
-/* ── Attachments ─────────────────────────────── */
 .attachments {
     display:flex; flex-wrap:wrap; gap: 8px;
     padding: 0 40px 10px;
@@ -1293,7 +1209,6 @@ body.light-mode .copy-code-btn:hover { background: rgba(0,0,0,0.1); }
     width: 18px; height: 18px; font-size: 11px; cursor: pointer;
     line-height: 18px; text-align: center; flex-shrink: 0;
 }
-/* ── Input bar ────────────────────────────────── */
 .input-bar {
     background: rgba(22, 27, 34, 0.7);
     backdrop-filter: blur(20px);
@@ -1415,7 +1330,6 @@ body.light-mode .copy-code-btn:hover { background: rgba(0,0,0,0.1); }
 }
 #sendBtn:hover { box-shadow: 0 6px 16px rgba(31,111,235,0.6); transform: translateY(-1px); }
 #sendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
-/* ── Status bar ───────────────────────────────── */
 #statusBar {
     display: flex;
     justify-content: space-between;
@@ -1444,7 +1358,6 @@ body.light-mode .copy-code-btn:hover { background: rgba(0,0,0,0.1); }
     margin-left: 12px;
     color: #3fb950;
 }
-/* ── Voice recording animation ───────────────── */
 .record-btn.recording {
     background: #f85149;
     color: white;
@@ -1670,6 +1583,268 @@ body.light-mode .vision-badge {
     border-color: rgba(63,185,80,0.25);
     color: #1e7e34;
 }
+
+/* ===== WEATHER WIDGET STYLES – COMPACT (same as Notes/Cork Board) ===== */
+.toast-container {
+    position: fixed;
+    top: 70px;
+    right: 16px;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+    max-width: 280px;
+    width: auto;
+}
+.toast {
+    background: rgba(22, 27, 34, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+    color: #e1e4e8;
+    pointer-events: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    position: relative;
+    min-width: 0;
+    transform: translateX(0);
+    opacity: 1;
+    transition: opacity 0.5s ease;
+}
+.toast.show {
+    opacity: 1;
+}
+.toast-scene {
+    height: 90px;
+    flex-shrink: 0;
+    background: #1a1a2e;
+    position: relative;
+    overflow: hidden;
+}
+.toast-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: block;
+}
+.toast-scene::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 20px;
+    background: linear-gradient(to bottom, rgba(22, 27, 34, 0), rgba(22, 27, 34, 0.95));
+    pointer-events: none;
+    z-index: 2;
+}
+.toast-content {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 10px 12px;
+}
+.toast-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.4);
+}
+.toast-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0px;
+    min-width: 0;
+}
+.toast-text .main {
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 500;
+    color: #e1e4e8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.toast-text .main .highlight {
+    font-weight: 700;
+    color: #fff;
+}
+.toast-text .sub {
+    font-size: 10px;
+    color: rgba(255,255,255,0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+.toast-text .sub.visible {
+    opacity: 1;
+}
+.toast-text .time-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-top: 0;
+}
+.toast-text .time-row .clock {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.3px;
+    font-variant-numeric: tabular-nums;
+}
+.toast-text .time-row .date {
+    font-size: 9px;
+    color: rgba(255,255,255,0.5);
+}
+.toast-text .weather-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.8);
+}
+.toast-text .weather-row .temp {
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+}
+.toast-text .weather-row .condition {
+    font-size: 10px;
+    color: rgba(255,255,255,0.6);
+}
+.toast-text .weather-row .weather-emoji {
+    font-size: 14px;
+}
+.toast-text .fetch-status {
+    font-size: 9px;
+    color: rgba(255,255,255,0.4);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0%;
+    height: 3px;
+    background: linear-gradient(90deg, #58a6ff, #3fb950);
+    border-radius: 0;
+    transition: width 0.4s ease;
+    z-index: 3;
+    pointer-events: none;
+    max-width: 100%;
+    will-change: width;
+}
+.toast .close-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 20px;
+    transition: background 0.2s;
+    line-height: 1;
+    z-index: 4;
+}
+.toast .close-btn:hover {
+    background: rgba(255, 0, 0, 0.35);
+    color: #fff;
+}
+.spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,0.15);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.weather-toggle-btn {
+    background: rgba(33,38,45,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 12px;
+    width: 46px;
+    height: 46px;
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+}
+.weather-toggle-btn:hover {
+    color: #58a6ff;
+    border-color: #58a6ff;
+    background: rgba(88,166,255,0.1);
+}
+body.light-mode .weather-toggle-btn {
+    background: rgba(255,255,255,0.6);
+    border-color: rgba(0,0,0,0.1);
+    color: #57606a;
+}
+body.light-mode .weather-toggle-btn:hover {
+    color: #1f6feb;
+    border-color: #1f6feb;
+    background: rgba(31,111,235,0.05);
+}
+.weather-country-select {
+    background: rgba(13,17,23,0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    color: #e6edf3;
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s, background 0.3s, color 0.3s;
+    backdrop-filter: blur(5px);
+    max-width: 160px;
+    cursor: pointer;
+}
+.weather-country-select:focus {
+    border-color: #58a6ff;
+}
+body.light-mode .weather-country-select {
+    background: rgba(255,255,255,0.8);
+    color: #24292f;
+    border-color: rgba(0,0,0,0.15);
+}
+body.light-mode .weather-country-select:focus {
+    border-color: #1f6feb;
+}
+.weather-country-select option {
+    background: #1a1a2e;
+    color: #e1e4e8;
+}
+body.light-mode .weather-country-select option {
+    background: #fff;
+    color: #24292f;
+}
 </style>
 </head>
 <body>
@@ -1788,6 +1963,10 @@ body.light-mode .vision-badge {
         <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
+
+        <!-- Weather toggle and country dropdown -->
+        <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
+        <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country"></select>
       </div>
     </div>
 
@@ -1811,6 +1990,9 @@ body.light-mode .vision-badge {
       </div>
     </div>
 
+    <!-- Weather Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <div id="statusBar">
       <span id="status">✅ Ready</span>
       <span id="resourceDisplay">💾 RAM: -- | 🎮 VRAM: --</span>
@@ -1827,7 +2009,7 @@ body.light-mode .vision-badge {
 </div>
 
 <script>
-/* ─── JavaScript (only chat) ────────────────────────────── */
+/* ─── CHAT JAVASCRIPT (existing) ────────────────────────────── */
 var chatArea    = document.getElementById('chatArea');
 var msgInput    = document.getElementById('msgInput');
 var sendBtn     = document.getElementById('sendBtn');
@@ -1847,12 +2029,10 @@ var searchQuery = '';
 var searchEnabled = true;
 var unloadBtn = document.getElementById('unloadBtn');
 
-// ── Smooth scroll helper ──────────────────────
 function smoothScrollToBottom() {
     chatArea.scrollTop = chatArea.scrollHeight;
 }
 
-// ── Throttled resize for textarea ──────────────
 var resizePending = false;
 msgInput.addEventListener('input', function() {
     if (resizePending) return;
@@ -1865,7 +2045,6 @@ msgInput.addEventListener('input', function() {
     });
 });
 
-// ── Code blocks and Mermaid ────────────────────
 function processCodeBlocks(root) {
     var codeBlocks = root.querySelectorAll('pre code');
     if (codeBlocks.length === 0) return;
@@ -1934,20 +2113,13 @@ function processCodeBlocks(root) {
     });
 }
 
-// Diagram-type declarations mermaid recognizes as a valid first line.
-// If a code block is missing one of these (models sometimes drop it when
-// showing a short snippet), we prepend "graph LR" so it still renders
-// instead of throwing "Syntax error in text".
 var MERMAID_DECLARATION_RE = /^\s*(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|sankey-beta|block-beta|xychart-beta)\b/i;
 
 function ensureMermaidDeclaration(text) {
     var trimmed = text.replace(/^\s+/, '');
     if (MERMAID_DECLARATION_RE.test(trimmed)) {
-        return text; // already has a valid header, leave untouched
+        return text;
     }
-    // Only auto-fix if it actually looks like flowchart node/edge syntax
-    // (has an arrow like --> / --- / -.-> ), otherwise leave it alone so
-    // the real error still surfaces for anything we don't recognize.
     if (/--[->.]|===>/.test(trimmed)) {
         return 'graph LR\n' + text;
     }
@@ -1971,7 +2143,6 @@ function renderMermaidDiagrams(root) {
     }
 }
 
-// ── DeepSeek status ──
 function checkDeepSeekStatus() {
     const statusSpan = document.getElementById('deepseekStatus');
     if (providerSelect.value !== 'deepseek') {
@@ -1995,7 +2166,6 @@ function checkDeepSeekStatus() {
         });
 }
 
-// Unload model
 unloadBtn.addEventListener('click', function() {
     if (!confirm('Unload current Ollama model from memory?')) return;
     fetch('/unload_model', { method: 'POST' })
@@ -2005,7 +2175,6 @@ unloadBtn.addEventListener('click', function() {
         .catch(() => status.textContent = '❌ Unload failed');
 });
 
-// ── DROP OVERLAY ───────────────────────────────
 var dropOverlay = document.getElementById('dropOverlay');
 var dragCounter = 0;
 function showDropOverlay() { dropOverlay.classList.add('active'); }
@@ -2155,7 +2324,6 @@ function addDroppedFile(file) {
     reader.readAsDataURL(file);
 }
 
-// ── THEME ──────────────────────────────────────
 var themeOuter = document.getElementById('themeToggleOuter');
 var themeKnob = document.getElementById('themeKnob');
 var isLight = localStorage.getItem('theme') === 'light';
@@ -2251,7 +2419,6 @@ function makeThemeStars() {
 }
 makeThemeStars();
 
-// ── Sidebar toggle ─────────────────────────────
 var sidebar = document.getElementById('sidebar');
 var sidebarVisible = localStorage.getItem('sidebarVisible') !== 'false';
 function toggleSidebar() {
@@ -2261,7 +2428,6 @@ function toggleSidebar() {
 }
 if (!sidebarVisible) sidebar.classList.add('hidden');
 
-// ── Scroll button ───────────────────────────────
 var scrollBtn = document.getElementById('scrollBottomBtn');
 var _scrollRaf = false;
 chatArea.addEventListener('scroll', function() {
@@ -2284,7 +2450,6 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// ─── Voice Output (TTS) ─────────────────────────
 var voiceEnabled = false;
 var speaking = false;
 var currentUtterance = null;
@@ -2314,32 +2479,24 @@ function stopSpeaking() {
     }
 }
 
-// ========================================================
-// NEW: Clean text for speech – removes decorative separators
-// ========================================================
 function cleanForSpeech(text) {
     var lines = text.split('\n');
     var cleanedLines = [];
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim();
-        // Skip entire lines that are only repeated punctuation: =, -, *, _, #
         if (/^[=*_\-#]+$/.test(line)) {
             continue;
         }
-        // Replace runs of 3 or more same punctuation with a single space
         line = line.replace(/([=*_\-#])\1{2,}/g, ' ');
         cleanedLines.push(line);
     }
     return cleanedLines.join('\n').trim();
 }
 
-// ── Speak with cleaning ──────────────────────────
 function speakText(text) {
     if (!voiceEnabled || !text) return;
-    // Clean the text before speaking
     var cleaned = cleanForSpeech(text);
-    if (!cleaned.trim()) return;  // nothing worth speaking
-
+    if (!cleaned.trim()) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = 'en-US';
@@ -2364,7 +2521,6 @@ function speakText(text) {
     window.speechSynthesis.speak(utterance);
 }
 
-// ── API Key helpers ─────────────────────────────
 function saveApiKey(provider, key) {
     if (key && key.trim()) localStorage.setItem('api_key_' + provider, key.trim());
     else localStorage.removeItem('api_key_' + provider);
@@ -2373,7 +2529,6 @@ function loadApiKey(provider) {
     return localStorage.getItem('api_key_' + provider) || '';
 }
 
-// ── Vision badge ────────────────────────────────
 function updateVisionBadge() {
     var provider = providerSelect.value;
     var model = modelSelect.value;
@@ -2392,7 +2547,6 @@ function updateVisionBadge() {
         .catch(() => visionBadge.classList.remove('visible'));
 }
 
-// ── Load models ─────────────────────────────────
 function loadModels() {
     var provider = providerSelect.value;
     var apiKey = apiKeyInput.value;
@@ -2486,7 +2640,6 @@ modelSelect.addEventListener('change', function() {
     document.getElementById('modelInfo').textContent = '';
 });
 
-// ── Date grouping helpers ──────────────────────
 function getDateGroup(dateStr) {
     var now = new Date();
     var date = new Date(dateStr);
@@ -2505,7 +2658,6 @@ function getDateGroup(dateStr) {
     return 'Older';
 }
 
-// ── Search ──────────────────────────────────────
 var searchTimeout = null;
 function searchChats() {
     var input = document.getElementById('searchInput');
@@ -2532,7 +2684,6 @@ function searchChats() {
     }, 300);
 }
 
-// ── Conversations ──────────────────────────────
 function loadConversations() {
     fetch('/conversations')
         .then(r => r.json())
@@ -3139,7 +3290,6 @@ function finalizeStats(usage) {
     tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens`;
 }
 
-// ── Voice recording ────────────────────────────
 var recordBtn = document.getElementById('recordBtn');
 var recognition = null;
 var isRecording = false;
@@ -3194,7 +3344,6 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     status.textContent = '⚠️ Voice recording not supported.';
 }
 
-// ── Resource monitor ────────────────────────────
 var resourceIntervalId = null;
 function updateResources() {
     fetch('/resources')
@@ -3211,16 +3360,12 @@ function updateResources() {
 }
 window.addEventListener('beforeunload', function() {
     if (resourceIntervalId) { clearInterval(resourceIntervalId); resourceIntervalId = null; }
-    // Only bother telling Ollama to free RAM if Ollama is actually the active provider —
-    // otherwise this fires on every page navigation and just logs a connection-refused
-    // warning when Ollama isn't running / isn't in use.
     if (providerSelect && providerSelect.value === 'ollama') {
         navigator.sendBeacon('/unload_model');
     }
 });
 resourceIntervalId = setInterval(updateResources, 15000);
 
-// ─── Initialisation ─────────────────────────────
 window.addEventListener('load', function() {
     var provider = providerSelect.value;
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
@@ -3237,10 +3382,1684 @@ window.addEventListener('load', function() {
     searchBtn.classList.toggle('active', searchEnabled);
     searchBtn.textContent = searchEnabled ? '🔍' : '🔍 off';
     status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
+
+    // Init weather after chat is ready
+    initWeather();
 });
 </script>
 
 """ + get_viewer_html() + """
+
+<script>
+/* ─── WEATHER JAVASCRIPT (merged from weather.html) ────────────── */
+
+// Polyfill for roundRect
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, radii) {
+        const r = typeof radii === 'number' ? radii : (radii || 0);
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        return this;
+    };
+}
+
+// ── Country data ──
+const countryList = [
+    { code: 'AF', name: 'Afghanistan' },
+    { code: 'AL', name: 'Albania' },
+    { code: 'DZ', name: 'Algeria' },
+    { code: 'AD', name: 'Andorra' },
+    { code: 'AO', name: 'Angola' },
+    { code: 'AG', name: 'Antigua and Barbuda' },
+    { code: 'AR', name: 'Argentina' },
+    { code: 'AM', name: 'Armenia' },
+    { code: 'AU', name: 'Australia' },
+    { code: 'AT', name: 'Austria' },
+    { code: 'AZ', name: 'Azerbaijan' },
+    { code: 'BS', name: 'Bahamas' },
+    { code: 'BH', name: 'Bahrain' },
+    { code: 'BD', name: 'Bangladesh' },
+    { code: 'BB', name: 'Barbados' },
+    { code: 'BY', name: 'Belarus' },
+    { code: 'BE', name: 'Belgium' },
+    { code: 'BZ', name: 'Belize' },
+    { code: 'BJ', name: 'Benin' },
+    { code: 'BT', name: 'Bhutan' },
+    { code: 'BO', name: 'Bolivia' },
+    { code: 'BA', name: 'Bosnia and Herzegovina' },
+    { code: 'BW', name: 'Botswana' },
+    { code: 'BR', name: 'Brazil' },
+    { code: 'BN', name: 'Brunei' },
+    { code: 'BG', name: 'Bulgaria' },
+    { code: 'BF', name: 'Burkina Faso' },
+    { code: 'BI', name: 'Burundi' },
+    { code: 'KH', name: 'Cambodia' },
+    { code: 'CM', name: 'Cameroon' },
+    { code: 'CA', name: 'Canada' },
+    { code: 'CV', name: 'Cape Verde' },
+    { code: 'CF', name: 'Central African Republic' },
+    { code: 'TD', name: 'Chad' },
+    { code: 'CL', name: 'Chile' },
+    { code: 'CN', name: 'China' },
+    { code: 'CO', name: 'Colombia' },
+    { code: 'KM', name: 'Comoros' },
+    { code: 'CG', name: 'Congo' },
+    { code: 'CD', name: 'DR Congo' },
+    { code: 'CR', name: 'Costa Rica' },
+    { code: 'HR', name: 'Croatia' },
+    { code: 'CU', name: 'Cuba' },
+    { code: 'CY', name: 'Cyprus' },
+    { code: 'CZ', name: 'Czech Republic' },
+    { code: 'DK', name: 'Denmark' },
+    { code: 'DJ', name: 'Djibouti' },
+    { code: 'DM', name: 'Dominica' },
+    { code: 'DO', name: 'Dominican Republic' },
+    { code: 'EC', name: 'Ecuador' },
+    { code: 'EG', name: 'Egypt' },
+    { code: 'SV', name: 'El Salvador' },
+    { code: 'GQ', name: 'Equatorial Guinea' },
+    { code: 'ER', name: 'Eritrea' },
+    { code: 'EE', name: 'Estonia' },
+    { code: 'SZ', name: 'Eswatini' },
+    { code: 'ET', name: 'Ethiopia' },
+    { code: 'FJ', name: 'Fiji' },
+    { code: 'FI', name: 'Finland' },
+    { code: 'FR', name: 'France' },
+    { code: 'GA', name: 'Gabon' },
+    { code: 'GM', name: 'Gambia' },
+    { code: 'GE', name: 'Georgia' },
+    { code: 'DE', name: 'Germany' },
+    { code: 'GH', name: 'Ghana' },
+    { code: 'GR', name: 'Greece' },
+    { code: 'GD', name: 'Grenada' },
+    { code: 'GT', name: 'Guatemala' },
+    { code: 'GN', name: 'Guinea' },
+    { code: 'GW', name: 'Guinea-Bissau' },
+    { code: 'GY', name: 'Guyana' },
+    { code: 'HT', name: 'Haiti' },
+    { code: 'HN', name: 'Honduras' },
+    { code: 'HU', name: 'Hungary' },
+    { code: 'IS', name: 'Iceland' },
+    { code: 'IN', name: 'India' },
+    { code: 'ID', name: 'Indonesia' },
+    { code: 'IR', name: 'Iran' },
+    { code: 'IQ', name: 'Iraq' },
+    { code: 'IE', name: 'Ireland' },
+    { code: 'IL', name: 'Israel' },
+    { code: 'IT', name: 'Italy' },
+    { code: 'JM', name: 'Jamaica' },
+    { code: 'JP', name: 'Japan' },
+    { code: 'JO', name: 'Jordan' },
+    { code: 'KZ', name: 'Kazakhstan' },
+    { code: 'KE', name: 'Kenya' },
+    { code: 'KI', name: 'Kiribati' },
+    { code: 'KP', name: 'North Korea' },
+    { code: 'KR', name: 'South Korea' },
+    { code: 'KW', name: 'Kuwait' },
+    { code: 'KG', name: 'Kyrgyzstan' },
+    { code: 'LA', name: 'Laos' },
+    { code: 'LV', name: 'Latvia' },
+    { code: 'LB', name: 'Lebanon' },
+    { code: 'LS', name: 'Lesotho' },
+    { code: 'LR', name: 'Liberia' },
+    { code: 'LY', name: 'Libya' },
+    { code: 'LI', name: 'Liechtenstein' },
+    { code: 'LT', name: 'Lithuania' },
+    { code: 'LU', name: 'Luxembourg' },
+    { code: 'MG', name: 'Madagascar' },
+    { code: 'MW', name: 'Malawi' },
+    { code: 'MY', name: 'Malaysia' },
+    { code: 'MV', name: 'Maldives' },
+    { code: 'ML', name: 'Mali' },
+    { code: 'MT', name: 'Malta' },
+    { code: 'MH', name: 'Marshall Islands' },
+    { code: 'MR', name: 'Mauritania' },
+    { code: 'MU', name: 'Mauritius' },
+    { code: 'MX', name: 'Mexico' },
+    { code: 'FM', name: 'Micronesia' },
+    { code: 'MD', name: 'Moldova' },
+    { code: 'MC', name: 'Monaco' },
+    { code: 'MN', name: 'Mongolia' },
+    { code: 'ME', name: 'Montenegro' },
+    { code: 'MA', name: 'Morocco' },
+    { code: 'MZ', name: 'Mozambique' },
+    { code: 'MM', name: 'Myanmar' },
+    { code: 'NA', name: 'Namibia' },
+    { code: 'NR', name: 'Nauru' },
+    { code: 'NP', name: 'Nepal' },
+    { code: 'NL', name: 'Netherlands' },
+    { code: 'NZ', name: 'New Zealand' },
+    { code: 'NI', name: 'Nicaragua' },
+    { code: 'NE', name: 'Niger' },
+    { code: 'NG', name: 'Nigeria' },
+    { code: 'MK', name: 'North Macedonia' },
+    { code: 'NO', name: 'Norway' },
+    { code: 'OM', name: 'Oman' },
+    { code: 'PK', name: 'Pakistan' },
+    { code: 'PW', name: 'Palau' },
+    { code: 'PA', name: 'Panama' },
+    { code: 'PG', name: 'Papua New Guinea' },
+    { code: 'PY', name: 'Paraguay' },
+    { code: 'PE', name: 'Peru' },
+    { code: 'PH', name: 'Philippines' },
+    { code: 'PL', name: 'Poland' },
+    { code: 'PT', name: 'Portugal' },
+    { code: 'QA', name: 'Qatar' },
+    { code: 'RO', name: 'Romania' },
+    { code: 'RU', name: 'Russia' },
+    { code: 'RW', name: 'Rwanda' },
+    { code: 'KN', name: 'Saint Kitts and Nevis' },
+    { code: 'LC', name: 'Saint Lucia' },
+    { code: 'VC', name: 'Saint Vincent and the Grenadines' },
+    { code: 'WS', name: 'Samoa' },
+    { code: 'SM', name: 'San Marino' },
+    { code: 'ST', name: 'Sao Tome and Principe' },
+    { code: 'SA', name: 'Saudi Arabia' },
+    { code: 'SN', name: 'Senegal' },
+    { code: 'RS', name: 'Serbia' },
+    { code: 'SC', name: 'Seychelles' },
+    { code: 'SL', name: 'Sierra Leone' },
+    { code: 'SG', name: 'Singapore' },
+    { code: 'SK', name: 'Slovakia' },
+    { code: 'SI', name: 'Slovenia' },
+    { code: 'SB', name: 'Solomon Islands' },
+    { code: 'SO', name: 'Somalia' },
+    { code: 'ZA', name: 'South Africa' },
+    { code: 'SS', name: 'South Sudan' },
+    { code: 'ES', name: 'Spain' },
+    { code: 'LK', name: 'Sri Lanka' },
+    { code: 'SD', name: 'Sudan' },
+    { code: 'SR', name: 'Suriname' },
+    { code: 'SE', name: 'Sweden' },
+    { code: 'CH', name: 'Switzerland' },
+    { code: 'SY', name: 'Syria' },
+    { code: 'TW', name: 'Taiwan' },
+    { code: 'TJ', name: 'Tajikistan' },
+    { code: 'TZ', name: 'Tanzania' },
+    { code: 'TH', name: 'Thailand' },
+    { code: 'TL', name: 'Timor-Leste' },
+    { code: 'TG', name: 'Togo' },
+    { code: 'TO', name: 'Tonga' },
+    { code: 'TT', name: 'Trinidad and Tobago' },
+    { code: 'TN', name: 'Tunisia' },
+    { code: 'TR', name: 'Turkey' },
+    { code: 'TM', name: 'Turkmenistan' },
+    { code: 'TV', name: 'Tuvalu' },
+    { code: 'UG', name: 'Uganda' },
+    { code: 'UA', name: 'Ukraine' },
+    { code: 'AE', name: 'United Arab Emirates' },
+    { code: 'GB', name: 'United Kingdom' },
+    { code: 'US', name: 'United States' },
+    { code: 'UY', name: 'Uruguay' },
+    { code: 'UZ', name: 'Uzbekistan' },
+    { code: 'VU', name: 'Vanuatu' },
+    { code: 'VA', name: 'Vatican City' },
+    { code: 'VE', name: 'Venezuela' },
+    { code: 'VN', name: 'Vietnam' },
+    { code: 'YE', name: 'Yemen' },
+    { code: 'ZM', name: 'Zambia' },
+    { code: 'ZW', name: 'Zimbabwe' }
+];
+
+const flagMap = {};
+countryList.forEach(c => {
+    const code = c.code.toUpperCase();
+    const flag = String.fromCodePoint(0x1F1E6 + code.charCodeAt(0) - 65, 0x1F1E6 + code.charCodeAt(1) - 65);
+    flagMap[c.code] = flag;
+});
+
+const countryLatMap = {
+    'AF': 33.9, 'AL': 41.2, 'DZ': 28.0, 'AD': 42.5, 'AO': -12.5,
+    'AG': 17.1, 'AR': -35.0, 'AM': 40.2, 'AU': -25.0, 'AT': 47.5,
+    'AZ': 40.5, 'BS': 25.0, 'BH': 26.0, 'BD': 24.0, 'BB': 13.2,
+    'BY': 53.0, 'BE': 50.8, 'BZ': 17.2, 'BJ': 9.5, 'BT': 27.5,
+    'BO': -17.0, 'BA': 44.0, 'BW': -22.0, 'BR': -14.0, 'BN': 4.5,
+    'BG': 42.7, 'BF': 12.0, 'BI': -3.5, 'KH': 13.0, 'CM': 6.0,
+    'CA': 56.0, 'CV': 15.0, 'CF': 6.5, 'TD': 15.0, 'CL': -30.0,
+    'CN': 35.0, 'CO': 4.0, 'KM': -12.2, 'CG': -1.0, 'CD': -4.0,
+    'CR': 10.0, 'HR': 45.2, 'CU': 22.0, 'CY': 35.0, 'CZ': 49.8,
+    'DK': 56.0, 'DJ': 11.8, 'DM': 15.4, 'DO': 18.7, 'EC': -2.0,
+    'EG': 26.0, 'SV': 13.8, 'GQ': 1.5, 'ER': 15.0, 'EE': 58.5,
+    'SZ': -26.5, 'ET': 8.0, 'FJ': -17.0, 'FI': 63.0, 'FR': 46.6,
+    'GA': -1.0, 'GM': 13.5, 'GE': 42.0, 'DE': 51.0, 'GH': 7.8,
+    'GR': 38.0, 'GD': 12.1, 'GT': 15.8, 'GN': 10.0, 'GW': 12.0,
+    'GY': 5.0, 'HT': 19.0, 'HN': 14.0, 'HU': 47.0, 'IS': 65.0,
+    'IN': 20.0, 'ID': -5.0, 'IR': 32.0, 'IQ': 33.0, 'IE': 53.0,
+    'IL': 31.5, 'IT': 42.0, 'JM': 18.1, 'JP': 36.0, 'JO': 31.0,
+    'KZ': 48.0, 'KE': 0.0, 'KI': 1.0, 'KP': 40.0, 'KR': 36.5,
+    'KW': 29.5, 'KG': 41.5, 'LA': 18.0, 'LV': 57.0, 'LB': 34.0,
+    'LS': -29.5, 'LR': 6.5, 'LY': 26.0, 'LI': 47.2, 'LT': 55.0,
+    'LU': 49.8, 'MG': -19.0, 'MW': -13.5, 'MY': 2.5, 'MV': 3.2,
+    'ML': 17.0, 'MT': 35.9, 'MH': 7.0, 'MR': 20.0, 'MU': -20.2,
+    'MX': 23.0, 'FM': 7.0, 'MD': 47.0, 'MC': 43.7, 'MN': 46.0,
+    'ME': 42.5, 'MA': 31.0, 'MZ': -18.0, 'MM': 22.0, 'NA': -22.0,
+    'NR': -0.5, 'NP': 28.0, 'NL': 52.3, 'NZ': -41.0, 'NI': 13.0,
+    'NE': 17.0, 'NG': 9.0, 'MK': 41.6, 'NO': 61.0, 'OM': 21.0,
+    'PK': 30.0, 'PW': 7.5, 'PA': 8.5, 'PG': -6.0, 'PY': -23.0,
+    'PE': -9.0, 'PH': 13.0, 'PL': 52.0, 'PT': 39.5, 'QA': 25.5,
+    'RO': 46.0, 'RU': 61.0, 'RW': -2.0, 'KN': 17.3, 'LC': 13.9,
+    'VC': 13.2, 'WS': -13.5, 'SM': 43.9, 'ST': 0.2, 'SA': 24.0,
+    'SN': 14.0, 'RS': 44.0, 'SC': -4.6, 'SL': 8.5, 'SG': 1.3,
+    'SK': 48.7, 'SI': 46.0, 'SB': -9.0, 'SO': 6.0, 'ZA': -30.0,
+    'SS': 7.0, 'ES': 40.0, 'LK': 7.5, 'SD': 15.0, 'SR': 4.0,
+    'SE': 62.0, 'CH': 46.8, 'SY': 35.0, 'TW': 23.5, 'TJ': 39.0,
+    'TZ': -6.0, 'TH': 14.0, 'TL': -8.9, 'TG': 8.5, 'TO': -21.0,
+    'TT': 10.5, 'TN': 34.0, 'TR': 39.0, 'TM': 40.0, 'TV': -7.0,
+    'UG': 1.0, 'UA': 49.0, 'AE': 24.0, 'GB': 54.0, 'US': 38.0,
+    'UY': -33.0, 'UZ': 41.0, 'VU': -16.0, 'VA': 41.9, 'VE': 7.0,
+    'VN': 16.0, 'YE': 15.5, 'ZM': -14.0, 'ZW': -19.0
+};
+
+// ── State ──
+let currentCity = 'Unknown';
+let currentCountry = 'Unknown';
+let currentCountryCode = '';
+let currentRegion = '';
+let currentTemp = null;
+let currentCondition = '';
+let currentWeatherEmoji = '🌤️';
+let currentFlag = '🌍';
+let currentLat = 0;
+let currentLon = 0;
+let currentTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+let activeToast = null;
+let activeCanvas = null;
+let activeSeason = 'summer';
+let canvasAnimId = null;
+let toastTimer = null;
+let blobInstances = [];
+
+const container = document.getElementById('toastContainer');
+const countrySelect = document.getElementById('weatherCountrySelect');
+
+// ── Toast controller ──
+function createToast() {
+    if (activeToast) {
+        activeToast.close();
+        activeToast = null;
+    }
+    container.innerHTML = '';
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `
+        <div class="toast-scene">
+            <canvas class="toast-canvas" id="sceneCanvas"></canvas>
+        </div>
+        <div class="toast-content">
+            <div class="toast-icon" id="toastIcon"><div class="spinner"></div></div>
+            <div class="toast-text">
+                <div class="main" id="toastMain">⏳ Detecting...</div>
+                <div class="sub" id="toastSub"></div>
+                <div class="time-row" id="timeRow">
+                    <span class="clock" id="clockText">--:--</span>
+                    <span class="date" id="dateText"></span>
+                </div>
+                <div class="weather-row" id="weatherRow" style="display:none;">
+                    <span class="weather-emoji" id="weatherEmoji">🌤️</span>
+                    <span class="temp" id="weatherTemp">--°C</span>
+                    <span class="condition" id="weatherCondition">--</span>
+                </div>
+                <div class="fetch-status" id="fetchStatus"></div>
+            </div>
+            <button class="close-btn" id="closeToastBtn">✕</button>
+        </div>
+        <div class="toast-progress" id="toastProgress"></div>
+    `;
+    container.appendChild(toast);
+
+    const canvas = document.getElementById('sceneCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const obj = {
+        toast,
+        canvas,
+        ctx,
+        icon: document.getElementById('toastIcon'),
+        main: document.getElementById('toastMain'),
+        sub: document.getElementById('toastSub'),
+        progress: document.getElementById('toastProgress'),
+        weatherRow: document.getElementById('weatherRow'),
+        weatherEmoji: document.getElementById('weatherEmoji'),
+        weatherTemp: document.getElementById('weatherTemp'),
+        weatherCondition: document.getElementById('weatherCondition'),
+        fetchStatus: document.getElementById('fetchStatus'),
+        closeBtn: document.getElementById('closeToastBtn'),
+        clockText: document.getElementById('clockText'),
+        dateText: document.getElementById('dateText'),
+        _clockInterval: null,
+        startClock() {
+            const tick = () => {
+                const now = new Date();
+                let timeStr, dateStr;
+                try {
+                    timeStr = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: currentTimezone }).format(now);
+                    dateStr = new Intl.DateTimeFormat([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: currentTimezone }).format(now);
+                } catch (e) {
+                    timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    dateStr = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+                }
+                if (this.clockText) this.clockText.textContent = timeStr;
+                if (this.dateText) this.dateText.textContent = dateStr;
+            };
+            tick();
+            this._clockInterval = setInterval(tick, 1000);
+        },
+        update(mainText, subText = '', iconHtml = null, progress = null) {
+            this.main.textContent = mainText;
+            if (subText) {
+                this.sub.textContent = subText;
+                this.sub.classList.add('visible');
+            } else {
+                this.sub.classList.remove('visible');
+            }
+            if (iconHtml !== null) this.icon.innerHTML = iconHtml;
+            if (progress !== null && progress > 0) {
+                this.progress.style.width = Math.min(progress, 100) + '%';
+                this.progress.style.display = 'block';
+            } else {
+                this.progress.style.width = '0%';
+                this.progress.style.display = 'none';
+            }
+        },
+        updateWeather(tempC, condition, emoji) {
+            this.weatherRow.style.display = 'flex';
+            this.weatherTemp.textContent = `${Math.round(tempC)}°C`;
+            this.weatherCondition.textContent = condition || '';
+            this.weatherEmoji.textContent = emoji || '🌤️';
+        },
+        setStatus(text) {
+            this.fetchStatus.textContent = text;
+        },
+        close() {
+            this.toast.classList.remove('show');
+            if (toastTimer) {
+                clearTimeout(toastTimer);
+                toastTimer = null;
+            }
+            if (canvasAnimId) {
+                cancelAnimationFrame(canvasAnimId);
+                canvasAnimId = null;
+            }
+            if (this._resizeHandler) {
+                window.removeEventListener('resize', this._resizeHandler);
+                this._resizeHandler = null;
+            }
+            if (this._clockInterval) {
+                clearInterval(this._clockInterval);
+                this._clockInterval = null;
+            }
+            setTimeout(() => {
+                if (this.toast.parentNode) this.toast.remove();
+                if (activeToast === this) activeToast = null;
+            }, 600);
+        }
+    };
+
+    obj.closeBtn.addEventListener('click', () => obj.close());
+    obj.startClock();
+
+    toast.classList.add('show');
+
+    activeToast = obj;
+    activeCanvas = canvas;
+    return obj;
+}
+
+// ── Canvas sizing ──
+function sizeCanvas(canvas) {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = rect.width, cssH = rect.height;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: cssW, h: cssH };
+}
+
+// ── Walking blob ──
+function createBlob(x, y, emoji, color, speed = 1.0, size = 22) {
+    return {
+        x, y, baseY: y, emoji, color,
+        speed: speed * (0.6 + Math.random() * 0.5),
+        size,
+        direction: Math.random() > 0.5 ? 1 : -1,
+        stepPhase: Math.random() * Math.PI * 2,
+        walkCycle: Math.random() * 100,
+        armSwing: 0,
+        legOffset: 0,
+        pauseTimer: 0,
+        isPaused: false,
+        pauseDuration: 0,
+        eyeColor: '#2b2b2b',
+        blush: true,
+        hasDrink: false,
+        isDrinking: false,
+        drinkTimer: 0,
+        drinkCooldown: 100 + Math.random() * 200,
+        drinkProgress: 0
+    };
+}
+function updateBlob(blob, w, h, t, speedMul = 1) {
+    if (!blob) return;
+    const spd = blob.speed * speedMul * 0.6;
+    if (blob.hasDrink) {
+        if (blob.isDrinking) {
+            blob.drinkTimer += 1;
+            blob.drinkProgress = Math.min(1, blob.drinkTimer / 30);
+            if (blob.drinkTimer > 70) {
+                blob.isDrinking = false;
+                blob.drinkTimer = 0;
+                blob.drinkProgress = 0;
+                blob.drinkCooldown = 150 + Math.random() * 250;
+            }
+            return;
+        } else {
+            blob.drinkCooldown -= 1;
+            if (blob.drinkCooldown <= 0) {
+                blob.isDrinking = true;
+                blob.isPaused = false;
+                blob.drinkTimer = 0;
+                blob.drinkProgress = 0;
+                return;
+            }
+        }
+    }
+    if (blob.isPaused) {
+        blob.pauseTimer += 1;
+        if (blob.pauseTimer > blob.pauseDuration) {
+            blob.isPaused = false;
+            blob.pauseTimer = 0;
+            if (Math.random() > 0.5) blob.direction *= -1;
+        }
+        return;
+    }
+    if (Math.random() < 0.003) {
+        blob.isPaused = true;
+        blob.pauseTimer = 0;
+        blob.pauseDuration = 40 + Math.random() * 80;
+        return;
+    }
+    blob.x += blob.direction * spd * 1.2;
+    blob.stepPhase += spd * 0.06;
+    blob.walkCycle += spd * 0.04;
+    blob.armSwing = Math.sin(blob.walkCycle) * 0.3;
+    blob.legOffset = Math.sin(blob.walkCycle);
+    const bobAmt = 2.5 + Math.abs(Math.sin(blob.walkCycle)) * 2;
+    blob.y = blob.baseY + Math.sin(blob.walkCycle) * bobAmt;
+    blob.headTilt = Math.sin(blob.walkCycle * 0.5) * 0.04;
+    const margin = 30 + blob.size;
+    if (blob.x > w - margin) { blob.direction = -1; blob.x = w - margin; }
+    if (blob.x < margin) { blob.direction = 1; blob.x = margin; }
+}
+
+// ─── Full Walking Blob Drawing ──
+function drawWalkingBlob(ctx, blob, t) {
+    const { x, y, size: r, color, emoji, direction, walkCycle, isDrinking } = blob;
+    const d = direction;
+    const drinking = isDrinking;
+    const lift = drinking ? Math.min(1, blob.drinkProgress * 1.3) : 0;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.beginPath();
+    ctx.ellipse(0, r * 1.15, r * 0.8, r * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const legLen = r * 0.7;
+    const legThick = r * 0.16;
+    const legPhase = drinking ? 0.3 : walkCycle;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = legThick;
+    ctx.lineCap = 'round';
+    const lx1 = -r * 0.2, ly1 = r * 0.75;
+    const lx2 = lx1 + Math.sin(legPhase + 0.3) * r * 0.4 * d * (drinking ? 0 : 1);
+    const ly2 = ly1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3)) * r * 0.15 * (drinking ? 0.3 : 1);
+    ctx.beginPath();
+    ctx.moveTo(lx1, ly1);
+    ctx.quadraticCurveTo((lx1+lx2)/2 + Math.sin(legPhase+0.3)*r*0.2*d*(drinking?0:1), ly1+legLen*0.5, lx2, ly2);
+    ctx.stroke();
+
+    const rx1 = r * 0.2, ry1 = r * 0.75;
+    const rx2 = rx1 + Math.sin(legPhase + 0.3 + Math.PI) * r * 0.4 * d * (drinking ? 0 : 1);
+    const ry2 = ry1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3 + Math.PI)) * r * 0.15 * (drinking ? 0.3 : 1);
+    ctx.beginPath();
+    ctx.moveTo(rx1, ry1);
+    ctx.quadraticCurveTo((rx1+rx2)/2 + Math.sin(legPhase+0.3+Math.PI)*r*0.2*d*(drinking?0:1), ry1+legLen*0.5, rx2, ry2);
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(lx2, ly2 + legThick*0.5, r*0.2, r*0.12, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(rx2, ry2 + legThick*0.5, r*0.2, r*0.12, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r, r * 1.05 * (1 + Math.sin(walkCycle)*0.04), 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.beginPath();
+    ctx.ellipse(-r*0.3*d, -r*0.35, r*0.25, r*0.15, -0.3*d, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = r * 0.14;
+    ctx.lineCap = 'round';
+    const freeArmSide = -d;
+    const flx1 = freeArmSide * r * 0.85, fly1 = -r * 0.15;
+    const flx2 = flx1 + (drinking ? 0 : Math.sin(walkCycle+0.8) * r * 0.45 * freeArmSide);
+    const fly2 = fly1 + r * 0.5 + (drinking ? 0 : Math.abs(Math.sin(walkCycle+0.8)) * r * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(flx1, fly1);
+    ctx.quadraticCurveTo((flx1+flx2)/2, fly1+r*0.3, flx2, fly2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(flx2, fly2, r*0.1, 0, Math.PI*2);
+    ctx.fill();
+
+    const drinkSide = d;
+    const dax1 = drinkSide * r * 0.85, day1 = -r * 0.15;
+    let dax2, day2;
+    if (blob.hasDrink) {
+        const restX = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.45 * drinkSide;
+        const restY = day1 + r * 0.5 + Math.abs(Math.sin(walkCycle+0.8+Math.PI)) * r * 0.1;
+        const raisedX = drinkSide * r * 0.35;
+        const raisedY = -r * 0.55;
+        dax2 = restX + (raisedX - restX) * lift;
+        day2 = restY + (raisedY - restY) * lift;
+    } else {
+        dax2 = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.45 * drinkSide;
+        day2 = day1 + r * 0.5 + Math.abs(Math.sin(walkCycle+0.8+Math.PI)) * r * 0.1;
+    }
+    ctx.beginPath();
+    ctx.moveTo(dax1, day1);
+    ctx.quadraticCurveTo((dax1+dax2)/2 + (lift>0?0:Math.sin(walkCycle+0.8+Math.PI)*r*0.2*drinkSide), day1+r*0.3, dax2, day2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(dax2, day2, r*0.1, 0, Math.PI*2);
+    ctx.fill();
+
+    if (blob.hasDrink) {
+        ctx.save();
+        ctx.translate(dax2, day2);
+        ctx.rotate(-drinkSide * (0.15 + lift * 0.9));
+        const canW = r*0.22, canH = r*0.5;
+        const canGrad = ctx.createLinearGradient(-canW/2, 0, canW/2, 0);
+        canGrad.addColorStop(0, '#e53935');
+        canGrad.addColorStop(0.5, '#ff6f60');
+        canGrad.addColorStop(1, '#c62828');
+        ctx.fillStyle = canGrad;
+        ctx.shadowColor = 'rgba(0,0,0,0.25)';
+        ctx.shadowBlur = 3;
+        ctx.beginPath();
+        ctx.roundRect(-canW/2, -canH*0.75, canW, canH, canW*0.25);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#c0c0c0';
+        ctx.beginPath();
+        ctx.ellipse(0, -canH*0.75, canW*0.28, canW*0.12, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillRect(-canW/2, -canH*0.15, canW, canH*0.16);
+        ctx.restore();
+        if (lift > 0.7) {
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            for (let i=0; i<3; i++) {
+                const bx = dax2 + Math.sin(t*0.1 + i) * r * 0.15;
+                const by = day2 - r*0.3 - i*r*0.12 - (t*0.05) % (r*0.3);
+                ctx.beginPath();
+                ctx.arc(bx, by, r*0.03, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+    }
+
+    const eyeY = -r * 0.05;
+    const eyeSpacing = r * 0.32;
+    const eyeR = r * 0.22;
+    const pupilR = r * 0.11;
+    const lookX = d * 0.15;
+    const blinkCycle = Math.sin(t * 0.03 + 2.3);
+    const eyeSquash = drinking ? (0.3 + (1-lift)*0.5) : (blinkCycle > 0.965 ? 0.12 : 1);
+
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetY = 1;
+    ctx.beginPath();
+    ctx.ellipse(-eyeSpacing, eyeY, eyeR, eyeR * eyeSquash, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(eyeSpacing, eyeY, eyeR, eyeR * eyeSquash, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    if (eyeSquash > 0.4) {
+        ctx.fillStyle = blob.eyeColor || '#2b2b2b';
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(-eyeSpacing + lookX*eyeR*0.5, eyeY, pupilR, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(eyeSpacing + lookX*eyeR*0.5, eyeY, pupilR, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath();
+        ctx.arc(-eyeSpacing + lookX*eyeR*0.5 - pupilR*0.3, eyeY - pupilR*0.35, pupilR*0.3, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(eyeSpacing + lookX*eyeR*0.5 - pupilR*0.3, eyeY - pupilR*0.35, pupilR*0.3, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    if (blob.blush !== false) {
+        ctx.fillStyle = 'rgba(255,110,110,0.25)';
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.ellipse(-eyeSpacing - r*0.25, r*0.2, r*0.2, r*0.12, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(eyeSpacing + r*0.25, r*0.2, r*0.2, r*0.12, 0, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    ctx.strokeStyle = '#2b2b2b';
+    ctx.lineWidth = Math.max(1.5, r*0.06);
+    ctx.shadowBlur = 0;
+    if (drinking && lift > 0.5) {
+        ctx.beginPath();
+        ctx.arc(0, r*0.28, r*0.09, 0, Math.PI*2);
+        ctx.stroke();
+    } else {
+        ctx.beginPath();
+        ctx.arc(0, r*0.25, r*0.2, 0.15*Math.PI, 0.85*Math.PI);
+        ctx.stroke();
+    }
+
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
+    ctx.font = `${Math.round(r*0.9)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.fillText(emoji, 0, -r*1.2 - Math.abs(Math.sin(walkCycle))*2);
+
+    ctx.restore();
+}
+
+// ─── Full Season drawing functions ──
+function drawSummer(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#4a90d9');
+    sky.addColorStop(0.6, '#87CEEB');
+    sky.addColorStop(1, '#cdeffd');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    const sunX = w*0.82, sunY = h*0.18;
+    const grd = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 60);
+    grd.addColorStop(0, 'rgba(255,240,150,1)');
+    grd.addColorStop(0.5, 'rgba(255,200,50,0.8)');
+    grd.addColorStop(1, 'rgba(255,200,50,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 60, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fdd835';
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 28, 0, Math.PI*2);
+    ctx.fill();
+
+    const seaTop = h*0.50, seaBottom = h*0.68;
+    const sea = ctx.createLinearGradient(0, seaTop, 0, seaBottom);
+    sea.addColorStop(0, '#1e88e5');
+    sea.addColorStop(0.5, '#29b6f6');
+    sea.addColorStop(1, '#4fc3f7');
+    ctx.fillStyle = sea;
+    ctx.fillRect(0, seaTop, w, seaBottom - seaTop);
+    for (let i=0; i<4; i++) {
+        const wy = seaTop + (i+1)*(seaBottom-seaTop)/5;
+        ctx.strokeStyle = `rgba(255,255,255,${0.35 - i*0.06})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let x=0; x<=w; x+=6) {
+            const yy = wy + Math.sin(x*0.05 + t*0.02 + i) * 2.2;
+            if (x===0) ctx.moveTo(x, yy);
+            else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+    }
+    ctx.fillStyle = '#f0d9a8';
+    ctx.fillRect(0, seaBottom, w, h - seaBottom);
+    drawHouse(ctx, w*0.22, seaBottom + (h-seaBottom)*0.62, 0.85, t, { wall:'#f5e6ca', roof:'#4fc3f7', trim:'#e8d5b5', flowers:true, lights:false });
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 0.9);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+function drawWinter(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#0b1a2e');
+    sky.addColorStop(0.3, '#1a2a4a');
+    sky.addColorStop(0.6, '#2d4a6a');
+    sky.addColorStop(1, '#4a6a8a');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    for (let i=0; i<20; i++) {
+        const x = (i*37+13)%w;
+        const y = (i*29+7)%(h*0.5);
+        const tw = 0.3 + Math.abs(Math.sin(t*0.015 + i*1.3))*0.7;
+        ctx.fillStyle = `rgba(255,255,255,${tw})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 0.8+tw*0.6, 0, Math.PI*2);
+        ctx.fill();
+    }
+    const groundY = h*0.70;
+    ctx.fillStyle = '#e8edf2';
+    ctx.beginPath();
+    ctx.moveTo(0, groundY);
+    for (let x=0; x<=w; x+=6) {
+        const yOff = Math.sin(x*0.04 + t*0.008)*3 + Math.sin(x*0.07 + t*0.015)*1.5;
+        ctx.lineTo(x, groundY + yOff);
+    }
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fill();
+
+    drawHouse(ctx, w*0.22, groundY+6, 0.85, t, { wall:'#d5c8b0', roof:'#6d4c2f', trim:'#c9b89a', snow:true, lights:true, smoke:true });
+    drawSnowman(ctx, w*0.72, groundY+4, 0.6, t);
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 0.6);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+function drawAutumn(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#9bb7d4');
+    sky.addColorStop(0.5, '#c9d9e8');
+    sky.addColorStop(1, '#e8f0e8');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    const grd = ctx.createLinearGradient(0, h*0.74, 0, h);
+    grd.addColorStop(0, '#7cb342');
+    grd.addColorStop(1, '#558b2f');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, h*0.74, w, h*0.26);
+
+    drawTree(ctx, w*0.78, h*0.74, 1.0, t, 'maple');
+    drawHouse(ctx, w*0.22, h*0.72, 0.9, t, { wall:'#e8d5b5', roof:'#8d6e63', trim:'#d4a373', flowers:true, lights:false });
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 0.85);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+function drawSpring(ctx, w, h, t, blobs) {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#81c784');
+    sky.addColorStop(0.5, '#b2dfdb');
+    sky.addColorStop(1, '#e0f7fa');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    const grd = ctx.createLinearGradient(0, h*0.73, 0, h);
+    grd.addColorStop(0, '#7cb342');
+    grd.addColorStop(1, '#4caf50');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, h*0.73, w, h*0.27);
+
+    drawTree(ctx, w*0.78, h*0.725, 1.0, t, 'sakura');
+    drawHouse(ctx, w*0.22, h*0.71, 0.9, t, { wall:'#f5e6ca', roof:'#6d4c2f', trim:'#d7ccc8', flowers:true, lights:false });
+
+    blobs.forEach(b => {
+        updateBlob(b, w, h, t, 1.0);
+        drawWalkingBlob(ctx, b, t);
+    });
+}
+
+function drawHouse(ctx, x, y, s, t, opts) {
+    const wall = opts.wall || '#f5e6ca';
+    const roof = opts.roof || '#b23b3b';
+    const trim = opts.trim || '#e8d5b5';
+    const hasSnow = opts.snow || false;
+    const hasLights = opts.lights || false;
+    const chimneySmoke = opts.smoke || false;
+
+    ctx.save();
+    ctx.translate(x, y);
+    const W = 58*s, H = 48*s;
+    const hw = W/2, hh = H/2;
+
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 16*s;
+    ctx.shadowOffsetY = 4*s;
+
+    ctx.fillStyle = wall;
+    ctx.shadowColor = 'rgba(0,0,0,0.10)';
+    ctx.shadowBlur = 12*s;
+    ctx.shadowOffsetY = 3*s;
+    ctx.beginPath();
+    ctx.roundRect(-hw, -hh+4*s, W, H-4*s, 2*s);
+    ctx.fill();
+
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 10*s;
+    ctx.shadowOffsetY = 4*s;
+    ctx.fillStyle = roof;
+    ctx.beginPath();
+    ctx.moveTo(-hw-10*s, -hh+4*s);
+    ctx.lineTo(0, -hh-22*s);
+    ctx.lineTo(hw+10*s, -hh+4*s);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.shadowBlur = 6*s;
+    ctx.fillStyle = trim;
+    ctx.beginPath();
+    ctx.moveTo(-hw-11*s, -hh+6*s);
+    ctx.lineTo(-hw-6*s, -hh+2*s);
+    ctx.lineTo(hw+6*s, -hh+2*s);
+    ctx.lineTo(hw+11*s, -hh+6*s);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.shadowBlur = 6*s;
+    ctx.shadowOffsetY = 2*s;
+    ctx.fillStyle = '#8a6a52';
+    ctx.beginPath();
+    ctx.roundRect(hw-10*s, -hh-18*s, 7*s, 16*s, 1*s);
+    ctx.fill();
+    ctx.fillStyle = '#7a5a42';
+    ctx.fillRect(hw-11*s, -hh-20*s, 9*s, 3*s);
+
+    if (chimneySmoke) {
+        ctx.shadowBlur = 0;
+        for (let i=0; i<4; i++) {
+            const st = t*0.02 + i*1.7;
+            const sx = hw-6*s + Math.sin(st)*5*s;
+            const sy = -hh-22*s - i*7*s - (t*0.01)%6*s;
+            const sr = 3*s + i*2.5*s + Math.sin(st*0.5)*2*s;
+            const alpha = 0.25 - i*0.05;
+            ctx.fillStyle = `rgba(200,200,200,${Math.max(0, alpha)})`;
+            ctx.beginPath();
+            ctx.arc(sx, sy, sr, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
+
+    ctx.shadowBlur = 4*s;
+    ctx.shadowOffsetY = 2*s;
+    ctx.fillStyle = '#6d4c2f';
+    ctx.beginPath();
+    ctx.roundRect(-5*s, -hh+18*s, 10*s, 18*s, 1.5*s);
+    ctx.fill();
+    ctx.fillStyle = '#5a3d2b';
+    ctx.fillRect(-4*s, -hh+20*s, 3.5*s, 6*s);
+    ctx.fillRect(0.5*s, -hh+20*s, 3.5*s, 6*s);
+    ctx.fillRect(-4*s, -hh+28*s, 3.5*s, 6*s);
+    ctx.fillRect(0.5*s, -hh+28*s, 3.5*s, 6*s);
+    ctx.fillStyle = '#f0c040';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(4*s, -hh+25*s, 1.2*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.shadowBlur = 4*s;
+    ctx.shadowOffsetY = 2*s;
+    const winColor = hasLights ? '#ffdd77' : '#b3d9ff';
+    ctx.fillStyle = winColor;
+    ctx.beginPath();
+    ctx.roundRect(-hw+6*s, -hh+12*s, 11*s, 12*s, 1*s);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+    ctx.lineWidth = 1.5*s;
+    ctx.strokeRect(-hw+6*s, -hh+12*s, 11*s, 12*s);
+    ctx.beginPath();
+    ctx.moveTo(-hw+6*s, -hh+18*s);
+    ctx.lineTo(-hw+17*s, -hh+18*s);
+    ctx.moveTo(-hw+11.5*s, -hh+12*s);
+    ctx.lineTo(-hw+11.5*s, -hh+24*s);
+    ctx.stroke();
+
+    ctx.fillStyle = winColor;
+    ctx.beginPath();
+    ctx.roundRect(hw-17*s, -hh+12*s, 11*s, 12*s, 1*s);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+    ctx.lineWidth = 1.5*s;
+    ctx.strokeRect(hw-17*s, -hh+12*s, 11*s, 12*s);
+    ctx.beginPath();
+    ctx.moveTo(hw-17*s, -hh+18*s);
+    ctx.lineTo(hw-6*s, -hh+18*s);
+    ctx.moveTo(hw-11.5*s, -hh+12*s);
+    ctx.lineTo(hw-11.5*s, -hh+24*s);
+    ctx.stroke();
+
+    if (hasLights) {
+        ctx.shadowBlur = 0;
+        const glow = ctx.createRadialGradient(x, y-hh+18*s, 0, x, y-hh+18*s, 20*s);
+        glow.addColorStop(0, 'rgba(255,220,100,0.15)');
+        glow.addColorStop(1, 'rgba(255,220,100,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x, y-hh+18*s, 20*s, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    if (hasSnow) {
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath();
+        ctx.moveTo(-hw-8*s, -hh+5*s);
+        ctx.quadraticCurveTo(-hw*0.4, -hh-16*s, 0, -hh-20*s);
+        ctx.quadraticCurveTo(hw*0.4, -hh-16*s, hw+8*s, -hh+5*s);
+        ctx.quadraticCurveTo(hw*0.6, -hh+2*s, 0, -hh+4*s);
+        ctx.quadraticCurveTo(-hw*0.6, -hh+2*s, -hw-8*s, -hh+5*s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.beginPath();
+        ctx.ellipse(hw-6.5*s, -hh-20*s, 6*s, 2.5*s, 0, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    if (opts.flowers) {
+        ctx.shadowBlur = 0;
+        const flowerColors = ['#e91e63','#ff5722','#ffeb3b','#4caf50','#9c27b0'];
+        for (let side=-1; side<=1; side+=2) {
+            const bx = side * (hw-14*s);
+            ctx.fillStyle = '#6d4c2f';
+            ctx.fillRect(bx-3*s, -hh+10*s, 6*s, 3*s);
+            for (let f=0; f<3; f++) {
+                const fx = bx + (f-1)*2*s + Math.sin(t*0.02+f+side)*0.3*s;
+                const fy = -hh+8*s + Math.sin(t*0.025+f*1.2+side)*0.5*s;
+                ctx.fillStyle = flowerColors[(f+side)%flowerColors.length];
+                ctx.beginPath();
+                ctx.arc(fx, fy, 1.8*s, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = '#4caf50';
+                ctx.fillRect(fx-0.3*s, fy+1.5*s, 0.6*s, 2*s);
+            }
+        }
+    }
+
+    ctx.restore();
+}
+
+function drawTree(ctx, x, y, s, t, type) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    const sway = Math.sin(t*0.012)*0.035;
+    ctx.rotate(sway);
+
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 14*s;
+    ctx.shadowOffsetY = 4*s;
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.ellipse(0, 4*s, 26*s, 8*s, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    const trunkH = 42*s;
+    ctx.strokeStyle = '#6d4c2f';
+    ctx.lineWidth = 7*s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 4*s);
+    ctx.lineTo(-2*s, -trunkH);
+    ctx.stroke();
+
+    ctx.lineWidth = 4*s;
+    ctx.beginPath();
+    ctx.moveTo(-1*s, -trunkH*0.55);
+    ctx.quadraticCurveTo(-16*s, -trunkH*0.7, -20*s, -trunkH*0.95);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-1.5*s, -trunkH*0.8);
+    ctx.quadraticCurveTo(14*s, -trunkH*0.92, 20*s, -trunkH*1.1);
+    ctx.stroke();
+
+    let colors, highlight;
+    if (type === 'maple') {
+        colors = ['#b23b3b','#d84315','#e64a19','#a0392f','#c62828'];
+        highlight = 'rgba(255,200,150,0.18)';
+    } else {
+        colors = ['#f8bbd0','#f48fb1','#fce4ec','#f06292','#f5c1d9'];
+        highlight = 'rgba(255,255,255,0.35)';
+    }
+
+    const canopyY = -trunkH - 6*s;
+    const clusters = [
+        { dx:0, dy:-8, r:24 },
+        { dx:-20, dy:2, r:17 },
+        { dx:20, dy:0, r:18 },
+        { dx:-10, dy:14, r:15 },
+        { dx:12, dy:15, r:15 },
+        { dx:0, dy:6, r:20 }
+    ];
+
+    clusters.forEach((c, i) => {
+        const wob = Math.sin(t*0.01 + i*1.7)*1.2*s;
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.shadowColor = 'rgba(0,0,0,0.10)';
+        ctx.shadowBlur = 6*s;
+        ctx.shadowOffsetY = 2*s;
+        ctx.beginPath();
+        ctx.arc(c.dx*s + wob, canopyY + c.dy*s, c.r*s, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = highlight;
+    ctx.beginPath();
+    ctx.arc(-8*s, canopyY-10*s, 14*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.restore();
+
+    const particleCount = type === 'maple' ? 12 : 18;
+    for (let i=0; i<particleCount; i++) {
+        const seed = i*13.7;
+        const fallT = (t*0.02 + seed) % 40;
+        const px = x + Math.sin(seed)*34*s + Math.sin(t*0.006+seed)*10*s;
+        const py = y - trunkH*0.6 + (fallT/40)*(trunkH*1.15);
+        const drift = Math.sin(t*0.03 + seed*2)*6*s;
+        const alpha = Math.max(0, 1 - fallT/40);
+        if (alpha <= 0) continue;
+        ctx.save();
+        ctx.translate(px + drift, py);
+        ctx.rotate(t*0.02 + seed);
+        ctx.globalAlpha = alpha * 0.85;
+        ctx.fillStyle = colors[i % colors.length];
+        if (type === 'maple') {
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 2.6*s, 1.6*s, 0, 0, Math.PI*2);
+            ctx.fill();
+        } else {
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 2*s, 1.3*s, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(0, -1.6*s, 1.6*s, 1*s, 0, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+}
+
+function drawSnowman(ctx, x, y, s, t) {
+    ctx.save();
+    ctx.translate(x, y);
+    const wobble = Math.sin(t*0.015)*1.2;
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.beginPath();
+    ctx.ellipse(0, 38*s, 24*s, 6*s, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#f0f4f8';
+    ctx.shadowColor = 'rgba(0,0,0,0.08)';
+    ctx.shadowBlur = 6*s;
+    ctx.shadowOffsetY = 2*s;
+    ctx.beginPath();
+    ctx.arc(0, 24*s + wobble*0.3, 22*s, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 4*s + wobble*0.5, 16*s, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -16*s + wobble*0.7, 11*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#37474f';
+    ctx.fillRect(-16*s, -26*s, 32*s, 5*s);
+    ctx.fillRect(-10*s, -38*s, 20*s, 14*s);
+
+    ctx.fillStyle = '#e53935';
+    ctx.fillRect(-18*s, -6*s + wobble*0.4, 36*s, 5*s);
+    ctx.fillRect(-16*s, -4*s + wobble*0.4, 6*s, 10*s);
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.arc(-5*s, -18*s + wobble*0.6, 2*s, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(5*s, -18*s + wobble*0.6, 2*s, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ff8a65';
+    ctx.beginPath();
+    ctx.moveTo(0, -14*s + wobble*0.6);
+    ctx.lineTo(12*s, -15*s + wobble*0.5);
+    ctx.lineTo(0, -16*s + wobble*0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 1.5*s;
+    ctx.beginPath();
+    ctx.arc(0, -12*s + wobble*0.5, 6*s, 0.1*Math.PI, 0.9*Math.PI);
+    ctx.stroke();
+
+    ctx.fillStyle = '#1a1a1a';
+    for (let i=-1; i<=1; i++) {
+        ctx.beginPath();
+        ctx.arc(0, (2+i*6)*s + wobble*0.4, 1.8*s, 0, Math.PI*2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+function renderScene(ctx, w, h, season, time) {
+    ctx.clearRect(0, 0, w, h);
+
+    if (blobInstances.length === 0) {
+        const blobConfigs = [
+            { x: w*0.7, y: h*0.72, emoji: '🌻', color: '#ffb74d', speed: 1.0, size: 20 },
+            { x: w*0.15, y: h*0.78, emoji: '🐸', color: '#a5d6a7', speed: 0.8, size: 16 },
+            { x: w*0.45, y: h*0.76, emoji: '🐝', color: '#fdd835', speed: 1.2, size: 15 },
+        ];
+        blobInstances = blobConfigs.map(cfg => createBlob(cfg.x, cfg.y, cfg.emoji, cfg.color, cfg.speed, cfg.size));
+        blobInstances.forEach(b => {
+            b.x = 30 + Math.random() * (w - 60);
+            b.baseY = h*0.70 + Math.random()*0.12*h;
+            b.y = b.baseY;
+        });
+    }
+
+    blobInstances.forEach(b => {
+        if (Math.abs(b.baseY - h*0.73) > 20) {
+            b.baseY = h*0.70 + (b.baseY % (h*0.12));
+            b.y = b.baseY;
+        }
+    });
+
+    switch (season) {
+        case 'summer': drawSummer(ctx, w, h, time, blobInstances); break;
+        case 'winter': drawWinter(ctx, w, h, time, blobInstances); break;
+        case 'autumn': drawAutumn(ctx, w, h, time, blobInstances); break;
+        case 'spring': drawSpring(ctx, w, h, time, blobInstances); break;
+        default: drawSummer(ctx, w, h, time, blobInstances);
+    }
+}
+
+// ─── LOCATION & WEATHER helpers ──
+async function getLocationFromIP() {
+    try {
+        const res = await fetch('https://ip-api.com/json/');
+        if (!res.ok) throw new Error('IP API error');
+        const data = await res.json();
+        if (data.status === 'success') {
+            return {
+                city: data.city || 'Unknown',
+                country: data.country || 'Unknown',
+                countryCode: data.countryCode || '',
+                lat: data.lat || 0,
+                lon: data.lon || 0,
+                region: data.regionName || '',
+                timezone: data.timezone || null
+            };
+        }
+        return null;
+    } catch (e) {
+        console.warn('IP geolocation failed:', e);
+        return null;
+    }
+}
+
+function getFlagFromCode(code) {
+    if (!code) return '🌍';
+    const upper = code.toUpperCase();
+    if (upper.length === 2) {
+        try {
+            return String.fromCodePoint(0x1F1E6 + upper.charCodeAt(0) - 65, 0x1F1E6 + upper.charCodeAt(1) - 65);
+        } catch (e) { return '🌍'; }
+    }
+    return '🌍';
+}
+
+function getSeasonForCountry(country, code, lat) {
+    const month = new Date().getMonth() + 1;
+    let effectiveLat = lat;
+    if (!effectiveLat || Math.abs(effectiveLat) < 0.01) {
+        if (code && countryLatMap[code]) {
+            effectiveLat = countryLatMap[code];
+        } else {
+            effectiveLat = 30;
+        }
+    }
+    const isNorth = effectiveLat > 0;
+    if (Math.abs(effectiveLat) < 10) {
+        if (month >= 11 || month <= 2) return 'winter';
+        if (month >= 3 && month <= 5) return 'spring';
+        if (month >= 6 && month <= 8) return 'summer';
+        return 'autumn';
+    }
+    if (isNorth) {
+        if (month >= 3 && month <= 5) return 'spring';
+        if (month >= 6 && month <= 8) return 'summer';
+        if (month >= 9 && month <= 11) return 'autumn';
+        return 'winter';
+    } else {
+        if (month >= 3 && month <= 5) return 'autumn';
+        if (month >= 6 && month <= 8) return 'winter';
+        if (month >= 9 && month <= 11) return 'spring';
+        return 'summer';
+    }
+}
+
+function weatherEmojiFromCode(code) {
+    if (code === 0) return '☀️';
+    if (code >= 1 && code <= 3) return '⛅';
+    if (code === 45 || code === 48) return '🌫️';
+    if (code >= 51 && code <= 67) return '🌧️';
+    if (code >= 71 && code <= 77) return '❄️';
+    if (code >= 80 && code <= 82) return '🌧️';
+    if (code >= 85 && code <= 86) return '❄️';
+    if (code >= 95) return '⛈️';
+    return '🌤️';
+}
+function weatherDescFromCode(code) {
+    const map = {
+        0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+        45: 'Fog', 48: 'Rime fog',
+        51: 'Light drizzle', 53: 'Drizzle', 55: 'Dense drizzle',
+        56: 'Freezing drizzle', 57: 'Freezing drizzle',
+        61: 'Slight rain', 63: 'Rain', 65: 'Heavy rain',
+        66: 'Freezing rain', 67: 'Freezing rain',
+        71: 'Slight snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains',
+        80: 'Rain showers', 81: 'Rain showers', 82: 'Violent showers',
+        85: 'Snow showers', 86: 'Snow showers',
+        95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm'
+    };
+    return map[code] || '--';
+}
+
+async function fetchWeather(lat, lon) {
+    try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Weather API error');
+        const data = await res.json();
+        const current = data.current || {};
+        const tempC = typeof current.temperature_2m === 'number' ? current.temperature_2m : null;
+        const code = current.weather_code;
+        return {
+            tempC,
+            condition: weatherDescFromCode(code),
+            emoji: weatherEmojiFromCode(code),
+            region: '',
+            city: '',
+            country: '',
+            lat, lon,
+            timezone: data.timezone || null
+        };
+    } catch (err) {
+        return null;
+    }
+}
+
+async function fetchWeatherByCity(city) {
+    try {
+        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+        const geoRes = await fetch(geoUrl);
+        if (!geoRes.ok) throw new Error('Geocoding error');
+        const geoData = await geoRes.json();
+        const place = geoData.results?.[0];
+        if (!place) return null;
+        const lat = place.latitude, lon = place.longitude;
+        const wUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
+        const wRes = await fetch(wUrl);
+        if (!wRes.ok) throw new Error('Weather API error');
+        const wData = await wRes.json();
+        const current = wData.current || {};
+        const tempC = typeof current.temperature_2m === 'number' ? current.temperature_2m : null;
+        const code = current.weather_code;
+        return {
+            tempC,
+            condition: weatherDescFromCode(code),
+            emoji: weatherEmojiFromCode(code),
+            region: place.admin1 || '',
+            city: place.name || city,
+            country: place.country || '',
+            lat, lon,
+            timezone: wData.timezone || null
+        };
+    } catch (err) {
+        return null;
+    }
+}
+
+// ── SHOW TOAST ──
+async function showSeasonToast(season, city, country, code, region, lat, manual = false) {
+    const toast = createToast();
+    const canvas = toast.canvas;
+    const emoji = season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : '❄️';
+    const name = season.charAt(0).toUpperCase() + season.slice(1);
+    const flag = getFlagFromCode(code) || '🌍';
+    let locationDisplay = city;
+    if (!locationDisplay || locationDisplay === country || locationDisplay === code.toLowerCase()) {
+        locationDisplay = country;
+    } else if (region && region !== city && region !== 'Unknown') {
+        locationDisplay += ', ' + region;
+    }
+
+    const mainText = `${flag} ${locationDisplay}`;
+    const subText = `${emoji} ${name}`;
+
+    toast.update(mainText, subText, emoji, 80);
+
+    if (currentTemp !== null && currentTemp !== undefined) {
+        toast.updateWeather(currentTemp, currentCondition || '', currentWeatherEmoji || '🌤️');
+        toast.setStatus('✅ Weather loaded');
+    } else {
+        toast.setStatus('⏳ Loading weather...');
+        try {
+            let wData = null;
+            if (city && city !== 'Unknown') {
+                wData = await fetchWeatherByCity(city);
+            }
+            if ((!wData || wData.tempC === null) && lat) {
+                wData = await fetchWeather(lat, 0);
+            }
+            if (wData && wData.tempC !== null) {
+                currentTemp = wData.tempC;
+                currentCondition = wData.condition || '';
+                currentWeatherEmoji = wData.emoji || '🌤️';
+                if (wData.region) currentRegion = wData.region;
+                if (wData.city && wData.city !== 'Unknown') currentCity = wData.city;
+                if (wData.country) currentCountry = wData.country;
+                if (wData.lat) currentLat = wData.lat;
+                if (wData.lon) currentLon = wData.lon;
+                toast.updateWeather(currentTemp, currentCondition, currentWeatherEmoji);
+                toast.setStatus('✅ Weather loaded');
+            } else {
+                toast.setStatus('⚠️ Weather unavailable');
+            }
+        } catch (e) {
+            toast.setStatus('⚠️ Weather unavailable');
+        }
+    }
+
+    // ─── Start animation ───
+    blobInstances = [];
+
+    function startAnimation() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            animateScene(canvas, season);
+            return true;
+        }
+        return false;
+    }
+
+    if (!startAnimation()) {
+        setTimeout(() => {
+            if (!startAnimation()) {
+                const ro = new ResizeObserver(() => {
+                    if (startAnimation()) ro.disconnect();
+                });
+                ro.observe(canvas);
+                setTimeout(() => ro.disconnect(), 2000);
+            }
+        }, 150);
+    }
+
+    if (!manual) {
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            if (activeToast === toast) toast.close();
+        }, 10000);
+    }
+
+    if (code) {
+        const option = countrySelect.querySelector(`option[value="${code}"]`);
+        if (option) countrySelect.value = code;
+    }
+
+    return toast;
+}
+
+// ── UPDATE FROM COUNTRY SELECT ──
+async function updateFromCountry(code) {
+    const country = countryList.find(c => c.code === code);
+    if (!country) return;
+    const name = country.name;
+    const wData = await fetchWeatherByCity(name);
+    let city = name;
+    let region = '';
+    let temp = null, cond = '', emoji = '🌤️';
+    let lat = 0, lon = 0;
+    let countryName = name;
+    if (wData && wData.tempC !== null) {
+        temp = wData.tempC;
+        cond = wData.condition || '';
+        emoji = wData.emoji || '🌤️';
+        if (wData.city && wData.city !== name) city = wData.city;
+        if (wData.region) region = wData.region;
+        if (wData.country) countryName = wData.country;
+        lat = wData.lat || 0;
+        lon = wData.lon || 0;
+        if (wData.timezone) currentTimezone = wData.timezone;
+    }
+    if (!lat || Math.abs(lat) < 0.01) {
+        lat = countryLatMap[code] || 30;
+    }
+    currentCity = city;
+    currentCountry = countryName;
+    currentCountryCode = code;
+    currentRegion = region;
+    currentTemp = temp;
+    currentCondition = cond;
+    currentWeatherEmoji = emoji;
+    currentFlag = getFlagFromCode(code);
+    currentLat = lat;
+    currentLon = lon;
+    const season = getSeasonForCountry(countryName, code, lat);
+    blobInstances = [];
+    await showSeasonToast(season, city, countryName, code, region, lat, true);
+}
+
+// ── DETECT LOCATION ──
+async function detectLocation() {
+    let loc = await getLocationFromIP();
+    if (loc && loc.countryCode) {
+        const code = loc.countryCode;
+        const country = countryList.find(c => c.code === code);
+        if (country) {
+            currentCountryCode = code;
+            currentCountry = country.name;
+            currentCity = loc.city || country.name;
+            currentRegion = loc.region || '';
+            currentFlag = getFlagFromCode(code);
+            currentLat = loc.lat || 0;
+            currentLon = loc.lon || 0;
+            if (!currentLat || Math.abs(currentLat) < 0.01) {
+                currentLat = countryLatMap[code] || 30;
+            }
+            const wData = await fetchWeather(loc.lat || currentLat, loc.lon || 0);
+            if (wData && wData.tempC !== null) {
+                currentTemp = wData.tempC;
+                currentCondition = wData.condition || '';
+                currentWeatherEmoji = wData.emoji || '🌤️';
+                if (wData.city) currentCity = wData.city;
+                if (wData.region) currentRegion = wData.region;
+                if (wData.lat) currentLat = wData.lat;
+                if (wData.lon) currentLon = wData.lon;
+            }
+            currentTimezone = (wData && wData.timezone) || loc.timezone || currentTimezone;
+            const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
+            blobInstances = [];
+            await showSeasonToast(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
+            return;
+        }
+    }
+    if (navigator.geolocation) {
+        try {
+            const pos = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 });
+            });
+            const { latitude, longitude } = pos.coords;
+            const wData = await fetchWeather(latitude, longitude);
+            if (wData && wData.tempC !== null) {
+                const city = wData.city || 'Unknown';
+                const country = wData.country || 'Unknown';
+                let code = '';
+                const found = countryList.find(c => c.name === country);
+                if (found) code = found.code;
+                if (!code) {
+                    for (const c of countryList) {
+                        if (country.toLowerCase().includes(c.name.toLowerCase()) ||
+                            c.name.toLowerCase().includes(country.toLowerCase())) {
+                            code = c.code;
+                            break;
+                        }
+                    }
+                }
+                currentCity = city;
+                currentCountry = country;
+                currentCountryCode = code;
+                currentRegion = wData.region || '';
+                currentTemp = wData.tempC;
+                currentCondition = wData.condition || '';
+                currentWeatherEmoji = wData.emoji || '🌤️';
+                currentFlag = getFlagFromCode(code);
+                currentLat = wData.lat || latitude;
+                currentLon = wData.lon || longitude;
+                currentTimezone = wData.timezone || currentTimezone;
+                const season = getSeasonForCountry(country, code, currentLat);
+                blobInstances = [];
+                await showSeasonToast(season, city, country, code, currentRegion, currentLat, true);
+                return;
+            }
+        } catch (e) {
+            console.warn('Geolocation failed:', e);
+        }
+    }
+    const fallbackCode = 'US';
+    await updateFromCountry(fallbackCode);
+}
+
+// ── ANIMATION ──
+function animateScene(canvas, season) {
+    if (canvasAnimId) cancelAnimationFrame(canvasAnimId);
+    if (!canvas) return;
+    let { w, h } = sizeCanvas(canvas);
+    const onResize = () => {
+        if (canvas && document.body.contains(canvas)) {
+            ({ w, h } = sizeCanvas(canvas));
+            blobInstances.forEach(b => {
+                b.baseY = h*0.70 + (b.baseY % (h*0.12));
+                b.y = b.baseY;
+            });
+        }
+    };
+    window.addEventListener('resize', onResize);
+
+    let start = performance.now();
+    let activeSeason = season;
+
+    function frame(now) {
+        if (!canvas || !document.body.contains(canvas)) {
+            cancelAnimationFrame(canvasAnimId);
+            window.removeEventListener('resize', onResize);
+            return;
+        }
+        const t = (now - start) * 0.6;
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        renderScene(ctx, w, h, activeSeason, t);
+        canvasAnimId = requestAnimationFrame(frame);
+    }
+    frame(start);
+}
+
+// ── TOGGLE WEATHER ──
+function toggleWeather() {
+    if (container.style.display === 'none') {
+        container.style.display = 'flex';
+        if (!activeToast) {
+            if (currentCountryCode) {
+                updateFromCountry(currentCountryCode);
+            } else {
+                detectLocation();
+            }
+        } else {
+            if (!document.querySelector('.toast')) {
+                if (currentCountryCode) {
+                    updateFromCountry(currentCountryCode);
+                } else {
+                    detectLocation();
+                }
+            }
+        }
+    } else {
+        container.style.display = 'none';
+        if (activeToast) activeToast.close();
+    }
+}
+
+// ── INIT WEATHER ──
+function initWeather() {
+    countryList.sort((a, b) => a.name.localeCompare(b.name));
+    countryList.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.code;
+        const flag = getFlagFromCode(c.code);
+        opt.textContent = `${flag} ${c.name}`;
+        countrySelect.appendChild(opt);
+    });
+    countrySelect.addEventListener('change', (e) => {
+        const code = e.target.value;
+        if (code) {
+            updateFromCountry(code);
+        }
+    });
+    detectLocation();
+}
+
+// ── Override detectLocation to ensure container is shown ──
+const originalDetect = detectLocation;
+detectLocation = async function() {
+    container.style.display = 'flex';
+    await originalDetect();
+};
+
+console.log('🌍 Weather widget integrated with TrioForge');
+</script>
+
 </body>
 </html>"""
     return html
@@ -3255,12 +5074,8 @@ def unload_model():
             json={"model": current_model, "prompt": "", "keep_alive": 0},
             timeout=3
         )
-        print(f"🧹 Unloaded '{current_model}' from Ollama RAM")
-    except requests.exceptions.ConnectionError:
-        # Ollama simply isn't running — expected/benign, not worth logging every time.
+    except:
         pass
-    except Exception as e:
-        print(f"⚠️ Could not unload model: {e}")
     return '', 204
 
 providers = {
@@ -3287,7 +5102,7 @@ def get_resources():
                 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                 info = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 vram_used_gb = info.used / (1024**3)
-            except Exception:
+            except:
                 pass
         if vram_used_gb is None:
             try:
@@ -3298,7 +5113,7 @@ def get_resources():
                 match = re.search(r'Used\s+(\d+)\s+MB', output)
                 if match:
                     vram_used_gb = float(match.group(1)) / 1024
-            except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            except:
                 pass
         if vram_used_gb is None and platform.system() == "Darwin":
             vram_used_gb = ram_used_gb
@@ -3315,10 +5130,7 @@ def get_resources():
 def cached_vision_check(provider_name, model):
     if provider_name == 'ollama' and model:
         try:
-            resp = requests.post(
-                "http://127.0.0.1:11434/api/show",
-                json={"name": model}, timeout=5
-            )
+            resp = requests.post("http://127.0.0.1:11434/api/show", json={"name": model}, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 details = data.get("details", {})
@@ -3328,7 +5140,7 @@ def cached_vision_check(provider_name, model):
                 family = details.get("family", "").lower()
                 vision_families = VISION_MODELS["ollama"]
                 return any(kw in family for kw in vision_families)
-        except Exception:
+        except:
             pass
     return model_supports_vision(provider_name, model)
 
@@ -3355,7 +5167,7 @@ def _cached_models(provider_name, api_key):
         return []
     try:
         return provider.list_models(api_key=api_key if api_key != 'None' else None)
-    except Exception:
+    except:
         return []
 
 @app.route('/set_model', methods=['POST'])
@@ -3371,8 +5183,8 @@ def set_model():
             models = [m['name'] for m in resp.json().get('models', [])]
             if model not in models:
                 return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 400
-    except Exception as e:
-        print(f"⚠️ Error verifying model: {e}")
+    except:
+        pass
     current_model = model
     save_model_config(model)
     providers["ollama"].model = model
@@ -3404,7 +5216,7 @@ def deepseek_status():
                 return jsonify({"ok": True, "message": "API online"})
             else:
                 return jsonify({"ok": False, "message": "API returned error"})
-        except Exception:
+        except:
             return jsonify({"ok": False, "message": "API unreachable or invalid key"})
     else:
         return jsonify({"ok": False, "message": "No API key provided"})
@@ -3528,24 +5340,21 @@ def search_conversations():
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
-# ── SQLite Logs API (JSON only, no UI) ──────────────────
+# ── SQLite Logs API ──
 @app.route('/api/logs')
 def get_logs():
     page = request.args.get('page', 1, type=int)
     per_page = 50
     offset = (page - 1) * per_page
-
     conv_filter = request.args.get('conv_id', '').strip()
     date_from = request.args.get('from', '')
     date_to = request.args.get('to', '')
-
     with _sqlite_lock:
         cur = _sqlite_conn.cursor()
         query = "SELECT id, conversation_id, role, content, created_at FROM messages WHERE 1=1"
         count_query = "SELECT COUNT(*) FROM messages WHERE 1=1"
         params = []
         count_params = []
-
         if conv_filter:
             query += " AND conversation_id = ?"
             params.append(conv_filter)
@@ -3561,15 +5370,12 @@ def get_logs():
             params.append(date_to)
             count_query += " AND created_at <= ?"
             count_params.append(date_to)
-
         query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([per_page, offset])
         cur.execute(query, params)
         rows = cur.fetchall()
-
         cur.execute(count_query, count_params)
         total = cur.fetchone()[0]
-
     logs = [{
         'id': row[0],
         'conversation_id': row[1],
@@ -3577,7 +5383,6 @@ def get_logs():
         'content': row[3],
         'created_at': row[4]
     } for row in rows]
-
     return jsonify({
         'logs': logs,
         'total': total,
@@ -3590,7 +5395,6 @@ def export_logs_csv():
     conv_filter = request.args.get('conv_id', '').strip()
     date_from = request.args.get('from', '')
     date_to = request.args.get('to', '')
-
     with _sqlite_lock:
         cur = _sqlite_conn.cursor()
         query = "SELECT id, conversation_id, role, content, created_at FROM messages WHERE 1=1"
@@ -3607,7 +5411,6 @@ def export_logs_csv():
         query += " ORDER BY created_at DESC"
         cur.execute(query, params)
         rows = cur.fetchall()
-
     import csv
     from io import StringIO
     output = StringIO()
@@ -3619,7 +5422,7 @@ def export_logs_csv():
     return Response(output.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=conversation_logs.csv'})
 
-# ── Chat endpoints (unchanged) ───────────────────────────
+# ── Chat endpoints ──
 @app.route('/chat', methods=['POST'])
 def chat():
     global current_model
@@ -3727,8 +5530,6 @@ def chat():
         token_estimate = len(reply.split()) / 0.75
         duration = end_time - start_time if end_time > start_time else 1
         usage = {"tokens": int(token_estimate), "duration_sec": round(duration, 2)}
-
-        print(f"✅ Reply: {reply[:60]}")
 
         ts = datetime.now().strftime("%H:%M")
         original_message = data.get('message', '').strip()
