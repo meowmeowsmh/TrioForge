@@ -1,6 +1,7 @@
-# notes.py – advanced with Markdown, tags, pinning, colours, AI assistance, semantic search
+# notes.py – full Obsidian‑style knowledge management
 # STORAGE: SQLite (sqlite_data/notes.db) + JSON backup (json_configuration/notes.json)
-# JSON is written on every change as a human‑readable backup.
+# FEATURES: Markdown, tags, pinning, colours, AI assistance, semantic search,
+#           bidirectional [[wiki links]], ![[embeds]], backlinks, graph view.
 
 import os
 import json as std_json
@@ -8,6 +9,7 @@ import sqlite3
 import threading
 import uuid
 import random
+import re
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
 from concurrent.futures import ThreadPoolExecutor
@@ -87,9 +89,19 @@ def init_db():
             embedding     TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_notes_modified ON notes(last_modified);
+
+        -- OBSIDIAN-STYLE LINK TABLE
+        CREATE TABLE IF NOT EXISTS note_links (
+            from_note_id TEXT NOT NULL,
+            to_note_id   TEXT NOT NULL,
+            link_type    TEXT NOT NULL DEFAULT 'wiki',  -- 'wiki' or 'embed'
+            PRIMARY KEY (from_note_id, to_note_id, link_type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_note_links_from ON note_links(from_note_id);
+        CREATE INDEX IF NOT EXISTS idx_note_links_to ON note_links(to_note_id);
     """)
     conn.commit()
-    print("✅ SQLite notes table ready.")
+    print("✅ SQLite notes + links table ready.")
 
 init_db()
 
@@ -165,6 +177,7 @@ def delete_note_from_db(note_id):
     with _write_lock:
         conn = get_conn()
         conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        conn.execute("DELETE FROM note_links WHERE from_note_id = ? OR to_note_id = ?", (note_id, note_id))
         conn.commit()
     write_json_backup()
 
@@ -172,6 +185,7 @@ def clear_all_notes_db():
     with _write_lock:
         conn = get_conn()
         conn.execute("DELETE FROM notes")
+        conn.execute("DELETE FROM note_links")
         conn.commit()
     write_json_backup()
 
@@ -228,42 +242,36 @@ def migrate_from_json_if_needed():
         if not data:
             return
         for note_id, note in data.items():
-            # Recreate the note in SQLite, preserving created date
             upsert_note(note_id, note, created=note.get("created"))
         print(f"✅ Migrated {len(data)} notes from JSON to SQLite")
     except Exception as e:
         print(f"❌ Migration failed: {e}")
 
-# ---------- In‑memory cache (optional) ----------
+# ---------- In‑memory cache ----------
 _notes_cache = None
 _cache_lock = threading.Lock()
 
 def load_notes():
-    """Load notes into cache from SQLite (or JSON fallback)."""
+    """Load notes into cache from SQLite."""
     global _notes_cache
     if _notes_cache is not None:
         return _notes_cache
     with _cache_lock:
         if _notes_cache is not None:
             return _notes_cache
-        # Try SQLite first
         notes = get_all_notes()
-        if not notes:
-            # fallback to JSON (if DB empty and JSON exists)
-            if os.path.exists(NOTES_JSON):
-                try:
-                    with open(NOTES_JSON, "r", encoding="utf-8") as f:
-                        notes = json_loads(f.read())
-                    # re-insert into DB
-                    for nid, n in notes.items():
-                        upsert_note(nid, n, created=n.get("created"))
-                    print("ℹ️ Loaded notes from JSON backup into SQLite")
-                except:
-                    pass
+        if not notes and os.path.exists(NOTES_JSON):
+            try:
+                with open(NOTES_JSON, "r", encoding="utf-8") as f:
+                    notes = json_loads(f.read())
+                for nid, n in notes.items():
+                    upsert_note(nid, n, created=n.get("created"))
+                print("ℹ️ Loaded notes from JSON backup into SQLite")
+            except:
+                pass
         _notes_cache = notes
         return _notes_cache
 
-# (Compatibility wrappers for old async/sync save functions)
 def save_notes_async(notes_data=None):
     write_json_backup()
 
@@ -292,10 +300,76 @@ def embed_note(note):
         return None
     return model.encode(text).tolist()
 
-# ---------- Flask Blueprint ----------
+# ======================================================================
+# OBSIDIAN‑STYLE WIKI LINKS & BACKLINKS
+# ======================================================================
+WIKI_LINK_RE = re.compile(r'\[\[([^\]]+)\]\]')
+EMBED_LINK_RE = re.compile(r'!\[\[([^\]]+)\]\]')
+
+def resolve_note_by_title(title):
+    """Case‑insensitive lookup of a note ID by title."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM notes WHERE LOWER(title) = LOWER(?)",
+        (title.strip(),)
+    ).fetchone()
+    return row[0] if row else None
+
+def update_note_links(note_id: str, content: str):
+    """Parse [[Title]] and ![[Title]] from content and update note_links table."""
+    wiki_targets = set(WIKI_LINK_RE.findall(content))
+    embed_targets = set(EMBED_LINK_RE.findall(content))
+    
+    conn = get_conn()
+    conn.execute("DELETE FROM note_links WHERE from_note_id = ?", (note_id,))
+    
+    for title in wiki_targets:
+        target_id = resolve_note_by_title(title)
+        if target_id and target_id != note_id:
+            conn.execute(
+                "INSERT OR IGNORE INTO note_links (from_note_id, to_note_id, link_type) VALUES (?, ?, 'wiki')",
+                (note_id, target_id)
+            )
+    for title in embed_targets:
+        target_id = resolve_note_by_title(title)
+        if target_id and target_id != note_id:
+            conn.execute(
+                "INSERT OR IGNORE INTO note_links (from_note_id, to_note_id, link_type) VALUES (?, ?, 'embed')",
+                (note_id, target_id)
+            )
+    conn.commit()
+
+def get_backlinks(note_id: str):
+    """Return all notes that link to this one."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT n.id, n.title, nl.link_type
+        FROM note_links nl
+        JOIN notes n ON n.id = nl.from_note_id
+        WHERE nl.to_note_id = ?
+        ORDER BY n.title
+    """, (note_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+def get_graph_data():
+    """Fetch all notes and links for the graph view."""
+    conn = get_conn()
+    nodes = conn.execute("SELECT id, title FROM notes ORDER BY title").fetchall()
+    edges = conn.execute("""
+        SELECT from_note_id AS 'from', to_note_id AS 'to', link_type
+        FROM note_links
+    """).fetchall()
+    return {
+        "nodes": [{"id": row[0], "label": row[1]} for row in nodes],
+        "edges": [{"from": row[0], "to": row[1], "title": row[2]} for row in edges]
+    }
+
+# ======================================================================
+# Flask Blueprint
+# ======================================================================
 notes_bp = Blueprint('notes', __name__, url_prefix='/notes')
 
-# Serve the notes HTML page (unchanged)
+# Serve the notes HTML page
 @notes_bp.route('')
 def notes_page():
     return render_template_string(NOTES_HTML)
@@ -310,10 +384,11 @@ def create_note():
     data = request.get_json()
     note_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
+    content = data.get("content", "")
     note = {
         "id": note_id,
         "title": data.get("title", "Untitled"),
-        "content": data.get("content", ""),
+        "content": content,
         "created": now,
         "last_modified": now,
         "order": len(load_notes()),
@@ -322,7 +397,7 @@ def create_note():
         "color": data.get("color", "default")
     }
     upsert_note(note_id, note, created=now)
-    # Invalidate cache
+    update_note_links(note_id, content)  # parse wiki links
     global _notes_cache
     with _cache_lock:
         _notes_cache = None
@@ -340,6 +415,8 @@ def update_note(note_id):
             fields[key] = data[key]
     if fields:
         update_note_fields_db(note_id, fields)
+        if "content" in fields:
+            update_note_links(note_id, fields["content"])
         global _notes_cache
         with _cache_lock:
             _notes_cache = None
@@ -533,11 +610,20 @@ def reorder_notes():
         _notes_cache = None
     return jsonify({'ok': True})
 
+# ---------- OBSIDIAN API ----------
+@notes_bp.route('/api/backlinks/<note_id>', methods=['GET'])
+def backlinks_api(note_id):
+    return jsonify(get_backlinks(note_id))
+
+@notes_bp.route('/api/graph', methods=['GET'])
+def graph_api():
+    return jsonify(get_graph_data())
+
 # ---------- Run migration on startup ----------
 migrate_from_json_if_needed()
 
 # ===========================================================================
-# HTML TEMPLATE – now with the weather widget integrated at top‑right (compact, toggleable)
+# HTML TEMPLATE – now with Obsidian features + weather widget
 # ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -545,8 +631,11 @@ NOTES_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
-<title>Notes · Advanced + AI + Weather</title>
+<title>Notes · Obsidian + AI + Weather</title>
 <script src="/static/vendor/marked.min.js"></script>
+<!-- vis-network for graph view -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/vis-network.min.js"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.css" rel="stylesheet" type="text/css" />
 <style>
 /* ── base – same as before ── */
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -691,7 +780,6 @@ body.light-mode::before { opacity: 0; }
     color: #8b949e;
 }
 
-/* ─── SIDEBAR NOTE ITEMS – ENHANCED SPACING ─── */
 .note-item-sidebar {
     display:flex;
     align-items:center;
@@ -868,7 +956,6 @@ body.light-mode .center-tabs .tab-btn.active { background: #1f6feb; color: #fff;
 }
 .clear-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
 
-/* ─── Weather toggle button ─── */
 .weather-toggle-btn {
     background: rgba(33,38,45,0.6);
     border: 1px solid rgba(255,255,255,0.1);
@@ -924,7 +1011,7 @@ body.light-mode .weather-toggle-btn:hover {
 @keyframes fly { 0%,100% { transform: translateY(-50%) rotate(-1deg); } 50% { transform: translateY(-60%) rotate(1deg); } }
 .knob {
     position: absolute; top: 50%; width: 40px; height: 40px; border-radius: 50%; transform: translateY(-50%);
-    z-index: 10; cursor: grab; transition: left 0.4s cubic-bezier(0.34, 1.2, 0.64, 1); left: 3px;
+    z-index: 10; cursor: grab; transition: left 0.4s cubic-bezier(.34,1.2,.64,1); left: 3px;
 }
 .knob:active { cursor: grabbing; }
 .knob-moon {
@@ -939,7 +1026,7 @@ body.light-mode .weather-toggle-btn:hover {
 .knob-sun {
     position: absolute; inset:0; border-radius:50%; background: hsl(44 100% 58%);
     box-shadow: 2px 2px 6px rgba(255,255,180,0.9) inset, -2px -2px 4px rgba(180,100,0,0.3) inset,
-                0 0 12px hsl(44 100% 70% / 0.5);
+                0 0 12px hsl(44 100% 70% / .5);
     opacity: 0; transition: opacity 0.3s ease;
 }
 .toggle-outer.day .night-bg { opacity: 0; }
@@ -1136,6 +1223,40 @@ body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="pa
 }
 .notes-panel .note-editor .editor-footer .pin-toggle:hover { background: rgba(255,255,255,0.1); }
 
+/* Backlinks container (Obsidian style) */
+#backlinksContainer {
+    width:100%;
+    margin-top:8px;
+    display:none;
+    border-top:1px solid rgba(255,255,255,0.05);
+    padding-top:8px;
+}
+#backlinksContainer .backlinks-label {
+    font-size:12px;
+    color:#8b949e;
+    margin-bottom:4px;
+}
+#backlinksList {
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+}
+#backlinksList .tag-pill {
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:20px;
+    padding:3px 12px;
+    font-size:12px;
+    color:#8b949e;
+    cursor:pointer;
+    transition:all 0.2s;
+    user-select:none;
+}
+#backlinksList .tag-pill:hover {
+    background:rgba(255,255,255,0.12);
+    color:#58a6ff;
+}
+
 .notes-panel .note-editor .note-actions {
     display:flex;
     gap: 10px;
@@ -1156,7 +1277,6 @@ body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="pa
 .notes-panel .note-editor .note-actions .save-note:hover { background: #388bfd; }
 .notes-panel .note-editor .note-actions button:hover { background: rgba(255,255,255,0.1); }
 
-/* ─── MAIN NOTE ITEMS – MORE SPACING ─── */
 .notes-panel .note-item {
     background: rgba(28, 35, 51, 0.6);
     backdrop-filter: blur(8px);
@@ -1263,8 +1383,6 @@ body.light-mode .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,
 .search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
 body.light-mode .search-mode-toggle button { color: #57606a; border-color: rgba(0,0,0,0.1); }
 body.light-mode .search-mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-
-/* Fix for Edit & Delete buttons in light mode */
 body.light-mode .notes-panel .note-item .note-actions button {
     background: rgba(0, 0, 0, 0.05);
     border: 1px solid rgba(0, 0, 0, 0.1);
@@ -1282,8 +1400,6 @@ body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
     background: rgba(248, 81, 73, 0.1);
     border-color: #f85149;
 }
-
-/* Image upload button */
 .image-upload-btn {
     background: rgba(88,166,255,0.15);
     border-color: #58a6ff;
@@ -1292,8 +1408,65 @@ body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
 .image-upload-btn:hover {
     background: rgba(88,166,255,0.25);
 }
+#backlinksContainer .tag-pill {
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:20px;
+    padding:3px 12px;
+    font-size:12px;
+    color:#8b949e;
+    cursor:pointer;
+    transition:all 0.2s;
+    user-select:none;
+}
+#backlinksContainer .tag-pill:hover {
+    background:rgba(255,255,255,0.12);
+    color:#58a6ff;
+}
+body.light-mode #backlinksContainer .tag-pill {
+    background:rgba(0,0,0,0.04);
+    border-color:rgba(0,0,0,0.08);
+    color:#57606a;
+}
+body.light-mode #backlinksContainer .tag-pill:hover {
+    background:rgba(0,0,0,0.08);
+    color:#1f6feb;
+}
 
-/* ── Weather Widget (compact, fixed top‑right, toggleable) ── */
+/* ── Graph Modal ── */
+#graphModal {
+    display:none;
+    position:fixed;
+    top:0; left:0;
+    width:100%; height:100%;
+    background:rgba(0,0,0,0.85);
+    z-index:20000;
+    backdrop-filter:blur(5px);
+    padding:20px;
+}
+#graphModal .graph-header {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    color:#fff;
+    padding:10px 20px;
+    background:rgba(0,0,0,0.5);
+    border-radius:12px;
+    margin-bottom:16px;
+}
+#graphModal .graph-header h2 { margin:0; }
+#graphModal .graph-header button {
+    background:none; border:none; color:#fff; font-size:28px; cursor:pointer;
+}
+#graphContainer {
+    width:100%;
+    height:calc(100% - 80px);
+    background:rgba(255,255,255,0.02);
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,0.1);
+}
+
+/* ── Weather Widget (compact, fixed top‑right) ── */
 .weather-widget {
     position: fixed;
     top: 70px;
@@ -1314,7 +1487,7 @@ body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
     display: flex;
     flex-direction: column;
     padding: 0;
-    position: relative;     /* for absolute child positioning */
+    position: relative;
 }
 .weather-widget .toast-scene {
     height: 90px;
@@ -1378,10 +1551,7 @@ body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.weather-widget .toast-text .main .highlight {
-    font-weight: 700;
-    color: #fff;
-}
+.weather-widget .toast-text .main .highlight { font-weight: 700; color: #fff; }
 .weather-widget .toast-text .sub {
     font-size: 10px;
     color: rgba(255,255,255,0.6);
@@ -1389,163 +1559,67 @@ body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.weather-widget .toast-text .time-row {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-}
+.weather-widget .toast-text .time-row { display:flex; align-items:baseline; gap:4px; }
 .weather-widget .toast-text .time-row .clock {
-    font-size: 14px;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: 0.3px;
-    font-variant-numeric: tabular-nums;
+    font-size:14px; font-weight:700; color:#fff; letter-spacing:0.3px; font-variant-numeric:tabular-nums;
 }
-.weather-widget .toast-text .time-row .date {
-    font-size: 9px;
-    color: rgba(255,255,255,0.5);
-}
+.weather-widget .toast-text .time-row .date { font-size:9px; color:rgba(255,255,255,0.5); }
 .weather-widget .toast-text .weather-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    color: rgba(255,255,255,0.8);
+    display:flex; align-items:center; gap:4px; font-size:11px; color:rgba(255,255,255,0.8);
 }
-.weather-widget .toast-text .weather-row .temp {
-    font-weight: 700;
-    font-size: 13px;
-    color: #fff;
-}
-.weather-widget .toast-text .weather-row .condition {
-    font-size: 10px;
-    color: rgba(255,255,255,0.6);
-}
-.weather-widget .toast-text .weather-row .weather-emoji {
-    font-size: 14px;
-}
+.weather-widget .toast-text .weather-row .temp { font-weight:700; font-size:13px; color:#fff; }
+.weather-widget .toast-text .weather-row .condition { font-size:10px; color:rgba(255,255,255,0.6); }
+.weather-widget .toast-text .weather-row .weather-emoji { font-size:14px; }
 .weather-widget .toast-text .fetch-status {
-    font-size: 9px;
-    color: rgba(255,255,255,0.4);
-    font-style: italic;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size:9px; color:rgba(255,255,255,0.4); font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .weather-widget .toast-progress {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 0%;
-    height: 3px;
-    background: linear-gradient(90deg, #58a6ff, #3fb950);
-    border-radius: 0;                /* rely on parent clipping */
-    transition: width 0.4s ease;
-    z-index: 3;
-    pointer-events: none;
-    max-width: 100%;
-    will-change: width;
+    position:absolute; bottom:0; left:0; width:0%; height:3px;
+    background:linear-gradient(90deg,#58a6ff,#3fb950); border-radius:0; transition:width .4s ease;
+    z-index:3; pointer-events:none; max-width:100%; will-change:width;
 }
 .weather-widget .close-btn {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    background: rgba(0,0,0,0.35);
-    border: none;
-    color: rgba(255,255,255,0.7);
-    cursor: pointer;
-    font-size: 12px;
-    padding: 2px 6px;
-    border-radius: 20px;
-    transition: background 0.2s;
-    line-height: 1;
-    z-index: 4;
+    position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.35); border:none;
+    color:rgba(255,255,255,0.7); cursor:pointer; font-size:12px; padding:2px 6px; border-radius:20px;
+    transition:background .2s; line-height:1; z-index:4;
 }
-.weather-widget .close-btn:hover {
-    background: rgba(255,0,0,0.35);
-    color: #fff;
-}
+.weather-widget .close-btn:hover { background:rgba(255,0,0,0.35); color:#fff; }
 .weather-widget .spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid rgba(255,255,255,0.15);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    width:18px; height:18px; border:2px solid rgba(255,255,255,0.15); border-top-color:#fff;
+    border-radius:50%; animation:spin 0.8s linear infinite;
 }
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform:rotate(360deg); } }
 
-/* Weather controls – placed inside top bar */
 .weather-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    display:flex; align-items:center; gap:6px;
 }
 .weather-controls select {
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.15);
-    color: #e1e4e8;
-    border-radius: 40px;
-    padding: 4px 12px 4px 16px;
-    font-size: 13px;
-    font-family: inherit;
-    cursor: pointer;
-    outline: none;
-    max-width: 150px;
-    appearance: none;
-    -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-    padding-right: 28px;
+    background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); color:#e1e4e8;
+    border-radius:40px; padding:4px 12px 4px 16px; font-size:13px; font-family:inherit;
+    cursor:pointer; outline:none; max-width:150px; appearance:none; -webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 8px center; padding-right:28px;
 }
-.weather-controls select option {
-    background: #1a1a2e;
-    color: #e1e4e8;
-}
-.weather-controls select:hover {
-    border-color: rgba(255,255,255,0.3);
-}
+.weather-controls select option { background:#1a1a2e; color:#e1e4e8; }
+.weather-controls select:hover { border-color:rgba(255,255,255,0.3); }
 body.light-mode .weather-widget .toast {
-    background: rgba(255,255,255,0.92);
-    border-color: rgba(0,0,0,0.06);
-    color: #24292f;
+    background:rgba(255,255,255,0.92); border-color:rgba(0,0,0,0.06); color:#24292f;
 }
-body.light-mode .weather-widget .toast-text .main { color: #24292f; }
-body.light-mode .weather-widget .toast-text .main .highlight { color: #000; }
-body.light-mode .weather-widget .toast-text .time-row .clock { color: #000; }
-body.light-mode .weather-widget .toast-text .weather-row .temp { color: #000; }
+body.light-mode .weather-widget .toast-text .main { color:#24292f; }
+body.light-mode .weather-widget .toast-text .main .highlight { color:#000; }
+body.light-mode .weather-widget .toast-text .time-row .clock { color:#000; }
+body.light-mode .weather-widget .toast-text .weather-row .temp { color:#000; }
 body.light-mode .weather-controls select {
-    background: rgba(255,255,255,0.8);
-    color: #1a1a2e;
-    border-color: rgba(0,0,0,0.15);
+    background:rgba(255,255,255,0.8); color:#1a1a2e; border-color:rgba(0,0,0,0.15);
 }
-body.light-mode .weather-controls select option {
-    background: #fff;
-    color: #1a1a2e;
-}
-
-@media (max-width: 600px) {
-    .weather-widget {
-        top: 60px;
-        right: 8px;
-        max-width: 94vw;
-    }
-    .weather-widget .toast-scene {
-        height: 70px;
-    }
-    .weather-widget .toast-content {
-        padding: 6px 10px 8px 8px;
-    }
-    .weather-widget .toast-text .main { font-size: 11px; }
-    .weather-widget .toast-text .weather-row .temp { font-size: 12px; }
-    .weather-controls select {
-        max-width: 120px;
-        font-size: 12px;
-        padding: 3px 24px 3px 10px;
-    }
+body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e; }
+@media (max-width:600px) {
+    .weather-widget { top:60px; right:8px; max-width:94vw; }
+    .weather-widget .toast-scene { height:70px; }
+    .weather-widget .toast-content { padding:6px 10px 8px 8px; }
+    .weather-widget .toast-text .main { font-size:11px; }
+    .weather-widget .toast-text .weather-row .temp { font-size:12px; }
+    .weather-controls select { max-width:120px; font-size:12px; padding:3px 24px 3px 10px; }
 }
 </style>
 </head>
@@ -1560,7 +1634,6 @@ body.light-mode .weather-controls select option {
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="🔍 Search notes..." oninput="searchNotes()">
         </div>
-        <!-- Search mode toggle -->
         <div class="search-mode-toggle">
             <button id="searchModeKeyword" class="active" onclick="setSearchMode('keyword')">Keyword</button>
             <button id="searchModeSemantic" onclick="setSearchMode('semantic')">🧠 Semantic</button>
@@ -1583,19 +1656,15 @@ body.light-mode .weather-controls select option {
                 </button>
                 <h1>📚 Trio-Forge Custom Notes</h1>
             </div>
-
             <div class="center-tabs">
                 <a href="/" class="tab-btn" style="text-decoration:none;">💬 Chat</a>
                 <button class="tab-btn active">📝 Notes</button>
                 <a href="/corkboard" class="tab-btn" style="text-decoration:none;">📌 Cork Board</a>
             </div>
-
             <div class="right">
-                <!-- Weather country selector -->
                 <div class="weather-controls">
                     <select id="countrySelect" aria-label="Select country"></select>
                 </div>
-                <!-- Weather toggle button -->
                 <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
                 <div class="theme-toggle-wrapper">
                     <div class="toggle-outer" id="themeToggleOuter" onclick="handleThemeClick(event)">
@@ -1679,9 +1748,10 @@ body.light-mode .weather-controls select option {
                         <button data-cmd="list" title="Bullet list">•</button>
                         <button data-cmd="code" title="Code block">{ }</button>
                         <button data-cmd="preview" title="Toggle preview" id="previewToggle">👁️</button>
-                        <!-- Image Upload Button -->
                         <button class="image-upload-btn" id="imageUploadBtn" title="Insert Image">🖼️</button>
                         <input type="file" id="imageFileInput" accept="image/*" style="display:none;">
+                        <!-- GRAPH VIEW BUTTON (Obsidian style) -->
+                        <button id="graphViewBtn" title="Open Graph View">📊 Graph</button>
                         <!-- AI Assistance -->
                         <select id="aiActionSelect" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#8b949e; padding:4px 8px; font-size:13px;">
                             <option value="summarise">Summarise</option>
@@ -1704,7 +1774,7 @@ body.light-mode .weather-controls select option {
                     </div>
                 </div>
                 <div class="editor-body">
-                    <textarea id="noteContentInput" placeholder="Write your note in Markdown..."></textarea>
+                    <textarea id="noteContentInput" placeholder="Write your note in Markdown... (use [[Wiki Links]])"></textarea>
                     <div class="preview" id="notePreview"></div>
                 </div>
                 <div class="editor-footer">
@@ -1718,12 +1788,16 @@ body.light-mode .weather-controls select option {
                         <span class="color-option color-orange" data-color="orange" title="Orange"></span>
                     </div>
                     <button class="pin-toggle" id="pinToggle">📌 Pin</button>
+                    <!-- BACKLINKS CONTAINER (Obsidian style) -->
+                    <div id="backlinksContainer">
+                        <div class="backlinks-label">🔗 Linked from:</div>
+                        <div id="backlinksList"></div>
+                    </div>
                 </div>
                 <div class="note-actions">
                     <button class="save-note" id="saveNoteBtn">💾 Save Note</button>
                     <button id="cancelNoteBtn" style="display:none;">Cancel</button>
                 </div>
-                <!-- AI result area -->
                 <div id="aiResult" style="display:none; margin-top:12px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid rgba(255,255,255,0.1); color:#e1e4e8; font-size:14px; white-space:pre-wrap;"></div>
             </div>
             <div id="notesList"></div>
@@ -1731,7 +1805,16 @@ body.light-mode .weather-controls select option {
     </div>
 </div>
 
-<!-- ─── WEATHER WIDGET (fixed top‑right) ─── -->
+<!-- ─── GRAPH VIEW MODAL (Obsidian) ─── -->
+<div id="graphModal">
+    <div class="graph-header">
+        <h2>📊 Knowledge Graph</h2>
+        <button onclick="closeGraph()">✕</button>
+    </div>
+    <div id="graphContainer"></div>
+</div>
+
+<!-- ─── WEATHER WIDGET ─── -->
 <div class="weather-widget" id="weatherWidget" style="display:block;">
     <div class="toast" id="weatherToast">
         <div class="toast-scene">
@@ -1875,11 +1958,50 @@ body.light-mode .weather-controls select option {
     var activeTagFilter = '';
     var searchMode = 'keyword';
 
-    // ─── Markdown preview ──────────────────────────────
+    // ─── Markdown preview with Obsidian links ──────────
+    function renderWikiPreview(htmlContent) {
+        // Replace ![[Title]] with embedded blockquote
+        htmlContent = htmlContent.replace(/!\[\[([^\]]+)\]\]/g, function(match, title) {
+            var foundId = null;
+            for (var id in notesData) {
+                if (notesData[id].title.toLowerCase() === title.toLowerCase()) {
+                    foundId = id;
+                    break;
+                }
+            }
+            if (foundId) {
+                var note = notesData[foundId];
+                var snippet = note.content.substring(0, 300) + (note.content.length > 300 ? '…' : '');
+                return `<blockquote style="border-left:3px solid #58a6ff; padding-left:12px; margin:8px 0; background:rgba(255,255,255,0.03); border-radius:4px;">
+                    📄 <strong><a href="#" onclick="selectNote('${foundId}')">${title}</a></strong><br>
+                    ${marked.parse(snippet)}
+                </blockquote>`;
+            }
+            return `<span style="color:#f85149;">[![[${title}]]]</span>`;
+        });
+        // Replace [[Title]] with clickable link
+        htmlContent = htmlContent.replace(/\[\[([^\]]+)\]\]/g, function(match, title) {
+            var foundId = null;
+            for (var id in notesData) {
+                if (notesData[id].title.toLowerCase() === title.toLowerCase()) {
+                    foundId = id;
+                    break;
+                }
+            }
+            if (foundId) {
+                return `<a href="#" onclick="selectNote('${foundId}')" style="color:#58a6ff; text-decoration:underline;">${title}</a>`;
+            }
+            return `<span style="color:#f85149;">[[${title}]]</span>`;
+        });
+        return htmlContent;
+    }
+
     function updatePreview() {
         var content = document.getElementById('noteContentInput').value;
         var preview = document.getElementById('notePreview');
-        preview.innerHTML = marked.parse(content || '');
+        var rendered = marked.parse(content || '');
+        rendered = renderWikiPreview(rendered);
+        preview.innerHTML = rendered;
     }
     document.getElementById('noteContentInput').addEventListener('input', updatePreview);
 
@@ -2088,6 +2210,76 @@ body.light-mode .weather-controls select option {
         this.classList.toggle('active', currentPinned);
         this.textContent = currentPinned ? '📌 Pinned' : '📌 Pin';
     });
+
+    // ─── GRAPH VIEW ──────────────────────────────────────
+    function openGraphView() {
+        var modal = document.getElementById('graphModal');
+        modal.style.display = 'block';
+        var container = document.getElementById('graphContainer');
+        container.innerHTML = '<div style="color:#8b949e; padding:40px; text-align:center;">⏳ Loading graph...</div>';
+        
+        fetch('/notes/api/graph')
+            .then(r => r.json())
+            .then(data => {
+                var nodes = new vis.DataSet(data.nodes.map(n => ({ ...n, shape: 'dot', size: 22, font: { color: '#e1e4e8' } })));
+                var edges = new vis.DataSet(data.edges);
+                var options = {
+                    nodes: { shape: 'dot', size: 20, font: { size: 14, color: '#e1e4e8' } },
+                    edges: { smooth: false, arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
+                    physics: { stabilization: { enabled: true, iterations: 100 } },
+                    interaction: { hover: true, tooltipDelay: 100 },
+                    layout: { improvedLayout: true }
+                };
+                var network = new vis.Network(container, { nodes, edges }, options);
+                network.on('click', function(params) {
+                    if (params.nodes.length) {
+                        var id = params.nodes[0];
+                        closeGraph();
+                        selectNote(id);
+                    }
+                });
+            })
+            .catch(err => {
+                container.innerHTML = '<div style="color:#f85149; padding:40px; text-align:center;">❌ Failed to load graph: ' + err + '</div>';
+            });
+    }
+
+    function closeGraph() {
+        document.getElementById('graphModal').style.display = 'none';
+        document.getElementById('graphContainer').innerHTML = '';
+    }
+
+    document.getElementById('graphViewBtn').addEventListener('click', openGraphView);
+
+    // ─── BACKLINKS ──────────────────────────────────────
+    function loadBacklinks(noteId) {
+        if (!noteId) {
+            document.getElementById('backlinksContainer').style.display = 'none';
+            return;
+        }
+        fetch('/notes/api/backlinks/' + noteId)
+            .then(r => r.json())
+            .then(data => {
+                var container = document.getElementById('backlinksContainer');
+                var list = document.getElementById('backlinksList');
+                list.innerHTML = '';
+                if (data.length === 0) {
+                    container.style.display = 'none';
+                    return;
+                }
+                container.style.display = 'block';
+                data.forEach(function(item) {
+                    var pill = document.createElement('span');
+                    pill.className = 'tag-pill';
+                    pill.textContent = '📄 ' + item.title;
+                    pill.style.cursor = 'pointer';
+                    pill.title = 'Type: ' + (item.link_type || 'wiki');
+                    pill.onclick = function() { selectNote(item.id); };
+                    list.appendChild(pill);
+                });
+            })
+            .catch(() => { document.getElementById('backlinksContainer').style.display = 'none'; });
+    }
 
     // ─── Load & render notes ───────────────────────────
     function loadNotes() {
@@ -2391,6 +2583,7 @@ body.light-mode .weather-controls select option {
         document.getElementById('notePreview').classList.remove('visible');
         document.querySelector('#toolbar [data-cmd="preview"]').classList.remove('active');
         document.getElementById('aiResult').style.display = 'none';
+        document.getElementById('backlinksContainer').style.display = 'none';
         editingNoteId = null;
         currentColor = 'default';
         document.querySelectorAll('#colorPicker .color-option').forEach(c => c.classList.remove('active'));
@@ -2413,6 +2606,8 @@ body.light-mode .weather-controls select option {
         document.getElementById('noteTagsInput').value = (note.tags || []).join(', ');
         document.getElementById('aiResult').style.display = 'none';
         editingNoteId = id;
+        // load backlinks for this note
+        loadBacklinks(id);
         currentColor = note.color || 'default';
         document.querySelectorAll('#colorPicker .color-option').forEach(c => {
             c.classList.toggle('active', c.dataset.color === currentColor);
@@ -2671,9 +2866,9 @@ body.light-mode .weather-controls select option {
     let blobInstances = [];
     let canvasAnimId = null;
     let toastTimer = null;
-    let activeToast = null; // we'll use the widget directly
+    let activeToast = null;
 
-    // DOM references for weather
+    // DOM refs for weather
     const container = document.getElementById('weatherWidget');
     const canvas = document.getElementById('sceneCanvas');
     const ctx = canvas.getContext('2d');
@@ -2692,17 +2887,13 @@ body.light-mode .weather-controls select option {
     const closeBtn = document.getElementById('closeToastBtn');
     const countrySelect = document.getElementById('countrySelect');
 
-    // ─── Toggle weather visibility ─────────────────────
     function toggleWeather() {
         if (container.style.display === 'none') {
             container.style.display = 'block';
-            // If no active data, re-detect location
             if (!currentCountryCode) {
                 detectLocation();
             } else {
-                // Re-show the toast (if hidden)
                 toast.style.display = 'flex';
-                // Optionally refresh weather
                 updateFromCountry(currentCountryCode);
             }
         } else {
@@ -2711,7 +2902,6 @@ body.light-mode .weather-controls select option {
         }
     }
 
-    // ─── Clock update ──────────────────────────────────
     function startClock() {
         const tick = () => {
             const now = new Date();
@@ -2731,17 +2921,10 @@ body.light-mode .weather-controls select option {
     }
     startClock();
 
-    // ─── Update widget UI ──────────────────────────────
     function updateWidget(mainText, subText = '', iconHtml = null, progress = null) {
         mainEl.textContent = mainText;
-        if (subText) {
-            subEl.textContent = subText;
-            subEl.style.opacity = '1';
-        } else {
-            subEl.style.opacity = '0';
-        }
+        if (subText) { subEl.textContent = subText; subEl.style.opacity = '1'; } else { subEl.style.opacity = '0'; }
         if (iconHtml !== null) iconEl.innerHTML = iconHtml;
-        // Update progress bar – hide when not active
         if (progress !== null && progress > 0) {
             progressEl.style.width = Math.min(progress, 100) + '%';
             progressEl.style.display = 'block';
@@ -2758,11 +2941,8 @@ body.light-mode .weather-controls select option {
         weatherEmoji.textContent = emoji || '🌤️';
     }
 
-    function setStatus(text) {
-        fetchStatus.textContent = text;
-    }
+    function setStatus(text) { fetchStatus.textContent = text; }
 
-    // ─── Canvas sizing ──────────────────────────────────
     function sizeCanvas() {
         const rect = canvas.parentElement.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
@@ -2775,7 +2955,6 @@ body.light-mode .weather-controls select option {
         return { w: cssW, h: cssH };
     }
 
-    // ─── Blob drawing ──────────────────────────────────
     function createBlob(x, y, emoji, color, speed = 1.0, size = 22) {
         return {
             x, y, baseY: y, emoji, color, speed: speed * (0.6 + Math.random() * 0.5), size,
@@ -2850,13 +3029,11 @@ body.light-mode .weather-controls select option {
         ctx.save();
         ctx.translate(x, y);
 
-        // shadow
         ctx.fillStyle = 'rgba(0,0,0,0.10)';
         ctx.beginPath();
         ctx.ellipse(0, r * 1.15, r * 0.8, r * 0.25, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // legs
         const legLen = r * 0.7;
         const legThick = r * 0.16;
         const legPhase = drinking ? 0.3 : walkCycle;
@@ -2879,7 +3056,6 @@ body.light-mode .weather-controls select option {
         ctx.quadraticCurveTo((rx1+rx2)/2 + Math.sin(legPhase+0.3+Math.PI)*r*0.2*d*(drinking?0:1), ry1+legLen*0.5, rx2, ry2);
         ctx.stroke();
 
-        // feet
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.ellipse(lx2, ly2 + legThick*0.5, r*0.2, r*0.12, 0, 0, Math.PI*2);
@@ -2888,7 +3064,6 @@ body.light-mode .weather-controls select option {
         ctx.ellipse(rx2, ry2 + legThick*0.5, r*0.2, r*0.12, 0, 0, Math.PI*2);
         ctx.fill();
 
-        // body
         ctx.fillStyle = color;
         ctx.shadowBlur = 10;
         ctx.shadowOffsetY = 3;
@@ -2896,14 +3071,12 @@ body.light-mode .weather-controls select option {
         ctx.ellipse(0, 0, r, r * 1.05 * (1 + Math.sin(walkCycle)*0.04), 0, 0, Math.PI*2);
         ctx.fill();
 
-        // highlight
         ctx.shadowBlur = 0;
         ctx.fillStyle = 'rgba(255,255,255,0.20)';
         ctx.beginPath();
         ctx.ellipse(-r*0.3*d, -r*0.35, r*0.25, r*0.15, -0.3*d, 0, Math.PI*2);
         ctx.fill();
 
-        // arms
         ctx.strokeStyle = color;
         ctx.lineWidth = r * 0.14;
         ctx.lineCap = 'round';
@@ -2943,7 +3116,6 @@ body.light-mode .weather-controls select option {
         ctx.arc(dax2, day2, r*0.1, 0, Math.PI*2);
         ctx.fill();
 
-        // drink can
         if (blob.hasDrink) {
             ctx.save();
             ctx.translate(dax2, day2);
@@ -2979,7 +3151,6 @@ body.light-mode .weather-controls select option {
             }
         }
 
-        // eyes
         const eyeY = -r * 0.05;
         const eyeSpacing = r * 0.32;
         const eyeR = r * 0.22;
@@ -3016,7 +3187,6 @@ body.light-mode .weather-controls select option {
             ctx.fill();
         }
 
-        // blush
         if (blob.blush !== false) {
             ctx.fillStyle = 'rgba(255,110,110,0.25)';
             ctx.shadowBlur = 0;
@@ -3028,7 +3198,6 @@ body.light-mode .weather-controls select option {
             ctx.fill();
         }
 
-        // mouth
         ctx.strokeStyle = '#2b2b2b';
         ctx.lineWidth = Math.max(1.5, r*0.06);
         ctx.shadowBlur = 0;
@@ -3042,7 +3211,6 @@ body.light-mode .weather-controls select option {
             ctx.stroke();
         }
 
-        // emoji
         ctx.shadowBlur = 6;
         ctx.shadowOffsetY = 2;
         ctx.font = `${Math.round(r*0.9)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
@@ -3055,7 +3223,6 @@ body.light-mode .weather-controls select option {
         ctx.restore();
     }
 
-    // ─── Season drawing functions ──────────────────────
     function drawSummer(ctx, w, h, t, blobs) {
         const sky = ctx.createLinearGradient(0, 0, 0, h);
         sky.addColorStop(0, '#4a90d9');
@@ -3063,7 +3230,6 @@ body.light-mode .weather-controls select option {
         sky.addColorStop(1, '#cdeffd');
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, w, h);
-
         const sunX = w*0.82, sunY = h*0.18;
         const grd = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 60);
         grd.addColorStop(0, 'rgba(255,240,150,1)');
@@ -3077,7 +3243,6 @@ body.light-mode .weather-controls select option {
         ctx.beginPath();
         ctx.arc(sunX, sunY, 28, 0, Math.PI*2);
         ctx.fill();
-
         const seaTop = h*0.50, seaBottom = h*0.68;
         const sea = ctx.createLinearGradient(0, seaTop, 0, seaBottom);
         sea.addColorStop(0, '#1e88e5');
@@ -3100,11 +3265,7 @@ body.light-mode .weather-controls select option {
         ctx.fillStyle = '#f0d9a8';
         ctx.fillRect(0, seaBottom, w, h - seaBottom);
         drawHouse(ctx, w*0.22, seaBottom + (h-seaBottom)*0.62, 0.85, t, { wall:'#f5e6ca', roof:'#4fc3f7', trim:'#e8d5b5', flowers:true, lights:false });
-
-        blobs.forEach(b => {
-            updateBlob(b, w, h, t, 0.9);
-            drawWalkingBlob(ctx, b, t);
-        });
+        blobs.forEach(b => { updateBlob(b, w, h, t, 0.9); drawWalkingBlob(ctx, b, t); });
     }
 
     function drawWinter(ctx, w, h, t, blobs) {
@@ -3115,7 +3276,6 @@ body.light-mode .weather-controls select option {
         sky.addColorStop(1, '#4a6a8a');
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, w, h);
-
         for (let i=0; i<20; i++) {
             const x = (i*37+13)%w;
             const y = (i*29+7)%(h*0.5);
@@ -3137,14 +3297,9 @@ body.light-mode .weather-controls select option {
         ctx.lineTo(0, h);
         ctx.closePath();
         ctx.fill();
-
         drawHouse(ctx, w*0.22, groundY+6, 0.85, t, { wall:'#d5c8b0', roof:'#6d4c2f', trim:'#c9b89a', snow:true, lights:true, smoke:true });
         drawSnowman(ctx, w*0.72, groundY+4, 0.6, t);
-
-        blobs.forEach(b => {
-            updateBlob(b, w, h, t, 0.6);
-            drawWalkingBlob(ctx, b, t);
-        });
+        blobs.forEach(b => { updateBlob(b, w, h, t, 0.6); drawWalkingBlob(ctx, b, t); });
     }
 
     function drawAutumn(ctx, w, h, t, blobs) {
@@ -3159,14 +3314,9 @@ body.light-mode .weather-controls select option {
         grd.addColorStop(1, '#558b2f');
         ctx.fillStyle = grd;
         ctx.fillRect(0, h*0.74, w, h*0.26);
-
         drawTree(ctx, w*0.78, h*0.74, 1.0, t, 'maple');
         drawHouse(ctx, w*0.22, h*0.72, 0.9, t, { wall:'#e8d5b5', roof:'#8d6e63', trim:'#d4a373', flowers:true, lights:false });
-
-        blobs.forEach(b => {
-            updateBlob(b, w, h, t, 0.85);
-            drawWalkingBlob(ctx, b, t);
-        });
+        blobs.forEach(b => { updateBlob(b, w, h, t, 0.85); drawWalkingBlob(ctx, b, t); });
     }
 
     function drawSpring(ctx, w, h, t, blobs) {
@@ -3181,17 +3331,11 @@ body.light-mode .weather-controls select option {
         grd.addColorStop(1, '#4caf50');
         ctx.fillStyle = grd;
         ctx.fillRect(0, h*0.73, w, h*0.27);
-
         drawTree(ctx, w*0.78, h*0.725, 1.0, t, 'sakura');
         drawHouse(ctx, w*0.22, h*0.71, 0.9, t, { wall:'#f5e6ca', roof:'#6d4c2f', trim:'#d7ccc8', flowers:true, lights:false });
-
-        blobs.forEach(b => {
-            updateBlob(b, w, h, t, 1.0);
-            drawWalkingBlob(ctx, b, t);
-        });
+        blobs.forEach(b => { updateBlob(b, w, h, t, 1.0); drawWalkingBlob(ctx, b, t); });
     }
 
-    // ─── Drawing helpers ──────────────────────────────
     function drawHouse(ctx, x, y, s, t, opts) {
         const wall = opts.wall || '#f5e6ca';
         const roof = opts.roof || '#b23b3b';
@@ -3357,17 +3501,14 @@ body.light-mode .weather-controls select option {
                 }
             }
         }
-
         ctx.restore();
     }
 
     function drawTree(ctx, x, y, s, t, type) {
         ctx.save();
         ctx.translate(x, y);
-
         const sway = Math.sin(t*0.012)*0.035;
         ctx.rotate(sway);
-
         ctx.shadowColor = 'rgba(0,0,0,0.15)';
         ctx.shadowBlur = 14*s;
         ctx.shadowOffsetY = 4*s;
@@ -3377,7 +3518,6 @@ body.light-mode .weather-controls select option {
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
-
         const trunkH = 42*s;
         ctx.strokeStyle = '#6d4c2f';
         ctx.lineWidth = 7*s;
@@ -3386,7 +3526,6 @@ body.light-mode .weather-controls select option {
         ctx.moveTo(0, 4*s);
         ctx.lineTo(-2*s, -trunkH);
         ctx.stroke();
-
         ctx.lineWidth = 4*s;
         ctx.beginPath();
         ctx.moveTo(-1*s, -trunkH*0.55);
@@ -3405,7 +3544,6 @@ body.light-mode .weather-controls select option {
             colors = ['#f8bbd0','#f48fb1','#fce4ec','#f06292','#f5c1d9'];
             highlight = 'rgba(255,255,255,0.35)';
         }
-
         const canopyY = -trunkH - 6*s;
         const clusters = [
             { dx:0, dy:-8, r:24 },
@@ -3415,7 +3553,6 @@ body.light-mode .weather-controls select option {
             { dx:12, dy:15, r:15 },
             { dx:0, dy:6, r:20 }
         ];
-
         clusters.forEach((c, i) => {
             const wob = Math.sin(t*0.01 + i*1.7)*1.2*s;
             ctx.fillStyle = colors[i % colors.length];
@@ -3426,13 +3563,11 @@ body.light-mode .weather-controls select option {
             ctx.arc(c.dx*s + wob, canopyY + c.dy*s, c.r*s, 0, Math.PI*2);
             ctx.fill();
         });
-
         ctx.shadowBlur = 0;
         ctx.fillStyle = highlight;
         ctx.beginPath();
         ctx.arc(-8*s, canopyY-10*s, 14*s, 0, Math.PI*2);
         ctx.fill();
-
         ctx.restore();
 
         const particleCount = type === 'maple' ? 12 : 18;
@@ -3527,10 +3662,8 @@ body.light-mode .weather-controls select option {
         ctx.restore();
     }
 
-    // ─── Render scene ──────────────────────────────────
     function renderScene(ctx, w, h, season, time) {
         ctx.clearRect(0, 0, w, h);
-
         if (blobInstances.length === 0) {
             const blobConfigs = [
                 { x: w*0.7, y: h*0.72, emoji: '🌻', color: '#ffb74d', speed: 1.0, size: 20 },
@@ -3544,14 +3677,12 @@ body.light-mode .weather-controls select option {
                 b.y = b.baseY;
             });
         }
-
         blobInstances.forEach(b => {
             if (Math.abs(b.baseY - h*0.73) > 20) {
                 b.baseY = h*0.70 + (b.baseY % (h*0.12));
                 b.y = b.baseY;
             }
         });
-
         switch (season) {
             case 'summer': drawSummer(ctx, w, h, time, blobInstances); break;
             case 'winter': drawWinter(ctx, w, h, time, blobInstances); break;
@@ -3561,7 +3692,6 @@ body.light-mode .weather-controls select option {
         }
     }
 
-    // ─── Animation loop ─────────────────────────────────
     function animateScene() {
         if (canvasAnimId) cancelAnimationFrame(canvasAnimId);
         if (!canvas) return;
@@ -3576,10 +3706,8 @@ body.light-mode .weather-controls select option {
             }
         };
         window.addEventListener('resize', onResize);
-
         let start = performance.now();
-        let season = 'summer'; // will be updated
-
+        let season = 'summer';
         function frame(now) {
             if (!canvas || !document.body.contains(canvas)) {
                 cancelAnimationFrame(canvasAnimId);
@@ -3594,7 +3722,6 @@ body.light-mode .weather-controls select option {
         window._setSeason = (s) => { season = s; };
     }
 
-    // ─── Weather API helpers ────────────────────────────
     function getFlagFromCode(code) {
         if (!code) return '🌍';
         const upper = code.toUpperCase();
@@ -3610,11 +3737,8 @@ body.light-mode .weather-controls select option {
         const month = new Date().getMonth() + 1;
         let effectiveLat = lat;
         if (!effectiveLat || Math.abs(effectiveLat) < 0.01) {
-            if (code && countryLatMap[code]) {
-                effectiveLat = countryLatMap[code];
-            } else {
-                effectiveLat = 30;
-            }
+            if (code && countryLatMap[code]) effectiveLat = countryLatMap[code];
+            else effectiveLat = 30;
         }
         const isNorth = effectiveLat > 0;
         if (Math.abs(effectiveLat) < 10) {
@@ -3669,16 +3793,8 @@ body.light-mode .weather-controls select option {
             const current = data.current || {};
             const tempC = typeof current.temperature_2m === 'number' ? current.temperature_2m : null;
             const code = current.weather_code;
-            return {
-                tempC,
-                condition: weatherDescFromCode(code),
-                emoji: weatherEmojiFromCode(code),
-                lat, lon,
-                timezone: data.timezone || null
-            };
-        } catch (err) {
-            return null;
-        }
+            return { tempC, condition: weatherDescFromCode(code), emoji: weatherEmojiFromCode(code), lat, lon, timezone: data.timezone || null };
+        } catch (err) { return null; }
     }
 
     async function fetchWeatherByCity(city) {
@@ -3698,29 +3814,17 @@ body.light-mode .weather-controls select option {
             const tempC = typeof current.temperature_2m === 'number' ? current.temperature_2m : null;
             const code = current.weather_code;
             return {
-                tempC,
-                condition: weatherDescFromCode(code),
-                emoji: weatherEmojiFromCode(code),
-                region: place.admin1 || '',
-                city: place.name || city,
-                country: place.country || '',
-                lat, lon,
-                timezone: wData.timezone || null
+                tempC, condition: weatherDescFromCode(code), emoji: weatherEmojiFromCode(code),
+                region: place.admin1 || '', city: place.name || city, country: place.country || '',
+                lat, lon, timezone: wData.timezone || null
             };
-        } catch (err) {
-            return null;
-        }
+        } catch (err) { return null; }
     }
 
-    // ─── Show weather widget ────────────────────────────
     async function showWeatherWidget(season, city, country, code, region, lat, manual = false) {
         const flag = getFlagFromCode(code) || '🌍';
-        // Avoid duplication: if country is already in city, skip it
         let locationDisplay = city;
-        if (region && region !== city && region !== 'Unknown') {
-            locationDisplay += `, ${region}`;
-        }
-        // Use just city and country without duplicating
+        if (region && region !== city && region !== 'Unknown') locationDisplay += `, ${region}`;
         const mainText = `${flag} ${locationDisplay}`;
         const subText = `${season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : '❄️'} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
         updateWidget(mainText, subText, subText.split(' ')[0], 80);
@@ -3732,12 +3836,8 @@ body.light-mode .weather-controls select option {
             setStatus('⏳ Loading weather...');
             try {
                 let wData = null;
-                if (city && city !== 'Unknown') {
-                    wData = await fetchWeatherByCity(city);
-                }
-                if ((!wData || wData.tempC === null) && lat) {
-                    wData = await fetchWeather(lat, 0);
-                }
+                if (city && city !== 'Unknown') wData = await fetchWeatherByCity(city);
+                if ((!wData || wData.tempC === null) && lat) wData = await fetchWeather(lat, 0);
                 if (wData && wData.tempC !== null) {
                     currentTemp = wData.tempC;
                     currentCondition = wData.condition || '';
@@ -3752,66 +3852,39 @@ body.light-mode .weather-controls select option {
                 } else {
                     setStatus('⚠️ Weather unavailable');
                 }
-            } catch (e) {
-                setStatus('⚠️ Weather unavailable');
-            }
+            } catch (e) { setStatus('⚠️ Weather unavailable'); }
         }
-
         if (window._setSeason) window._setSeason(season);
-
         if (code) {
             const option = countrySelect.querySelector(`option[value="${code}"]`);
             if (option) countrySelect.value = code;
         }
     }
 
-    // ─── Update from country select ─────────────────────
     async function updateFromCountry(code) {
         const country = countryList.find(c => c.code === code);
         if (!country) return;
         const name = country.name;
-
         const wData = await fetchWeatherByCity(name);
-
-        let city = name;
-        let region = '';
-        let temp = null, cond = '', emoji = '🌤️';
-        let lat = 0, lon = 0;
-        let countryName = name;
-
+        let city = name, region = '', temp = null, cond = '', emoji = '🌤️';
+        let lat = 0, lon = 0, countryName = name;
         if (wData && wData.tempC !== null) {
-            temp = wData.tempC;
-            cond = wData.condition || '';
-            emoji = wData.emoji || '🌤️';
+            temp = wData.tempC; cond = wData.condition || ''; emoji = wData.emoji || '🌤️';
             if (wData.city && wData.city !== name) city = wData.city;
             if (wData.region) region = wData.region;
             if (wData.country) countryName = wData.country;
-            lat = wData.lat || 0;
-            lon = wData.lon || 0;
+            lat = wData.lat || 0; lon = wData.lon || 0;
             if (wData.timezone) currentTimezone = wData.timezone;
         }
-
-        if (!lat || Math.abs(lat) < 0.01) {
-            lat = countryLatMap[code] || 30;
-        }
-
-        currentCity = city;
-        currentCountry = countryName;
-        currentCountryCode = code;
-        currentRegion = region;
-        currentTemp = temp;
-        currentCondition = cond;
-        currentWeatherEmoji = emoji;
-        currentFlag = getFlagFromCode(code);
-        currentLat = lat;
-        currentLon = lon;
-
+        if (!lat || Math.abs(lat) < 0.01) lat = countryLatMap[code] || 30;
+        currentCity = city; currentCountry = countryName; currentCountryCode = code; currentRegion = region;
+        currentTemp = temp; currentCondition = cond; currentWeatherEmoji = emoji;
+        currentFlag = getFlagFromCode(code); currentLat = lat; currentLon = lon;
         const season = getSeasonForCountry(countryName, code, lat);
         blobInstances = [];
         await showWeatherWidget(season, city, countryName, code, region, lat, true);
     }
 
-    // ─── Detect location ────────────────────────────────
     async function detectLocation() {
         try {
             const res = await fetch('https://ip-api.com/json/');
@@ -3828,9 +3901,7 @@ body.light-mode .weather-controls select option {
                     currentFlag = getFlagFromCode(code);
                     currentLat = data.lat || 0;
                     currentLon = data.lon || 0;
-                    if (!currentLat || Math.abs(currentLat) < 0.01) {
-                        currentLat = countryLatMap[code] || 30;
-                    }
+                    if (!currentLat || Math.abs(currentLat) < 0.01) currentLat = countryLatMap[code] || 30;
                     const wData = await fetchWeather(data.lat || currentLat, data.lon || 0);
                     if (wData && wData.tempC !== null) {
                         currentTemp = wData.tempC;
@@ -3840,22 +3911,17 @@ body.light-mode .weather-controls select option {
                         if (wData.lon) currentLon = wData.lon;
                     }
                     currentTimezone = (wData && wData.timezone) || data.timezone || currentTimezone;
-
                     const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
                     blobInstances = [];
                     await showWeatherWidget(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
                     return;
                 }
             }
-        } catch (e) {
-            console.warn('IP geolocation failed:', e);
-        }
-
+        } catch (e) { console.warn('IP geolocation failed:', e); }
         const fallbackCode = 'US';
         await updateFromCountry(fallbackCode);
     }
 
-    // ─── Init weather widget ────────────────────────────
     function initWeatherWidget() {
         countryList.sort((a, b) => a.name.localeCompare(b.name));
         countryList.forEach(c => {
@@ -3865,20 +3931,14 @@ body.light-mode .weather-controls select option {
             opt.textContent = `${flag} ${c.name}`;
             countrySelect.appendChild(opt);
         });
-
         countrySelect.addEventListener('change', (e) => {
             const code = e.target.value;
-            if (code) {
-                updateFromCountry(code);
-            }
+            if (code) updateFromCountry(code);
         });
-
         closeBtn.addEventListener('click', function() {
-            // Hide the toast but keep container visible – user can toggle back
             toast.style.display = 'none';
             if (activeToast) activeToast.close();
         });
-
         animateScene();
         detectLocation();
     }
@@ -3894,5 +3954,4 @@ body.light-mode .weather-controls select option {
 </body>
 </html>
 """
-
 # End of notes.py
