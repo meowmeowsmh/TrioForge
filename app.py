@@ -1670,19 +1670,29 @@ body.light-mode .vision-badge {
     gap: 0px;
     min-width: 0;
 }
-.toast-text .main {
+.toast-text .toast-text-main {
     font-size: 12px;
     line-height: 1.2;
     font-weight: 500;
-    color: #e1e4e8;
+    color: #e1e4e8 !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-decoration: none !important;
 }
-.toast-text .main .highlight {
+.toast-text .toast-text-main * {
+    color: inherit !important;
+    text-decoration: none !important;
+}
+.toast-text .toast-text-main .highlight {
     font-weight: 700;
-    color: #fff;
+    color: #fff !important;
 }
+#toastMain {
+    color: #ffffff !important;
+}
+body.light-mode .toast-text .toast-text-main { color: #24292f !important; }
+body.light-mode .toast-text .toast-text-main .highlight { color: #000 !important; }
 .toast-text .sub {
     font-size: 10px;
     color: rgba(255,255,255,0.6);
@@ -3692,7 +3702,7 @@ function createToast() {
         <div class="toast-content">
             <div class="toast-icon" id="toastIcon"><div class="spinner"></div></div>
             <div class="toast-text">
-                <div class="main" id="toastMain">⏳ Detecting...</div>
+                <div class="toast-text-main" id="toastMain">⏳ Detecting...</div>
                 <div class="sub" id="toastSub"></div>
                 <div class="time-row" id="timeRow">
                     <span class="clock" id="clockText">--:--</span>
@@ -3749,6 +3759,7 @@ function createToast() {
             this._clockInterval = setInterval(tick, 1000);
         },
         update(mainText, subText = '', iconHtml = null, progress = null) {
+            if (!document.body.contains(this.toast)) return;
             this.main.textContent = mainText;
             if (subText) {
                 this.sub.textContent = subText;
@@ -4610,17 +4621,17 @@ function renderScene(ctx, w, h, season, time) {
 // ─── LOCATION & WEATHER helpers ──
 async function getLocationFromIP() {
     try {
-        const res = await fetch('https://ip-api.com/json/');
+        const res = await fetch('https://ipapi.co/json/');
         if (!res.ok) throw new Error('IP API error');
         const data = await res.json();
-        if (data.status === 'success') {
+        if (data.country_code) {
             return {
                 city: data.city || 'Unknown',
-                country: data.country || 'Unknown',
-                countryCode: data.countryCode || '',
-                lat: data.lat || 0,
-                lon: data.lon || 0,
-                region: data.regionName || '',
+                country: data.country_name || 'Unknown',
+                countryCode: data.country_code || '',
+                lat: data.latitude || 0,
+                lon: data.longitude || 0,
+                region: data.region || '',
                 timezone: data.timezone || null
             };
         }
@@ -4708,13 +4719,27 @@ async function fetchWeather(lat, lon) {
         const current = data.current || {};
         const tempC = typeof current.temperature_2m === 'number' ? current.temperature_2m : null;
         const code = current.weather_code;
+
+        let city = '', country = '', region = '';
+        try {
+            const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+            if (geoRes.ok) {
+                const geo = await geoRes.json();
+                city = geo.city || geo.locality || '';
+                country = geo.countryName || '';
+                region = geo.principalSubdivision || '';
+            }
+        } catch (geoErr) {
+            console.warn('Reverse geocode failed:', geoErr);
+        }
+
         return {
             tempC,
             condition: weatherDescFromCode(code),
             emoji: weatherEmojiFromCode(code),
-            region: '',
-            city: '',
-            country: '',
+            region,
+            city,
+            country,
             lat, lon,
             timezone: data.timezone || null
         };
@@ -4760,12 +4785,15 @@ async function showSeasonToast(season, city, country, code, region, lat, manual 
     const canvas = toast.canvas;
     const emoji = season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : '❄️';
     const name = season.charAt(0).toUpperCase() + season.slice(1);
-    const flag = getFlagFromCode(code) || '🌍';
+    const flag = '🌐';
     let locationDisplay = city;
     if (!locationDisplay || locationDisplay === country || locationDisplay === code.toLowerCase()) {
         locationDisplay = country;
     } else if (region && region !== city && region !== 'Unknown') {
         locationDisplay += ', ' + region;
+    }
+    if (!locationDisplay || !locationDisplay.trim()) {
+        locationDisplay = 'Unknown location';
     }
 
     const mainText = `${flag} ${locationDisplay}`;
