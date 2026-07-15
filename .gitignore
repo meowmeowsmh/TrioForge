@@ -38,3 +38,6 @@ static/uploads/
 sqlite_data/
 conversations.db
 notes.db
+
+#weather html 
+weather.html
