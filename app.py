@@ -517,7 +517,8 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
                         status = chunk.get('status', '')
                         if status:
                             full_response += status + "\n"
-                            yield f"data: {json_dumps({'token': status + '\n'})}\n\n"
+                            # FIXED: replaced '+ '\n'' with '+ chr(10)'
+                            yield f"data: {json_dumps({'token': status + chr(10)})}\n\n"
                         if 'error' in chunk:
                             err = '❌ ' + chunk['error']
                             full_response += err
@@ -545,7 +546,8 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
                         status = chunk.get('status', '')
                         if status:
                             full_response += status + "\n"
-                            yield f"data: {json_dumps({'token': status + '\n'})}\n\n"
+                            # FIXED: replaced '+ '\n'' with '+ chr(10)'
+                            yield f"data: {json_dumps({'token': status + chr(10)})}\n\n"
                         if 'error' in chunk:
                             err = '❌ ' + chunk['error']
                             full_response += err
@@ -557,7 +559,8 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
             output = execute_ollama_command_sync(user_message)
             full_response = output
             for line in output.splitlines():
-                yield f"data: {json_dumps({'token': line + '\n'})}\n\n"
+                # FIXED: replaced '+ '\n'' with '+ chr(10)'
+                yield f"data: {json_dumps({'token': line + chr(10)})}\n\n"
         yield f"data: {json_dumps({'done': True, 'full_response': full_response})}\n\n"
     except Exception as e:
         err = f"❌ Command failed: {e}"
@@ -5106,8 +5109,11 @@ def unload_model():
         pass
     return '', 204
 
+# ── Environment variable for Ollama base URL ──
+ollama_base = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+
 providers = {
-    "ollama": OllamaProvider(model=current_model),
+    "ollama": OllamaProvider(model=current_model, base_url=ollama_base),
     "llamacpp": LlamaCppProvider(),
     "huggingface": HuggingFaceProvider(),
     "groq": GroqProvider(),
@@ -5860,4 +5866,4 @@ if __name__ == '__main__':
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
 
-    app.run(host='127.0.0.1', port=5001, debug=True, use_reloader=False, ssl_context=ssl_context, threaded=True)
+    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False, ssl_context=ssl_context, threaded=True)
