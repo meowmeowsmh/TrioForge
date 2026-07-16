@@ -49,7 +49,7 @@
 ### 1️⃣ Clone the Repository
 ```bash
 git clone https://github.com/meowmeowsmh/TrioForge.git
-cd Trioforge
+cd TrioForge
 pip install -r requirements.txt
 ollama pull vaultbox/qwen3.5-uncensored:9b
 python app.py
