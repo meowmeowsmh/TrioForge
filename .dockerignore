@@ -1,0 +1,13 @@
+json_configuration/
+sqlite_data/
+static/uploads/
+cert_store/
+__pycache__/
+*.pyc
+.git/
+.vscode/
+.idea/
+venv/
+env/
+*.log
+*.tmp

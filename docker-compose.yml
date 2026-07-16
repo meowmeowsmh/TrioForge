@@ -1,0 +1,36 @@
+services:
+  app:
+    build: .
+    container_name: trio-forge
+    ports:
+      - "5001:5001"
+    volumes:
+      # Persist conversations, notes, cork board data (JSON)
+      - ./json_configuration:/app/json_configuration
+      # Use a Docker volume for SQLite to avoid Windows filesystem I/O errors
+      - sqlite_volume:/app/sqlite_data
+      # Persist uploaded images / attachments
+      - ./static/uploads:/app/static/uploads
+      # (optional) keep certs if you ever generate them
+      - ./cert_store:/app/cert_store
+    environment:
+      # Point to Ollama – if you run Ollama on the host, use "host.docker.internal" (mac/win)
+      # or the IP of your host (Linux: use --add-host or set to your host IP)
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Alternatively, if you run Ollama in a separate container:
+      # - OLLAMA_BASE_URL=http://ollama:11434
+    restart: unless-stopped
+
+  # Optional: run Ollama alongside the app (uncomment if you want)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ./ollama_data:/root/.ollama
+  #   restart: unless-stopped
+
+# Define the Docker-managed volume for SQLite
+volumes:
+  sqlite_volume:
