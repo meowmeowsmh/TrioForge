@@ -1,27 +1,11 @@
-# 🧠 Forge-llm Custom Chat
+# ⚙️ TrioForge
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![GitHub last commit](https://img.shields.io/github/last-commit/meowmeowsmh/ollama-chat-interface)](https://github.com/meowmeowsmh/ollama-chat-interface)
+[![GitHub last commit](https://img.shields.io/github/last-commit/meowmeowsmh/TrioForge)](https://github.com/meowmeowsmh/TrioForge)
 
-> A full‑featured, multi‑conversation chat interface for [Ollama](https://ollama.com) – **100% free**, no API keys, no limits (when using Ollama).  
-
-Everything auto‑creates itself – just clone, run, and go.
----
-
-## 📖 Table of Contents
-
-- [✨ Features](#-features)
-- [📦 Prerequisites](#-prerequisites)
-- [🚀 Quick Start](#-quick-start)
-- [🛠️ Configuration](#️-configuration)
-- [🧠 How the Fallback Works](#-how-the-fallback-works)
-- [📁 Project Structure](#-project-structure)
-- [💻 Running Manually](#-running-manually)
-- [❓ Troubleshooting](#-troubleshooting)
-- [🤝 Contributing](#-contributing)
-- [📝 License](#-license)
-- [🙌 Acknowledgements](#-acknowledgements)
+> A private, offline-first AI workspace with multi-LLM support, persistent conversations, and SQLite audit logs.  
+> **100% free when using Ollama** – no API keys, no limits, no cloud.
 
 ---
 
@@ -29,31 +13,30 @@ Everything auto‑creates itself – just clone, run, and go.
 
 | Feature | Description |
 |---------|-------------|
-| 🔓 **100% FREE** | No API keys, no rate limits, no bills – if you stick to **Ollama**. |
+| 🔓 **100% Free** | No API keys, no rate limits—just local models with Ollama. |
 | 🧠 **Any Model** | Works with Qwen, Llama, Mistral, DeepSeek, and more. |
-| 🌐 **Web Search** | Optional DuckDuckGo search for up‑to‑date answers. |
-| 🎤 **Voice Input** | Speech‑to‑text directly in your browser. |
-| 📎 **File/Image Upload** | Attach images, PDFs, text files, code files. |
-| 💾 **Live Monitor** | Shows RAM & VRAM usage in real time. |
-| 🔒 **HTTPS** | Auto‑generates certificates on Windows – just run and go. |
-| 🧰 **Multi‑Provider Support** | Besides Ollama, you can also use Groq, Hugging Face, DeepSeek, Claude, and llama.cpp – just add your API key. |
-| 📑 **Persistent Conversations** | Chats are automatically saved in `json_configuration/conversations.json` – you can rename, delete, and reorder them. |
-| 🖱️ **Drag‑and‑Drop File Upload** | Drop files or folders directly onto the chat to attach them. |
-| 🤖 **We applogies that embedded models will not be supported** | Embedded does not worked on the ui interface only worked on cmd or other cmd related. |
-| 📖 **notes that notes we include in our page** | you can add notes to your study related subject. |
-| 📖 **Corkboard that help people to related fact with fact** | Corkboard include to help to make notes. |
-| >_ **bat terminal to open application for the code** | help user to relief it the problem they have just one button to communicate with the server |
-| 🧠 **check out the instruction.md helps user to get onto llama.cpp style I recommend llama than ollama in terms of clearing cache** | reason,because it instantly cache out if you want to used ollama recommend cloud service for providing better and quality answer. |
-| 📊 **Now you are able to track your previous database if you want to recover your previous chat but can't find it in conversation.db and cork_board.py** | help user to track back previous data after they clear previos message from html this help to prevent parent noticing your privacy search without knowing your browsing history of your previous data inside the chatbot interface information |
-|**notes that we are coming out decartion for our corkboard** | offline mode|
+| 🌐 **Web Search** | Optional DuckDuckGo integration for up-to-date answers. |
+| 🎤 **Voice Input** | Speech-to-text directly in your browser. |
+| 📎 **File/Image Upload** | Attach images, PDFs, code files, and text documents. |
+| 💾 **Live Monitor** | Real-time RAM & VRAM usage tracking. |
+| 🔒 **HTTPS** | Auto-generates SSL certificates on Windows. |
+| 🧰 **Multi-Provider** | Supports Ollama, Groq, Hugging Face, DeepSeek, Claude, and llama.cpp. |
+| 📑 **Persistent Chats** | Conversations auto-save to `json_configuration/conversations.json`. |
+| 🗄️ **SQLite Audit Log** | Every message is logged to `sqlite_data/conversations.db`. Recover deleted chats even after clearing the UI. |
+| 🖱️ **Drag & Drop** | Drop files or folders directly onto the chat window. |
+| 📝 **Notes & Corkboard** | Built-in study tools for organizing facts and notes. |
 
 ---
-notes that you can download vscode try and error and install extension "SQLite IntelliView" so that you can check your database sqlite
+
+## 📸 Screenshots
+
+![Chat interface](image-3.png)
+![Notes](image.png)
+![Cork Board](image-2.png)
+
 ---
 
 ## 📦 Prerequisites
-
-Before you begin, ensure you have the following installed:
 
 - **Python 3.8+** – [Download](https://www.python.org/downloads/)
 - **Ollama** – [Download](https://ollama.com) (required for local models)
@@ -62,18 +45,11 @@ Before you begin, ensure you have the following installed:
 ---
 
 ## 🚀 Quick Start
-![alt text](image-1.png)
-to this: 
-![alt text](image-3.png)
-## second update 
-![alt text](image.png)
-## 3 massive update
-![alt text](image-2.png)
+
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/meowmeowsmh/ollama-chat-interface.git
-cd best_bot_vscode
-#ensure to download all requirement 
+git clone https://github.com/meowmeowsmh/TrioForge.git
+cd Trioforge
 pip install -r requirements.txt
-#to run the real application(ensure to get certificate): 
-python app.py 
+ollama pull vaultbox/qwen3.5-uncensored:9b
+python app.py
