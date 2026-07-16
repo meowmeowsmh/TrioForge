@@ -53,3 +53,15 @@ cd TrioForge
 pip install -r requirements.txt
 ollama pull vaultbox/qwen3.5-uncensored:9b
 python app.py
+```
+
+### 🐧 Linux (Docker)
+
+```bash
+# Build the image
+docker compose build
+# Start the container in detached mode
+docker compose up -d
+# Check logs to confirm everything is working
+docker compose logs -f
+```
