@@ -83,6 +83,7 @@ os.makedirs(SQLITE_DIR, exist_ok=True)
 # ── SQLite ──
 _sqlite_conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
 _sqlite_lock = threading.Lock()
+_sqlite_executor = ThreadPoolExecutor(max_workers=1)
 def _init_sqlite():
     with _sqlite_lock:
         _sqlite_conn.execute("PRAGMA journal_mode=WAL;")
@@ -112,7 +113,8 @@ def log_message_to_sqlite(cid, role, text):
                 _sqlite_conn.commit()
         except Exception as e:
             print(f"⚠️ Failed to log message to sqlite: {e}")
-    _save_executor.submit(_write)
+    # Own executor so sqlite logging never queues behind the JSON conversation-file save
+    _sqlite_executor.submit(_write)
 
 # ── Create JSON files if missing ──
 if not os.path.exists(CONVERSATIONS_FILE):
@@ -228,6 +230,8 @@ def _hydrate_blobs_from_disk(convs):
                 if f.get("file") and not f.get("b64"):
                     f["b64"] = _load_attachment_from_disk(f["file"])
 
+_hydrated_cids = set()  # conversation ids whose attachment b64 has been loaded into RAM
+
 def _ensure_cache():
     global _conversations_cache, _cache_loaded
     if _cache_loaded:
@@ -239,7 +243,11 @@ def _ensure_cache():
             try:
                 with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
                     _conversations_cache = json_loads(f.read())
-                _hydrate_blobs_from_disk(_conversations_cache)
+                # NOTE: attachment b64 is intentionally NOT hydrated here.
+                # Hydrating every attachment for every conversation at startup meant
+                # every image/file's base64 sat resident in RAM for the whole process
+                # lifetime. Instead, get_conversation() hydrates a conversation's own
+                # attachments the first time that conversation is actually opened.
             except Exception as e:
                 print(f"⚠️ Error loading conversations: {e}")
                 _conversations_cache = {}
@@ -250,8 +258,16 @@ def load_conversations():
     return _conversations_cache
 
 _save_executor = ThreadPoolExecutor(max_workers=1)
+_save_timer = None
+_save_timer_lock = threading.Lock()
+_SAVE_DEBOUNCE_SECONDS = 1.0  # coalesce bursts of add_message() into one file write
 
 def save_conversations_async(convs):
+    # Rewriting the whole conversations file on every single message gets slower
+    # as history grows. Debounce so a burst of messages (e.g. user msg + bot
+    # reply right after streaming) triggers one write instead of several.
+    global _save_timer
+
     def _save():
         try:
             lean = _strip_blobs_for_disk(convs)
@@ -261,7 +277,13 @@ def save_conversations_async(convs):
             os.replace(temp_file, CONVERSATIONS_FILE)
         except Exception as e:
             print(f"❌ Failed to save conversations: {e}")
-    _save_executor.submit(_save)
+
+    with _save_timer_lock:
+        if _save_timer is not None:
+            _save_timer.cancel()
+        _save_timer = threading.Timer(_SAVE_DEBOUNCE_SECONDS, lambda: _save_executor.submit(_save))
+        _save_timer.daemon = True
+        _save_timer.start()
 
 def create_conversation(title=None):
     _ensure_cache()
@@ -282,7 +304,19 @@ def create_conversation(title=None):
 
 def get_conversation(cid):
     _ensure_cache()
-    return _conversations_cache.get(cid)
+    conv = _conversations_cache.get(cid)
+    if conv is not None and cid not in _hydrated_cids:
+        with _cache_lock:
+            if cid not in _hydrated_cids:
+                for msg in conv.get("messages", []):
+                    for im in msg.get("images", []):
+                        if im.get("file") and not im.get("b64"):
+                            im["b64"] = _load_attachment_from_disk(im["file"])
+                    for f in msg.get("files", []):
+                        if f.get("file") and not f.get("b64"):
+                            f["b64"] = _load_attachment_from_disk(f["file"])
+                _hydrated_cids.add(cid)
+    return conv
 
 setup_viewer(app, get_conversation)
 
