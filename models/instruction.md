@@ -17,3 +17,6 @@ D:\TrioForge\llama-b10054-bin-win-cpu-x64\llama-server.exe -m "models\Qwen3.5-9B
 
 full path version if downloaded in windget:
 "C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\ggml.llamacpp_Microsoft.Winget.Source_8wekyb3d8bbwe\llama-server.exe" -m "models\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf" --mmproj "models\mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf" --port 8080
+
+Powershell:
+& "C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\ggml.llamacpp_Microsoft.Winget.Source_8wekyb3d8bbwe\llama-server.exe" -m "models\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf" --mmproj "models\mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf" --port 8080
