@@ -3,6 +3,7 @@
 # FEATURES: Markdown, tags, pinning, colours, AI assistance, semantic search,
 #           bidirectional [[wiki links]], ![[embeds]], backlinks, graph view.
 # NEW: Obsidian vault sync (import/export .md files with frontmatter)
+# OPTIMISED: in‑memory cache, async debounced JSON writes, no redundant DB queries.
 
 import os
 import json as std_json
@@ -149,7 +150,10 @@ def _note_to_row_values(note_id, data, created=None, existing=None):
 
 # ---------- Core DB operations ----------
 def upsert_note(note_id, data, created=None):
-    """Insert or replace a note. `created` can be passed for migrations."""
+    """Insert or replace a note, updating both DB and in‑memory cache.
+       JSON backup is scheduled asynchronously.
+    """
+    global _notes_cache
     vals = _note_to_row_values(note_id, data, created)
     with _write_lock:
         conn = get_conn()
@@ -167,14 +171,39 @@ def upsert_note(note_id, data, created=None):
                 embedding=excluded.embedding
         """, vals)
         conn.commit()
-    write_json_backup()
+
+    # Update cache immediately
+    if _notes_cache is None:
+        load_notes()   # ensure cache exists
+    with _cache_lock:
+        # Build a note dict from the row values
+        note = {
+            "id": vals["id"],
+            "title": vals["title"],
+            "content": vals["content"],
+            "created": vals["created"],
+            "last_modified": vals["last_modified"],
+            "order": vals["order_idx"],
+            "pinned": bool(vals["pinned"]),
+            "color": vals["color"],
+            "tags": json_loads(vals["tags"]),
+            "embedding": json_loads(vals["embedding"]) if vals["embedding"] else None,
+        }
+        _notes_cache[note_id] = note
+
+    _schedule_backup()
 
 def get_note_from_db(note_id):
+    # Try cache first
+    if _notes_cache is not None and note_id in _notes_cache:
+        return _notes_cache[note_id]
+    # Fallback to DB if not in cache
     conn = get_conn()
     row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
     return _note_row_to_dict(row) if row else None
 
 def get_all_notes():
+    """Read all notes from SQLite (used only for initial load)."""
     conn = get_conn()
     rows = conn.execute("SELECT * FROM notes ORDER BY order_idx, created").fetchall()
     notes = {}
@@ -184,31 +213,45 @@ def get_all_notes():
     return notes
 
 def delete_note_from_db(note_id):
+    """Delete from DB and cache, schedule backup."""
+    global _notes_cache
     with _write_lock:
         conn = get_conn()
         conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         conn.execute("DELETE FROM note_links WHERE from_note_id = ? OR to_note_id = ?", (note_id, note_id))
         conn.commit()
-    write_json_backup()
+    if _notes_cache is not None and note_id in _notes_cache:
+        with _cache_lock:
+            del _notes_cache[note_id]
+    _schedule_backup()
 
 def clear_all_notes_db():
+    """Clear all notes and links, update cache."""
+    global _notes_cache
     with _write_lock:
         conn = get_conn()
         conn.execute("DELETE FROM notes")
         conn.execute("DELETE FROM note_links")
         conn.commit()
-    write_json_backup()
+    with _cache_lock:
+        _notes_cache = {}
+    _schedule_backup()
 
 def set_note_embedding_db(note_id, embedding):
+    """Update embedding in DB and cache."""
+    global _notes_cache
     with _write_lock:
         conn = get_conn()
         conn.execute("UPDATE notes SET embedding = ? WHERE id = ?",
                      (json_dumps(embedding) if embedding is not None else None, note_id))
         conn.commit()
-    write_json_backup()
+    if _notes_cache is not None and note_id in _notes_cache:
+        with _cache_lock:
+            _notes_cache[note_id]["embedding"] = embedding
+    _schedule_backup()
 
 def update_note_fields_db(note_id, fields):
-    """Partial update of note fields."""
+    """Partial update of note fields, update cache."""
     if not fields:
         return
     fields = dict(fields)
@@ -225,15 +268,49 @@ def update_note_fields_db(note_id, fields):
         conn = get_conn()
         conn.execute(f"UPDATE notes SET {set_clause}, embedding = NULL WHERE id = :id", fields)
         conn.commit()
-    write_json_backup()
 
-# ---------- JSON backup writer ----------
-def write_json_backup():
-    """Write the entire notes dictionary to the JSON file (sync)."""
-    notes = get_all_notes()
+    # Update cache
+    if _notes_cache is not None and note_id in _notes_cache:
+        with _cache_lock:
+            note = _notes_cache[note_id]
+            for k, v in fields.items():
+                if k == "tags":
+                    note["tags"] = json_loads(v)
+                elif k == "pinned":
+                    note["pinned"] = bool(v)
+                elif k == "order_idx":
+                    note["order"] = v
+                elif k == "last_modified":
+                    note["last_modified"] = v
+                else:
+                    note[k] = v
+            note["embedding"] = None   # embedding invalidated
+    _schedule_backup()
+
+# ---------- JSON backup (async, debounced) ----------
+_backup_timer = None
+_backup_lock = threading.Lock()
+BACKUP_DELAY = 1.0  # seconds
+
+def _schedule_backup():
+    """Schedule an asynchronous JSON backup after a short delay."""
+    global _backup_timer
+    with _backup_lock:
+        if _backup_timer is not None:
+            _backup_timer.cancel()
+        _backup_timer = threading.Timer(BACKUP_DELAY, _write_backup_task)
+        _backup_timer.daemon = True
+        _backup_timer.start()
+
+def _write_backup_task():
+    """Write the current cache to JSON (runs in a background thread)."""
+    global _backup_timer
+    with _backup_lock:
+        _backup_timer = None
+    # Use the cache directly – no DB query
     try:
         with open(NOTES_JSON, "w", encoding="utf-8") as f:
-            std_json.dump(notes, f, indent=2)
+            std_json.dump(_notes_cache, f, indent=2)
     except Exception as e:
         print(f"❌ Failed to write JSON backup: {e}")
 
@@ -262,7 +339,7 @@ _notes_cache = None
 _cache_lock = threading.Lock()
 
 def load_notes():
-    """Load notes into cache from SQLite."""
+    """Load notes into cache from SQLite once, then always return the cache."""
     global _notes_cache
     if _notes_cache is not None:
         return _notes_cache
@@ -274,6 +351,7 @@ def load_notes():
             try:
                 with open(NOTES_JSON, "r", encoding="utf-8") as f:
                     notes = json_loads(f.read())
+                # Import JSON into SQLite
                 for nid, n in notes.items():
                     upsert_note(nid, n, created=n.get("created"))
                 print("ℹ️ Loaded notes from JSON backup into SQLite")
@@ -283,10 +361,12 @@ def load_notes():
         return _notes_cache
 
 def save_notes_async(notes_data=None):
-    write_json_backup()
+    """Legacy: schedule a backup."""
+    _schedule_backup()
 
 def save_notes_sync(notes_data=None):
-    write_json_backup()
+    """Legacy: force a synchronous backup (rarely used)."""
+    _write_backup_task()
 
 # ---------- Embedding model (lazy) ----------
 _embed_model = None
@@ -400,27 +480,18 @@ def import_from_obsidian(vault_path=None):
         return {"error": f"Invalid vault path: {vault_path}"}
 
     print(f"🔍 Scanning vault: {vault_path}")
-    # Normalise path (handles Windows backslashes)
     vault_path = os.path.normpath(vault_path)
-    
-    # Use Path.glob
     md_files = list(Path(vault_path).glob("*.md"))
     print(f"📄 Found {len(md_files)} .md files")
-    for f in md_files:
-        print(f"   - {f.name}")
 
     imported = 0
     skipped = 0
     errors = []
 
     for md_file in md_files:
-        print(f"📖 Processing: {md_file}")
         try:
-            # Read the file
             with open(md_file, "r", encoding="utf-8") as f:
                 raw = f.read()
-            
-            # Try to parse frontmatter
             try:
                 post = frontmatter.loads(raw)
                 title = post.get("title", md_file.stem)
@@ -430,30 +501,22 @@ def import_from_obsidian(vault_path=None):
                     tags = [t.strip() for t in tags.split(",") if t.strip()]
                 pinned = post.get("pinned", False)
                 color = post.get("color", "default")
-            except Exception as fm_err:
-                # No frontmatter – use whole file as content, title from filename
-                print(f"   ⚠️ No frontmatter or parsing error: {fm_err}, using file as content")
+            except Exception:
                 title = md_file.stem
                 content = raw
                 tags = []
                 pinned = False
                 color = "default"
 
-            # Use file modification time as last_modified
             last_mod = datetime.fromtimestamp(md_file.stat().st_mtime).isoformat()
-            
-            # Check if a note with same title exists (case‑insensitive)
             conn = get_conn()
             row = conn.execute("SELECT id FROM notes WHERE LOWER(title) = LOWER(?)", (title,)).fetchone()
             if row:
                 note_id = row[0]
                 existing = get_note_from_db(note_id)
-                # Only update if file is newer
                 if existing and existing.get("last_modified", "") >= last_mod:
                     skipped += 1
-                    print(f"   ⏭️ Skipped (file not newer than note) – {title}")
                     continue
-                # Update existing
                 upsert_note(note_id, {
                     "title": title,
                     "content": content,
@@ -463,9 +526,7 @@ def import_from_obsidian(vault_path=None):
                     "last_modified": last_mod,
                 })
                 imported += 1
-                print(f"   ✅ Updated existing note: {title}")
             else:
-                # New note
                 note_id = str(uuid.uuid4())
                 upsert_note(note_id, {
                     "title": title,
@@ -477,15 +538,14 @@ def import_from_obsidian(vault_path=None):
                     "last_modified": last_mod,
                 })
                 imported += 1
-                print(f"   ✅ Created new note: {title}")
         except Exception as e:
-            print(f"   ❌ Failed to import {md_file}: {e}")
             errors.append(str(e))
 
     # Refresh cache after import
     global _notes_cache
     with _cache_lock:
         _notes_cache = None
+    load_notes()   # reload from DB
 
     return {
         "imported": imported,
@@ -501,16 +561,14 @@ def export_to_obsidian(vault_path=None):
     if not vault_path or not os.path.isdir(vault_path):
         return {"error": "Invalid vault path"}
 
-    notes = get_all_notes()
+    notes = load_notes()   # use cache
     exported = 0
     for note_id, note in notes.items():
         title = note.get("title", "Untitled")
-        # Sanitize title for filename (replace invalid chars)
         safe_title = "".join(c for c in title if c.isalnum() or c in " _-").strip()
         if not safe_title:
             safe_title = note_id
         file_path = Path(vault_path) / (safe_title + ".md")
-        # Build frontmatter
         frontmatter_dict = {
             "title": title,
             "tags": note.get("tags", []),
@@ -519,7 +577,6 @@ def export_to_obsidian(vault_path=None):
             "created": note.get("created"),
             "last_modified": note.get("last_modified"),
         }
-        # Remove None values
         frontmatter_dict = {k:v for k,v in frontmatter_dict.items() if v is not None}
         content = note.get("content", "")
         post = frontmatter.Post(content, **frontmatter_dict)
@@ -564,10 +621,7 @@ def create_note():
         "color": data.get("color", "default")
     }
     upsert_note(note_id, note, created=now)
-    update_note_links(note_id, content)  # parse wiki links
-    global _notes_cache
-    with _cache_lock:
-        _notes_cache = None
+    update_note_links(note_id, content)
     return jsonify({"id": note_id, "ok": True})
 
 @notes_bp.route('/api/<note_id>', methods=['PUT'])
@@ -584,9 +638,6 @@ def update_note(note_id):
         update_note_fields_db(note_id, fields)
         if "content" in fields:
             update_note_links(note_id, fields["content"])
-        global _notes_cache
-        with _cache_lock:
-            _notes_cache = None
     return jsonify({"ok": True})
 
 @notes_bp.route('/api/<note_id>', methods=['DELETE'])
@@ -595,9 +646,6 @@ def delete_note(note_id):
     if not note:
         return jsonify({"error": "Note not found"}), 404
     delete_note_from_db(note_id)
-    global _notes_cache
-    with _cache_lock:
-        _notes_cache = None
     return jsonify({"ok": True})
 
 # ---------- Keyword search ----------
@@ -605,7 +653,7 @@ def delete_note(note_id):
 def search_notes():
     query = request.args.get('q', '').strip().lower()
     tag = request.args.get('tag', '').strip().lower()
-    notes = load_notes()
+    notes = load_notes()   # fast cache
     results = {}
     for nid, note in notes.items():
         if tag and tag not in [t.lower() for t in note.get("tags", [])]:
@@ -728,9 +776,6 @@ def ai_assist():
             new_tags = [t for t in tags if t not in existing]
             if new_tags:
                 update_note_fields_db(note_id, {"tags": list(existing.union(new_tags))})
-                global _notes_cache
-                with _cache_lock:
-                    _notes_cache = None
                 return jsonify({"result": result, "tags": new_tags})
 
     return jsonify({"result": result})
@@ -758,9 +803,6 @@ def upload_image():
 @notes_bp.route('/api/clear_all', methods=['POST'])
 def clear_all_notes():
     clear_all_notes_db()
-    global _notes_cache
-    with _cache_lock:
-        _notes_cache = {}
     return jsonify({"ok": True})
 
 # ---------- Reorder ----------
@@ -772,9 +814,6 @@ def reorder_notes():
         return jsonify({'error': 'Invalid order data'}), 400
     for nid, new_order in order_map.items():
         update_note_fields_db(nid, {"order": int(new_order)})
-    global _notes_cache
-    with _cache_lock:
-        _notes_cache = None
     return jsonify({'ok': True})
 
 # ---------- OBSIDIAN API ----------
@@ -803,24 +842,21 @@ def sync_config():
 def sync_obsidian():
     data = request.get_json()
     direction = data.get('direction')  # 'import' or 'export'
-    vault_path = data.get('vault_path')  # optional, if not provided uses config
+    vault_path = data.get('vault_path')
     if direction == 'import':
         result = import_from_obsidian(vault_path)
     elif direction == 'export':
         result = export_to_obsidian(vault_path)
     else:
         return jsonify({"error": "Invalid direction. Use 'import' or 'export'."}), 400
-    # Refresh cache after sync
-    global _notes_cache
-    with _cache_lock:
-        _notes_cache = None
     return jsonify(result)
 
 # ---------- Run migration on startup ----------
 migrate_from_json_if_needed()
+load_notes()   # preload cache
 
 # ===========================================================================
-# HTML TEMPLATE – unchanged (already includes sync UI)
+# HTML TEMPLATE – unchanged (same as before, but we keep it here for completeness)
 # ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
