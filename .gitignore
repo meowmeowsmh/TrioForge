@@ -8,6 +8,7 @@ json_configuration/conversations.json
 json_configuration/model_config.json
 json_configuration/corkboard.json
 json_configuration/notes.json
+json_configuration/sync_config.json
 
 # SSL certificates (each user generates their own, or uses HTTP fallback)
 cert_store/
