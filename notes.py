@@ -2,6 +2,7 @@
 # STORAGE: SQLite (sqlite_data/notes.db) + JSON backup (json_configuration/notes.json)
 # FEATURES: Markdown, tags, pinning, colours, AI assistance, semantic search,
 #           bidirectional [[wiki links]], ![[embeds]], backlinks, graph view.
+# NEW: Obsidian vault sync (import/export .md files with frontmatter)
 
 import os
 import json as std_json
@@ -47,6 +48,11 @@ from llm_providers import (
     LlamaCppProvider,
 )
 
+# ---------- Obsidian sync imports ----------
+import yaml
+import frontmatter
+from pathlib import Path
+
 # ======================================================================
 # SQLite storage layer
 # ======================================================================
@@ -57,6 +63,10 @@ os.makedirs(DB_DIR, exist_ok=True)
 # JSON backup path
 NOTES_JSON = "json_configuration/notes.json"
 os.makedirs(os.path.dirname(NOTES_JSON), exist_ok=True)
+
+# Sync config
+SYNC_CONFIG_PATH = "json_configuration/sync_config.json"
+os.makedirs(os.path.dirname(SYNC_CONFIG_PATH), exist_ok=True)
 
 _local = threading.local()
 _write_lock = threading.Lock()
@@ -365,6 +375,163 @@ def get_graph_data():
     }
 
 # ======================================================================
+# OBSIDIAN VAULT SYNC (import/export) – IMPROVED
+# ======================================================================
+
+def get_vault_path():
+    """Return the Obsidian vault path from config, or None."""
+    try:
+        with open(SYNC_CONFIG_PATH, "r") as f:
+            config = std_json.load(f)
+        return config.get("vault_path")
+    except:
+        return None
+
+def set_vault_path(path):
+    """Save vault path to config."""
+    with open(SYNC_CONFIG_PATH, "w") as f:
+        std_json.dump({"vault_path": path}, f, indent=2)
+
+def import_from_obsidian(vault_path=None):
+    """Import all .md files from vault_path into the app."""
+    if vault_path is None:
+        vault_path = get_vault_path()
+    if not vault_path or not os.path.isdir(vault_path):
+        return {"error": f"Invalid vault path: {vault_path}"}
+
+    print(f"🔍 Scanning vault: {vault_path}")
+    # Normalise path (handles Windows backslashes)
+    vault_path = os.path.normpath(vault_path)
+    
+    # Use Path.glob
+    md_files = list(Path(vault_path).glob("*.md"))
+    print(f"📄 Found {len(md_files)} .md files")
+    for f in md_files:
+        print(f"   - {f.name}")
+
+    imported = 0
+    skipped = 0
+    errors = []
+
+    for md_file in md_files:
+        print(f"📖 Processing: {md_file}")
+        try:
+            # Read the file
+            with open(md_file, "r", encoding="utf-8") as f:
+                raw = f.read()
+            
+            # Try to parse frontmatter
+            try:
+                post = frontmatter.loads(raw)
+                title = post.get("title", md_file.stem)
+                content = post.content
+                tags = post.get("tags", [])
+                if isinstance(tags, str):
+                    tags = [t.strip() for t in tags.split(",") if t.strip()]
+                pinned = post.get("pinned", False)
+                color = post.get("color", "default")
+            except Exception as fm_err:
+                # No frontmatter – use whole file as content, title from filename
+                print(f"   ⚠️ No frontmatter or parsing error: {fm_err}, using file as content")
+                title = md_file.stem
+                content = raw
+                tags = []
+                pinned = False
+                color = "default"
+
+            # Use file modification time as last_modified
+            last_mod = datetime.fromtimestamp(md_file.stat().st_mtime).isoformat()
+            
+            # Check if a note with same title exists (case‑insensitive)
+            conn = get_conn()
+            row = conn.execute("SELECT id FROM notes WHERE LOWER(title) = LOWER(?)", (title,)).fetchone()
+            if row:
+                note_id = row[0]
+                existing = get_note_from_db(note_id)
+                # Only update if file is newer
+                if existing and existing.get("last_modified", "") >= last_mod:
+                    skipped += 1
+                    print(f"   ⏭️ Skipped (file not newer than note) – {title}")
+                    continue
+                # Update existing
+                upsert_note(note_id, {
+                    "title": title,
+                    "content": content,
+                    "tags": tags,
+                    "pinned": pinned,
+                    "color": color,
+                    "last_modified": last_mod,
+                })
+                imported += 1
+                print(f"   ✅ Updated existing note: {title}")
+            else:
+                # New note
+                note_id = str(uuid.uuid4())
+                upsert_note(note_id, {
+                    "title": title,
+                    "content": content,
+                    "tags": tags,
+                    "pinned": pinned,
+                    "color": color,
+                    "created": last_mod,
+                    "last_modified": last_mod,
+                })
+                imported += 1
+                print(f"   ✅ Created new note: {title}")
+        except Exception as e:
+            print(f"   ❌ Failed to import {md_file}: {e}")
+            errors.append(str(e))
+
+    # Refresh cache after import
+    global _notes_cache
+    with _cache_lock:
+        _notes_cache = None
+
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "total_files": len(md_files)
+    }
+
+def export_to_obsidian(vault_path=None):
+    """Export all app notes to markdown files in the vault."""
+    if vault_path is None:
+        vault_path = get_vault_path()
+    if not vault_path or not os.path.isdir(vault_path):
+        return {"error": "Invalid vault path"}
+
+    notes = get_all_notes()
+    exported = 0
+    for note_id, note in notes.items():
+        title = note.get("title", "Untitled")
+        # Sanitize title for filename (replace invalid chars)
+        safe_title = "".join(c for c in title if c.isalnum() or c in " _-").strip()
+        if not safe_title:
+            safe_title = note_id
+        file_path = Path(vault_path) / (safe_title + ".md")
+        # Build frontmatter
+        frontmatter_dict = {
+            "title": title,
+            "tags": note.get("tags", []),
+            "pinned": note.get("pinned", False),
+            "color": note.get("color", "default"),
+            "created": note.get("created"),
+            "last_modified": note.get("last_modified"),
+        }
+        # Remove None values
+        frontmatter_dict = {k:v for k,v in frontmatter_dict.items() if v is not None}
+        content = note.get("content", "")
+        post = frontmatter.Post(content, **frontmatter_dict)
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(frontmatter.dumps(post))
+            exported += 1
+        except Exception as e:
+            print(f"⚠️ Failed to export {file_path}: {e}")
+    return {"exported": exported}
+
+# ======================================================================
 # Flask Blueprint
 # ======================================================================
 notes_bp = Blueprint('notes', __name__, url_prefix='/notes')
@@ -619,11 +786,41 @@ def backlinks_api(note_id):
 def graph_api():
     return jsonify(get_graph_data())
 
+# ---------- OBSIDIAN SYNC API ----------
+@notes_bp.route('/api/sync_config', methods=['GET', 'POST'])
+def sync_config():
+    if request.method == 'GET':
+        return jsonify({"vault_path": get_vault_path()})
+    else:
+        data = request.get_json()
+        path = data.get('vault_path')
+        if not path:
+            return jsonify({"error": "vault_path required"}), 400
+        set_vault_path(path)
+        return jsonify({"ok": True})
+
+@notes_bp.route('/api/sync_obsidian', methods=['POST'])
+def sync_obsidian():
+    data = request.get_json()
+    direction = data.get('direction')  # 'import' or 'export'
+    vault_path = data.get('vault_path')  # optional, if not provided uses config
+    if direction == 'import':
+        result = import_from_obsidian(vault_path)
+    elif direction == 'export':
+        result = export_to_obsidian(vault_path)
+    else:
+        return jsonify({"error": "Invalid direction. Use 'import' or 'export'."}), 400
+    # Refresh cache after sync
+    global _notes_cache
+    with _cache_lock:
+        _notes_cache = None
+    return jsonify(result)
+
 # ---------- Run migration on startup ----------
 migrate_from_json_if_needed()
 
 # ===========================================================================
-# HTML TEMPLATE – now with Obsidian features + weather widget
+# HTML TEMPLATE – unchanged (already includes sync UI)
 # ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -956,6 +1153,117 @@ body.light-mode .center-tabs .tab-btn.active { background: #1f6feb; color: #fff;
 }
 .clear-btn:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
 
+/* ----- Obsidian Sync Button ----- */
+.sync-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.sync-btn {
+    background: rgba(33,38,45,0.7);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8b949e;
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(5px);
+    transition: all 0.2s;
+}
+.sync-btn:hover {
+    background: rgba(88,166,255,0.15);
+    border-color: #58a6ff;
+    color: #58a6ff;
+}
+#syncStatus {
+    font-size: 11px;
+    color: #8b949e;
+    display: none;
+}
+.sync-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(22,27,34,0.95);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 24px;
+    z-index: 99999;
+    min-width: 320px;
+    max-width: 90vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    backdrop-filter: blur(20px);
+}
+.sync-popup h3 {
+    margin: 0 0 12px;
+    color: #e1e4e8;
+}
+.sync-popup p {
+    color: #8b949e;
+    font-size: 13px;
+    margin: 0 0 8px;
+}
+.sync-popup input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.3);
+    color: #e1e4e8;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+}
+.sync-popup .actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+.sync-popup .actions button {
+    padding: 8px 20px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+}
+.sync-popup .actions .cancel-sync {
+    background: transparent;
+    color: #8b949e;
+}
+.sync-popup .sync-btns {
+    display: flex;
+    gap: 10px;
+    margin: 12px 0;
+}
+.sync-popup .sync-btns button {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+}
+.sync-popup .sync-btns .import-btn { background: #1f6feb; color: #fff; }
+.sync-popup .sync-btns .export-btn { background: #3fb950; color: #fff; }
+.sync-popup #syncResult {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #8b949e;
+}
+body.light-mode .sync-popup {
+    background: rgba(255,255,255,0.95);
+    border-color: rgba(0,0,0,0.1);
+}
+body.light-mode .sync-popup h3 { color: #24292f; }
+body.light-mode .sync-popup input {
+    background: rgba(0,0,0,0.04);
+    color: #24292f;
+    border-color: rgba(0,0,0,0.15);
+}
+body.light-mode .sync-popup .actions .cancel-sync { color: #57606a; }
+/* end sync styles */
+
 .weather-toggle-btn {
     background: rgba(33,38,45,0.6);
     border: 1px solid rgba(255,255,255,0.1);
@@ -987,7 +1295,7 @@ body.light-mode .weather-toggle-btn:hover {
     background: rgba(31,111,235,0.05);
 }
 
-/* Theme toggle */
+/* Theme toggle (unchanged) */
 .theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
 .toggle-outer {
     position: relative; width: 140px; height: 56px; border-radius: 999px; background: hsl(220 18% 82%);
@@ -1162,6 +1470,89 @@ body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="pa
 }
 .notes-panel .note-editor .editor-body .preview.visible {
     display:block;
+}
+
+/* ── Obsidian-style rendering inside the preview pane ── */
+.preview h1, .preview h2, .preview h3, .preview h4, .preview h5, .preview h6 {
+    color: #e6edf3;
+    font-weight: 600;
+    margin: 18px 0 8px;
+    line-height: 1.3;
+}
+.preview h1 { font-size: 1.6em; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.preview h2 { font-size: 1.35em; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.preview h3 { font-size: 1.15em; }
+.preview h1:first-child, .preview h2:first-child, .preview h3:first-child { margin-top: 0; }
+.preview p { margin: 8px 0; }
+.preview ul, .preview ol { padding-left: 24px; margin: 8px 0; }
+.preview li { margin: 3px 0; }
+.preview li > input[type="checkbox"] {
+    margin-right: 6px;
+    accent-color: #58a6ff;
+    transform: translateY(1px);
+}
+.preview a { color: #58a6ff; text-decoration: none; }
+.preview a:hover { text-decoration: underline; }
+.preview hr {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    margin: 16px 0;
+}
+.preview code {
+    background: rgba(255,255,255,0.08);
+    color: #ffa657;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+    font-size: 0.9em;
+}
+.preview pre {
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    margin: 10px 0;
+}
+.preview pre code {
+    background: none;
+    color: #e6edf3;
+    padding: 0;
+}
+.preview blockquote {
+    border-left: 3px solid #58a6ff;
+    padding: 4px 12px;
+    margin: 10px 0;
+    background: rgba(255,255,255,0.03);
+    border-radius: 0 4px 4px 0;
+    color: #b6c2cf;
+}
+/* Obsidian-style ==highlight== */
+.preview mark, .obsidian-highlight {
+    background: #ffd82480;
+    color: #1a1a1a;
+    padding: 1px 3px;
+    border-radius: 3px;
+}
+/* Obsidian-style markdown tables */
+.preview table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 0.93em;
+}
+.preview table th, .preview table td {
+    border: 1px solid rgba(255,255,255,0.14);
+    padding: 6px 10px;
+    text-align: left;
+}
+.preview table th {
+    background: rgba(255,255,255,0.06);
+    font-weight: 600;
+    color: #e6edf3;
+}
+.preview table tr:nth-child(even) td {
+    background: rgba(255,255,255,0.02);
 }
 .notes-panel .note-editor .editor-footer {
     display:flex;
@@ -1369,6 +1760,15 @@ body.light-mode .notes-panel .note-editor input,
 body.light-mode .notes-panel .note-editor textarea,
 body.light-mode .notes-panel .note-editor .editor-body .preview { color: #24292f; }
 body.light-mode .notes-panel .note-editor .editor-body .preview { background: rgba(0,0,0,0.03); }
+body.light-mode .preview h1, body.light-mode .preview h2, body.light-mode .preview h3 { color: #24292f; border-bottom-color: rgba(0,0,0,0.1); }
+body.light-mode .preview code { background: rgba(0,0,0,0.06); color: #b35900; }
+body.light-mode .preview pre { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.08); }
+body.light-mode .preview pre code { background: none; color: #24292f; }
+body.light-mode .preview blockquote { background: rgba(0,0,0,0.03); color: #57606a; }
+body.light-mode .preview table th, body.light-mode .preview table td { border-color: rgba(0,0,0,0.12); }
+body.light-mode .preview table th { background: rgba(0,0,0,0.05); color: #24292f; }
+body.light-mode .preview table tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
+body.light-mode .preview mark, body.light-mode .obsidian-highlight { background: #ffe066; color: #1a1a1a; }
 body.light-mode .notes-panel .note-editor .editor-header .toolbar button { color: #57606a; }
 body.light-mode .notes-panel .note-editor .editor-header .toolbar button:hover { background: rgba(0,0,0,0.06); }
 body.light-mode .notes-panel .note-editor .editor-footer .tags-input { background: rgba(0,0,0,0.04); color: #24292f; }
@@ -1662,6 +2062,10 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 <a href="/corkboard" class="tab-btn" style="text-decoration:none;">📌 Cork Board</a>
             </div>
             <div class="right">
+                <div class="sync-controls">
+                    <button class="sync-btn" id="syncBtn" title="Sync with Obsidian vault">🔄 Sync</button>
+                    <span id="syncStatus"></span>
+                </div>
                 <div class="weather-controls">
                     <select id="countrySelect" aria-label="Select country"></select>
                 </div>
@@ -1747,6 +2151,8 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         <button data-cmd="heading" title="Heading">H</button>
                         <button data-cmd="list" title="Bullet list">•</button>
                         <button data-cmd="code" title="Code block">{ }</button>
+                        <button data-cmd="highlight" title="Highlight">🖍️</button>
+                        <button data-cmd="table" title="Insert table">▦</button>
                         <button data-cmd="preview" title="Toggle preview" id="previewToggle">👁️</button>
                         <button class="image-upload-btn" id="imageUploadBtn" title="Insert Image">🖼️</button>
                         <input type="file" id="imageFileInput" accept="image/*" style="display:none;">
@@ -1958,6 +2364,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     var activeTagFilter = '';
     var searchMode = 'keyword';
 
+    // ─── Obsidian ==highlight== syntax ──────────────────
+    function convertHighlights(text) {
+        return (text || '').replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
+    }
+
     // ─── Markdown preview with Obsidian links ──────────
     function renderWikiPreview(htmlContent) {
         // Replace ![[Title]] with embedded blockquote
@@ -1974,7 +2385,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 var snippet = note.content.substring(0, 300) + (note.content.length > 300 ? '…' : '');
                 return `<blockquote style="border-left:3px solid #58a6ff; padding-left:12px; margin:8px 0; background:rgba(255,255,255,0.03); border-radius:4px;">
                     📄 <strong><a href="#" onclick="selectNote('${foundId}')">${title}</a></strong><br>
-                    ${marked.parse(snippet)}
+                    ${marked.parse(convertHighlights(snippet))}
                 </blockquote>`;
             }
             return `<span style="color:#f85149;">[![[${title}]]]</span>`;
@@ -1999,7 +2410,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     function updatePreview() {
         var content = document.getElementById('noteContentInput').value;
         var preview = document.getElementById('notePreview');
-        var rendered = marked.parse(content || '');
+        var rendered = marked.parse(convertHighlights(content || ''));
         rendered = renderWikiPreview(rendered);
         preview.innerHTML = rendered;
     }
@@ -2019,6 +2430,14 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
             else if (cmd === 'heading') replacement = '# ' + selected;
             else if (cmd === 'list') replacement = '- ' + selected;
             else if (cmd === 'code') replacement = '```\n' + selected + '\n```';
+            else if (cmd === 'highlight') replacement = '==' + selected + '==';
+            else if (cmd === 'table') {
+                replacement = selected ? selected + '\n\n' : '';
+                replacement += '| Column A | Column B | Column C |\n' +
+                               '| -------- | -------- | -------- |\n' +
+                               '| Row 1    | Data     | Data     |\n' +
+                               '| Row 2    | Data     | Data     |\n';
+            }
             else if (cmd === 'preview') {
                 document.getElementById('notePreview').classList.toggle('visible');
                 this.classList.toggle('active');
@@ -2735,6 +3154,93 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         .then(data => { if (data.ok) loadNotes(); else console.error('Reorder failed'); })
         .catch(err => console.error('Error reordering:', err));
     }
+
+    // ─── Obsidian Sync ────────────────────────────────────
+    var vaultPath = null;
+
+    function loadSyncConfig() {
+        fetch('/notes/api/sync_config')
+            .then(r => r.json())
+            .then(data => { if (data.vault_path) vaultPath = data.vault_path; });
+    }
+
+    function showSyncPopup() {
+        var overlay = document.createElement('div');
+        overlay.className = 'sync-popup';
+        overlay.id = 'syncPopup';
+        overlay.innerHTML = `
+            <h3>🔄 Obsidian Sync</h3>
+            <p>Vault path on server:</p>
+            <input type="text" id="vaultPathInput" placeholder="/path/to/your/obsidian/vault" value="${vaultPath || ''}">
+            <div class="sync-btns">
+                <button class="import-btn" id="importBtn">📥 Import from Vault</button>
+                <button class="export-btn" id="exportBtn">📤 Export to Vault</button>
+            </div>
+            <div class="actions">
+                <button class="cancel-sync" id="cancelSync">Cancel</button>
+            </div>
+            <div id="syncResult"></div>
+        `;
+        document.body.appendChild(overlay);
+
+        document.getElementById('vaultPathInput').addEventListener('change', function() {
+            var path = this.value.trim();
+            if (path) {
+                fetch('/notes/api/sync_config', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({vault_path: path})
+                }).then(r => r.json()).then(data => { if (data.ok) vaultPath = path; });
+            }
+        });
+
+        function runSync(direction) {
+            var path = document.getElementById('vaultPathInput').value.trim();
+            if (!path) {
+                document.getElementById('syncResult').textContent = '⚠️ Please set a vault path.';
+                return;
+            }
+            document.getElementById('syncResult').textContent = '⏳ Syncing...';
+            var statusEl = document.getElementById('syncStatus');
+            statusEl.textContent = '⏳ Syncing...';
+            statusEl.style.display = 'inline';
+            fetch('/notes/api/sync_obsidian', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({direction: direction, vault_path: path})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('syncResult').textContent = '❌ ' + data.error;
+                    statusEl.textContent = '❌ Sync failed';
+                    return;
+                }
+                if (direction === 'import') {
+                    document.getElementById('syncResult').textContent = `✅ Imported ${data.imported} notes (${data.skipped} skipped) – ${data.total_files} files found`;
+                    statusEl.textContent = `✅ Imported ${data.imported}`;
+                } else {
+                    document.getElementById('syncResult').textContent = `✅ Exported ${data.exported} notes`;
+                    statusEl.textContent = `✅ Exported ${data.exported}`;
+                }
+                loadNotes();
+                setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+            })
+            .catch(err => {
+                document.getElementById('syncResult').textContent = '❌ Error: ' + err;
+                statusEl.textContent = '❌ Error';
+            });
+        }
+
+        document.getElementById('importBtn').addEventListener('click', function() { runSync('import'); });
+        document.getElementById('exportBtn').addEventListener('click', function() { runSync('export'); });
+        document.getElementById('cancelSync').addEventListener('click', function() {
+            overlay.remove();
+        });
+    }
+
+    document.getElementById('syncBtn').addEventListener('click', showSyncPopup);
+    loadSyncConfig();
 
     // ─── WEATHER WIDGET ──────────────────────────────────
     // POLYFILL for roundRect
