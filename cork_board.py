@@ -2231,6 +2231,13 @@ function updatePinElement(el, pin) {
         e.stopPropagation();
         if (confirm('Delete this pin?')) deletePin(pin.id);
     });
+    el.querySelectorAll('.pin-content img').forEach(function(imgEl) {
+        imgEl.style.cursor = 'zoom-in';
+        imgEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+            openPinImageViewer(imgEl.getAttribute('src'));
+        });
+    });
     el.dataset.lastModified = pin.last_modified || '';
 }
 
@@ -2240,8 +2247,389 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
+// ─── Image Viewer for pin images – zoom-to-cursor, pinch, clamped pan ──
+function collectPinImages() {
+    return Object.values(boardData.pins)
+        .filter(function(p) { return !!p.image_url; })
+        .sort(function(a, b) { return (a.created || '').localeCompare(b.created || ''); })
+        .map(function(p) { return { url: p.image_url, name: p.filename || p.title || 'image' }; });
+}
+
+function openPinImageViewer(imageUrl) {
+    var images = collectPinImages();
+    if (!images.length) return;
+    var idx = images.findIndex(function(i) { return i.url === imageUrl; });
+    if (idx === -1) idx = 0;
+    pinImageViewer.open(images, idx);
+}
+
+var pinImageViewer = {
+    images: [],
+    currentIndex: 0,
+    scale: 1,
+    panX: 0,
+    panY: 0,
+    minScale: 1,
+    maxScale: 8,
+    isDragging: false,
+    startX: 0, startY: 0,
+    startPanX: 0, startPanY: 0,
+    imgElement: null,
+    container: null,
+    counterElement: null,
+    loaderElement: null,
+    currentSrc: null,
+    rafId: null,
+    _preloadCache: {},
+    _pinch: null,
+
+    init: function() {
+        if (!document.getElementById('pinImageViewer')) this.buildModal();
+        this.imgElement = document.getElementById('pinViewerImage');
+        this.container = document.getElementById('pinViewerContainer');
+        this.counterElement = document.getElementById('pinViewerCounter');
+        this.loaderElement = document.getElementById('pinViewerLoader');
+        this.attachEvents();
+        this.imgElement.style.willChange = 'transform';
+    },
+
+    buildModal: function() {
+        var modal = document.createElement('div');
+        modal.id = 'pinImageViewer';
+        modal.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:99999; backdrop-filter:blur(5px); align-items:center; justify-content:center; flex-direction:column; touch-action:none;';
+        modal.innerHTML = `
+            <div style="position:absolute; top:20px; right:30px; z-index:100000;">
+                <button onclick="pinImageViewer.close()" style="background:none; border:none; color:#fff; font-size:32px; cursor:pointer;">✕</button>
+            </div>
+            <div style="position:absolute; top:20px; left:30px; z-index:100000; color:#fff; font-size:18px;" id="pinViewerCounter">1 / 1</div>
+            <div style="position:absolute; top:56px; left:30px; z-index:100000; color:#ccc; font-size:13px;" id="pinViewerZoomLabel">100%</div>
+            <div style="display:flex; align-items:center; justify-content:center; width:100%; height:calc(100% - 120px);">
+                <button onclick="pinImageViewer.prev()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; font-size:48px; padding:20px; border-radius:50%; cursor:pointer; margin:0 20px;">‹</button>
+                <div style="position:relative; width:80%; height:100%; overflow:hidden; display:flex; align-items:center; justify-content:center;" id="pinViewerContainer">
+                    <div id="pinViewerLoader" style="display:none; position:absolute; width:44px; height:44px; border:4px solid rgba(255,255,255,0.25); border-top-color:#fff; border-radius:50%; animation:pinViewerSpin 0.8s linear infinite;"></div>
+                    <img id="pinViewerImage" src="" alt="Image" draggable="false" style="max-width:90%; max-height:90%; object-fit:contain; cursor:grab; transform-origin:center center; will-change:transform; backface-visibility:hidden; opacity:1; transition:opacity 0.15s ease;">
+                </div>
+                <button onclick="pinImageViewer.next()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; font-size:48px; padding:20px; border-radius:50%; cursor:pointer; margin:0 20px;">›</button>
+            </div>
+            <div style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); display:flex; gap:20px; color:#fff; font-size:16px;">
+                <button onclick="pinImageViewer.zoomIn()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; padding:8px 16px; border-radius:8px; cursor:pointer;">🔍+</button>
+                <button onclick="pinImageViewer.zoomOut()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; padding:8px 16px; border-radius:8px; cursor:pointer;">🔍−</button>
+                <button onclick="pinImageViewer.reset()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; padding:8px 16px; border-radius:8px; cursor:pointer;">⟲ Reset</button>
+                <button onclick="pinImageViewer.download()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; padding:8px 16px; border-radius:8px; cursor:pointer;">⬇ Save</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        if (!document.getElementById('pinViewerSpinStyle')) {
+            var style = document.createElement('style');
+            style.id = 'pinViewerSpinStyle';
+            style.textContent = '@keyframes pinViewerSpin { to { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+        }
+    },
+
+    open: function(images, index) {
+        this.images = images;
+        this.currentIndex = index || 0;
+        this._preloadCache = {};
+        this.currentSrc = null;
+        this._loadCurrent(true);
+        document.getElementById('pinImageViewer').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        document.addEventListener('keydown', this.keyHandler);
+        this._preloadNeighbors();
+    },
+
+    close: function() {
+        document.getElementById('pinImageViewer').style.display = 'none';
+        document.body.style.overflow = '';
+        document.removeEventListener('keydown', this.keyHandler);
+        if (this.rafId) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+        }
+    },
+
+    keyHandler: function(e) {
+        if (e.key === 'Escape') pinImageViewer.close();
+        else if (e.key === 'ArrowLeft') pinImageViewer.prev();
+        else if (e.key === 'ArrowRight') pinImageViewer.next();
+        else if (e.key === '+' || e.key === '=') pinImageViewer.zoomIn();
+        else if (e.key === '-') pinImageViewer.zoomOut();
+        else if (e.key === '0') pinImageViewer.reset();
+    },
+
+    // Pin images are plain URLs (not base64), unlike the chat viewer
+    _srcFor: function(img) {
+        return img.url;
+    },
+
+    _loadCurrent: function(resetView) {
+        if (!this.images.length) return;
+        var img = this.images[this.currentIndex];
+        var newSrc = this._srcFor(img);
+        var self = this;
+
+        if (resetView) {
+            this.scale = this.minScale;
+            this.panX = 0;
+            this.panY = 0;
+        }
+        this.counterElement.textContent = (this.currentIndex + 1) + ' / ' + this.images.length;
+
+        if (newSrc === this.currentSrc) {
+            this._applyTransform();
+            return;
+        }
+
+        var cached = this._preloadCache[this.currentIndex];
+        if (cached && cached.complete) {
+            this._swapSrc(newSrc);
+            return;
+        }
+
+        this.loaderElement.style.display = 'block';
+        this.imgElement.style.opacity = '0';
+        var loader = new Image();
+        loader.onload = function() {
+            if (self.images[self.currentIndex] !== img) return;
+            self._preloadCache[self.currentIndex] = loader;
+            self._swapSrc(newSrc);
+        };
+        loader.onerror = function() {
+            self.loaderElement.style.display = 'none';
+        };
+        loader.src = newSrc;
+    },
+
+    _swapSrc: function(newSrc) {
+        this.imgElement.src = newSrc;
+        this.currentSrc = newSrc;
+        this.loaderElement.style.display = 'none';
+        this.imgElement.style.opacity = '1';
+        this._applyTransform();
+    },
+
+    _preloadNeighbors: function() {
+        var self = this;
+        [this.currentIndex - 1, this.currentIndex + 1].forEach(function(i) {
+            if (i < 0 || i >= self.images.length || self._preloadCache[i]) return;
+            var img = new Image();
+            img.src = self._srcFor(self.images[i]);
+            self._preloadCache[i] = img;
+        });
+    },
+
+    _clampPan: function() {
+        if (!this.container) return;
+        var rect = this.container.getBoundingClientRect();
+        var imgRect = this.imgElement.getBoundingClientRect();
+        if (!imgRect.width || !imgRect.height) return;
+        var baseW = imgRect.width / this.scale;
+        var baseH = imgRect.height / this.scale;
+        var scaledW = baseW * this.scale;
+        var scaledH = baseH * this.scale;
+        var maxX = Math.max(0, (scaledW - rect.width) / 2);
+        var maxY = Math.max(0, (scaledH - rect.height) / 2);
+        this.panX = Math.max(-maxX, Math.min(maxX, this.panX));
+        this.panY = Math.max(-maxY, Math.min(maxY, this.panY));
+    },
+
+    _applyTransform: function() {
+        this._clampPan();
+        this.imgElement.style.transform = 'translate3d(' + this.panX + 'px, ' + this.panY + 'px, 0) scale(' + this.scale + ')';
+        var label = document.getElementById('pinViewerZoomLabel');
+        if (label) label.textContent = Math.round(this.scale * 100) + '%';
+    },
+
+    update: function() {
+        if (this.rafId) return;
+        var self = this;
+        this.rafId = requestAnimationFrame(function() {
+            self._applyTransform();
+            self.rafId = null;
+        });
+    },
+
+    next: function() {
+        if (this.currentIndex < this.images.length - 1) {
+            this.currentIndex++;
+            this._loadCurrent(true);
+            this._preloadNeighbors();
+        }
+    },
+
+    prev: function() {
+        if (this.currentIndex > 0) {
+            this.currentIndex--;
+            this._loadCurrent(true);
+            this._preloadNeighbors();
+        }
+    },
+
+    zoomAt: function(clientX, clientY, newScale) {
+        newScale = Math.max(this.minScale, Math.min(this.maxScale, newScale));
+        var rect = this.container.getBoundingClientRect();
+        var cx = clientX - (rect.left + rect.width / 2);
+        var cy = clientY - (rect.top + rect.height / 2);
+        var ratio = newScale / this.scale;
+        this.panX = cx - (cx - this.panX) * ratio;
+        this.panY = cy - (cy - this.panY) * ratio;
+        this.scale = newScale;
+        if (this.scale <= this.minScale) { this.panX = 0; this.panY = 0; }
+        this.update();
+    },
+
+    _withTransition: function(fn) {
+        var self = this;
+        this.imgElement.style.transition = 'transform 0.15s ease, opacity 0.15s ease';
+        fn();
+        setTimeout(function() { self.imgElement.style.transition = 'opacity 0.15s ease'; }, 160);
+    },
+
+    zoomIn: function() {
+        var rect = this.container.getBoundingClientRect();
+        this._withTransition(function() {
+            pinImageViewer.zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, pinImageViewer.scale * 1.5);
+        });
+    },
+
+    zoomOut: function() {
+        var rect = this.container.getBoundingClientRect();
+        this._withTransition(function() {
+            pinImageViewer.zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, pinImageViewer.scale / 1.5);
+        });
+    },
+
+    reset: function() {
+        this._withTransition(function() {
+            pinImageViewer.scale = pinImageViewer.minScale;
+            pinImageViewer.panX = 0;
+            pinImageViewer.panY = 0;
+            pinImageViewer.update();
+        });
+    },
+
+    download: function() {
+        if (!this.images.length) return;
+        var img = this.images[this.currentIndex];
+        var a = document.createElement('a');
+        a.href = this._srcFor(img);
+        a.download = img.name || 'image';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    },
+
+    attachEvents: function() {
+        var self = this;
+        var imgEl = this.imgElement;
+        var container = this.container;
+
+        imgEl.addEventListener('dblclick', function(e) {
+            e.stopPropagation();
+            self._withTransition(function() {
+                if (self.scale <= self.minScale + 0.01) {
+                    self.zoomAt(e.clientX, e.clientY, 2.5);
+                } else {
+                    self.scale = self.minScale;
+                    self.panX = 0;
+                    self.panY = 0;
+                    self.update();
+                }
+            });
+        });
+
+        imgEl.addEventListener('mousedown', function(e) {
+            if (self.scale <= self.minScale) return;
+            self.isDragging = true;
+            self.startX = e.clientX;
+            self.startY = e.clientY;
+            self.startPanX = self.panX;
+            self.startPanY = self.panY;
+            imgEl.style.transition = 'none';
+            imgEl.style.cursor = 'grabbing';
+            e.stopPropagation();
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!self.isDragging) return;
+            self.panX = self.startPanX + (e.clientX - self.startX);
+            self.panY = self.startPanY + (e.clientY - self.startY);
+            self.update();
+            e.stopPropagation();
+            e.preventDefault();
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (self.isDragging) {
+                self.isDragging = false;
+                imgEl.style.cursor = 'grab';
+            }
+        });
+
+        var wheelTimeout = null;
+        container.addEventListener('wheel', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (wheelTimeout) return;
+            wheelTimeout = setTimeout(function() { wheelTimeout = null; }, 16);
+            imgEl.style.transition = 'none';
+            var factor = e.deltaY > 0 ? 0.9 : 1.1;
+            self.zoomAt(e.clientX, e.clientY, self.scale * factor);
+        }, { passive: false });
+
+        container.addEventListener('touchstart', function(e) {
+            imgEl.style.transition = 'none';
+            if (e.touches.length === 1 && self.scale > self.minScale) {
+                var t = e.touches[0];
+                self.isDragging = true;
+                self.startX = t.clientX;
+                self.startY = t.clientY;
+                self.startPanX = self.panX;
+                self.startPanY = self.panY;
+            } else if (e.touches.length === 2) {
+                self.isDragging = false;
+                var t0 = e.touches[0], t1 = e.touches[1];
+                self._pinch = {
+                    startDist: Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY),
+                    startScale: self.scale,
+                    cx: (t0.clientX + t1.clientX) / 2,
+                    cy: (t0.clientY + t1.clientY) / 2
+                };
+            }
+        }, { passive: true });
+
+        container.addEventListener('touchmove', function(e) {
+            if (e.touches.length === 1 && self.isDragging) {
+                e.preventDefault();
+                var t = e.touches[0];
+                self.panX = self.startPanX + (t.clientX - self.startX);
+                self.panY = self.startPanY + (t.clientY - self.startY);
+                self.update();
+            } else if (e.touches.length === 2 && self._pinch) {
+                e.preventDefault();
+                var t0 = e.touches[0], t1 = e.touches[1];
+                var dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+                var newScale = self._pinch.startScale * (dist / self._pinch.startDist);
+                self.zoomAt(self._pinch.cx, self._pinch.cy, newScale);
+            }
+        }, { passive: false });
+
+        container.addEventListener('touchend', function(e) {
+            if (e.touches.length === 0) {
+                self.isDragging = false;
+                self._pinch = null;
+            }
+        }, { passive: true });
+    }
+};
+
 // ─── Links ─────────────────────────────────────────────
 function hashStr(s) {
+
     var h = 0;
     for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
     return Math.abs(h);
@@ -4180,6 +4568,7 @@ function initWeatherWidget() {
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('load', function() {
     loadBoard();
+    pinImageViewer.init();
     var savedProvider = localStorage.getItem('corkboard_ai_provider') || 'ollama';
     document.getElementById('aiProviderSelect').value = savedProvider;
     var evt = new Event('change');

@@ -4632,6 +4632,9 @@ function renderScene(ctx, w, h, season, time) {
             { x: w*0.45, y: h*0.76, emoji: '🐝', color: '#fdd835', speed: 1.2, size: 15 },
         ];
         blobInstances = blobConfigs.map(cfg => createBlob(cfg.x, cfg.y, cfg.emoji, cfg.color, cfg.speed, cfg.size));
+        const drinkerIdx = Math.floor(Math.random() * blobInstances.length);
+        blobInstances[drinkerIdx].hasDrink = true;
+        blobInstances[drinkerIdx].drinkCooldown = 60 + Math.random() * 120;
         blobInstances.forEach(b => {
             b.x = 30 + Math.random() * (w - 60);
             b.baseY = h*0.70 + Math.random()*0.12*h;
