@@ -326,7 +326,55 @@ def compute_all_embeddings():
 # (Uncomment to enable background precomputation)
 # threading.Thread(target=compute_all_embeddings, daemon=True).start()
 
+
+# ---------- Conversation tree → cork board layout ----------
+def compute_conversation_tree_layout(nodes, x_spacing=260, y_spacing=220):
+    """Given a list of {'id': ..., 'parent_id': ... or None}, return {id: (x, y)}.
+    Layered tree layout: depth (message's distance from the conversation root)
+    maps to y; leaves get sequential x slots and every parent centers itself
+    over the x-midpoint of its own children, so branches fan out naturally
+    left-to-right under the branch point instead of overlapping."""
+    by_id = {n['id']: n for n in nodes}
+    children = {}
+    roots = []
+    for n in nodes:
+        pid = n.get('parent_id')
+        if pid and pid in by_id and pid != n['id']:
+            children.setdefault(pid, []).append(n['id'])
+        else:
+            roots.append(n['id'])
+
+    positions = {}
+    depths = {}
+    next_slot = [0]
+
+    def assign(node_id, depth, visiting):
+        if node_id in positions or node_id in visiting:
+            return positions.get(node_id, 0)  # guard against malformed/cyclic parent links
+        visiting.add(node_id)
+        depths[node_id] = depth
+        kids = [k for k in children.get(node_id, []) if k not in visiting]
+        if not kids:
+            x = next_slot[0] * x_spacing
+            next_slot[0] += 1
+        else:
+            xs = [assign(k, depth + 1, visiting) for k in kids]
+            x = sum(xs) / len(xs)
+        positions[node_id] = x
+        return x
+
+    for r in roots:
+        assign(r, 0, set())
+    # Anything unreachable from a root (orphaned parent_id) still gets placed
+    for n in nodes:
+        if n['id'] not in positions:
+            assign(n['id'], 0, set())
+
+    return {nid: (positions[nid], depths.get(nid, 0) * y_spacing) for nid in positions}
+
+
 corkboard_bp = Blueprint('corkboard', __name__, url_prefix='/corkboard')
+
 
 # ---------- Serve the corkboard HTML page ----------
 @corkboard_bp.route('')
@@ -596,6 +644,62 @@ def delete_pin(pin_id):
         return jsonify({"error": "Pin not found"}), 404
     delete_pin_row(pin_id)
     return jsonify({"ok": True})
+
+# ---------- API: import a chat conversation's branch tree as pins + red threads ----------
+# Expects: {"conversation_id": "...", "nodes": [{"id","parent_id","role","content"}, ...]}
+# Re-importing the same conversation_id replaces its previous pins/threads (idempotent).
+@corkboard_bp.route('/api/import_conversation_tree', methods=['POST'])
+def import_conversation_tree():
+    data = request.get_json() or {}
+    conversation_id = data.get('conversation_id')
+    nodes = data.get('nodes')
+    if not conversation_id or not isinstance(nodes, list) or not nodes:
+        return jsonify({"error": "conversation_id and a non-empty nodes[] are required"}), 400
+
+    conv_tag = f"conv:{conversation_id}"
+
+    # Clear any pins (and their links, via delete_pin_row) from a previous import
+    conn = get_conn()
+    old_pin_ids = [r["id"] for r in conn.execute(
+        "SELECT id FROM pins WHERE tags LIKE ?", (f'%"{conv_tag}"%',)
+    )]
+    for pid in old_pin_ids:
+        delete_pin_row(pid)
+
+    layout = compute_conversation_tree_layout(nodes)
+    now = datetime.now().isoformat()
+    id_map = {}  # caller's node id -> our namespaced pin id
+
+    role_colors = {"user": "blue", "assistant": "green", "system": "orange"}
+    for n in nodes:
+        node_id = n['id']
+        pin_id = f"{conversation_id}:{node_id}"
+        id_map[node_id] = pin_id
+        role = n.get('role', 'assistant')
+        content = n.get('content', '')
+        title = n.get('title') or (content[:40] + ('…' if len(content) > 40 else '')) or role.capitalize()
+        x, y = layout.get(node_id, (0, 0))
+        pin_data = {
+            "title": title,
+            "content": content,
+            "x": x,
+            "y": y,
+            "width": 240,
+            "height": 150,
+            "color": role_colors.get(role, "yellow"),
+            "rotation": 0,
+            "tags": [conv_tag, role],
+            "type": "conversation_node",
+        }
+        upsert_pin(pin_id, pin_data, now)
+
+    for n in nodes:
+        parent = n.get('parent_id')
+        if parent and parent in id_map:
+            add_link(id_map[parent], id_map[n['id']], 'red')
+
+    return jsonify({"ok": True, "conversation_id": conversation_id, "pin_count": len(nodes)})
+
 
 # ---------- API: links (Red Thread = color: 'red') ----------
 @corkboard_bp.route('/api/links', methods=['POST'])
@@ -1820,6 +1924,7 @@ body.light-mode .weather-controls select option {
         <button class="top-btn" id="linkBtn" onclick="toggleLinkMode()">🔗 Link Mode</button>
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
         <button class="top-btn" id="suggestLinksBtn" onclick="openLinkSuggestions()">💡 Suggest Links</button>
+        <button class="top-btn" id="importConvBtn" onclick="importConversationTree()">💬 Import Conversation</button>
     </div>
 
     <!-- TAG FILTER -->
@@ -2102,6 +2207,39 @@ function scheduleBoardSizeUpdate() {
 }
 
 // ─── Load & render ────────────────────────────────────
+// Pulls a chat conversation's branch tree from the main app and lays it out
+// as pins + red threads here. `/api/conversations/<id>/tree` is a placeholder —
+// it needs to exist on the chat side and return {"nodes": [{id, parent_id, role, content}, ...]}.
+function importConversationTree() {
+    var conversationId = prompt('Conversation ID to import as a cork board tree:');
+    if (!conversationId) return;
+    fetch('/api/conversations/' + encodeURIComponent(conversationId) + '/tree')
+        .then(r => r.json())
+        .then(convData => {
+            if (!convData || !convData.nodes || !convData.nodes.length) {
+                alert("Could not load that conversation's branch tree.");
+                return null;
+            }
+            return fetch('/corkboard/api/import_conversation_tree', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: conversationId, nodes: convData.nodes })
+            }).then(r => r.json());
+        })
+        .then(result => {
+            if (!result) return;
+            if (result.ok) {
+                loadBoard();
+            } else {
+                alert(result.error || 'Import failed.');
+            }
+        })
+        .catch(e => {
+            console.error('Import conversation failed:', e);
+            alert('Import failed — see console for details.');
+        });
+}
+
 function loadBoard() {
     var query = document.getElementById('searchInput').value.trim();
     var tag = activeTagFilter;
@@ -3475,7 +3613,7 @@ function createBlob(x, y, emoji, color, speed = 1.0, size = 22) {
 
 function updateBlob(blob, w, h, t, speedMul = 1) {
     if (!blob) return;
-    const spd = blob.speed * speedMul * 0.6;
+    const spd = blob.speed * speedMul * 1.8; // was 0.6 — too slow to cross the scene
     if (blob.hasDrink && blob.isDrinking) {
         blob.drinkTimer += 1;
         blob.drinkProgress = Math.min(1, blob.drinkTimer / 30);
@@ -3512,9 +3650,11 @@ function updateBlob(blob, w, h, t, speedMul = 1) {
         blob.pauseDuration = 40 + Math.random() * 80;
         return;
     }
-    blob.x += blob.direction * spd * 1.2;
+    const moveDist = spd * 1.2;
+    blob.x += blob.direction * moveDist;
     blob.stepPhase += spd * 0.06;
-    blob.walkCycle += spd * 0.04;
+    const strideLen = blob.size * 2.2; // px of travel per full leg-swing cycle — keeps steps matched to movement
+    blob.walkCycle += (moveDist / strideLen) * Math.PI * 2;
     blob.armSwing = Math.sin(blob.walkCycle) * 0.3;
     blob.legOffset = Math.sin(blob.walkCycle);
     const bobAmt = 2.5 + Math.abs(Math.sin(blob.walkCycle)) * 2;
@@ -3522,6 +3662,19 @@ function updateBlob(blob, w, h, t, speedMul = 1) {
     const margin = 30 + blob.size;
     if (blob.x > w - margin) { blob.direction = -1; blob.x = w - margin; }
     if (blob.x < margin) { blob.direction = 1; blob.x = margin; }
+}
+
+// Foot stance/swing cycle: one leg plants+glides while the other lifts+swings,
+// so left/right feet properly alternate instead of moving in mirrored lockstep
+function footCycle(phase, ampX, liftY) {
+    const p = ((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    if (p < Math.PI) {
+        const s = p / Math.PI;
+        return { horiz: ampX * (1 - 2 * s), lift: 0 };
+    } else {
+        const s = (p - Math.PI) / Math.PI;
+        return { horiz: ampX * (-1 + 2 * s), lift: -liftY * Math.sin(s * Math.PI) };
+    }
 }
 
 function drawWalkingBlob(ctx, blob, t) {
@@ -3547,19 +3700,21 @@ function drawWalkingBlob(ctx, blob, t) {
     ctx.lineWidth = legThick;
     ctx.lineCap = 'round';
     const lx1 = -r * 0.2, ly1 = r * 0.75;
-    const lx2 = lx1 + Math.sin(legPhase + 0.3) * r * 0.4 * d * (drinking ? 0 : 1);
-    const ly2 = ly1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3)) * r * 0.15 * (drinking ? 0.3 : 1);
+    const footL = footCycle(legPhase + 0.3, r * 0.4, r * 0.15);
+    const lx2 = lx1 + footL.horiz * d * (drinking ? 0 : 1);
+    const ly2 = ly1 + legLen * 0.8 + footL.lift * (drinking ? 0.3 : 1);
     ctx.beginPath();
     ctx.moveTo(lx1, ly1);
-    ctx.quadraticCurveTo((lx1+lx2)/2 + Math.sin(legPhase+0.3)*r*0.2*d*(drinking?0:1), ly1+legLen*0.5, lx2, ly2);
+    ctx.quadraticCurveTo((lx1+lx2)/2 + footL.horiz*0.5*d*(drinking?0:1), ly1+legLen*0.5, lx2, ly2);
     ctx.stroke();
 
     const rx1 = r * 0.2, ry1 = r * 0.75;
-    const rx2 = rx1 + Math.sin(legPhase + 0.3 + Math.PI) * r * 0.4 * d * (drinking ? 0 : 1);
-    const ry2 = ry1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3 + Math.PI)) * r * 0.15 * (drinking ? 0.3 : 1);
+    const footR = footCycle(legPhase + 0.3 + Math.PI, r * 0.4, r * 0.15);
+    const rx2 = rx1 + footR.horiz * d * (drinking ? 0 : 1);
+    const ry2 = ry1 + legLen * 0.8 + footR.lift * (drinking ? 0.3 : 1);
     ctx.beginPath();
     ctx.moveTo(rx1, ry1);
-    ctx.quadraticCurveTo((rx1+rx2)/2 + Math.sin(legPhase+0.3+Math.PI)*r*0.2*d*(drinking?0:1), ry1+legLen*0.5, rx2, ry2);
+    ctx.quadraticCurveTo((rx1+rx2)/2 + footR.horiz*0.5*d*(drinking?0:1), ry1+legLen*0.5, rx2, ry2);
     ctx.stroke();
 
     // feet
