@@ -1,6 +1,8 @@
 # app.py – chat + notes + cork board + integrated weather toast (full animation – guaranteed working)
 from flask import Flask, request, jsonify, Response
+from flask_compress import Compress
 import requests
+import hashlib
 import base64
 import os
 import json as std_json
@@ -59,6 +61,7 @@ except:
     NVML_AVAILABLE = False
 
 app = Flask(__name__)
+Compress(app)  # gzip responses — the inline HTML/CSS/JS page is ~157KB uncompressed; text compresses ~75-85%
 app.register_blueprint(notes_bp)
 app.register_blueprint(corkboard_bp)
 
@@ -613,10 +616,10 @@ def build_html(model_name):
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>TrioForge chat interface</title>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" defer></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
 <style>
 /* ===== all styles (without notes-panel styles) ===== */
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -3949,6 +3952,21 @@ function updateBlob(blob, w, h, t, speedMul = 1) {
     if (blob.x < margin) { blob.direction = 1; blob.x = margin; }
 }
 
+// ─── Foot stance/swing cycle: one leg plants+glides while the other lifts+swings, ──
+// ─── so left/right feet properly alternate instead of moving in mirrored lockstep ──
+function footCycle(phase, ampX, liftY) {
+    const p = ((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    if (p < Math.PI) {
+        // stance: foot planted, glides backward under the body (body moving forward over it)
+        const s = p / Math.PI;
+        return { horiz: ampX * (1 - 2 * s), lift: 0 };
+    } else {
+        // swing: foot lifts off the ground and swings forward to the next plant
+        const s = (p - Math.PI) / Math.PI;
+        return { horiz: ampX * (-1 + 2 * s), lift: -liftY * Math.sin(s * Math.PI) };
+    }
+}
+
 // ─── Full Walking Blob Drawing ──
 function drawWalkingBlob(ctx, blob, t) {
     const { x, y, size: r, color, emoji, direction, walkCycle, isDrinking } = blob;
@@ -3970,20 +3988,22 @@ function drawWalkingBlob(ctx, blob, t) {
     ctx.strokeStyle = color;
     ctx.lineWidth = legThick;
     ctx.lineCap = 'round';
+    const footL = footCycle(legPhase + 0.3, r * 0.6, r * 0.22);
     const lx1 = -r * 0.2, ly1 = r * 0.75;
-    const lx2 = lx1 + Math.sin(legPhase + 0.3) * r * 0.6 * d * (drinking ? 0 : 1); // was r*0.4 — bigger step
-    const ly2 = ly1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3)) * r * 0.15 * (drinking ? 0.3 : 1);
+    const lx2 = lx1 + footL.horiz * d * (drinking ? 0 : 1);
+    const ly2 = ly1 + legLen * 0.8 + footL.lift * (drinking ? 0.3 : 1);
     ctx.beginPath();
     ctx.moveTo(lx1, ly1);
-    ctx.quadraticCurveTo((lx1+lx2)/2 + Math.sin(legPhase+0.3)*r*0.2*d*(drinking?0:1), ly1+legLen*0.5, lx2, ly2);
+    ctx.quadraticCurveTo((lx1+lx2)/2 + footL.horiz*0.3*d*(drinking?0:1), ly1+legLen*0.5, lx2, ly2);
     ctx.stroke();
 
+    const footR = footCycle(legPhase + 0.3 + Math.PI, r * 0.6, r * 0.22);
     const rx1 = r * 0.2, ry1 = r * 0.75;
-    const rx2 = rx1 + Math.sin(legPhase + 0.3 + Math.PI) * r * 0.6 * d * (drinking ? 0 : 1); // was r*0.4 — bigger step
-    const ry2 = ry1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3 + Math.PI)) * r * 0.15 * (drinking ? 0.3 : 1);
+    const rx2 = rx1 + footR.horiz * d * (drinking ? 0 : 1);
+    const ry2 = ry1 + legLen * 0.8 + footR.lift * (drinking ? 0.3 : 1);
     ctx.beginPath();
     ctx.moveTo(rx1, ry1);
-    ctx.quadraticCurveTo((rx1+rx2)/2 + Math.sin(legPhase+0.3+Math.PI)*r*0.2*d*(drinking?0:1), ry1+legLen*0.5, rx2, ry2);
+    ctx.quadraticCurveTo((rx1+rx2)/2 + footR.horiz*0.3*d*(drinking?0:1), ry1+legLen*0.5, rx2, ry2);
     ctx.stroke();
 
     ctx.fillStyle = color;
@@ -4068,6 +4088,11 @@ function drawWalkingBlob(ctx, blob, t) {
         ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-canW/2, -canH*0.15, canW, canH*0.16);
+        // hand wraps around the can's lower half — drawn last so it's visible in front, not hidden under the can
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.ellipse(0, canH*0.05, canW*0.62, canW*0.42, 0, 0, Math.PI*2);
+        ctx.fill();
         ctx.restore();
         if (lift > 0.7) {
             ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -5059,6 +5084,7 @@ function animateScene(canvas, season) {
 
     let start = performance.now();
     let activeSeason = season;
+    let lastRenderTime = 0;
 
     function frame(now) {
         if (!canvas || !document.body.contains(canvas)) {
@@ -5066,6 +5092,13 @@ function animateScene(canvas, season) {
             window.removeEventListener('resize', onResize);
             return;
         }
+        // this scene is purely decorative and heavy (many shadowBlur draws per frame),
+        // so cap it at ~30fps instead of 60fps — halves main-thread work while typing
+        if (now - lastRenderTime < 32) {
+            canvasAnimId = requestAnimationFrame(frame);
+            return;
+        }
+        lastRenderTime = now;
         const t = (now - start) * 0.6;
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
@@ -5162,7 +5195,14 @@ providers = {
 
 @app.route('/')
 def index():
-    return build_html(current_model)
+    html = build_html(current_model)
+    etag = hashlib.md5(html.encode('utf-8')).hexdigest()
+    if request.headers.get('If-None-Match') == etag:
+        return '', 304
+    resp = Response(html)
+    resp.headers['ETag'] = etag
+    resp.headers['Cache-Control'] = 'no-cache'  # always revalidate, but skip re-sending the ~157KB body when unchanged
+    return resp
 
 @app.route('/resources', methods=['GET'])
 def get_resources():
