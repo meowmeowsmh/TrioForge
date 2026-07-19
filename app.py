@@ -4987,38 +4987,7 @@ async function updateFromCountry(code) {
 
 // ── DETECT LOCATION ──
 async function detectLocation() {
-    let loc = await getLocationFromIP();
-    if (loc && loc.countryCode) {
-        const code = loc.countryCode;
-        const country = countryList.find(c => c.code === code);
-        if (country) {
-            currentCountryCode = code;
-            currentCountry = country.name;
-            currentCity = loc.city || country.name;
-            currentRegion = loc.region || '';
-            currentFlag = getFlagFromCode(code);
-            currentLat = loc.lat || 0;
-            currentLon = loc.lon || 0;
-            if (!currentLat || Math.abs(currentLat) < 0.01) {
-                currentLat = countryLatMap[code] || 30;
-            }
-            const wData = await fetchWeather(loc.lat || currentLat, loc.lon || 0);
-            if (wData && wData.tempC !== null) {
-                currentTemp = wData.tempC;
-                currentCondition = wData.condition || '';
-                currentWeatherEmoji = wData.emoji || '🌤️';
-                if (wData.city) currentCity = wData.city;
-                if (wData.region) currentRegion = wData.region;
-                if (wData.lat) currentLat = wData.lat;
-                if (wData.lon) currentLon = wData.lon;
-            }
-            currentTimezone = (wData && wData.timezone) || loc.timezone || currentTimezone;
-            const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
-            blobInstances = [];
-            await showSeasonToast(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
-            return;
-        }
-    }
+    // 1) Prefer the browser's exact location (GPS / Wi-Fi positioning) — most accurate
     if (navigator.geolocation) {
         try {
             const pos = await new Promise((resolve, reject) => {
@@ -5061,7 +5030,43 @@ async function detectLocation() {
             console.warn('Geolocation failed:', e);
         }
     }
-    const fallbackCode = 'US';
+
+    // 2) Fall back to coarser IP-based geolocation
+    let loc = await getLocationFromIP();
+    if (loc && loc.countryCode) {
+        const code = loc.countryCode;
+        const country = countryList.find(c => c.code === code);
+        if (country) {
+            currentCountryCode = code;
+            currentCountry = country.name;
+            currentCity = loc.city || country.name;
+            currentRegion = loc.region || '';
+            currentFlag = getFlagFromCode(code);
+            currentLat = loc.lat || 0;
+            currentLon = loc.lon || 0;
+            if (!currentLat || Math.abs(currentLat) < 0.01) {
+                currentLat = countryLatMap[code] || 30;
+            }
+            const wData = await fetchWeather(loc.lat || currentLat, loc.lon || 0);
+            if (wData && wData.tempC !== null) {
+                currentTemp = wData.tempC;
+                currentCondition = wData.condition || '';
+                currentWeatherEmoji = wData.emoji || '🌤️';
+                if (wData.city) currentCity = wData.city;
+                if (wData.region) currentRegion = wData.region;
+                if (wData.lat) currentLat = wData.lat;
+                if (wData.lon) currentLon = wData.lon;
+            }
+            currentTimezone = (wData && wData.timezone) || loc.timezone || currentTimezone;
+            const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
+            blobInstances = [];
+            await showSeasonToast(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
+            return;
+        }
+    }
+
+    // 3) Last resort: default to Malaysia instead of the US
+    const fallbackCode = 'MY';
     await updateFromCountry(fallbackCode);
 }
 
