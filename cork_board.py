@@ -4262,6 +4262,7 @@ function animateScene() {
 
     let start = performance.now();
     let season = 'summer'; // will be updated
+    let lastRenderTime = 0;
 
     function frame(now) {
         if (!canvas || !document.body.contains(canvas)) {
@@ -4269,6 +4270,12 @@ function animateScene() {
             window.removeEventListener('resize', onResize);
             return;
         }
+        // decorative scene, cap at ~30fps instead of 60fps to save main-thread work
+        if (now - lastRenderTime < 32) {
+            canvasAnimId = requestAnimationFrame(frame);
+            return;
+        }
+        lastRenderTime = now;
         const t = (now - start) * 0.6;
         renderScene(ctx, w, h, season, t);
         canvasAnimId = requestAnimationFrame(frame);

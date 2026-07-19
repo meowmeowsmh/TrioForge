@@ -4250,12 +4250,19 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         window.addEventListener('resize', onResize);
         let start = performance.now();
         let season = 'summer';
+        let lastRenderTime = 0;
         function frame(now) {
             if (!canvas || !document.body.contains(canvas)) {
                 cancelAnimationFrame(canvasAnimId);
                 window.removeEventListener('resize', onResize);
                 return;
             }
+            // decorative scene, cap at ~30fps instead of 60fps to save main-thread work
+            if (now - lastRenderTime < 32) {
+                canvasAnimId = requestAnimationFrame(frame);
+                return;
+            }
+            lastRenderTime = now;
             const t = (now - start) * 0.6;
             renderScene(ctx, w, h, season, t);
             canvasAnimId = requestAnimationFrame(frame);
