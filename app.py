@@ -617,6 +617,7 @@ def build_html(model_name):
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>TrioForge chat interface</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" defer></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
@@ -2973,7 +2974,7 @@ function renderMsg(role, entry, msgIndex) {
     var body = document.createElement('div');
     body.className = 'body';
     if (role === 'bot') {
-        body.innerHTML = marked.parse(entry.text || '');
+        body.innerHTML = DOMPurify.sanitize(marked.parse(entry.text || ''));
         renderMermaidDiagrams(body);
     } else {
         body.textContent = entry.text || '';
@@ -3025,8 +3026,6 @@ function reloadCurrentChat() {
                 messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
             }
             smoothScrollToBottom();
-            processCodeBlocks(chatArea);
-            renderMermaidDiagrams(chatArea);
         });
 }
 async function startEditMessage(msgDiv, role, entry, idx) {
@@ -3266,7 +3265,7 @@ function actuallySend(text) {
                             rafId = null;
                         }
                         flushTokens();
-                        botBody.innerHTML = marked.parse(fullText || '(empty response)');
+                        botBody.innerHTML = DOMPurify.sanitize(marked.parse(fullText || '(empty response)'));
                         botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                         processCodeBlocks(botDiv);
                         renderMermaidDiagrams(botDiv);
@@ -3312,7 +3311,7 @@ function actuallySend(text) {
                 } else {
                     var text = data.response || '(no response)';
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
-                    botDiv.querySelector('.body').innerHTML = marked.parse(text);
+                    botDiv.querySelector('.body').innerHTML = DOMPurify.sanitize(marked.parse(text));
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                     processCodeBlocks(botDiv);
                     renderMermaidDiagrams(botDiv);
