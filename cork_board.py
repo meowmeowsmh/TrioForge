@@ -4493,8 +4493,70 @@ async function updateFromCountry(code) {
     await showWeatherWidget(season, city, countryName, code, region, lat, true);
 }
 
+// ─── Exact location (browser geolocation + reverse geocoding) ─────
+function getBrowserLocation() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) { resolve(null); return; }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+            () => resolve(null),                       // denied / unavailable / timeout
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
+        );
+    });
+}
+
+async function reverseGeocode(lat, lon) {
+    try {
+        const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Reverse geocode error');
+        const data = await res.json();
+        return {
+            countryCode: data.countryCode || null,
+            countryName: data.countryName || null,
+            city: data.city || data.locality || null,
+            region: data.principalSubdivision || ''
+        };
+    } catch (e) { return null; }
+}
+
+async function useExactLocation(lat, lon) {
+    const geo = await reverseGeocode(lat, lon);
+    const code = (geo && geo.countryCode) || null;
+    const country = code ? countryList.find(c => c.code === code) : null;
+
+    currentCountryCode = code || currentCountryCode;
+    currentCountry = (geo && geo.countryName) || (country ? country.name : currentCountry);
+    currentCity = (geo && geo.city) || currentCity || currentCountry;
+    currentRegion = (geo && geo.region) || '';
+    currentFlag = getFlagFromCode(currentCountryCode);
+    currentLat = lat;
+    currentLon = lon;
+
+    const wData = await fetchWeather(lat, lon);
+    if (wData && wData.tempC !== null) {
+        currentTemp = wData.tempC;
+        currentCondition = wData.condition || '';
+        currentWeatherEmoji = wData.emoji || '🌤️';
+        currentTimezone = wData.timezone || currentTimezone;
+    }
+    const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
+    blobInstances = [];
+    await showWeatherWidget(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
+}
+
 // ─── Detect location ────────────────────────────────
 async function detectLocation() {
+    // 1) Prefer the browser's exact location (GPS / Wi-Fi positioning)
+    const exact = await getBrowserLocation();
+    if (exact) {
+        try {
+            await useExactLocation(exact.lat, exact.lon);
+            return;
+        } catch (e) { console.warn('Exact-location lookup failed:', e); }
+    }
+
+    // 2) Fall back to coarse IP-based geolocation
     try {
         const res = await fetch('https://ip-api.com/json/');
         if (!res.ok) throw new Error('IP API error');
@@ -4533,7 +4595,8 @@ async function detectLocation() {
         console.warn('IP geolocation failed:', e);
     }
 
-    const fallbackCode = 'US';
+    // 3) Last resort: default to Malaysia instead of the US
+    const fallbackCode = 'MY';
     await updateFromCountry(fallbackCode);
 }
 
