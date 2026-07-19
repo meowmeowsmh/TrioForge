@@ -3896,7 +3896,7 @@ function createBlob(x, y, emoji, color, speed = 1.0, size = 22) {
 }
 function updateBlob(blob, w, h, t, speedMul = 1) {
     if (!blob) return;
-    const spd = blob.speed * speedMul * 0.6;
+    const spd = blob.speed * speedMul * 1.8; // was 0.6 — sped up ~3x so it doesn't take forever to cross
     if (blob.hasDrink) {
         if (blob.isDrinking) {
             blob.drinkTimer += 1;
@@ -3928,15 +3928,17 @@ function updateBlob(blob, w, h, t, speedMul = 1) {
         }
         return;
     }
-    if (Math.random() < 0.003) {
+    if (Math.random() < 0.0006) { // was 0.003 — paused ~17% of the time, way too often
         blob.isPaused = true;
         blob.pauseTimer = 0;
-        blob.pauseDuration = 40 + Math.random() * 80;
+        blob.pauseDuration = 20 + Math.random() * 30; // was 40 + rand*80 — shorter pauses too
         return;
     }
-    blob.x += blob.direction * spd * 1.2;
+    const moveDist = spd * 1.2;
+    blob.x += blob.direction * moveDist;
     blob.stepPhase += spd * 0.06;
-    blob.walkCycle += spd * 0.04;
+    const strideLen = blob.size * 2.2; // px of travel per full leg-swing cycle — keeps steps matched to movement
+    blob.walkCycle += (moveDist / strideLen) * Math.PI * 2;
     blob.armSwing = Math.sin(blob.walkCycle) * 0.3;
     blob.legOffset = Math.sin(blob.walkCycle);
     const bobAmt = 2.5 + Math.abs(Math.sin(blob.walkCycle)) * 2;
@@ -3969,7 +3971,7 @@ function drawWalkingBlob(ctx, blob, t) {
     ctx.lineWidth = legThick;
     ctx.lineCap = 'round';
     const lx1 = -r * 0.2, ly1 = r * 0.75;
-    const lx2 = lx1 + Math.sin(legPhase + 0.3) * r * 0.4 * d * (drinking ? 0 : 1);
+    const lx2 = lx1 + Math.sin(legPhase + 0.3) * r * 0.6 * d * (drinking ? 0 : 1); // was r*0.4 — bigger step
     const ly2 = ly1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3)) * r * 0.15 * (drinking ? 0.3 : 1);
     ctx.beginPath();
     ctx.moveTo(lx1, ly1);
@@ -3977,7 +3979,7 @@ function drawWalkingBlob(ctx, blob, t) {
     ctx.stroke();
 
     const rx1 = r * 0.2, ry1 = r * 0.75;
-    const rx2 = rx1 + Math.sin(legPhase + 0.3 + Math.PI) * r * 0.4 * d * (drinking ? 0 : 1);
+    const rx2 = rx1 + Math.sin(legPhase + 0.3 + Math.PI) * r * 0.6 * d * (drinking ? 0 : 1); // was r*0.4 — bigger step
     const ry2 = ry1 + legLen * 0.8 + Math.abs(Math.sin(legPhase + 0.3 + Math.PI)) * r * 0.15 * (drinking ? 0.3 : 1);
     ctx.beginPath();
     ctx.moveTo(rx1, ry1);
@@ -4010,7 +4012,7 @@ function drawWalkingBlob(ctx, blob, t) {
     ctx.lineCap = 'round';
     const freeArmSide = -d;
     const flx1 = freeArmSide * r * 0.85, fly1 = -r * 0.15;
-    const flx2 = flx1 + (drinking ? 0 : Math.sin(walkCycle+0.8) * r * 0.45 * freeArmSide);
+    const flx2 = flx1 + (drinking ? 0 : Math.sin(walkCycle+0.8) * r * 0.65 * freeArmSide); // was r*0.45 — bigger swing
     const fly2 = fly1 + r * 0.5 + (drinking ? 0 : Math.abs(Math.sin(walkCycle+0.8)) * r * 0.1);
     ctx.beginPath();
     ctx.moveTo(flx1, fly1);
@@ -4032,7 +4034,7 @@ function drawWalkingBlob(ctx, blob, t) {
         dax2 = restX + (raisedX - restX) * lift;
         day2 = restY + (raisedY - restY) * lift;
     } else {
-        dax2 = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.45 * drinkSide;
+        dax2 = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.65 * drinkSide; // was r*0.45 — bigger swing
         day2 = day1 + r * 0.5 + Math.abs(Math.sin(walkCycle+0.8+Math.PI)) * r * 0.1;
     }
     ctx.beginPath();
