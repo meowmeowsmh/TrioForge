@@ -3513,7 +3513,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 
     function updateBlob(blob, w, h, t, speedMul = 1) {
         if (!blob) return;
-        const spd = blob.speed * speedMul * 0.6;
+        const spd = blob.speed * speedMul * 1.8; // was 0.6 — too slow to cross the scene
         if (blob.hasDrink && blob.isDrinking) {
             blob.drinkTimer += 1;
             blob.drinkProgress = Math.min(1, blob.drinkTimer / 30);
@@ -3550,9 +3550,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
             blob.pauseDuration = 40 + Math.random() * 80;
             return;
         }
-        blob.x += blob.direction * spd * 1.2;
+        const moveDist = spd * 1.2;
+        blob.x += blob.direction * moveDist;
         blob.stepPhase += spd * 0.06;
-        blob.walkCycle += spd * 0.04;
+        const strideLen = blob.size * 2.2; // px of travel per full leg-swing cycle — keeps steps matched to movement
+        blob.walkCycle += (moveDist / strideLen) * Math.PI * 2;
         blob.armSwing = Math.sin(blob.walkCycle) * 0.3;
         blob.legOffset = Math.sin(blob.walkCycle);
         const bobAmt = 2.5 + Math.abs(Math.sin(blob.walkCycle)) * 2;
