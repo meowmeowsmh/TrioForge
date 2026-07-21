@@ -5457,6 +5457,50 @@ def search_conversations():
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
+# ── NEW ROUTE: Get conversation tree for import ──
+@app.route('/api/conversations/<cid>/tree', methods=['GET'])
+def conversation_tree(cid):
+    """
+    Return a tree of messages for the given conversation ID.
+    Each node has: id, parent_id (previous message id), role, content, title (snippet).
+    """
+    # 1. Verify the conversation exists (in the JSON store)
+    convs = load_conversations()
+    if cid not in convs:
+        return jsonify({"error": "Conversation not found"}), 404
+
+    # 2. Fetch all messages for this conversation from SQLite, ordered by timestamp
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute(
+            "SELECT id, role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at",
+            (cid,)
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return jsonify({"error": "No messages found for this conversation"}), 404
+
+    # 3. Build a linear chain: each message's parent is the previous one (null for first)
+    nodes = []
+    prev_id = None
+    for row in rows:
+        # row: (id, role, content, created_at)
+        content = row[2] or ""
+        title = content[:40] + ("…" if len(content) > 40 else "") or f"{row[1]} message"
+        node = {
+            "id": str(row[0]),           # use the SQLite row id as node id
+            "parent_id": prev_id,        # first message has parent_id = null
+            "role": row[1],
+            "content": content,
+            "title": title,
+            "created_at": row[3]
+        }
+        nodes.append(node)
+        prev_id = str(row[0])
+
+    return jsonify({"nodes": nodes})
+
 # ── SQLite Logs API ──
 @app.route('/api/logs')
 def get_logs():
