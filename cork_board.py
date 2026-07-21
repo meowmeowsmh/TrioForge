@@ -2210,33 +2210,135 @@ function scheduleBoardSizeUpdate() {
 // Pulls a chat conversation's branch tree from the main app and lays it out
 // as pins + red threads here. `/api/conversations/<id>/tree` is a placeholder —
 // it needs to exist on the chat side and return {"nodes": [{id, parent_id, role, content}, ...]}.
+// ─── IMPORT CONVERSATION (with reliable modal close) ───
 function importConversationTree() {
-    var conversationId = prompt('Conversation ID to import as a cork board tree:');
-    if (!conversationId) return;
-    fetch('/api/conversations/' + encodeURIComponent(conversationId) + '/tree')
+    fetch('/conversations')
         .then(r => r.json())
-        .then(convData => {
-            if (!convData || !convData.nodes || !convData.nodes.length) {
-                alert("Could not load that conversation's branch tree.");
-                return null;
+        .then(convs => {
+            if (!convs || convs.length === 0) {
+                alert('No conversations found.');
+                return;
             }
+
+            // Build modal
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:99999; backdrop-filter:blur(5px);';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#1c2333; padding:24px 30px; border-radius:16px; max-width:600px; width:90%; max-height:90vh; overflow-y:auto; color:#e1e4e8;';
+            box.innerHTML = `
+                <h3 style="margin-top:0;">💬 Import Messages</h3>
+                <p style="font-size:14px; color:#8b949e;">Select a conversation, then click "Import" next to any message.</p>
+                <select id="importConvSelect" style="width:100%; padding:10px; margin:8px 0; border-radius:8px; background:#2d2d3d; color:#e6edf3; border:1px solid rgba(255,255,255,0.1); font-size:14px;">
+                    ${convs.map(c => `<option value="${c.id}">${c.title} (${c.created.slice(0,10)})</option>`).join('')}
+                </select>
+                <button id="loadMessagesBtn" style="background:#1f6feb; border:none; padding:6px 16px; border-radius:6px; color:#fff; cursor:pointer; margin-bottom:12px;">Load Messages</button>
+                <div id="messageList" style="max-height:400px; overflow-y:auto; margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;"></div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
+                    <button id="closeImportModalBtn" style="background:rgba(255,255,255,0.1); border:none; padding:8px 20px; border-radius:8px; color:#8b949e; cursor:pointer;">Close</button>
+                </div>
+            `;
+            modal.appendChild(box);
+            document.body.appendChild(modal);
+
+            // Close function
+            function closeModal() {
+                if (modal.parentNode) modal.remove();
+            }
+
+            // Close button
+            document.getElementById('closeImportModalBtn').addEventListener('click', closeModal);
+
+            // Load messages button
+            document.getElementById('loadMessagesBtn').addEventListener('click', function() {
+                const cid = document.getElementById('importConvSelect').value;
+                const listDiv = document.getElementById('messageList');
+                listDiv.innerHTML = '<div style="text-align:center;padding:20px;color:#8b949e;">Loading messages...</div>';
+
+                fetch('/conversations/' + encodeURIComponent(cid) + '/messages')
+                    .then(r => r.json())
+                    .then(messages => {
+                        if (!messages || messages.length === 0) {
+                            listDiv.innerHTML = '<div style="padding:12px;color:#8b949e;">No messages.</div>';
+                            return;
+                        }
+                        let html = '';
+                        messages.forEach((msg, idx) => {
+                            const role = msg.role || 'unknown';
+                            const content = (msg.text || '').slice(0, 120) + (msg.text && msg.text.length > 120 ? '…' : '');
+                            const ts = msg.ts || '';
+                            html += `
+                                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 4px; border-bottom:1px solid rgba(255,255,255,0.05);">
+                                    <div style="flex:1; min-width:0; margin-right:8px;">
+                                        <span style="font-weight:600; color:${role === 'user' ? '#58a6ff' : '#3fb950'};">${role}</span>
+                                        <span style="font-size:12px; color:#8b949e; margin-left:6px;">${ts}</span>
+                                        <div style="font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${content}</div>
+                                    </div>
+                                    <button class="importMsgBtn" data-cid="${cid}" data-msgidx="${idx}" style="background:#6f42c1; border:none; padding:4px 12px; border-radius:6px; color:#fff; cursor:pointer; font-size:12px;">📌 Import</button>
+                                </div>
+                            `;
+                        });
+                        listDiv.innerHTML = html;
+                        // Attach click handlers
+                        listDiv.querySelectorAll('.importMsgBtn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const cid = this.dataset.cid;
+                                const idx = parseInt(this.dataset.msgidx);
+                                // Import the message and then close the modal
+                                importSingleMessage(cid, idx, closeModal);
+                            });
+                        });
+                    })
+                    .catch(err => {
+                        listDiv.innerHTML = '<div style="padding:12px;color:#f85149;">Error loading messages.</div>';
+                        console.error(err);
+                    });
+            });
+        })
+        .catch(e => {
+            alert('Could not fetch conversation list.');
+        });
+}
+
+// ─── IMPORT SINGLE MESSAGE (with optional callback) ───
+function importSingleMessage(cid, msgIdx, onDone) {
+    fetch('/conversations/' + encodeURIComponent(cid) + '/messages')
+        .then(r => r.json())
+        .then(messages => {
+            if (msgIdx < 0 || msgIdx >= messages.length) {
+                alert('Message not found.');
+                return;
+            }
+            const msg = messages[msgIdx];
+            const node = {
+                id: 'msg-' + Date.now() + '-' + msgIdx,
+                parent_id: null,
+                role: msg.role || 'assistant',
+                content: msg.text || '',
+                title: (msg.text || '').slice(0, 40) + (msg.text && msg.text.length > 40 ? '…' : '') || 'Message'
+            };
+            const payload = {
+                conversation_id: cid + '-single-' + Date.now(),
+                nodes: [node]
+            };
             return fetch('/corkboard/api/import_conversation_tree', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conversation_id: conversationId, nodes: convData.nodes })
-            }).then(r => r.json());
+                body: JSON.stringify(payload)
+            });
         })
+        .then(r => r.json())
         .then(result => {
-            if (!result) return;
             if (result.ok) {
-                loadBoard();
+                alert('✅ Message imported as a pin!');
+                loadBoard();   // refresh board
+                if (onDone) onDone();  // close modal
             } else {
                 alert(result.error || 'Import failed.');
             }
         })
-        .catch(e => {
-            console.error('Import conversation failed:', e);
-            alert('Import failed — see console for details.');
+        .catch(err => {
+            console.error('Import single message failed:', err);
+            alert('Import failed.');
         });
 }
 
@@ -4830,3 +4932,5 @@ window.addEventListener('resize', () => {
 </body>
 </html>
 """
+
+# End of cork_board.py
