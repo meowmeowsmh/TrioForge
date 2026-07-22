@@ -84,7 +84,7 @@ def init_db():
             x             REAL NOT NULL DEFAULT 0,
             y             REAL NOT NULL DEFAULT 0,
             width         INTEGER NOT NULL DEFAULT 220,
-            height        INTEGER NOT NULL DEFAULT 160,
+            height        INTEGER NOT NULL DEFAULT 200,
             color         TEXT NOT NULL DEFAULT 'yellow',
             rotation      INTEGER NOT NULL DEFAULT 0,
             created       TEXT NOT NULL,
@@ -149,7 +149,7 @@ def _pin_to_row_values(pin_id, data, now, existing=None):
         "x": g("x", random.randint(40, 480)),
         "y": g("y", random.randint(40, 280)),
         "width": g("width", 220),
-        "height": g("height", 160),
+        "height": g("height", 200),  # increased default height
         "color": g("color", "yellow"),
         "rotation": g("rotation", random.choice([-3, -2, -1, 0, 1, 2, 3])),
         "created": e.get("created", now),
@@ -646,6 +646,32 @@ def delete_pin(pin_id):
     return jsonify({"ok": True})
 
 # ---------- API: import a chat conversation's branch tree as pins + red threads ----------
+def _normalize_timestamp(value, fallback):
+    """Coerce a timestamp of unknown shape (ISO string, epoch seconds, epoch ms,
+    or garbage) into a valid ISO 8601 string, or return `fallback` if it can't
+    be parsed at all. Storing anything else here is what produces "Invalid Date"
+    client-side, since `new Date(...)` silently fails on non-ISO strings."""
+    if value is None or value == '':
+        return fallback
+    # Numeric epoch (seconds or milliseconds), possibly sent as a string
+    if isinstance(value, (int, float)) or (isinstance(value, str) and value.replace('.', '', 1).isdigit()):
+        try:
+            num = float(value)
+            if num > 1e12:   # looks like milliseconds
+                num /= 1000
+            return datetime.fromtimestamp(num).isoformat()
+        except (ValueError, OSError, OverflowError):
+            return fallback
+    if isinstance(value, str):
+        try:
+            # Accept trailing 'Z' (Python's fromisoformat rejects it pre-3.11)
+            datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return value
+        except ValueError:
+            return fallback
+    return fallback
+
+
 # Expects: {"conversation_id": "...", "nodes": [{"id","parent_id","role","content"}, ...]}
 # Re-importing the same conversation_id replaces its previous pins/threads (idempotent).
 @corkboard_bp.route('/api/import_conversation_tree', methods=['POST'])
@@ -685,14 +711,13 @@ def import_conversation_tree():
             "x": x,
             "y": y,
             "width": 240,
-            "height": 150,
+            "height": 200,  # increased height for imported pins
             "color": role_colors.get(role, "yellow"),
             "rotation": 0,
             "tags": [conv_tag, role],
             "type": "conversation_node",
         }
-        # FIXED: Use the actual message timestamp if provided, otherwise fallback to now
-        pin_timestamp = n.get('created') or now
+        pin_timestamp = _normalize_timestamp(n.get('created'), fallback=now)
         upsert_pin(pin_id, pin_data, pin_timestamp)
 
     for n in nodes:
@@ -1157,10 +1182,12 @@ svg.link-layer {
     font-size:13px;
     color:#2b2b2b;
     transition: box-shadow .15s ease, transform .1s;
-    padding: 22px 12px 10px;
+    padding: 22px 12px 14px;  /* increased bottom padding */
     overflow:hidden;
     display:flex;
     flex-direction:column;
+    height: var(--pin-height, 200px); /* default 200px */
+    min-height: 180px;                /* ensure toolbar always fits */
 }
 .pin.dragging { cursor:grabbing; z-index:50; box-shadow: 6px 10px 22px rgba(0,0,0,0.6); transition: none; }
 .pin.link-source { outline:3px solid #58a6ff; outline-offset:2px; }
@@ -1181,10 +1208,12 @@ svg.link-layer {
     font-weight:700; font-size:15px; margin-bottom:4px; word-break:break-word;
     outline:none;
     cursor:default;
+    flex-shrink: 0;
 }
 .pin-content {
-    flex:1;
-    overflow-y:auto;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
     font-size:13px;
     line-height:1.5;
     word-break:break-word;
@@ -1205,6 +1234,7 @@ svg.link-layer {
     flex-wrap:wrap;
     gap:4px;
     margin-top:6px;
+    flex-shrink: 0;
 }
 .pin-tags .tag-label {
     font-size:10px;
@@ -1219,16 +1249,22 @@ svg.link-layer {
     margin-top:4px;
     text-align:right;
     opacity:0.5;
+    flex-shrink: 0;
 }
 .pin-toolbar {
     display:flex;
     gap:4px;
     margin-top:6px;
+    margin-bottom: 2px;  /* extra space so it's not flush with the edge */
     justify-content:flex-end;
     opacity:0;
     transition: opacity .2s;
+    flex-shrink: 0;
 }
-.pin:hover .pin-toolbar { opacity:1; }
+.pin.show-toolbar .pin-toolbar { opacity:1; }
+@media (hover: hover) and (pointer: fine) {
+    .pin:hover .pin-toolbar { opacity:1; }
+}
 .pin-toolbar button {
     background: rgba(0,0,0,0.08);
     border:none;
@@ -1986,7 +2022,7 @@ body.light-mode .weather-controls select option {
             </div>
             <div class="col">
                 <label>Height</label>
-                <input type="number" id="pinHeight" min="100" max="600" value="160">
+                <input type="number" id="pinHeight" min="100" max="600" value="200">
             </div>
         </div>
 
@@ -2192,7 +2228,7 @@ function updateBoardSize() {
     let maxY = contentHeight;
     Object.values(boardData.pins).forEach(pin => {
         const r = (pin.width || 220) + (pin.x || 0);
-        const b = (pin.height || 160) + (pin.y || 0);
+        const b = (pin.height || 200) + (pin.y || 0);
         if (r + 200 > maxX) maxX = r + 200;
         if (b + 200 > maxY) maxY = b + 200;
     });
@@ -2434,13 +2470,29 @@ function renderPin(pin) {
     div.addEventListener('touchstart', e => dragStart(e, div, pin.id), { passive: false });
     div.addEventListener('click', function(e) {
         if (isDragging) return;
-        if (!linkMode) return;
-        if (e.target.closest('.pin-title') || e.target.closest('.pin-content') ||
-            e.target.closest('.pin-tags') || e.target.closest('.pin-timestamp') ||
-            e.target.closest('.pin-toolbar')) return;
-        handleLinkClick(pin.id, div);
+        if (linkMode) {
+            if (e.target.closest('.pin-title') || e.target.closest('.pin-content') ||
+                e.target.closest('.pin-tags') || e.target.closest('.pin-timestamp') ||
+                e.target.closest('.pin-toolbar')) return;
+            handleLinkClick(pin.id, div);
+            return;
+        }
+        // Touch devices don't fire mouseleave, so CSS :hover can get stuck
+        // "on" after a tap. Toggle an explicit class instead so it always
+        // clears — either on a second tap here, or on the document-level
+        // listener below when the user taps anywhere else.
+        if (e.target.closest('.pin-toolbar')) return;
+        var alreadyShown = div.classList.contains('show-toolbar');
+        document.querySelectorAll('.pin.show-toolbar').forEach(p => p.classList.remove('show-toolbar'));
+        if (!alreadyShown) div.classList.add('show-toolbar');
     });
 }
+
+// Tapping/clicking anywhere outside a pin clears any stuck toolbar state.
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.pin')) return;
+    document.querySelectorAll('.pin.show-toolbar').forEach(p => p.classList.remove('show-toolbar'));
+});
 
 function updatePinElement(el, pin) {
     var lastModified = el.dataset.lastModified || '';
@@ -2448,7 +2500,7 @@ function updatePinElement(el, pin) {
     var colorClass = 'color-' + (pin.color || 'yellow');
     el.className = 'pin ' + colorClass;
     var w = pin.width || 220;
-    var h = pin.height || 160;
+    var h = pin.height || 200;  // default to 200
     el.style.width = w + 'px';
     el.style.height = h + 'px';
     el.style.transform = 'translate3d(' + (pin.x || 40) + 'px, ' + (pin.y || 40) + 'px, 0) rotate(' + (pin.rotation || 0) + 'deg)';
@@ -2461,7 +2513,7 @@ function updatePinElement(el, pin) {
         <div class="pin-title">${escapeHtml(pin.title)}</div>
         <div class="pin-content">${contentHtml}</div>
         ${tagsHtml ? `<div class="pin-tags">${tagsHtml}</div>` : ''}
-        <div class="pin-timestamp">${new Date(pin.last_modified || pin.created).toLocaleString()}</div>
+        <div class="pin-timestamp">${formatPinTimestamp(pin)}</div>
         <div class="pin-toolbar">
             <button class="edit-pin" title="Edit">✏️</button>
             <button class="del-pin" title="Delete">🗑</button>
@@ -2483,6 +2535,13 @@ function updatePinElement(el, pin) {
         });
     });
     el.dataset.lastModified = pin.last_modified || '';
+}
+
+function formatPinTimestamp(pin) {
+    var raw = pin.last_modified || pin.created;
+    var d = new Date(raw);
+    if (!raw || isNaN(d.getTime())) return '';
+    return d.toLocaleString();
 }
 
 function escapeHtml(text) {
@@ -2879,8 +2938,8 @@ function hashStr(s) {
     return Math.abs(h);
 }
 function buildLinkPath(link, a, b) {
-    var x1 = a.x + (a.width || 220)/2, y1 = a.y + (a.height || 160)/2;
-    var x2 = b.x + (b.width || 220)/2, y2 = b.y + (b.height || 160)/2;
+    var x1 = a.x + (a.width || 220)/2, y1 = a.y + (a.height || 200)/2;
+    var x2 = b.x + (b.width || 220)/2, y2 = b.y + (b.height || 200)/2;
     var dx = x2 - x1, dy = y2 - y1;
     var dist = Math.max(Math.sqrt(dx*dx + dy*dy), 1);
     var px = -dy / dist, py = dx / dist;
@@ -3045,7 +3104,7 @@ function createNewPin() {
             x: wrap.scrollLeft + 60,
             y: wrap.scrollTop + 60,
             width: 220,
-            height: 160
+            height: 200
         })
     }).then(r => r.json()).then(data => {
         if (data.ok) {
@@ -3299,7 +3358,7 @@ function openEditModal(id) {
     document.getElementById('pinContent').value = pin.content || '';
     document.getElementById('pinTags').value = (pin.tags || []).join(', ');
     document.getElementById('pinWidth').value = pin.width || 220;
-    document.getElementById('pinHeight').value = pin.height || 160;
+    document.getElementById('pinHeight').value = pin.height || 200;
     var color = pin.color || 'default';
     document.querySelectorAll('#pinColorPicker .color-option').forEach(el => {
         el.classList.toggle('active', el.dataset.color === color);
@@ -3402,7 +3461,7 @@ function savePinFromModal() {
     var content = document.getElementById('pinContent').value;
     var tags = document.getElementById('pinTags').value.split(',').map(s => s.trim()).filter(Boolean);
     var width = parseInt(document.getElementById('pinWidth').value) || 220;
-    var height = parseInt(document.getElementById('pinHeight').value) || 160;
+    var height = parseInt(document.getElementById('pinHeight').value) || 200;
     var color = document.querySelector('#pinColorPicker .color-option.active')?.dataset.color || 'default';
 
     var pin = boardData.pins[editingPinId];
