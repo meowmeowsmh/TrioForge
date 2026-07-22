@@ -185,7 +185,7 @@ class OllamaProvider(LLMProvider):
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: str = "./models",
                  server_url: str = "http://127.0.0.1:8080/v1",
-                 context_length: int = 65536):
+                 context_length: int = 16384): #16k
         self.models_dir = os.path.abspath(models_dir)
         self.server_url = server_url.rstrip("/")
         self.context_length = context_length
