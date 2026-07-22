@@ -691,7 +691,9 @@ def import_conversation_tree():
             "tags": [conv_tag, role],
             "type": "conversation_node",
         }
-        upsert_pin(pin_id, pin_data, now)
+        # FIXED: Use the actual message timestamp if provided, otherwise fallback to now
+        pin_timestamp = n.get('created') or now
+        upsert_pin(pin_id, pin_data, pin_timestamp)
 
     for n in nodes:
         parent = n.get('parent_id')
@@ -2309,12 +2311,14 @@ function importSingleMessage(cid, msgIdx, onDone) {
                 return;
             }
             const msg = messages[msgIdx];
+            // FIXED: Added 'created' property to preserve original message timestamp
             const node = {
                 id: 'msg-' + Date.now() + '-' + msgIdx,
                 parent_id: null,
                 role: msg.role || 'assistant',
                 content: msg.text || '',
-                title: (msg.text || '').slice(0, 40) + (msg.text && msg.text.length > 40 ? '…' : '') || 'Message'
+                title: (msg.text || '').slice(0, 40) + (msg.text && msg.text.length > 40 ? '…' : '') || 'Message',
+                created: msg.ts || msg.created || new Date().toISOString()
             };
             const payload = {
                 conversation_id: cid + '-single-' + Date.now(),
