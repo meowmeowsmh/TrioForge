@@ -5,6 +5,9 @@ Supports image (vision) input for providers and models that allow it.
 
 import os
 import glob
+import re
+import hashlib
+import base64
 import requests
 import json
 from typing import List, Dict, Any, Optional
@@ -71,6 +74,123 @@ def model_supports_vision(provider_name: str, model_name: str) -> bool:
     # substring match for others (ollama, llamacpp)
     model_lower = model_name.lower()
     return any(keyword in model_lower for keyword in known)
+
+
+# ── Universal file reader ───────────────────────────────────────────────────────
+# Goal: NEVER just say "binary, can't read it". Every uploaded file — text, code,
+# PDF, image, .exe, .dll, .zip, whatever comes out of the file explorer or a
+# download — gets turned into *something* the model can reason about.
+
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".csv", ".tsv",
+    ".c", ".cpp", ".h", ".hpp", ".cs", ".java", ".go", ".rs", ".rb", ".php",
+    ".html", ".htm", ".css", ".scss", ".xml", ".yaml", ".yml", ".ini", ".cfg",
+    ".conf", ".toml", ".sh", ".bat", ".ps1", ".sql", ".log", ".ipynb", ".env",
+    ".rst", ".tex", ".ahk", ".lua", ".kt", ".swift", ".r",
+}
+
+# (signature bytes, human label) — checked in order, first match wins
+_BINARY_SIGNATURES = [
+    (b"MZ", "Windows executable / DLL (PE)"),
+    (b"\x7fELF", "Linux executable / library (ELF)"),
+    (b"\xca\xfe\xba\xbe", "Java class / Mach-O fat binary"),
+    (b"PK\x03\x04", "ZIP-based file (zip / docx / xlsx / pptx / jar / apk)"),
+    (b"%PDF", "PDF document"),
+    (b"\x89PNG", "PNG image"),
+    (b"\xff\xd8\xff", "JPEG image"),
+    (b"GIF8", "GIF image"),
+    (b"\x1f\x8b", "GZIP archive"),
+    (b"7z\xbc\xaf\x27\x1c", "7-Zip archive"),
+    (b"Rar!\x1a\x07", "RAR archive"),
+    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "Legacy MS Office document (doc/xls/ppt)"),
+    (b"ID3", "MP3 audio"),
+    (b"RIFF", "RIFF container (wav/avi)"),
+]
+
+
+def _strip_c_comments_generic(text: str) -> str:
+    text = re.sub(r'//.*', '', text)
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+    return '\n'.join(line for line in text.splitlines() if line.strip())
+
+
+def _extract_printable_strings(data: bytes, min_len: int = 4, limit: int = 60) -> List[str]:
+    """Cheap 'strings'-style pass: pull runs of printable ASCII out of raw bytes
+    so binaries (exe, dll, unknown formats) still yield something readable."""
+    found = re.findall(rb"[ -~]{%d,}" % min_len, data)
+    out = []
+    for b in found:
+        s = b.decode("ascii", errors="ignore").strip()
+        if s and s not in out:
+            out.append(s)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def describe_or_extract_file(name: str, b64: str, mime: str = "") -> str:
+    """
+    Convert ANY attached file into a text block for the LLM — text/code files
+    decode directly, PDFs get real text extraction, and everything else
+    (.exe, .dll, .zip, images, unknown binaries) gets identified by signature
+    plus any human-readable strings found inside, instead of being dropped.
+    """
+    try:
+        raw = base64.b64decode(_strip_b64_prefix(b64))
+    except Exception as e:
+        return f"[Could not decode attached file {name}: {e}]"
+
+    size = len(raw)
+    ext = os.path.splitext(name)[1].lower()
+    header = f"--- File: {name} ({size:,} bytes) ---\n"
+
+    # 1) Known text / code files → decode straight to text
+    if ext in TEXT_EXTENSIONS or (mime and mime.startswith("text/")):
+        try:
+            text = raw.decode("utf-8", errors="replace")
+            if ext in (".c", ".cpp", ".h", ".hpp"):
+                text = _strip_c_comments_generic(text)
+            return header + text[:8000]
+        except Exception:
+            pass  # fall through to binary handling below
+
+    # 2) PDFs → try real text extraction
+    if ext == ".pdf" or raw[:4] == b"%PDF":
+        try:
+            from pypdf import PdfReader
+            import io
+            reader = PdfReader(io.BytesIO(raw))
+            pages_text = [(p.extract_text() or "") for p in reader.pages[:20]]
+            text = "\n".join(pages_text).strip()
+            if text:
+                return header + text[:8000]
+        except Exception:
+            pass  # pypdf missing or extraction failed — fall through to metadata
+
+    # 3) Everything else — .exe, .dll, .zip, images, archives, unknown formats —
+    #    identify what it is and surface any readable strings inside it.
+    kind = "Unknown binary data"
+    for sig, label in _BINARY_SIGNATURES:
+        if raw.startswith(sig):
+            kind = label
+            break
+
+    sha256 = hashlib.sha256(raw).hexdigest()
+    info = (
+        f"{header}"
+        f"Type: {kind}\n"
+        f"MIME (client-reported): {mime or 'unknown'}\n"
+        f"SHA-256: {sha256}\n"
+    )
+
+    strings = _extract_printable_strings(raw)
+    if strings:
+        info += f"Readable strings found inside the file (showing {len(strings)}):\n"
+        info += "\n".join(f"  - {s}" for s in strings)
+    else:
+        info += "No readable text strings found inside the file."
+
+    return info
 
 
 class LLMProvider:
@@ -185,7 +305,7 @@ class OllamaProvider(LLMProvider):
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: str = "./models",
                  server_url: str = "http://127.0.0.1:8080/v1",
-                 context_length: int = 16384): #16k
+                 context_length: int = 65536): #64k
         self.models_dir = os.path.abspath(models_dir)
         self.server_url = server_url.rstrip("/")
         self.context_length = context_length

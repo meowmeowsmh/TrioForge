@@ -48,6 +48,7 @@ from llm_providers import (
     ClaudeProvider,
     model_supports_vision,
     VISION_MODELS,
+    describe_or_extract_file,
 )
 from notes import notes_bp
 from cork_board import corkboard_bp
@@ -2031,7 +2032,7 @@ body.light-mode .weather-country-select option {
       <div class="input-bar">
         <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
-        <input type="file" id="fileInput" accept="image/*,.pdf,.txt,.md,.py,.js,.csv,.json,.c,.cpp,.h,.hpp" multiple style="display:none"/>
+        <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
         <select id="modelSelect" class="model-select" title="Select model"></select>
         <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
@@ -5641,13 +5642,9 @@ def chat():
             final_prompt += user_message
 
         for f in files:
-            try:
-                raw = base64.b64decode(f['b64']).decode('utf-8', errors='replace')
-                if f['name'].lower().endswith(('.c', '.cpp', '.h', '.hpp')):
-                    raw = strip_c_comments(raw)
-                final_prompt += f"\n\n--- File: {f['name']} ---\n{raw[:8000]}"
-            except:
-                final_prompt += f"\n\n[Attached file: {f['name']} — binary]"
+            final_prompt += "\n\n" + describe_or_extract_file(
+                f.get('name', 'file'), f.get('b64', ''), f.get('mime', '')
+            )
 
         conv = get_conversation(conv_id)
         messages = []
@@ -5772,13 +5769,9 @@ def chat_stream():
             final_prompt += user_message
 
         for f in files:
-            try:
-                raw = base64.b64decode(f['b64']).decode('utf-8', errors='replace')
-                if f['name'].lower().endswith(('.c', '.cpp', '.h', '.hpp')):
-                    raw = strip_c_comments(raw)
-                final_prompt += f"\n\n--- File: {f['name']} ---\n{raw[:8000]}"
-            except:
-                final_prompt += f"\n\n[Attached file: {f['name']} — binary]"
+            final_prompt += "\n\n" + describe_or_extract_file(
+                f.get('name', 'file'), f.get('b64', ''), f.get('mime', '')
+            )
 
         conv = get_conversation(conv_id)
         messages = []
