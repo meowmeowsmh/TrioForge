@@ -53,6 +53,8 @@ cd TrioForge
 pip install -r requirements.txt
 ollama pull vaultbox/qwen3.5-uncensored:9b
 python app.py
+#or this 
+python -m waitress --host=0.0.0.0 --port=5001 app:app #for more security feature but you need to download 
 ```
 
 ### 🐧 Linux (Docker)
