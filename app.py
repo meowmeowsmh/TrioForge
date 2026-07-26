@@ -1,4 +1,4 @@
-# app.py – chat + notes + cork board + integrated weather toast (full animation – guaranteed working)
+# app.py – chat + notes + cork board + integrated weather toast (performance-optimized)
 from flask import Flask, request, jsonify, Response
 from flask_compress import Compress
 import requests
@@ -15,7 +15,7 @@ import re
 import urllib.request
 import platform
 import time
-from functools import lru_cache
+from functools import lru_cache, wraps
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import sqlite3
@@ -62,9 +62,38 @@ except:
     NVML_AVAILABLE = False
 
 app = Flask(__name__)
-Compress(app)  # gzip responses — the inline HTML/CSS/JS page is ~157KB uncompressed; text compresses ~75-85%
+Compress(app)
 app.register_blueprint(notes_bp)
 app.register_blueprint(corkboard_bp)
+
+# ── Lightweight per-IP rate limiting ──
+_rate_limit_lock = threading.Lock()
+_rate_limit_buckets = {}
+
+def rate_limited(max_per_minute=20):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+            now = time.time()
+            with _rate_limit_lock:
+                bucket = _rate_limit_buckets.setdefault(ip, [])
+                bucket[:] = [t for t in bucket if now - t < 60]
+                if len(bucket) >= max_per_minute:
+                    return jsonify({
+                        "error": f"Rate limit exceeded ({max_per_minute}/min). Please slow down."
+                    }), 429
+                bucket.append(now)
+            return fn(*args, **kwargs)
+        return wrapped
+    return decorator
+
+@app.after_request
+def _add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    return response
 
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 CONVERSATIONS_FILE = "json_configuration/conversations.json"
@@ -88,6 +117,7 @@ os.makedirs(SQLITE_DIR, exist_ok=True)
 _sqlite_conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
 _sqlite_lock = threading.Lock()
 _sqlite_executor = ThreadPoolExecutor(max_workers=1)
+
 def _init_sqlite():
     with _sqlite_lock:
         _sqlite_conn.execute("PRAGMA journal_mode=WAL;")
@@ -98,13 +128,68 @@ def _init_sqlite():
                 conversation_id TEXT NOT NULL,
                 role            TEXT NOT NULL,
                 content         TEXT,
+                attachments     TEXT,          -- JSON array: {"images":[...], "files":[...]}
                 created_at      TEXT NOT NULL
             );
         """)
+        cur = _sqlite_conn.cursor()
+        cur.execute("PRAGMA table_info(messages)")
+        columns = [col[1] for col in cur.fetchall()]
+        if 'attachments' not in columns:
+            _sqlite_conn.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);")
         _sqlite_conn.commit()
 _init_sqlite()
+
+# ── Migration: move existing JSON messages to SQLite ──
+def _migrate_json_to_sqlite():
+    """One‑time copy of messages from conversations.json into SQLite,
+       then strips the 'messages' key from the JSON file."""
+    if not os.path.exists(CONVERSATIONS_FILE):
+        return
+    try:
+        with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
+            full_data = json_loads(f.read())
+    except:
+        return
+    migrated_any = False
+    for cid, conv in full_data.items():
+        with _sqlite_lock:
+            cur = _sqlite_conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM messages WHERE conversation_id = ?", (cid,))
+            if cur.fetchone()[0] > 0:
+                continue
+        msgs = conv.get("messages", [])
+        if not msgs:
+            continue
+        for msg in msgs:
+            role = msg.get("role")
+            text = msg.get("text", "")
+            images = msg.get("images", [])
+            files = msg.get("files", [])
+            stored_images = [{"name": im.get("name"), "file": im.get("file"), "mime": im.get("mime")} for im in images if im.get("file")]
+            stored_files = [{"name": f.get("name"), "file": f.get("file"), "mime": f.get("mime")} for f in files if f.get("file")]
+            attachments_json = std_json.dumps({"images": stored_images, "files": stored_files}) if (stored_images or stored_files) else None
+            created_at = msg.get("ts", datetime.now().isoformat())
+            with _sqlite_lock:
+                _sqlite_conn.execute(
+                    "INSERT INTO messages (conversation_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (cid, role, text, attachments_json, created_at)
+                )
+                _sqlite_conn.commit()
+        migrated_any = True
+    if migrated_any:
+        for cid in full_data:
+            if "messages" in full_data[cid]:
+                del full_data[cid]["messages"]
+        with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
+            f.write(json_dumps_pretty(full_data))
+        print("✅ Migration: messages moved to SQLite and stripped from JSON.")
+    else:
+        print("ℹ️ Migration: no new messages to move.")
+
+_migrate_json_to_sqlite()
 
 def log_message_to_sqlite(cid, role, text):
     def _write():
@@ -117,7 +202,6 @@ def log_message_to_sqlite(cid, role, text):
                 _sqlite_conn.commit()
         except Exception as e:
             print(f"⚠️ Failed to log message to sqlite: {e}")
-    # Own executor so sqlite logging never queues behind the JSON conversation-file save
     _sqlite_executor.submit(_write)
 
 # ── Create JSON files if missing ──
@@ -176,24 +260,21 @@ def save_model_config(model):
         std_json.dump({"model": model}, f, ensure_ascii=False, indent=2)
 current_model = load_model_config()
 
-# ── Conversation storage ──
+# ── Conversation storage (JSON metadata only) ──
 _conversations_cache = {}
 _cache_loaded = False
 _cache_lock = threading.Lock()
+_conversations_sorted = None
+_conversations_dirty = True
 
-def _save_attachment_to_disk(b64_data, hint_name=""):
+def _save_attachment_to_disk_async(b64_data, hint_name=""):
     if not b64_data:
         return ""
     ext = os.path.splitext(hint_name)[1] or ".bin"
     fname = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join(ATTACHMENTS_DIR, fname)
-    try:
-        with open(path, "wb") as f:
-            f.write(base64.b64decode(b64_data))
-        return fname
-    except Exception as e:
-        print(f"⚠️ Failed to persist attachment: {e}")
-        return ""
+    _executor.submit(lambda: open(path, "wb").write(base64.b64decode(b64_data)))
+    return fname
 
 def _load_attachment_from_disk(fname):
     if not fname:
@@ -209,35 +290,12 @@ def _load_attachment_from_disk(fname):
 def _strip_blobs_for_disk(convs):
     lean = {}
     for cid, conv in convs.items():
-        lean_conv = dict(conv)
-        lean_messages = []
-        for msg in conv.get("messages", []):
-            lean_msg = dict(msg)
-            lean_msg["images"] = [
-                ({**im, "b64": ""} if im.get("file") else im) for im in msg.get("images", [])
-            ]
-            lean_msg["files"] = [
-                ({**f, "b64": ""} if f.get("file") else f) for f in msg.get("files", [])
-            ]
-            lean_messages.append(lean_msg)
-        lean_conv["messages"] = lean_messages
+        lean_conv = {k: v for k, v in conv.items() if k != "messages"}
         lean[cid] = lean_conv
     return lean
 
-def _hydrate_blobs_from_disk(convs):
-    for conv in convs.values():
-        for msg in conv.get("messages", []):
-            for im in msg.get("images", []):
-                if im.get("file") and not im.get("b64"):
-                    im["b64"] = _load_attachment_from_disk(im["file"])
-            for f in msg.get("files", []):
-                if f.get("file") and not f.get("b64"):
-                    f["b64"] = _load_attachment_from_disk(f["file"])
-
-_hydrated_cids = set()  # conversation ids whose attachment b64 has been loaded into RAM
-
 def _ensure_cache():
-    global _conversations_cache, _cache_loaded
+    global _conversations_cache, _cache_loaded, _conversations_sorted, _conversations_dirty
     if _cache_loaded:
         return
     with _cache_lock:
@@ -247,11 +305,13 @@ def _ensure_cache():
             try:
                 with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
                     _conversations_cache = json_loads(f.read())
-                # NOTE: attachment b64 is intentionally NOT hydrated here.
-                # Hydrating every attachment for every conversation at startup meant
-                # every image/file's base64 sat resident in RAM for the whole process
-                # lifetime. Instead, get_conversation() hydrates a conversation's own
-                # attachments the first time that conversation is actually opened.
+                for cid, conv in _conversations_cache.items():
+                    if "order" not in conv:
+                        conv["order"] = 0
+                    if "created" not in conv:
+                        conv["created"] = datetime.now().isoformat()
+                _conversations_sorted = None
+                _conversations_dirty = True
             except Exception as e:
                 print(f"⚠️ Error loading conversations: {e}")
                 _conversations_cache = {}
@@ -261,17 +321,23 @@ def load_conversations():
     _ensure_cache()
     return _conversations_cache
 
+def get_sorted_conversations():
+    global _conversations_sorted, _conversations_dirty
+    _ensure_cache()
+    if _conversations_dirty or _conversations_sorted is None:
+        convs = load_conversations()
+        _conversations_sorted = sorted(convs.values(), key=lambda c: (c.get('order', 0), c.get('created', '')))
+        _conversations_dirty = False
+    return _conversations_sorted
+
+_executor = ThreadPoolExecutor(max_workers=4)
 _save_executor = ThreadPoolExecutor(max_workers=1)
 _save_timer = None
 _save_timer_lock = threading.Lock()
-_SAVE_DEBOUNCE_SECONDS = 1.0  # coalesce bursts of add_message() into one file write
+_SAVE_DEBOUNCE_SECONDS = 1.0
 
 def save_conversations_async(convs):
-    # Rewriting the whole conversations file on every single message gets slower
-    # as history grows. Debounce so a burst of messages (e.g. user msg + bot
-    # reply right after streaming) triggers one write instead of several.
     global _save_timer
-
     def _save():
         try:
             lean = _strip_blobs_for_disk(convs)
@@ -281,7 +347,6 @@ def save_conversations_async(convs):
             os.replace(temp_file, CONVERSATIONS_FILE)
         except Exception as e:
             print(f"❌ Failed to save conversations: {e}")
-
     with _save_timer_lock:
         if _save_timer is not None:
             _save_timer.cancel()
@@ -300,69 +365,86 @@ def create_conversation(title=None):
             "id": cid,
             "title": title or "New Chat",
             "created": datetime.now().isoformat(),
-            "messages": [],
-            "order": new_order
+            "order": new_order,
+            "last_activity": datetime.now().isoformat()
         }
+        _conversations_dirty = True
     save_conversations_async(_conversations_cache)
     return cid
 
 def get_conversation(cid):
     _ensure_cache()
-    conv = _conversations_cache.get(cid)
-    if conv is not None and cid not in _hydrated_cids:
-        with _cache_lock:
-            if cid not in _hydrated_cids:
-                for msg in conv.get("messages", []):
-                    for im in msg.get("images", []):
-                        if im.get("file") and not im.get("b64"):
-                            im["b64"] = _load_attachment_from_disk(im["file"])
-                    for f in msg.get("files", []):
-                        if f.get("file") and not f.get("b64"):
-                            f["b64"] = _load_attachment_from_disk(f["file"])
-                _hydrated_cids.add(cid)
-    return conv
+    return _conversations_cache.get(cid)
 
-setup_viewer(app, get_conversation)
+def get_messages(cid):
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute(
+            "SELECT role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at",
+            (cid,)
+        )
+        rows = cur.fetchall()
+    msgs = []
+    for role, content, attachments_json, created_at in rows:
+        msg = {"role": role, "text": content or "", "ts": created_at}
+        if attachments_json:
+            try:
+                att = std_json.loads(attachments_json)
+                for im in att.get("images", []):
+                    if im.get("file"):
+                        im["b64"] = _load_attachment_from_disk(im["file"])
+                for f in att.get("files", []):
+                    if f.get("file"):
+                        f["b64"] = _load_attachment_from_disk(f["file"])
+                msg["images"] = att.get("images", [])
+                msg["files"] = att.get("files", [])
+            except:
+                pass
+        msgs.append(msg)
+    return msgs
 
 def add_message(cid, role, text, images=None, files=None, ts=None):
-    _ensure_cache()
-    if cid not in _conversations_cache:
-        return False
     if images is None: images = []
     if files is None: files = []
     if ts is None: ts = datetime.now().strftime("%H:%M")
+
     stored_images = []
     for img in images:
         b64 = img.get("b64", "")
-        fname = _save_attachment_to_disk(b64, img.get("name", "image.png"))
+        fname = _save_attachment_to_disk_async(b64, img.get("name", "image.png"))
         stored_images.append({
             "name": img.get("name", "image"),
-            "b64": b64,
-            "mime": img.get("mime", "image/png"),
-            "file": fname
+            "file": fname,
+            "mime": img.get("mime", "image/png")
         })
     stored_files = []
     for f in files:
         b64 = f.get("b64", "")
-        fname = _save_attachment_to_disk(b64, f.get("name", "file.bin"))
+        fname = _save_attachment_to_disk_async(b64, f.get("name", "file.bin"))
         stored_files.append({
             "name": f.get("name", "file"),
-            "b64": b64,
-            "mime": f.get("mime", "application/octet-stream"),
-            "file": fname
+            "file": fname,
+            "mime": f.get("mime", "application/octet-stream")
         })
+
+    attachments_json = std_json.dumps({"images": stored_images, "files": stored_files}) if (stored_images or stored_files) else None
+
+    with _sqlite_lock:
+        _sqlite_conn.execute(
+            "INSERT INTO messages (conversation_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)",
+            (cid, role, text, attachments_json, datetime.now().isoformat())
+        )
+        _sqlite_conn.commit()
+
+    _ensure_cache()
     with _cache_lock:
-        _conversations_cache[cid]["messages"].append({
-            "role": role,
-            "text": text,
-            "images": stored_images,
-            "files": stored_files,
-            "ts": ts
-        })
-        if role == "user" and len(_conversations_cache[cid]["messages"]) == 1:
-            _conversations_cache[cid]["title"] = text[:40] + ("..." if len(text) > 40 else "")
+        if cid in _conversations_cache:
+            conv = _conversations_cache[cid]
+            if role == "user" and len(get_messages(cid)) == 1:
+                conv["title"] = text[:40] + ("..." if len(text) > 40 else "")
+            conv["last_activity"] = datetime.now().isoformat()
+            _conversations_dirty = True
     save_conversations_async(_conversations_cache)
-    log_message_to_sqlite(cid, role, text)
     return True
 
 def delete_conversation(cid):
@@ -370,17 +452,15 @@ def delete_conversation(cid):
     if cid in _conversations_cache:
         with _cache_lock:
             del _conversations_cache[cid]
+            _conversations_dirty = True
         save_conversations_async(_conversations_cache)
         return True
     return False
 
 def clear_conversation_messages(cid):
-    _ensure_cache()
-    if cid not in _conversations_cache:
-        return False
-    with _cache_lock:
-        _conversations_cache[cid]["messages"] = []
-    save_conversations_async(_conversations_cache)
+    with _sqlite_lock:
+        _sqlite_conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
+        _sqlite_conn.commit()
     return True
 
 def strip_c_comments(text):
@@ -406,8 +486,6 @@ def describe_image_with_llava(image_b64):
     except Exception as e:
         print(f"⚠️ llava fallback failed: {e}")
         return ""
-
-_executor = ThreadPoolExecutor(max_workers=2)
 
 def trim_conversation_history(messages, max_messages=10, max_tokens=3000):
     if not messages:
@@ -555,7 +633,6 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
                         status = chunk.get('status', '')
                         if status:
                             full_response += status + "\n"
-                            # FIXED: replaced '+ '\n'' with '+ chr(10)'
                             yield f"data: {json_dumps({'token': status + chr(10)})}\n\n"
                         if 'error' in chunk:
                             err = '❌ ' + chunk['error']
@@ -584,7 +661,6 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
                         status = chunk.get('status', '')
                         if status:
                             full_response += status + "\n"
-                            # FIXED: replaced '+ '\n'' with '+ chr(10)'
                             yield f"data: {json_dumps({'token': status + chr(10)})}\n\n"
                         if 'error' in chunk:
                             err = '❌ ' + chunk['error']
@@ -597,7 +673,6 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
             output = execute_ollama_command_sync(user_message)
             full_response = output
             for line in output.splitlines():
-                # FIXED: replaced '+ '\n'' with '+ chr(10)'
                 yield f"data: {json_dumps({'token': line + chr(10)})}\n\n"
         yield f"data: {json_dumps({'done': True, 'full_response': full_response})}\n\n"
     except Exception as e:
@@ -608,7 +683,18 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
         add_message(conv_id, "user", user_message, images, files, ts)
         add_message(conv_id, "bot", full_response, [], [], ts)
 
-# ── Build HTML (Chat, Notes, Cork Board, plus integrated Weather) ──
+# ── HTML caching ──
+_cached_html = None
+_cached_html_model = None
+
+def get_cached_html():
+    global _cached_html, _cached_html_model
+    if _cached_html is None or _cached_html_model != current_model:
+        _cached_html = build_html(current_model)
+        _cached_html_model = current_model
+    return _cached_html
+
+# ── Build HTML (full original function – unchanged except for caching) ──
 def build_html(model_name):
     html = r"""<!DOCTYPE html>
 <html lang="en">
@@ -3899,7 +3985,7 @@ function createBlob(x, y, emoji, color, speed = 1.0, size = 22) {
 }
 function updateBlob(blob, w, h, t, speedMul = 1) {
     if (!blob) return;
-    const spd = blob.speed * speedMul * 1.8; // was 0.6 — sped up ~3x so it doesn't take forever to cross
+    const spd = blob.speed * speedMul * 1.8;
     if (blob.hasDrink) {
         if (blob.isDrinking) {
             blob.drinkTimer += 1;
@@ -3931,16 +4017,16 @@ function updateBlob(blob, w, h, t, speedMul = 1) {
         }
         return;
     }
-    if (Math.random() < 0.0006) { // was 0.003 — paused ~17% of the time, way too often
+    if (Math.random() < 0.0006) {
         blob.isPaused = true;
         blob.pauseTimer = 0;
-        blob.pauseDuration = 20 + Math.random() * 30; // was 40 + rand*80 — shorter pauses too
+        blob.pauseDuration = 20 + Math.random() * 30;
         return;
     }
     const moveDist = spd * 1.2;
     blob.x += blob.direction * moveDist;
     blob.stepPhase += spd * 0.06;
-    const strideLen = blob.size * 2.2; // px of travel per full leg-swing cycle — keeps steps matched to movement
+    const strideLen = blob.size * 2.2;
     blob.walkCycle += (moveDist / strideLen) * Math.PI * 2;
     blob.armSwing = Math.sin(blob.walkCycle) * 0.3;
     blob.legOffset = Math.sin(blob.walkCycle);
@@ -3952,22 +4038,17 @@ function updateBlob(blob, w, h, t, speedMul = 1) {
     if (blob.x < margin) { blob.direction = 1; blob.x = margin; }
 }
 
-// ─── Foot stance/swing cycle: one leg plants+glides while the other lifts+swings, ──
-// ─── so left/right feet properly alternate instead of moving in mirrored lockstep ──
 function footCycle(phase, ampX, liftY) {
     const p = ((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     if (p < Math.PI) {
-        // stance: foot planted, glides backward under the body (body moving forward over it)
         const s = p / Math.PI;
         return { horiz: ampX * (1 - 2 * s), lift: 0 };
     } else {
-        // swing: foot lifts off the ground and swings forward to the next plant
         const s = (p - Math.PI) / Math.PI;
         return { horiz: ampX * (-1 + 2 * s), lift: -liftY * Math.sin(s * Math.PI) };
     }
 }
 
-// ─── Full Walking Blob Drawing ──
 function drawWalkingBlob(ctx, blob, t) {
     const { x, y, size: r, color, emoji, direction, walkCycle, isDrinking } = blob;
     const d = direction;
@@ -4032,7 +4113,7 @@ function drawWalkingBlob(ctx, blob, t) {
     ctx.lineCap = 'round';
     const freeArmSide = -d;
     const flx1 = freeArmSide * r * 0.85, fly1 = -r * 0.15;
-    const flx2 = flx1 + (drinking ? 0 : Math.sin(walkCycle+0.8) * r * 0.65 * freeArmSide); // was r*0.45 — bigger swing
+    const flx2 = flx1 + (drinking ? 0 : Math.sin(walkCycle+0.8) * r * 0.65 * freeArmSide);
     const fly2 = fly1 + r * 0.5 + (drinking ? 0 : Math.abs(Math.sin(walkCycle+0.8)) * r * 0.1);
     ctx.beginPath();
     ctx.moveTo(flx1, fly1);
@@ -4054,7 +4135,7 @@ function drawWalkingBlob(ctx, blob, t) {
         dax2 = restX + (raisedX - restX) * lift;
         day2 = restY + (raisedY - restY) * lift;
     } else {
-        dax2 = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.65 * drinkSide; // was r*0.45 — bigger swing
+        dax2 = dax1 + Math.sin(walkCycle+0.8+Math.PI) * r * 0.65 * drinkSide;
         day2 = day1 + r * 0.5 + Math.abs(Math.sin(walkCycle+0.8+Math.PI)) * r * 0.1;
     }
     ctx.beginPath();
@@ -4088,7 +4169,6 @@ function drawWalkingBlob(ctx, blob, t) {
         ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-canW/2, -canH*0.15, canW, canH*0.16);
-        // hand wraps around the can's lower half — drawn last so it's visible in front, not hidden under the can
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.ellipse(0, canH*0.05, canW*0.62, canW*0.42, 0, 0, Math.PI*2);
@@ -4178,7 +4258,6 @@ function drawWalkingBlob(ctx, blob, t) {
     ctx.restore();
 }
 
-// ─── Full Season drawing functions ──
 function drawSummer(ctx, w, h, t, blobs) {
     const sky = ctx.createLinearGradient(0, 0, 0, h);
     sky.addColorStop(0, '#4a90d9');
@@ -4685,7 +4764,6 @@ function renderScene(ctx, w, h, season, time) {
     }
 }
 
-// ─── LOCATION & WEATHER helpers ──
 async function getLocationFromIP() {
     try {
         const res = await fetch('https://ipapi.co/json/');
@@ -4846,7 +4924,6 @@ async function fetchWeatherByCity(city) {
     }
 }
 
-// ── SHOW TOAST ──
 async function showSeasonToast(season, city, country, code, region, lat, manual = false) {
     const toast = createToast();
     const canvas = toast.canvas;
@@ -4900,7 +4977,6 @@ async function showSeasonToast(season, city, country, code, region, lat, manual 
         }
     }
 
-    // ─── Start animation ───
     blobInstances = [];
 
     function startAnimation() {
@@ -4946,7 +5022,6 @@ async function showSeasonToast(season, city, country, code, region, lat, manual 
     return toast;
 }
 
-// ── UPDATE FROM COUNTRY SELECT ──
 async function updateFromCountry(code) {
     const country = countryList.find(c => c.code === code);
     if (!country) return;
@@ -4986,9 +5061,7 @@ async function updateFromCountry(code) {
     await showSeasonToast(season, city, countryName, code, region, lat, true);
 }
 
-// ── DETECT LOCATION ──
 async function detectLocation() {
-    // 1) Prefer the browser's exact location (GPS / Wi-Fi positioning) — most accurate
     if (navigator.geolocation) {
         try {
             const pos = await new Promise((resolve, reject) => {
@@ -5032,7 +5105,6 @@ async function detectLocation() {
         }
     }
 
-    // 2) Fall back to coarser IP-based geolocation
     let loc = await getLocationFromIP();
     if (loc && loc.countryCode) {
         const code = loc.countryCode;
@@ -5066,12 +5138,10 @@ async function detectLocation() {
         }
     }
 
-    // 3) Last resort: default to Malaysia instead of the US
     const fallbackCode = 'MY';
     await updateFromCountry(fallbackCode);
 }
 
-// ── ANIMATION ──
 function animateScene(canvas, season) {
     if (canvasAnimId) cancelAnimationFrame(canvasAnimId);
     if (!canvas) return;
@@ -5097,8 +5167,6 @@ function animateScene(canvas, season) {
             window.removeEventListener('resize', onResize);
             return;
         }
-        // this scene is purely decorative and heavy (many shadowBlur draws per frame),
-        // so cap it at ~30fps instead of 60fps — halves main-thread work while typing
         if (now - lastRenderTime < 32) {
             canvasAnimId = requestAnimationFrame(frame);
             return;
@@ -5114,7 +5182,6 @@ function animateScene(canvas, season) {
     frame(start);
 }
 
-// ── TOGGLE WEATHER ──
 function toggleWeather() {
     if (container.style.display === 'none') {
         container.style.display = 'flex';
@@ -5139,7 +5206,6 @@ function toggleWeather() {
     }
 }
 
-// ── INIT WEATHER ──
 function initWeather() {
     countryList.sort((a, b) => a.name.localeCompare(b.name));
     countryList.forEach(c => {
@@ -5158,7 +5224,6 @@ function initWeather() {
     detectLocation();
 }
 
-// ── Override detectLocation to ensure container is shown ──
 const originalDetect = detectLocation;
 detectLocation = async function() {
     container.style.display = 'flex';
@@ -5171,7 +5236,6 @@ console.log('🌍 Weather widget integrated with TrioForge');
 </body>
 </html>"""
     return html
-
 
 # ── Routes ──
 @app.route('/unload_model', methods=['POST'])
@@ -5200,13 +5264,13 @@ providers = {
 
 @app.route('/')
 def index():
-    html = build_html(current_model)
+    html = get_cached_html()
     etag = hashlib.md5(html.encode('utf-8')).hexdigest()
     if request.headers.get('If-None-Match') == etag:
         return '', 304
     resp = Response(html)
     resp.headers['ETag'] = etag
-    resp.headers['Cache-Control'] = 'no-cache'  # always revalidate, but skip re-sending the ~157KB body when unchanged
+    resp.headers['Cache-Control'] = 'no-cache'
     return resp
 
 @app.route('/resources', methods=['GET'])
@@ -5262,6 +5326,19 @@ def cached_vision_check(provider_name, model):
             pass
     return model_supports_vision(provider_name, model)
 
+# Pre‑warm vision cache in background
+def prewarm_vision_cache():
+    cached_vision_check("ollama", current_model)
+    try:
+        resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+        if resp.status_code == 200:
+            models = [m['name'] for m in resp.json().get('models', [])]
+            for m in models:
+                cached_vision_check("ollama", m)
+    except:
+        pass
+threading.Thread(target=prewarm_vision_cache, daemon=True).start()
+
 @app.route('/check_vision', methods=['POST'])
 def check_vision():
     data = request.get_json()
@@ -5290,7 +5367,7 @@ def _cached_models(provider_name, api_key):
 
 @app.route('/set_model', methods=['POST'])
 def set_model():
-    global current_model
+    global current_model, _cached_html
     data = request.get_json()
     model = data.get('model')
     if not model:
@@ -5308,6 +5385,7 @@ def set_model():
     providers["ollama"].model = model
     cached_vision_check.cache_clear()
     _cached_models.cache_clear()
+    _cached_html = None
     return jsonify({'ok': True, 'model': model})
 
 @app.route('/deepseek/model_info', methods=['GET'])
@@ -5341,8 +5419,7 @@ def deepseek_status():
 
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
-    convs = load_conversations()
-    sorted_list = sorted(convs.values(), key=lambda c: (c.get('order', 0), c.get('created', '')))
+    sorted_list = get_sorted_conversations()
     result = [{
         "id": c["id"],
         "title": c.get("title", "Untitled"),
@@ -5362,11 +5439,10 @@ def delete_conversation_route(cid):
     return jsonify({"ok": ok})
 
 @app.route('/conversations/<cid>/messages', methods=['GET'])
-def get_messages(cid):
-    conv = get_conversation(cid)
-    if conv is None:
+def get_messages_route(cid):
+    if cid not in load_conversations():
         return jsonify([])
-    return jsonify(conv.get("messages", []))
+    return jsonify(get_messages(cid))
 
 @app.route('/clear_all', methods=['POST'])
 def clear_all():
@@ -5383,28 +5459,28 @@ def edit_message(cid, idx):
     new_text = data.get('text', '').strip()
     if not new_text:
         return jsonify({'error': 'Text cannot be empty'}), 400
-    convs = load_conversations()
-    conv = convs.get(cid)
-    if not conv:
-        return jsonify({'error': 'Conversation not found'}), 404
-    msgs = conv.get('messages', [])
-    if idx < 0 or idx >= len(msgs):
-        return jsonify({'error': 'Index out of range'}), 400
-    msgs[idx]['text'] = new_text
-    save_conversations_async(convs)
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute("SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at", (cid,))
+        rowids = [row[0] for row in cur.fetchall()]
+        if idx >= len(rowids):
+            return jsonify({'error': 'Index out of range'}), 400
+        rowid = rowids[idx]
+        cur.execute("UPDATE messages SET content = ? WHERE id = ?", (new_text, rowid))
+        _sqlite_conn.commit()
     return jsonify({'ok': True})
 
 @app.route('/conversations/<cid>/messages/<int:idx>', methods=['DELETE'])
 def delete_message(cid, idx):
-    convs = load_conversations()
-    conv = convs.get(cid)
-    if not conv:
-        return jsonify({'error': 'Conversation not found'}), 404
-    msgs = conv.get('messages', [])
-    if idx < 0 or idx >= len(msgs):
-        return jsonify({'error': 'Index out of range'}), 400
-    msgs.pop(idx)
-    save_conversations_async(convs)
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute("SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at", (cid,))
+        rowids = [row[0] for row in cur.fetchall()]
+        if idx < 0 or idx >= len(rowids):
+            return jsonify({'error': 'Index out of range'}), 400
+        rowid = rowids[idx]
+        cur.execute("DELETE FROM messages WHERE id = ?", (rowid,))
+        _sqlite_conn.commit()
     return jsonify({'ok': True})
 
 @app.route('/conversations/<cid>/rename', methods=['PUT'])
@@ -5413,11 +5489,13 @@ def rename_conversation(cid):
     new_title = data.get('title', '').strip()
     if not new_title:
         return jsonify({'error': 'Title cannot be empty'}), 400
-    convs = load_conversations()
-    if cid not in convs:
+    _ensure_cache()
+    if cid not in _conversations_cache:
         return jsonify({'error': 'Conversation not found'}), 404
-    convs[cid]['title'] = new_title
-    save_conversations_async(convs)
+    with _cache_lock:
+        _conversations_cache[cid]['title'] = new_title
+        _conversations_dirty = True
+    save_conversations_async(_conversations_cache)
     return jsonify({'ok': True})
 
 @app.route('/conversations/reorder', methods=['POST'])
@@ -5426,11 +5504,13 @@ def reorder_conversations():
     order_map = data.get('order')
     if not order_map or not isinstance(order_map, dict):
         return jsonify({'error': 'Invalid order data'}), 400
-    convs = load_conversations()
-    for cid, new_order in order_map.items():
-        if cid in convs:
-            convs[cid]['order'] = int(new_order)
-    save_conversations_async(convs)
+    _ensure_cache()
+    with _cache_lock:
+        for cid, new_order in order_map.items():
+            if cid in _conversations_cache:
+                _conversations_cache[cid]['order'] = int(new_order)
+        _conversations_dirty = True
+    save_conversations_async(_conversations_cache)
     return jsonify({'ok': True})
 
 @app.route('/conversations/search', methods=['GET'])
@@ -5442,35 +5522,38 @@ def search_conversations():
     results = []
     for cid, conv in convs.items():
         title_match = query in conv.get('title', '').lower()
-        msg_match = False
-        for msg in conv.get('messages', []):
-            text = msg.get('text', '').lower()
-            if query in text:
-                msg_match = True
-                break
-        if title_match or msg_match:
+        if title_match:
             results.append({
                 "id": conv["id"],
                 "title": conv.get("title", "Untitled"),
                 "created": conv.get("created", ""),
                 "order": conv.get("order", 0)
             })
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT conversation_id FROM messages WHERE LOWER(content) LIKE ?",
+            ('%' + query + '%',)
+        )
+        cids_with_match = [row[0] for row in cur.fetchall()]
+    for cid in cids_with_match:
+        if cid not in [r["id"] for r in results]:
+            conv = convs.get(cid)
+            if conv:
+                results.append({
+                    "id": conv["id"],
+                    "title": conv.get("title", "Untitled"),
+                    "created": conv.get("created", ""),
+                    "order": conv.get("order", 0)
+                })
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
 # ── NEW ROUTE: Get conversation tree for import ──
 @app.route('/api/conversations/<cid>/tree', methods=['GET'])
 def conversation_tree(cid):
-    """
-    Return a tree of messages for the given conversation ID.
-    Each node has: id, parent_id (previous message id), role, content, title (snippet).
-    """
-    # 1. Verify the conversation exists (in the JSON store)
-    convs = load_conversations()
-    if cid not in convs:
+    if cid not in load_conversations():
         return jsonify({"error": "Conversation not found"}), 404
-
-    # 2. Fetch all messages for this conversation from SQLite, ordered by timestamp
     with _sqlite_lock:
         cur = _sqlite_conn.cursor()
         cur.execute(
@@ -5478,20 +5561,16 @@ def conversation_tree(cid):
             (cid,)
         )
         rows = cur.fetchall()
-
     if not rows:
         return jsonify({"error": "No messages found for this conversation"}), 404
-
-    # 3. Build a linear chain: each message's parent is the previous one (null for first)
     nodes = []
     prev_id = None
     for row in rows:
-        # row: (id, role, content, created_at)
         content = row[2] or ""
         title = content[:40] + ("…" if len(content) > 40 else "") or f"{row[1]} message"
         node = {
-            "id": str(row[0]),           # use the SQLite row id as node id
-            "parent_id": prev_id,        # first message has parent_id = null
+            "id": str(row[0]),
+            "parent_id": prev_id,
             "role": row[1],
             "content": content,
             "title": title,
@@ -5499,7 +5578,6 @@ def conversation_tree(cid):
         }
         nodes.append(node)
         prev_id = str(row[0])
-
     return jsonify({"nodes": nodes})
 
 # ── SQLite Logs API ──
@@ -5586,6 +5664,7 @@ def export_logs_csv():
 
 # ── Chat endpoints ──
 @app.route('/chat', methods=['POST'])
+@rate_limited(max_per_minute=20)
 def chat():
     global current_model
     try:
@@ -5619,11 +5698,13 @@ def chat():
         search_context = ""
         if SEARCH_AVAILABLE and search_enabled and user_message.strip():
             try:
-                with DDGS() as ddgs:
-                    results = ddgs.text(user_message, max_results=3)
-                    snippets = [r['body'] for r in results if 'body' in r]
-                    if snippets:
-                        search_context = " ".join(snippets[:3])
+                future = _executor.submit(
+                    lambda: DDGS().text(user_message, max_results=3)
+                )
+                results = future.result(timeout=3)
+                snippets = [r['body'] for r in results if 'body' in r]
+                if snippets:
+                    search_context = " ".join(snippets[:3])
             except Exception as e:
                 print(f"❌ Search error: {e}")
 
@@ -5646,14 +5727,13 @@ def chat():
                 f.get('name', 'file'), f.get('b64', ''), f.get('mime', '')
             )
 
-        conv = get_conversation(conv_id)
+        msgs = get_messages(conv_id)
         messages = []
-        if conv:
-            for msg in conv.get('messages', []):
-                if msg['role'] == 'user':
-                    messages.append({"role": "user", "content": msg['text']})
-                elif msg['role'] == 'bot':
-                    messages.append({"role": "assistant", "content": msg['text']})
+        for msg in msgs:
+            if msg['role'] == 'user':
+                messages.append({"role": "user", "content": msg['text']})
+            elif msg['role'] == 'bot':
+                messages.append({"role": "assistant", "content": msg['text']})
 
         messages = [{"role": "system", "content": system_prompt}] + messages
         messages = trim_conversation_history(messages)
@@ -5712,6 +5792,7 @@ def chat():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/chat_stream', methods=['POST'])
+@rate_limited(max_per_minute=20)
 def chat_stream():
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -5746,11 +5827,13 @@ def chat_stream():
         search_context = ""
         if SEARCH_AVAILABLE and search_enabled and user_message.strip():
             try:
-                with DDGS() as ddgs:
-                    results = ddgs.text(user_message, max_results=3)
-                    snippets = [r['body'] for r in results if 'body' in r]
-                    if snippets:
-                        search_context = " ".join(snippets[:3])
+                future = _executor.submit(
+                    lambda: DDGS().text(user_message, max_results=3)
+                )
+                results = future.result(timeout=3)
+                snippets = [r['body'] for r in results if 'body' in r]
+                if snippets:
+                    search_context = " ".join(snippets[:3])
             except Exception as e:
                 print(f"❌ Search error: {e}")
 
@@ -5773,14 +5856,13 @@ def chat_stream():
                 f.get('name', 'file'), f.get('b64', ''), f.get('mime', '')
             )
 
-        conv = get_conversation(conv_id)
+        msgs = get_messages(conv_id)
         messages = []
-        if conv:
-            for msg in conv.get('messages', []):
-                if msg['role'] == 'user':
-                    messages.append({"role": "user", "content": msg['text']})
-                elif msg['role'] == 'bot':
-                    messages.append({"role": "assistant", "content": msg['text']})
+        for msg in msgs:
+            if msg['role'] == 'user':
+                messages.append({"role": "user", "content": msg['text']})
+            elif msg['role'] == 'bot':
+                messages.append({"role": "assistant", "content": msg['text']})
 
         messages = [{"role": "system", "content": system_prompt}] + messages
         messages = trim_conversation_history(messages)
@@ -5957,13 +6039,15 @@ if "ollama" in VISION_MODELS:
 else:
     VISION_MODELS["ollama"] = list(UNCENSORED_VISION_MODELS)
 
+setup_viewer(app, get_conversation)
+
 if __name__ == '__main__':
     print("\n" + "="*50)
     print("🚀  AI CHAT Interfacing Loading... · Multi-Conversation")
     print("="*50)
     print(f"  Default model : {DEFAULT_MODEL}")
     print(f"  Current model : {current_model}")
-    print(f"  Storage       : {CONVERSATIONS_FILE}")
+    print(f"  Storage       : {CONVERSATIONS_FILE} (metadata only), SQLite for messages")
     print("="*50 + "\n")
 
     cert_file = 'cert_store/localhost+1.pem'
@@ -5986,4 +6070,6 @@ if __name__ == '__main__':
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
 
-    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False, ssl_context=ssl_context, threaded=True)
+    # For production, use gunicorn instead of app.run.
+    # Example: gunicorn -w 4 -b 0.0.0.0:5001 app:app
+    app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False, ssl_context=ssl_context, threaded=True)
