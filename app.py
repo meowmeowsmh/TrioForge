@@ -6070,6 +6070,6 @@ if __name__ == '__main__':
     print(f"🌐 Open your browser at: {url}")
     print("="*50 + "\n")
 
-    # For production, use gunicorn instead of app.run.
+    # For production, use gunicorn or waitress instead of app.run.
     # Example: gunicorn -w 4 -b 0.0.0.0:5001 app:app
     app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False, ssl_context=ssl_context, threaded=True)
