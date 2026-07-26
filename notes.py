@@ -2641,6 +2641,10 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                     tagsInput.value = existing.concat(newTags).join(', ');
                 }
                 resultDiv.textContent = '✅ Suggested tags: ' + data.tags.join(', ') + ' (added to tags field)';
+            } else if (action === 'improve' && data.result) {
+                document.getElementById('noteContentInput').value = data.result;
+                updatePreview();
+                resultDiv.textContent = '✅ Note content updated with improved version.';
             } else {
                 resultDiv.textContent = data.result || 'Done.';
             }
