@@ -64,6 +64,29 @@ def _strip_b64_prefix(b64: str) -> str:
         return b64.split(",", 1)[1]
     return b64
 
+def _clean_api_key(key: Optional[str], provider_label: str) -> Optional[str]:
+    """Strip whitespace and catch stray non-ASCII characters (en-dashes, smart
+    quotes, etc.) that sneak in when a key is copy-pasted from a document,
+    webpage, or chat app with 'smart' text substitution. Without this, the
+    key gets silently embedded in an HTTP Authorization header later on and
+    fails deep inside the HTTP library with a cryptic UnicodeEncodeError
+    instead of a message that points at the actual problem."""
+    if not key:
+        return key
+    key = key.strip()
+    try:
+        key.encode("ascii")
+    except UnicodeEncodeError as e:
+        bad_char = key[e.start:e.end]
+        raise Exception(
+            f"Your {provider_label} API key contains a character that isn't plain text "
+            f"({bad_char!r}, often an en-dash or curly quote introduced by copy-pasting "
+            f"from a document, webpage, or chat app). Paste the key into a plain text "
+            f"editor first, remove the stray character, then re-enter it here."
+        )
+    return key
+
+
 def model_supports_vision(provider_name: str, model_name: str) -> bool:
     if not model_name:
         return False
@@ -465,7 +488,7 @@ class HuggingFaceProvider(LLMProvider):
 
     def _make_headers(self, api_key: Optional[str] = None) -> Dict:
         headers = {"Content-Type": "application/json"}
-        token = api_key or self.api_token
+        token = _clean_api_key(api_key or self.api_token, "Hugging Face")
         if token:
             headers["Authorization"] = f"Bearer {token}"
         return headers
@@ -567,13 +590,13 @@ class GroqProvider(LLMProvider):
             print("⚠️ GROQ_API_KEY not set. Provide it via UI or set env var.")
 
     def _get_key(self, kwargs) -> str:
-        key = kwargs.get("api_key") or self._default_key
+        key = _clean_api_key(kwargs.get("api_key") or self._default_key, "Groq")
         if not key:
             raise Exception("Groq API key is required. Enter it in the API Key field.")
         return key
 
     def _get_client(self, api_key: Optional[str] = None):
-        key = api_key or self._default_key
+        key = _clean_api_key(api_key or self._default_key, "Groq")
         if not key:
             raise Exception("Groq API key is required.")
         try:
@@ -667,7 +690,7 @@ class DeepSeekProvider(LLMProvider):
             print("⚠️ DEEPSEEK_API_KEY not set. Provide it via UI or set env var.")
 
     def _get_key(self, kwargs) -> str:
-        key = kwargs.get("api_key") or self._default_key
+        key = _clean_api_key(kwargs.get("api_key") or self._default_key, "DeepSeek")
         if not key:
             raise Exception("DeepSeek API key is required. Enter it in the API Key field.")
         return key
@@ -764,7 +787,7 @@ class ClaudeProvider(LLMProvider):
             print("⚠️ ANTHROPIC_API_KEY not set. Provide it via UI or set env var.")
 
     def _get_key(self, kwargs) -> str:
-        key = kwargs.get("api_key") or self._default_key
+        key = _clean_api_key(kwargs.get("api_key") or self._default_key, "Claude (Anthropic)")
         if not key:
             raise Exception("Claude (Anthropic) API key is required. Enter it in the API Key field.")
         return key

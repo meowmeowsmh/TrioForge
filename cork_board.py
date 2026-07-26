@@ -3445,6 +3445,9 @@ document.getElementById('aiAssistBtn').addEventListener('click', function() {
         } else if (action === 'suggest_links' && data.suggestions) {
             var list = data.suggestions.map(s => `• ${s.title} (${(s.score*100).toFixed(0)}%)`).join('\n');
             resultDiv.textContent = '🔗 Suggested links:\n' + list + '\n\nUse "💡 Suggest Links" button in toolbar to create them.';
+        } else if (action === 'improve' && data.result) {
+            document.getElementById('pinContent').value = data.result;
+            resultDiv.textContent = '✅ Pin content updated with improved version.';
         } else {
             resultDiv.textContent = data.result || 'Done.';
         }
