@@ -2505,7 +2505,7 @@ function updatePinElement(el, pin) {
     el.style.height = h + 'px';
     el.style.transform = 'translate3d(' + (pin.x || 40) + 'px, ' + (pin.y || 40) + 'px, 0) rotate(' + (pin.rotation || 0) + 'deg)';
 
-    var contentHtml = marked.parse(pin.content || '');
+    var contentHtml = marked.parse(convertHighlights(pin.content || ''));
     var tagsHtml = (pin.tags || []).map(t => `<span class="tag-label">#${escapeHtml(t)}</span>`).join('');
 
     el.innerHTML = `
@@ -3393,8 +3393,14 @@ function closeModal() {
 function togglePreview() {
     var preview = document.getElementById('pinPreview');
     var content = document.getElementById('pinContent').value;
-    preview.innerHTML = marked.parse(content || '');
+    preview.innerHTML = marked.parse(convertHighlights(content || ''));
     preview.classList.toggle('visible');
+}
+
+// Convert Obsidian-style ==highlight== spans into <mark> tags before
+// handing content to marked.js, which has no built-in syntax for it.
+function convertHighlights(text) {
+    return (text || '').replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
 }
 
 // ─── AI Assist in Modal ──────────────────────────────

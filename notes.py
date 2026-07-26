@@ -867,8 +867,8 @@ NOTES_HTML = r"""<!DOCTYPE html>
 <title>Notes · Obsidian + AI + Weather</title>
 <script src="/static/vendor/marked.min.js"></script>
 <!-- vis-network for graph view -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/vis-network.min.js"></script>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.css" rel="stylesheet" type="text/css" />
+<script src="/static/vendor/vis-network.min.js"></script>
+<link href="/static/vendor/vis-network.min.css" rel="stylesheet" type="text/css" />
 <style>
 /* ── base – same as before ── */
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -2676,20 +2676,69 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         modal.style.display = 'block';
         var container = document.getElementById('graphContainer');
         container.innerHTML = '<div style="color:#8b949e; padding:40px; text-align:center;">⏳ Loading graph...</div>';
-        
+
         fetch('/notes/api/graph')
             .then(r => r.json())
             .then(data => {
-                var nodes = new vis.DataSet(data.nodes.map(n => ({ ...n, shape: 'dot', size: 22, font: { color: '#e1e4e8' } })));
-                var edges = new vis.DataSet(data.edges);
+                // Size/highlight nodes by how connected they are, so hub notes
+                // stand out instead of every note looking identical.
+                var degree = {};
+                data.edges.forEach(e => {
+                    degree[e.from] = (degree[e.from] || 0) + 1;
+                    degree[e.to] = (degree[e.to] || 0) + 1;
+                });
+                var maxDegree = Math.max(1, ...Object.values(degree));
+
+                var nodes = new vis.DataSet(data.nodes.map(n => {
+                    var d = degree[n.id] || 0;
+                    var size = 14 + (d / maxDegree) * 18; // 14–32px range
+                    return {
+                        ...n,
+                        shape: 'dot',
+                        size: size,
+                        color: {
+                            background: d > 0 ? '#58a6ff' : '#3d4451',
+                            border: d > 0 ? '#79c0ff' : '#565f6e',
+                            highlight: { background: '#79c0ff', border: '#a5d6ff' },
+                            hover: { background: '#6cb6ff', border: '#a5d6ff' }
+                        },
+                        borderWidth: 2,
+                        font: { size: 14, color: '#e6edf3', strokeWidth: 3, strokeColor: 'rgba(13,17,23,0.9)' }
+                    };
+                }));
+                var edges = new vis.DataSet(data.edges.map(e => ({
+                    ...e,
+                    color: { color: 'rgba(139,148,158,0.5)', highlight: '#79c0ff', hover: '#79c0ff' },
+                    width: 1.5,
+                    smooth: { type: 'continuous', roundness: 0.4 }
+                })));
+
                 var options = {
-                    nodes: { shape: 'dot', size: 20, font: { size: 14, color: '#e1e4e8' } },
-                    edges: { smooth: false, arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
-                    physics: { stabilization: { enabled: true, iterations: 100 } },
-                    interaction: { hover: true, tooltipDelay: 100 },
+                    nodes: { shape: 'dot', shadow: { enabled: true, size: 6, x: 0, y: 2 } },
+                    edges: {
+                        arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+                        selectionWidth: 2
+                    },
+                    physics: {
+                        solver: 'barnesHut',
+                        barnesHut: {
+                            gravitationalConstant: -4000,
+                            centralGravity: 0.3,
+                            springLength: 140,
+                            springConstant: 0.05,
+                            avoidOverlap: 0.5
+                        },
+                        stabilization: { enabled: true, iterations: 200, fit: true }
+                    },
+                    interaction: { hover: true, tooltipDelay: 100, dragView: true, zoomView: true },
                     layout: { improvedLayout: true }
                 };
                 var network = new vis.Network(container, { nodes, edges }, options);
+                // Frame the whole graph nicely once physics settles, instead of
+                // leaving it wherever the initial layout happened to land.
+                network.once('stabilizationIterationsDone', function() {
+                    network.fit({ animation: { duration: 400, easingFunction: 'easeOutQuad' } });
+                });
                 network.on('click', function(params) {
                     if (params.nodes.length) {
                         var id = params.nodes[0];
