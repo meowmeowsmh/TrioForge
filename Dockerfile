@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system build tools (needed for psutil, sentence-transformers, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ && \
+    gcc g++ openssl && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
@@ -19,4 +19,4 @@ RUN mkdir -p json_configuration sqlite_data cert_store static/uploads
 
 EXPOSE 5001
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "app:app"]
+CMD ["gunicorn", "-c", "gunicorn_conf.py", "app:app"]
