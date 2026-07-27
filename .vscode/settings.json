@@ -1,0 +1,10 @@
+{
+  "css.lint.propertyIgnoredDueToDisplay": "ignore",
+  "css.lint.vendorPrefix": "ignore",
+  "css.lint.compatibleVendorPrefixes": "ignore",
+  "css.lint.unknownVendorSpecificProperties": "ignore",
+
+  "files.readonlyInclude": {
+    "static/vendor/**": true
+  }
+}
