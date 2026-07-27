@@ -13,4 +13,5 @@ pyyaml>=6.0
 frontmatter>=1.0.0
 pypdf>=3.0.0
 orjson>=3.9.0
-waitress
+waitress==3.0.2
+gunicorn==26.0.0
