@@ -3334,7 +3334,7 @@ document.getElementById('aiProviderSelect').addEventListener('change', function(
     localStorage.setItem('corkboard_ai_provider', provider);
 });
 
-document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
+document.getElementById('aiApiKeyInput').addEventListener('input', function() {
     var provider = document.getElementById('aiProviderSelect').value;
     var key = this.value.trim();
     if (key) {
@@ -3342,6 +3342,11 @@ document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
     } else {
         localStorage.removeItem('corkboard_api_key_' + provider);
     }
+});
+
+document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
+    var provider = document.getElementById('aiProviderSelect').value;
+    var key = this.value.trim();
     loadOllamaModels(provider, key);
 });
 

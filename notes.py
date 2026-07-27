@@ -2589,6 +2589,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         loadModelsForProvider(provider, apiKey);
     });
 
+    aiApiKeyInput.addEventListener('input', function() {
+        var provider = aiProviderSelect.value;
+        localStorage.setItem('notes_ai_api_key_' + provider, this.value);
+    });
+
     aiApiKeyInput.addEventListener('blur', function() {
         var provider = aiProviderSelect.value;
         localStorage.setItem('notes_ai_api_key_' + provider, this.value);
