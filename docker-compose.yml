@@ -17,6 +17,8 @@ services:
       # Point to Ollama – if you run Ollama on the host, use "host.docker.internal" (mac/win)
       # or the IP of your host (Linux: use --add-host or set to your host IP)
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Suppress Python warnings (like the pynvml deprecation notice)
+      - PYTHONWARNINGS=ignore
       # Alternatively, if you run Ollama in a separate container:
       # - OLLAMA_BASE_URL=http://ollama:11434
     restart: unless-stopped
