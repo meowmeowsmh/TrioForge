@@ -2582,7 +2582,8 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 
     aiProviderSelect.addEventListener('change', function() {
         var provider = this.value;
-        var apiKey = aiApiKeyInput.value;
+        var apiKey = localStorage.getItem('notes_ai_api_key_' + provider) || '';
+        aiApiKeyInput.value = apiKey;
         localStorage.setItem('notes_ai_provider', provider);
         toggleApiKeyVisibility(provider);
         loadModelsForProvider(provider, apiKey);
