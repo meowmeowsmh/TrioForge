@@ -49,6 +49,7 @@ from llm_providers import (
     model_supports_vision,
     VISION_MODELS,
     describe_or_extract_file,
+    sanitize_api_key,
 )
 from notes import notes_bp
 from cork_board import corkboard_bp
@@ -5351,7 +5352,7 @@ def check_vision():
 def get_provider_models():
     data = request.get_json()
     provider_name = data.get('provider', 'ollama')
-    api_key = data.get('api_key', None)
+    api_key = sanitize_api_key(data.get('api_key', None))
     models = _cached_models(provider_name, api_key or 'None')
     return jsonify({'models': models})
 
@@ -5676,7 +5677,7 @@ def chat():
         search_enabled = data.get('search', False)
         provider_name = data.get('provider', 'ollama')
         model = data.get('model', None)
-        api_key = data.get('api_key', None)
+        api_key = sanitize_api_key(data.get('api_key', None))
 
         if not user_message and not images and not files:
             return jsonify({'error': 'Nothing to send'}), 400
@@ -5802,7 +5803,7 @@ def chat_stream():
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
         model = data.get('model', current_model)
-        api_key = data.get('api_key', None)
+        api_key = sanitize_api_key(data.get('api_key', None))
 
         provider_name = data.get('provider', 'ollama')
         if provider_name != 'ollama':

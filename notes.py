@@ -47,6 +47,7 @@ from llm_providers import (
     HuggingFaceProvider,
     GroqProvider,
     LlamaCppProvider,
+    sanitize_api_key,
 )
 
 # ---------- Obsidian sync imports ----------
@@ -720,7 +721,7 @@ def ai_assist():
     action = data.get('action')
     provider_name = data.get('provider', 'ollama')
     model = data.get('model', 'llama3.2')
-    api_key = data.get('api_key', None)
+    api_key = sanitize_api_key(data.get('api_key', None))
 
     if not note_id or not action:
         return jsonify({"error": "Missing note_id or action"}), 400
@@ -856,7 +857,7 @@ migrate_from_json_if_needed()
 load_notes()   # preload cache
 
 # ===========================================================================
-# HTML TEMPLATE – unchanged (same as before, but we keep it here for completeness)
+# HTML TEMPLATE – with the password‑manager fix applied
 # ===========================================================================
 NOTES_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -1465,6 +1466,7 @@ body.light-mode .weather-toggle-btn:hover {
 .notes-panel .note-editor .editor-header .toolbar input[type="password"]:focus {
     border-color: #58a6ff;
 }
+/* --- FIX: API key input is now type="text" with CSS masking --- */
 .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
     max-width: 120px;
     display: none;
@@ -2057,6 +2059,12 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     .weather-widget .toast-text .weather-row .temp { font-size:12px; }
     .weather-controls select { max-width:120px; font-size:12px; padding:3px 24px 3px 10px; }
 }
+
+/* --- ADDED: CSS masking for API key input (fixes password‑manager popup) --- */
+#aiApiKeyInput {
+    -webkit-text-security: disc;
+    text-security: disc;
+}
 </style>
 </head>
 <body>
@@ -2208,7 +2216,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                             <option value="deepseek">DeepSeek</option>
                             <option value="claude">Claude</option>
                         </select>
-                        <input type="password" id="aiApiKeyInput" placeholder="API Key" style="max-width:120px; display:none;">
+                        <!-- FIXED: type="text" with CSS masking + anti‑autofill attributes -->
+                        <input type="text" id="aiApiKeyInput" placeholder="API Key (if required)"
+                               style="display:none; max-width:120px;"
+                               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                               data-lpignore="true">
                         <select id="aiModelSelect" title="Select model for AI assistance" style="max-width:160px;">
                             <option value="">Loading models...</option>
                         </select>

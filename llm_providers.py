@@ -8,6 +8,7 @@ import glob
 import re
 import hashlib
 import base64
+import unicodedata
 import requests
 import json
 from typing import List, Dict, Any, Optional
@@ -85,6 +86,20 @@ def _clean_api_key(key: Optional[str], provider_label: str) -> Optional[str]:
             f"editor first, remove the stray character, then re-enter it here."
         )
     return key
+
+
+def sanitize_api_key(key: Optional[str]) -> Optional[str]:
+    """Public counterpart to _clean_api_key for routes (app.py, notes.py,
+    cork_board.py) that accept an api_key straight from request JSON.
+    Auto-strips stray non-ASCII characters (en-dash, curly quotes, etc.)
+    instead of raising, so a bad paste is silently fixed for that request
+    rather than surfacing _clean_api_key's error. Call this on any api_key
+    read from request data before it reaches a provider."""
+    if not key:
+        return key
+    key = unicodedata.normalize("NFKD", key)
+    key = key.encode("ascii", "ignore").decode("ascii")
+    return key.strip()
 
 
 def model_supports_vision(provider_name: str, model_name: str) -> bool:
