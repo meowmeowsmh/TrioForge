@@ -4,6 +4,11 @@ services:
     container_name: trio-forge
     ports:
       - "5001:5001"
+    extra_hosts:
+      # Makes "host.docker.internal" resolve on native Linux Docker Engine
+      # too (Docker Desktop on Mac/Windows/WSL2 already provides this
+      # mapping automatically, so this line is harmless there).
+      - "host.docker.internal:host-gateway"
     volumes:
       # Persist conversations, notes, cork board data (JSON)
       - ./json_configuration:/app/json_configuration
