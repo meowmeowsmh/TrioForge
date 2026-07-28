@@ -48,6 +48,7 @@ from llm_providers import (
     GroqProvider,
     DeepSeekProvider,
     ClaudeProvider,
+    sanitize_api_key,
 )
 
 # ======================================================================
@@ -483,7 +484,7 @@ def ai_assist():
     action = data.get('action')
     provider_name = data.get('provider', 'ollama')
     model = data.get('model', 'llama3.2')
-    api_key = data.get('api_key', None)
+    api_key = sanitize_api_key(data.get('api_key', None))
 
     if not pin_id or not action:
         return jsonify({"error": "Missing pin_id or action"}), 400
@@ -1408,6 +1409,7 @@ body.light-mode .modal input[type="password"] {
     height:32px;
 }
 .modal .ai-section select { max-width:130px; }
+/* --- FIX: API key input is now type="text" with CSS masking --- */
 .modal .ai-section input[type="password"] { max-width:150px; display:none; }
 .modal .ai-section .ai-btn {
     background:#6f42c1;
@@ -1440,6 +1442,12 @@ body.light-mode .modal .ai-section input[type="password"] {
 body.light-mode .modal .ai-section .ai-result {
     background:rgba(0,0,0,0.03);
     color:#24292f;
+}
+
+/* --- ADDED: Mask API key input without triggering password-manager prompts --- */
+#aiApiKeyInput {
+    -webkit-text-security: disc;
+    text-security: disc;
 }
 
 /* ── Suggest Links modal ───────────────────────────── */
@@ -2044,7 +2052,11 @@ body.light-mode .weather-controls select option {
                     <option value="deepseek">DeepSeek</option>
                     <option value="claude">Claude (Anthropic)</option>
                 </select>
-                <input type="password" id="aiApiKeyInput" placeholder="API Key (if required)" style="display:none; max-width:150px;">
+                <!-- FIXED: API key input now type="text" with CSS masking -->
+                <input type="text" id="aiApiKeyInput" placeholder="API Key (if required)"
+                       style="display:none; max-width:150px;"
+                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                       data-lpignore="true">
                 <select id="aiModelSelect" title="Select model">
                     <option value="">Loading models...</option>
                 </select>
