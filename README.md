@@ -55,6 +55,8 @@ ollama pull vaultbox/qwen3.5-uncensored:9b
 python app.py
 #or this 
 python https_guni_n_waitress.py
+#prevent confusion used this local host if you used any of it
+#https://localhost:5001/
 ```
 
 ### 🐧 Linux (Docker)
@@ -66,4 +68,6 @@ docker compose build
 docker compose up -d
 # Check logs to confirm everything is working
 docker compose logs -f
+#this is the localhost you have to used to get into the server in linux or window
+#https://localhost:5001/
 ```
