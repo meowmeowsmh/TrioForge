@@ -7,37 +7,26 @@
 
 import os
 import json as std_json
-import sqlite3
+import logging
 import threading
 import uuid
-import random
 import re
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
 from concurrent.futures import ThreadPoolExecutor
 
-# ---------- Try orjson for faster JSON ----------
-try:
-    import orjson
-    def json_dumps(obj):
-        return orjson.dumps(obj).decode('utf-8')
-    def json_loads(s):
-        return orjson.loads(s)
-    print("🚀 notes: using orjson")
-except ImportError:
-    json_dumps = std_json.dumps
-    json_loads = std_json.loads
-    print("ℹ️ notes: using standard json (install orjson for faster I/O)")
+from common import (
+    json_dumps,
+    json_loads,
+    get_conn as _db_conn,
+    EMBED_AVAILABLE,
+    np,
+    cosine_similarity,
+    get_embedder,
+    embed_text,
+)
 
-# ---------- Embedding (semantic search) ----------
-try:
-    from sentence_transformers import SentenceTransformer
-    import numpy as np
-    from sklearn.metrics.pairwise import cosine_similarity
-    EMBED_AVAILABLE = True
-except ImportError:
-    EMBED_AVAILABLE = False
-    print("⚠️ sentence-transformers or scikit-learn not installed. Run: pip install sentence-transformers scikit-learn")
+logger = logging.getLogger(__name__)
 
 # ---------- LLM providers ----------
 from llm_providers import (
@@ -51,7 +40,6 @@ from llm_providers import (
 )
 
 # ---------- Obsidian sync imports ----------
-import yaml
 import frontmatter
 from pathlib import Path
 
@@ -70,20 +58,11 @@ os.makedirs(os.path.dirname(NOTES_JSON), exist_ok=True)
 SYNC_CONFIG_PATH = "json_configuration/sync_config.json"
 os.makedirs(os.path.dirname(SYNC_CONFIG_PATH), exist_ok=True)
 
-_local = threading.local()
 _write_lock = threading.Lock()
 
 def get_conn():
-    """One connection per thread (SQLite connections aren't thread-safe to share)."""
-    conn = getattr(_local, "conn", None)
-    if conn is None:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")       # readers don't block writers
-        conn.execute("PRAGMA synchronous=NORMAL")     # fast + safe enough with WAL
-        conn.execute("PRAGMA foreign_keys=ON")
-        _local.conn = conn
-    return conn
+    """Return this module's per-thread SQLite connection (from common)."""
+    return _db_conn(DB_PATH)
 
 def init_db():
     conn = get_conn()
@@ -113,7 +92,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_note_links_to ON note_links(to_note_id);
     """)
     conn.commit()
-    print("✅ SQLite notes + links table ready.")
+    logger.info("SQLite notes + links table ready.")
 
 init_db()
 
@@ -313,7 +292,7 @@ def _write_backup_task():
         with open(NOTES_JSON, "w", encoding="utf-8") as f:
             std_json.dump(_notes_cache, f, indent=2)
     except Exception as e:
-        print(f"❌ Failed to write JSON backup: {e}")
+        logger.error("Failed to write JSON backup: %s", e)
 
 # ---------- Migration from JSON (if DB empty) ----------
 def migrate_from_json_if_needed():
@@ -331,9 +310,9 @@ def migrate_from_json_if_needed():
             return
         for note_id, note in data.items():
             upsert_note(note_id, note, created=note.get("created"))
-        print(f"✅ Migrated {len(data)} notes from JSON to SQLite")
+        logger.info("Migrated %s notes from JSON to SQLite", len(data))
     except Exception as e:
-        print(f"❌ Migration failed: {e}")
+        logger.error("Migration failed: %s", e)
 
 # ---------- In‑memory cache ----------
 _notes_cache = None
@@ -355,8 +334,8 @@ def load_notes():
                 # Import JSON into SQLite
                 for nid, n in notes.items():
                     upsert_note(nid, n, created=n.get("created"))
-                print("ℹ️ Loaded notes from JSON backup into SQLite")
-            except:
+                logger.info("Loaded notes from JSON backup into SQLite")
+            except Exception:
                 pass
         _notes_cache = notes
         return _notes_cache
@@ -369,27 +348,10 @@ def save_notes_sync(notes_data=None):
     """Legacy: force a synchronous backup (rarely used)."""
     _write_backup_task()
 
-# ---------- Embedding model (lazy) ----------
-_embed_model = None
-_embed_model_lock = threading.Lock()
-
-def get_embedder():
-    global _embed_model
-    if not EMBED_AVAILABLE:
-        return None
-    with _embed_model_lock:
-        if _embed_model is None:
-            _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-        return _embed_model
-
+# ---------- Embedding (delegated to common) ----------
 def embed_note(note):
-    if not EMBED_AVAILABLE:
-        return None
-    model = get_embedder()
-    text = (note.get('title', '') + ' ' + note.get('content', '')).strip()[:1000]
-    if not text:
-        return None
-    return model.encode(text).tolist()
+    """Generate an embedding for a note (title + content)."""
+    return embed_text((note.get('title', '') + ' ' + note.get('content', '')))
 
 # ======================================================================
 # OBSIDIAN‑STYLE WIKI LINKS & BACKLINKS
@@ -465,7 +427,7 @@ def get_vault_path():
         with open(SYNC_CONFIG_PATH, "r") as f:
             config = std_json.load(f)
         return config.get("vault_path")
-    except:
+    except Exception:
         return None
 
 def set_vault_path(path):
@@ -480,10 +442,10 @@ def import_from_obsidian(vault_path=None):
     if not vault_path or not os.path.isdir(vault_path):
         return {"error": f"Invalid vault path: {vault_path}"}
 
-    print(f"🔍 Scanning vault: {vault_path}")
+    logger.info("Scanning vault: %s", vault_path)
     vault_path = os.path.normpath(vault_path)
     md_files = list(Path(vault_path).glob("*.md"))
-    print(f"📄 Found {len(md_files)} .md files")
+    logger.info("Found %s .md files", len(md_files))
 
     imported = 0
     skipped = 0
@@ -586,7 +548,7 @@ def export_to_obsidian(vault_path=None):
                 f.write(frontmatter.dumps(post))
             exported += 1
         except Exception as e:
-            print(f"⚠️ Failed to export {file_path}: {e}")
+            logger.warning("Failed to export %s: %s", file_path, e)
     return {"exported": exported}
 
 # ======================================================================

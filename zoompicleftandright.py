@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, Response
 
 # ---------- internal state ----------
 _get_conversation = None
+_get_messages = None
 
 
 # ---------- blueprint ----------
@@ -14,13 +15,12 @@ viewer_bp = Blueprint('viewer', __name__, url_prefix='/viewer')
 @viewer_bp.route('/conversations/<cid>/images', methods=['GET'])
 def get_conversation_images(cid):
     """Return all images (base64) from a conversation."""
-    if _get_conversation is None:
+    if _get_conversation is None or _get_messages is None:
         return jsonify({'error': 'Viewer not initialized'}), 500
-    conv = _get_conversation(cid)
-    if conv is None:
+    if _get_conversation(cid) is None:
         return jsonify({'error': 'Conversation not found'}), 404
     images = []
-    for msg in conv.get('messages', []):
+    for msg in _get_messages(cid):
         for img in msg.get('images', []):
             images.append({
                 'b64': img.get('b64', ''),
@@ -437,9 +437,10 @@ VIEWER_MODAL = ""
 VIEWER_SCRIPT_TAG = '<script src="/viewer/static/viewer.js"></script>'
 
 
-def setup_viewer(app, conv_getter):
-    global _get_conversation
+def setup_viewer(app, conv_getter, msg_getter=None):
+    global _get_conversation, _get_messages
     _get_conversation = conv_getter
+    _get_messages = msg_getter
     app.register_blueprint(viewer_bp)
 
 

@@ -11,7 +11,15 @@ import base64
 import unicodedata
 import requests
 import json
+import logging
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class ProviderError(Exception):
+    """Raised for provider-level failures (auth, connectivity, or API errors)."""
+
 
 # ── Vision model registry ──────────────────────────────────────────────────────
 VISION_MODELS = {
@@ -79,7 +87,7 @@ def _clean_api_key(key: Optional[str], provider_label: str) -> Optional[str]:
         key.encode("ascii")
     except UnicodeEncodeError as e:
         bad_char = key[e.start:e.end]
-        raise Exception(
+        raise ProviderError(
             f"Your {provider_label} API key contains a character that isn't plain text "
             f"({bad_char!r}, often an en-dash or curly quote introduced by copy-pasting "
             f"from a document, webpage, or chat app). Paste the key into a plain text "
@@ -268,10 +276,10 @@ class LLMProvider:
 class OllamaProvider(LLMProvider):
     """Ollama provider using /api/chat for all requests (preserves conversation history)."""
     def __init__(self, model: str = "vaultbox/qwen3.5-uncensored:9b",
-                 base_url: str = "http://127.0.0.1:11434"):
+                 base_url: Optional[str] = None):
+        self.base_url = base_url or os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
         self.model = model
-        self.base_url = base_url
-        self.chat_url = f"{base_url}/api/chat"
+        self.chat_url = f"{self.base_url}/api/chat"
 
     def _prepare_messages(self, messages: List[Dict], images: Optional[List[Dict]] = None) -> List[Dict]:
         """Convert provider messages to Ollama /api/chat format, embedding images if present."""
@@ -322,7 +330,7 @@ class OllamaProvider(LLMProvider):
             resp = requests.post(self.chat_url, json=payload, timeout=180)
             resp.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise Exception(f"Ollama request failed: {e}")
+            raise ProviderError(f"Ollama request failed: {e}")
         data = resp.json()
         return data.get("message", {}).get("content", "")
 
@@ -379,7 +387,7 @@ class LlamaCppProvider(LLMProvider):
             if self.available_models:
                 model = self.available_models[0]
             else:
-                raise Exception("No models found in ./models folder and no model specified.")
+                raise ProviderError("No models found in ./models folder and no model specified.")
         if os.path.sep not in model and not model.startswith("/") and not model.startswith("\\"):
             candidate = os.path.join(self.models_dir, model)
             if os.path.exists(candidate):
@@ -420,11 +428,11 @@ class LlamaCppProvider(LLMProvider):
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
         except requests.exceptions.Timeout:
-            raise Exception("llama.cpp server timed out. Try reducing context size or use a smaller model.")
+            raise ProviderError("llama.cpp server timed out. Try reducing context size or use a smaller model.")
         except requests.exceptions.ConnectionError:
-            raise Exception("Cannot connect to llama.cpp server. Is it running?")
+            raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
         except Exception as e:
-            raise Exception(f"llama.cpp error: {e}")
+            raise ProviderError(f"llama.cpp error: {e}")
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
@@ -466,7 +474,7 @@ class LlamaCppProvider(LLMProvider):
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
         except Exception as e:
-            raise Exception(f"llama.cpp vision error: {e}")
+            raise ProviderError(f"llama.cpp vision error: {e}")
 
 
 class HuggingFaceProvider(LLMProvider):
@@ -479,7 +487,7 @@ class HuggingFaceProvider(LLMProvider):
             import huggingface_hub
         except ImportError:
             self._available = False
-            print("⚠️ huggingface_hub not installed. Run: pip install huggingface_hub")
+            logger.warning("huggingface_hub not installed. Run: pip install huggingface_hub")
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         text_models = [
@@ -510,7 +518,7 @@ class HuggingFaceProvider(LLMProvider):
 
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         if not self._available:
-            raise Exception("Hugging Face provider not available – missing huggingface_hub.")
+            raise ProviderError("Hugging Face provider not available – missing huggingface_hub.")
         model = kwargs.get("model") or self.model
         prompt = messages[-1]["content"] if messages else ""
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
@@ -541,17 +549,17 @@ class HuggingFaceProvider(LLMProvider):
             return str(result)
         except requests.exceptions.HTTPError as e:
             if resp.status_code == 401:
-                raise Exception("Invalid Hugging Face token. Please check your token.")
+                raise ProviderError("Invalid Hugging Face token. Please check your token.")
             elif resp.status_code == 503:
-                raise Exception("Hugging Face API is overloaded. Please wait and retry.")
-            raise Exception(f"Hugging Face API error: {e}")
+                raise ProviderError("Hugging Face API is overloaded. Please wait and retry.")
+            raise ProviderError(f"Hugging Face API error: {e}")
         except Exception as e:
-            raise Exception(f"Failed to generate response: {e}")
+            raise ProviderError(f"Failed to generate response: {e}")
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
         if not self._available:
-            raise Exception("Hugging Face provider not available.")
+            raise ProviderError("Hugging Face provider not available.")
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         model = kwargs.get("model") or self.model
@@ -589,12 +597,12 @@ class HuggingFaceProvider(LLMProvider):
             return str(result)
         except requests.exceptions.HTTPError as e:
             if resp.status_code in (401, 403):
-                raise Exception("Invalid or missing Hugging Face token for this model.")
+                raise ProviderError("Invalid or missing Hugging Face token for this model.")
             elif resp.status_code == 503:
-                raise Exception("Hugging Face model is loading. Wait a moment and retry.")
-            raise Exception(f"HuggingFace vision API error: {e}")
+                raise ProviderError("Hugging Face model is loading. Wait a moment and retry.")
+            raise ProviderError(f"HuggingFace vision API error: {e}")
         except Exception as e:
-            raise Exception(f"HuggingFace vision request failed: {e}")
+            raise ProviderError(f"HuggingFace vision request failed: {e}")
 
 
 class GroqProvider(LLMProvider):
@@ -602,23 +610,23 @@ class GroqProvider(LLMProvider):
         self._default_key = api_key or os.environ.get("GROQ_API_KEY")
         self._available = bool(self._default_key)
         if not self._available:
-            print("⚠️ GROQ_API_KEY not set. Provide it via UI or set env var.")
+            logger.warning("GROQ_API_KEY not set. Provide it via UI or set env var.")
 
     def _get_key(self, kwargs) -> str:
         key = _clean_api_key(kwargs.get("api_key") or self._default_key, "Groq")
         if not key:
-            raise Exception("Groq API key is required. Enter it in the API Key field.")
+            raise ProviderError("Groq API key is required. Enter it in the API Key field.")
         return key
 
     def _get_client(self, api_key: Optional[str] = None):
         key = _clean_api_key(api_key or self._default_key, "Groq")
         if not key:
-            raise Exception("Groq API key is required.")
+            raise ProviderError("Groq API key is required.")
         try:
             from groq import Groq
             return Groq(api_key=key)
         except ImportError:
-            raise Exception("groq library not installed. Run: pip install groq")
+            raise ProviderError("groq library not installed. Run: pip install groq")
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         key = api_key or self._default_key
@@ -644,7 +652,7 @@ class GroqProvider(LLMProvider):
             models = [m["id"] for m in resp.json().get("data", [])]
             return models if models else FALLBACK_MODELS
         except Exception as e:
-            print(f"⚠️ Failed to fetch Groq models: {e}")
+            logger.warning("Failed to fetch Groq models: %s", e)
             return FALLBACK_MODELS
 
     def generate(self, messages: List[Dict[str, str]],
@@ -661,7 +669,7 @@ class GroqProvider(LLMProvider):
             )
             return chat.choices[0].message.content
         except Exception as e:
-            raise Exception(f"Groq API error: {e}")
+            raise ProviderError(f"Groq API error: {e}")
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
@@ -691,7 +699,7 @@ class GroqProvider(LLMProvider):
             )
             return chat.choices[0].message.content
         except Exception as e:
-            raise Exception(f"Groq vision API error: {e}")
+            raise ProviderError(f"Groq vision API error: {e}")
 
 
 class DeepSeekProvider(LLMProvider):
@@ -702,12 +710,12 @@ class DeepSeekProvider(LLMProvider):
         self._default_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
         self._available = bool(self._default_key)
         if not self._available:
-            print("⚠️ DEEPSEEK_API_KEY not set. Provide it via UI or set env var.")
+            logger.warning("DEEPSEEK_API_KEY not set. Provide it via UI or set env var.")
 
     def _get_key(self, kwargs) -> str:
         key = _clean_api_key(kwargs.get("api_key") or self._default_key, "DeepSeek")
         if not key:
-            raise Exception("DeepSeek API key is required. Enter it in the API Key field.")
+            raise ProviderError("DeepSeek API key is required. Enter it in the API Key field.")
         return key
 
     def _get_headers(self, api_key: str) -> Dict:
@@ -728,8 +736,21 @@ class DeepSeekProvider(LLMProvider):
             models = [m["id"] for m in data.get("data", [])]
             return models if models else self.FALLBACK_MODELS
         except Exception as e:
-            print(f"⚠️ Failed to fetch DeepSeek models: {e}")
+            logger.warning("Failed to fetch DeepSeek models: %s", e)
             return self.FALLBACK_MODELS
+
+    def get_status(self) -> dict:
+        """Check DeepSeek API reachability without exposing internals."""
+        if not self._default_key:
+            return {"ok": False, "message": "No API key provided"}
+        try:
+            headers = self._get_headers(self._default_key)
+            resp = requests.get("https://api.deepseek.com/v1/models", headers=headers, timeout=5)
+            if resp.status_code == 200:
+                return {"ok": True, "message": "API online"}
+            return {"ok": False, "message": "API returned error"}
+        except Exception:
+            return {"ok": False, "message": "API unreachable or invalid key"}
 
     def get_model_info(self, model_id: str) -> dict:
         """Return description, capabilities, and pricing for a given DeepSeek model."""
@@ -789,7 +810,7 @@ class DeepSeekProvider(LLMProvider):
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
         except requests.exceptions.RequestException as e:
-            raise Exception(f"DeepSeek API error: {e}")
+            raise ProviderError(f"DeepSeek API error: {e}")
 
     # generate_with_image is inherited from LLMProvider – no override needed
 
@@ -799,12 +820,12 @@ class ClaudeProvider(LLMProvider):
         self._default_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self._available = bool(self._default_key)
         if not self._available:
-            print("⚠️ ANTHROPIC_API_KEY not set. Provide it via UI or set env var.")
+            logger.warning("ANTHROPIC_API_KEY not set. Provide it via UI or set env var.")
 
     def _get_key(self, kwargs) -> str:
         key = _clean_api_key(kwargs.get("api_key") or self._default_key, "Claude (Anthropic)")
         if not key:
-            raise Exception("Claude (Anthropic) API key is required. Enter it in the API Key field.")
+            raise ProviderError("Claude (Anthropic) API key is required. Enter it in the API Key field.")
         return key
 
     def _get_headers(self, api_key: str) -> Dict:
@@ -832,7 +853,7 @@ class ClaudeProvider(LLMProvider):
             models = [m["id"] for m in data.get("data", [])]
             return models if models else FALLBACK_MODELS
         except Exception as e:
-            print(f"⚠️ Failed to fetch Claude models: {e}")
+            logger.warning("Failed to fetch Claude models: %s", e)
             return FALLBACK_MODELS
 
     def generate(self, messages: List[Dict[str, str]], model: str = "claude-3-5-sonnet-20241022", **kwargs) -> str:
@@ -864,7 +885,7 @@ class ClaudeProvider(LLMProvider):
             resp.raise_for_status()
             return resp.json()["content"][0]["text"]
         except requests.exceptions.RequestException as e:
-            raise Exception(f"Claude API error: {e}")
+            raise ProviderError(f"Claude API error: {e}")
 
     def generate_with_image(self, messages: List[Dict[str, str]], images: List[Dict], **kwargs) -> str:
         key = self._get_key(kwargs)
@@ -912,4 +933,4 @@ class ClaudeProvider(LLMProvider):
             resp.raise_for_status()
             return resp.json()["content"][0]["text"]
         except requests.exceptions.RequestException as e:
-            raise Exception(f"Claude vision API error: {e}")
+            raise ProviderError(f"Claude vision API error: {e}")

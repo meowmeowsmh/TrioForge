@@ -11,6 +11,14 @@
 #   gunicorn -c gunicorn_conf.py app:app
 
 import os
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 bind = "0.0.0.0:5001"
 workers = 4
@@ -24,8 +32,8 @@ _keyfile = os.path.join(CERT_DIR, "localhost+1-key.pem")
 if os.path.exists(_certfile) and os.path.exists(_keyfile):
     certfile = _certfile
     keyfile = _keyfile
-    print(f"🔒 gunicorn: HTTPS enabled using {_certfile}")
+    logger.info("gunicorn: HTTPS enabled using %s", _certfile)
 else:
-    print(f"⚠️  gunicorn: certs not found at {_certfile} / {_keyfile} — serving plain HTTP.")
-    print("   Run app.py directly once (python app.py) to auto-generate certs via mkcert,")
-    print("   or supply your own cert_store/localhost+1.pem and localhost+1-key.pem.")
+    logger.warning("gunicorn: certs not found at %s / %s - serving plain HTTP.", _certfile, _keyfile)
+    logger.info("Run app.py directly once (python app.py) to auto-generate certs via mkcert,")
+    logger.info("or supply your own cert_store/localhost+1.pem and localhost+1-key.pem.")
