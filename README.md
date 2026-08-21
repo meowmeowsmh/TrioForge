@@ -1,7 +1,6 @@
 # ⚙️ TrioForge
 
-> A private, offline-first AI workspace — chat with multiple LLMs, manage notes, and organize ideas on a corkboard, all from one self-hosted app.
-> **100% free when using [Ollama](https://ollama.com)** — no API keys, no rate limits, no cloud.
+> **Your own private, free AI workspace.** Chat with any local model, organize notes, and plan ideas on a corkboard — all on **your machine**, all **offline-first**, all **free with Ollama**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
@@ -9,39 +8,32 @@
 
 ---
 
-## Table of Contents
+## 💡 Why TrioForge? (instead of ChatGPT)
 
-1. [Features](#-features)
-2. [Screenshots](#-screenshots)
-3. [Prerequisites](#-prerequisites)
-4. [Quick Start](#-quick-start)
-5. [Configuration](#-configuration)
-6. [Running with HTTPS](#-running-with-https)
-7. [Docker](#-docker)
-8. [Where your data lives](#-where-your-data-lives)
-9. [Project structure](#-project-structure)
-10. [License](#-license)
+| | TrioForge | Typical cloud AI |
+|---|---|---|
+| 🔒 **Privacy** | Your chats stay on **your machine**. | Your chats go to their servers. |
+| 💸 **Cost** | **$0** with local Ollama models. | Subscription or per-token fees. |
+| 📴 **Offline** | Chat works with **no internet** (local models). | Requires a connection. |
+| 🧠 **Your models** | Qwen, Llama, Mistral, DeepSeek — you pick. | Fixed to whatever they offer. |
+| 🗂️ **All-in-one** | Chat **+** notes **+** corkboard in one app. | Just chat. |
+| ⚙️ **Open & yours** | Self-host, inspect, and extend it. | Closed black box. |
 
----
-
-## ✨ Features
-
-- 🔓 **100% free** — no API keys or limits when using local Ollama models.
-- 🧠 **Any model** — Qwen, Llama, Mistral, DeepSeek, and more.
-- 🧰 **Multi-provider** — Ollama, Groq, Hugging Face, DeepSeek, Claude, and llama.cpp.
-- 🌐 **Web search** — optional DuckDuckGo integration for up-to-date answers.
-- 📎 **File & image upload** — attach images, PDFs, code files, and text documents.
-- 🎤 **Voice input** — speech-to-text directly in your browser.
-- 🖱️ **Drag & drop** — drop files or folders straight onto the chat window.
-- 📑 **Persistent chats** — conversations auto-save and survive restarts.
-- 🗄️ **SQLite audit log** — every message is logged; recover deleted chats.
-- 📝 **Notes & corkboard** — built-in tools for organizing facts, notes, and ideas.
-- 💾 **Live monitor** — real-time RAM & VRAM usage tracking.
-- 🔒 **HTTPS** — auto-generates SSL certificates on Windows.
+**Bottom line:** if you care about privacy, money, or running your own models, TrioForge is the free, self-hosted alternative.
 
 ---
 
-## 📸 Screenshots
+## 🎯 Who it's for
+
+- **Privacy-conscious users** who don't want their conversations in the cloud.
+- **Self-hosters** who like running their own tools on their own hardware.
+- **Budget users** who want a capable AI assistant without a subscription.
+- **Students & researchers** who want chat plus a personal knowledge base (notes + corkboard).
+- **LLM hobbyists** who want to switch between local models freely.
+
+---
+
+## 📸 See it in action
 
 | Chat | Notes | Corkboard |
 |------|-------|-----------|
@@ -49,13 +41,20 @@
 
 ---
 
-## 📦 Prerequisites
+## ✨ Features
 
-| Tool | Why | Link |
-|------|-----|------|
-| **Python 3.8+** | Runs the app | [Download](https://www.python.org/downloads/) |
-| **Ollama** | Local models | [Download](https://ollama.com) |
-| **Git** | Cloning *(optional)* | [Download](https://git-scm.com/) |
+- 🔓 **100% free** — no API keys, no limits when using local Ollama models.
+- 🧠 **Any local model** — Qwen, Llama, Mistral, DeepSeek, and more.
+- 🧰 **Multi-provider** — Ollama, Groq, Hugging Face, DeepSeek, Claude, and llama.cpp.
+- 🌐 **Optional web search** — DuckDuckGo integration for up-to-date answers.
+- 📎 **File & image upload** — attach images, PDFs, code files, and documents.
+- 🎤 **Voice input** — speech-to-text directly in your browser.
+- 🖱️ **Drag & drop** — drop files or folders onto the chat window.
+- 📑 **Persistent chats** — conversations auto-save and survive restarts.
+- 🗄️ **SQLite audit log** — every message is logged; recover deleted chats.
+- 📝 **Notes & corkboard** — built-in tools for organizing facts and ideas.
+- 💾 **Live monitor** — real-time RAM & VRAM usage tracking.
+- 🔒 **HTTPS** — auto-generates SSL certificates on Windows.
 
 ---
 
@@ -69,8 +68,9 @@ cd TrioForge
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Pull a local model (or use any model you prefer)
+# 3. Pull a local model (or any model you prefer)
 ollama pull vaultbox/qwen3.5-uncensored:9b
+# ...e.g. `ollama pull llama3.2` or `ollama pull qwen2.5` also work
 
 # 4. Run the app
 python app.py
@@ -80,13 +80,11 @@ Then open **https://localhost:5001/** in your browser.
 
 > **Tip:** if the app starts in plain HTTP (no certificates), use **http://localhost:5001/** instead.
 
-For a production-style server, see [Running with HTTPS](#-running-with-https) below.
-
 ---
 
 ## ⚙️ Configuration
 
-Configuration is done through environment variables. All are optional — the app works out of the box with Ollama.
+Configuration is done through environment variables — all optional, the app works out of the box with Ollama.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -123,14 +121,9 @@ gunicorn -c gunicorn_conf.py app:app
 ## 🐳 Docker
 
 ```bash
-# Build the image
-docker compose build
-
-# Start the container in detached mode
-docker compose up -d
-
-# Follow the logs to confirm it's running
-docker compose logs -f
+docker compose build     # build the image
+docker compose up -d     # start in detached mode
+docker compose logs -f   # follow the logs
 ```
 
 Then open **https://localhost:5001/**.
@@ -146,7 +139,7 @@ Then open **https://localhost:5001/**.
 | `cert_store/` | Auto-generated SSL certificates |
 | `static/uploads/` | Uploaded images/files |
 
-All of the above are **git-ignored** — every user keeps their own copy.
+All of the above are **git-ignored** — every user keeps their own data private.
 
 ---
 
