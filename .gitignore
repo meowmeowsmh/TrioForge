@@ -1,39 +1,90 @@
-# Python cache
+# ──────────────────────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
 
-# Local user data (EVERYONE keeps their own)
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ──────────────────────────────────────────────────────────────
+# Testing / linting / coverage
+# ──────────────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ──────────────────────────────────────────────────────────────
+# Environment variables / secrets
+# ──────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ──────────────────────────────────────────────────────────────
+# Editors / OS
+# ──────────────────────────────────────────────────────────────
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ──────────────────────────────────────────────────────────────
+# Logs & databases
+# ──────────────────────────────────────────────────────────────
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# ──────────────────────────────────────────────────────────────
+# App: local user data (everyone keeps their own)
+# ──────────────────────────────────────────────────────────────
 json_configuration/attachments
 json_configuration/conversations.json
 json_configuration/model_config.json
 json_configuration/corkboard.json
 json_configuration/notes.json
 json_configuration/sync_config.json
+sqlite_data/
 
-# SSL certificates (each user generates their own, or uses HTTP fallback)
+# ──────────────────────────────────────────────────────────────
+# App: generated SSL certificates + downloaded mkcert
+# ──────────────────────────────────────────────────────────────
 cert_store/
-
-# mkcert executable (downloaded automatically)
 mkcert.exe
 
-# Virtual environment
-venv/
-.env
+# ──────────────────────────────────────────────────────────────
+# App: uploaded user files (user-specific and can be large)
+# ──────────────────────────────────────────────────────────────
+static/uploads/
 
-# modular gguf junk – ignore all .gguf files anywhere, especially in /models
+# ──────────────────────────────────────────────────────────────
+# Models (large local weights)
+# ──────────────────────────────────────────────────────────────
 *.gguf
 /models/*.gguf
 
-# ignore personal file
+# ──────────────────────────────────────────────────────────────
+# Personal / scratch files
+# ──────────────────────────────────────────────────────────────
 personal.txt
-
-# do not want to commit any uploaded files, they are user-specific and can be large
-static/uploads/
-
-# Ignore SQLite database directory and database files
-sqlite_data/
-conversations.db
-notes.db
-
-#weather html 
 weather.html

@@ -9,35 +9,25 @@
 
 import os
 import json as std_json          # used for tags/embedding JSON columns + misc parsing
-import sqlite3
+import logging
 import threading
 import uuid
 import random
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
 
-# ---------- Try orjson for faster JSON (tags/embedding columns) ----------
-try:
-    import orjson
-    def json_dumps(obj):
-        return orjson.dumps(obj).decode('utf-8')
-    def json_loads(s):
-        return orjson.loads(s)
-    print("🚀 corkboard: using orjson")
-except ImportError:
-    json_dumps = std_json.dumps
-    json_loads = std_json.loads
-    print("ℹ️ corkboard: using standard json (install orjson for faster I/O)")
+from common import (
+    json_dumps,
+    json_loads,
+    get_conn as _db_conn,
+    EMBED_AVAILABLE,
+    np,
+    cosine_similarity,
+    get_embedder,
+    embed_text,
+)
 
-# ---------- Embedding (semantic search) ----------
-try:
-    from sentence_transformers import SentenceTransformer
-    import numpy as np
-    from sklearn.metrics.pairwise import cosine_similarity
-    EMBED_AVAILABLE = True
-except ImportError:
-    EMBED_AVAILABLE = False
-    print("⚠️ sentence-transformers or scikit-learn not installed. Run: pip install sentence-transformers scikit-learn")
+logger = logging.getLogger(__name__)
 
 # ---------- LLM for AI assistance ----------
 from llm_providers import (
@@ -58,21 +48,12 @@ DB_DIR = "sqlite_data"
 DB_PATH = os.path.join(DB_DIR, "notes.db")
 os.makedirs(DB_DIR, exist_ok=True)
 
-_local = threading.local()
 _write_lock = threading.Lock()  # SQLite allows 1 writer at a time; serialize writes only
 
 
 def get_conn():
-    """One connection per thread (SQLite connections aren't thread-safe to share)."""
-    conn = getattr(_local, "conn", None)
-    if conn is None:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")       # readers don't block writers
-        conn.execute("PRAGMA synchronous=NORMAL")     # fast + safe enough with WAL
-        conn.execute("PRAGMA foreign_keys=ON")
-        _local.conn = conn
-    return conn
+    """Return this module's per-thread SQLite connection (from common)."""
+    return _db_conn(DB_PATH)
 
 
 def init_db():
@@ -288,30 +269,10 @@ def log_ai_history(pin_id, action, provider, model, result):
         conn.commit()
 
 
-# ---------- Embedding model (lazy loaded, thread‑safe) ----------
-_embed_model = None
-_embed_model_lock = threading.Lock()
-
-
-def get_embedder():
-    global _embed_model
-    if not EMBED_AVAILABLE:
-        return None
-    with _embed_model_lock:
-        if _embed_model is None:
-            _embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-        return _embed_model
-
-
+# ---------- Embedding (delegated to common) ----------
 def embed_pin(pin):
     """Generate embedding for a pin (title + content). Returns list of floats or None."""
-    if not EMBED_AVAILABLE:
-        return None
-    model = get_embedder()
-    text = (pin.get('title', '') + ' ' + pin.get('content', '')).strip()[:1000]
-    if not text:
-        return None
-    return model.encode(text).tolist()
+    return embed_text((pin.get('title', '') + ' ' + pin.get('content', '')))
 
 
 def compute_all_embeddings():
@@ -322,7 +283,7 @@ def compute_all_embeddings():
             emb = embed_pin(pin)
             if emb is not None:
                 set_pin_embedding(pid, emb)
-    print("✅ Precomputed embeddings for all pins.")
+    logger.info("Precomputed embeddings for all pins.")
 
 # (Uncomment to enable background precomputation)
 # threading.Thread(target=compute_all_embeddings, daemon=True).start()
@@ -582,9 +543,9 @@ Improved version:"""
         provider = get_provider(provider_name, api_key)
         response = provider.generate(messages, model=model, api_key=api_key)
         result = response.strip()
-        print(f"AI response for {action}: {result[:200]}...")
+        logger.info("AI response for %s: %s...", action, result[:200])
     except Exception as e:
-        print(f"AI error: {e}")
+        logger.error("AI error: %s", e)
         return jsonify({"error": f"AI service error: {str(e)}"}), 503
 
     if not result:

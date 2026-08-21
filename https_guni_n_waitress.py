@@ -15,8 +15,11 @@ import os
 import socket
 import ssl
 import sys
+import logging
 
 from waitress import serve
+
+logger = logging.getLogger(__name__)
 
 # Reuse app.py's certificate logic so this stays in sync with it.
 from app import app, ensure_certificates
@@ -31,10 +34,10 @@ KEY_FILE = os.path.join(CERT_DIR, "localhost+1-key.pem")
 
 def main():
     if not (os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)):
-        print("🔑 Certificates not found, generating (Windows + mkcert only)...")
+        logger.info("Certificates not found, generating (Windows + mkcert only)...")
         if not ensure_certificates():
-            print("❌ Could not obtain certificates. Falling back to plain HTTP.")
-            print(f"🌐 http://{HOST}:{PORT}")
+            logger.error("Could not obtain certificates. Falling back to plain HTTP.")
+            logger.info("http://%s:%s", HOST, PORT)
             serve(app, host=HOST, port=PORT)
             return
 
@@ -42,7 +45,7 @@ def main():
     try:
         ssl_context.load_cert_chain(CERT_FILE, KEY_FILE)
     except Exception as e:
-        print(f"❌ Failed to load certificates: {e}")
+        logger.error("Failed to load certificates: %s", e)
         sys.exit(1)
 
     # Optional but recommended: modern TLS only.
@@ -55,8 +58,8 @@ def main():
 
     wrapped_sock = ssl_context.wrap_socket(raw_sock, server_side=True)
 
-    print("🔒 Running with HTTPS (SSL enabled) via Waitress")
-    print(f"🌐 Open your browser at: https://localhost:{PORT}")
+    logger.info("Running with HTTPS (SSL enabled) via Waitress")
+    logger.info("Open your browser at: https://localhost:%s", PORT)
 
     serve(app, sockets=[wrapped_sock])
 
