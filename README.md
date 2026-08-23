@@ -72,13 +72,34 @@ pip install -r requirements.txt
 ollama pull vaultbox/qwen3.5-uncensored:9b
 # ...e.g. `ollama pull llama3.2` or `ollama pull qwen2.5` also work
 
-# 4. Run the app
-python app.py
+# 4. Run it — see "▶️ How to run" below (pick the file for your OS)
 ```
 
 Then open **https://localhost:5001/** in your browser.
 
 > **Tip:** if the app starts in plain HTTP (no certificates), use **http://localhost:5001/** instead.
+
+---
+
+## ▶️ How to run — which file do I use?
+
+There are three launch files, but you only ever need **one**. Pick by your operating system:
+
+| Your OS | Use this file | How |
+|---------|---------------|-----|
+| 🪟 **Windows** | `application.bat` | Double-click it |
+| 🐧 **Linux / macOS / WSL** | `run.sh` | Run `./run.sh` in a terminal (first time: `chmod +x run.sh`) |
+| 🛠️ Any OS (advanced) | `launcher.py` | `python launcher.py` |
+
+> **They all do the exact same thing.** `application.bat` and `run.sh` are just thin wrappers that call `launcher.py`, which auto-detects your OS, installs dependencies if needed, and starts the app.
+>
+> So the simple rule:
+> - **Windows users → double-click `application.bat`**
+> - **Everyone else → run `./run.sh`**
+>
+> You can ignore the other two files.
+
+The launcher also shows a small menu (Run on Windows / Run on Linux-macOS-WSL / Auto-detect / Quit) so you can pick how to start it.
 
 ---
 
