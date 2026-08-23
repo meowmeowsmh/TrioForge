@@ -174,15 +174,28 @@ TrioForge/
 ├── cork_board.py             # Corkboard blueprint (pins, links, AI assist)
 ├── common.py                 # Shared JSON / SQLite / embedding helpers
 ├── zoompicleftandright.py    # Image viewer blueprint
+├── launcher.py               # Cross-platform launcher (used by the two below)
+├── application.bat           # Windows launcher (double-click)
+├── run.sh                    # Linux / macOS / WSL launcher
+├── https_guni_n_waitress.py  # Waitress + HTTPS server (Windows)
+├── gunicorn_conf.py          # Gunicorn server config (Linux)
 ├── templates/
 │   └── index.html            # Frontend (HTML/CSS/JS)
 ├── static/                   # Static vendor assets (highlight, mermaid, …)
+├── models/                   # Ollama Modelfile + instruction (GGUF weights git-ignored)
 ├── json_configuration/       # User data (git-ignored)
 ├── sqlite_data/              # SQLite databases (git-ignored)
-├── https_guni_n_waitress.py  # Waitress + HTTPS entry point
-├── gunicorn_conf.py          # Gunicorn configuration (Linux)
-├── Dockerfile / docker-compose.yml
-└── requirements.txt
+├── cert_store/               # Auto-generated SSL certificates (git-ignored)
+├── Dockerfile
+├── docker-compose.yml
+├── docker-entrypoint.sh
+├── requirements.txt
+├── README.md
+├── LICENSE
+├── SECURITY.md
+├── Disclaimer.md
+├── CODE_REVIEW.md
+└── .gitignore / .dockerignore
 ```
 
 ---
