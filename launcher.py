@@ -121,11 +121,12 @@ def install_deps(project: Path) -> None:
 
 
 def run_app(project: Path) -> None:
-    """Start the Flask app using the same Python interpreter as this script."""
+    """Start the Flask app, replacing this launcher process."""
     print("Project folder: {}".format(project))
     print("Starting TrioForge... open https://localhost:5001 in your browser.")
-    result = subprocess.run([sys.executable, "app.py"], cwd=str(project))
-    sys.exit(result.returncode)
+    print()
+    os.chdir(str(project))
+    os.execv(sys.executable, [sys.executable, "app.py"])
 
 
 def prepare_and_run(project: Path, args) -> None:
@@ -238,7 +239,7 @@ def menu_loop(args) -> int:
         print("  4) Quit")
         try:
             choice = input("Enter your choice (1-4): ").strip()
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
             break
         if choice == "1":
             run_native(args)
@@ -269,9 +270,14 @@ def main() -> int:
                         help="(internal) Run natively; used when launched via WSL/bash.")
     args = parser.parse_args()
 
-    if args.menu:
-        return menu_loop(args)
-    return run_native(args)
+    try:
+        if args.menu:
+            return menu_loop(args)
+        return run_native(args)
+    except KeyboardInterrupt:
+        print()
+        print("Cancelled.")
+        return 0
 
 
 if __name__ == "__main__":
