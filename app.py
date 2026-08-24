@@ -1166,6 +1166,31 @@ def export_logs_csv():
     return Response(output.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=conversation_logs.csv'})
 
+# ── Voice agent logs ──
+@app.route('/api/voice/logs', methods=['GET'])
+def voice_logs():
+    """Return the saved local voice-agent conversation logs for the UI."""
+    root = os.path.dirname(os.path.abspath(__file__))
+    log_dir = os.path.join(root, "voiceguide_llama.cpp_guide")
+
+    def read_tail(name, lines=600):
+        path = os.path.join(log_dir, name)
+        if not os.path.exists(path):
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return "".join(f.readlines()[-lines:])
+        except Exception:
+            return ""
+
+    return jsonify({
+        "conversations": read_tail("conversations.log"),
+        "log": read_tail("voice_agent.log"),
+        "exists": any(os.path.exists(os.path.join(log_dir, n))
+                      for n in ("conversations.log", "voice_agent.log")),
+    })
+
+
 # ── Chat endpoints ──
 @app.route('/chat', methods=['POST'])
 @rate_limited(max_per_minute=20)

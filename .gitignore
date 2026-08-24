@@ -88,3 +88,6 @@ static/uploads/
 # ──────────────────────────────────────────────────────────────
 personal.txt
 weather.html
+
+# Voice agent conversation logs (kept locally, not committed)
+voiceguide_llama.cpp_guide/*.log

@@ -1396,6 +1396,7 @@ body.light-mode .weather-country-select option {
           <option value="groq">Groq</option>
           <option value="deepseek">DeepSeek</option>
           <option value="claude">Claude (Anthropic)</option>
+          <option value="voice">🗣 Voice-to-Voice</option>
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
@@ -1403,6 +1404,17 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
+        <div id="voicePanel" style="display:none; margin-top:10px; padding:10px; border:1px solid #333; border-radius:8px; background:#111;">
+          <div style="font-weight:bold; margin-bottom:6px;">🗣 Voice-to-Voice (local, hands-free)</div>
+          <div style="font-size:12px; margin-bottom:6px;">
+            Start the combined local voice agent with <code>voice_agent.bat</code> (or <code>python voice_agent.py</code>),
+            then just <b>speak</b> and it replies out loud using your llama.cpp GGUF model.
+            Conversations are saved to <code>voiceguide_llama.cpp_guide/</code>.
+          </div>
+          <button onclick="refreshVoiceLogs()" style="padding:4px 10px;">🔄 Refresh logs</button>
+          <button onclick="toggleVoiceLogs()" style="padding:4px 10px;">📄 Show / hide logs</button>
+          <pre id="voiceLogs" style="display:none; max-height:220px; overflow:auto; font-size:11px; margin-top:6px; white-space:pre-wrap; padding:6px; background:#0a0a0f;"></pre>
+        </div>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
@@ -2027,9 +2039,39 @@ function loadModels() {
         .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
 }
 
+function refreshVoiceLogs() {
+    fetch('/api/voice/logs')
+        .then(r => r.json())
+        .then(data => {
+            var pre = document.getElementById('voiceLogs');
+            if (!pre) return;
+            var txt = data.conversations || '';
+            if (!txt && !data.exists) txt = 'No voice conversation logs yet.\nStart the voice agent (voice_agent.bat), speak, then refresh.';
+            pre.textContent = txt || (data.log || '(no logs yet)');
+            var s = document.getElementById('status');
+            if (s) s.textContent = '🗣 Voice logs loaded';
+        })
+        .catch(err => console.warn('voice logs error', err));
+}
+function toggleVoiceLogs() {
+    var pre = document.getElementById('voiceLogs');
+    if (!pre) return;
+    var show = pre.style.display !== 'block';
+    pre.style.display = show ? 'block' : 'none';
+    if (show) refreshVoiceLogs();
+}
+
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
     var keyInput = document.getElementById('apiKeyInput');
+    var voicePanel = document.getElementById('voicePanel');
+    if (provider === 'voice') {
+        keyInput.style.display = 'none';
+        if (voicePanel) voicePanel.style.display = 'block';
+        refreshVoiceLogs();
+        return;
+    }
+    if (voicePanel) voicePanel.style.display = 'none';
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
         keyInput.style.display = 'inline-block';
         var placeholder = '';
