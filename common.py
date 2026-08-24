@@ -51,17 +51,9 @@ def get_conn(db_path: str) -> sqlite3.Connection:
 
 
 # ── Embedding model (lazy-loaded, thread-safe) ──
-# sentence-transformers pulls in torch + transformers (a slow ~20s import),
-# so we only *probe* for it here and do the real import lazily inside
-# get_embedder() — this keeps normal app startup fast.
-try:
-    import numpy as np
-    from sklearn.metrics.pairwise import cosine_similarity
-    _HAS_NP_SKLEARN = True
-except ImportError:
-    np = None
-    cosine_similarity = None
-    _HAS_NP_SKLEARN = False
+# numpy, scikit-learn, and sentence-transformers are heavy imports (they pull
+# in pandas, torch, transformers), so we only *probe* for them here and do the
+# real imports lazily inside the functions below — keeping app startup fast.
 
 
 def _module_available(name: str) -> bool:
@@ -69,11 +61,15 @@ def _module_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
-EMBED_AVAILABLE = _HAS_NP_SKLEARN and _module_available("sentence_transformers")
+EMBED_AVAILABLE = (
+    _module_available("sentence_transformers")
+    and _module_available("numpy")
+    and _module_available("sklearn")
+)
 if not EMBED_AVAILABLE:
     logger.warning(
-        "sentence-transformers or scikit-learn not installed. "
-        "Run: pip install sentence-transformers scikit-learn"
+        "sentence-transformers, numpy, or scikit-learn not installed. "
+        "Run: pip install sentence-transformers scikit-learn numpy"
     )
 
 _embed_model = None

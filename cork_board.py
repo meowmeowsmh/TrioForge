@@ -21,8 +21,6 @@ from common import (
     json_loads,
     get_conn as _db_conn,
     EMBED_AVAILABLE,
-    np,
-    cosine_similarity,
     get_embedder,
     embed_text,
 )
@@ -398,6 +396,9 @@ def semantic_search_pins():
     if not candidates:
         return jsonify([])
 
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
+
     emb_matrix = np.array([c[2] for c in candidates])
     similarities = cosine_similarity(q_emb, emb_matrix).flatten()
     sorted_idx = np.argsort(similarities)[::-1]
@@ -470,6 +471,9 @@ def ai_assist():
                 set_pin_embedding(pin_id, pin_emb)
         if pin_emb is None:
             return jsonify({"error": "Could not generate embedding for this pin"}), 500
+        import numpy as np
+        from sklearn.metrics.pairwise import cosine_similarity
+
         pin_emb = np.array(pin_emb).reshape(1, -1)
 
         candidates = []

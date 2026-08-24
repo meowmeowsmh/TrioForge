@@ -20,8 +20,6 @@ from common import (
     json_loads,
     get_conn as _db_conn,
     EMBED_AVAILABLE,
-    np,
-    cosine_similarity,
     get_embedder,
     embed_text,
 )
@@ -658,6 +656,9 @@ def semantic_search_notes():
 
     if not candidates:
         return jsonify([])
+
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
 
     emb_matrix = np.array([c[2] for c in candidates])
     similarities = cosine_similarity(q_emb, emb_matrix).flatten()
