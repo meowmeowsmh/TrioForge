@@ -2102,23 +2102,40 @@ function refreshWorkspaces() {
             activateWorkspace(data.current, data.workspaces);
         });
 }
+var wsDeps = [];
+
+function renderDeps() {
+    var box = document.getElementById('wsDeps');
+    box.innerHTML = '';
+    wsDeps.forEach(function(dep, i) {
+        var chip = document.createElement('div');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:#1c1c26;border:1px solid #333;border-radius:6px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px;';
+        chip.textContent = dep;
+        var x = document.createElement('button');
+        x.textContent = '✕';
+        x.style.cssText = 'background:transparent;border:none;color:#f66;cursor:pointer;font-size:12px;';
+        x.onclick = function() { wsDeps.splice(i, 1); renderDeps(); };
+        chip.appendChild(x);
+        box.appendChild(chip);
+    });
+}
+function addDependency() {
+    var inp = document.getElementById('wsDepInput');
+    var v = inp.value.trim();
+    if (!v || wsDeps.indexOf(v) !== -1) return;
+    wsDeps.push(v);
+    inp.value = '';
+    renderDeps();
+}
 function activateWorkspace(id, list) {
     var w = (list || []).find(function(x) { return x.id === id; });
     if (!w) return;
-    document.getElementById('wsProvider').value = w.provider || 'ollama';
     document.getElementById('wsThinking').value = w.thinking || 'high';
     document.getElementById('wsFolder').value = w.folder || '';
     document.getElementById('wsFolderMode').value = w.folder_mode || 'read';
-    document.getElementById('wsKeyDeepseek').value = '';
-    document.getElementById('wsKeyGroq').value = '';
-    document.getElementById('wsKeyAnthropic').value = '';
-    document.getElementById('wsKeyHF').value = '';
-    var st = '';
-    if (w.keys_set && w.keys_set.deepseek) st += '· deepseek set   ';
-    if (w.keys_set && w.keys_set.groq) st += '· groq set   ';
-    if (w.keys_set && w.keys_set.anthropic) st += '· anthropic set   ';
-    if (w.keys_set && w.keys_set.huggingface) st += '· huggingface set   ';
-    document.getElementById('wsStatus').textContent = st || 'No API keys set yet.';
+    wsDeps = (w.dependencies || []).slice();
+    renderDeps();
+    document.getElementById('wsStatus').textContent = '';
 }
 function switchWorkspace() {
     var id = document.getElementById('wsSelect').value;
@@ -2139,17 +2156,11 @@ function createWorkspace() {
 }
 function saveWorkspace() {
     var id = document.getElementById('wsSelect').value;
-    var keys = {};
-    ['Deepseek','Groq','Anthropic','HF'].forEach(function(k) {
-        var v = document.getElementById('wsKey' + k).value.trim();
-        if (v) keys[k.toLowerCase() === 'hf' ? 'huggingface' : k.toLowerCase()] = v;
-    });
     var body = {
-        keys: keys,
-        provider: document.getElementById('wsProvider').value.trim() || 'ollama',
         thinking: document.getElementById('wsThinking').value || 'high',
         folder: document.getElementById('wsFolder').value.trim(),
-        folder_mode: document.getElementById('wsFolderMode').value || 'read'
+        folder_mode: document.getElementById('wsFolderMode').value || 'read',
+        dependencies: wsDeps
     };
     fetch('/api/workspaces/' + id, {
         method: 'PUT',
@@ -2159,7 +2170,7 @@ function saveWorkspace() {
     .then(r => r.json())
     .then(d => {
         document.getElementById('wsStatus').textContent = '✅ Saved.';
-        refreshWorkspaces();
+        toggleWorkspaceSettings();  // close the modal
     })
     .catch(function() {
         document.getElementById('wsStatus').textContent = '⚠️ Save failed.';
@@ -4710,7 +4721,7 @@ console.log('🌍 Weather widget integrated with TrioForge');
 <div id="workspaceModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:9999; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(480px, 92vw); max-height:85vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <strong style="font-size:16px;">⚙️ Workspaces & API Keys</strong>
+      <strong style="font-size:16px;">⚙️ Workspaces</strong>
       <button onclick="toggleWorkspaceSettings()" style="background:transparent;border:none;color:#aaa;font-size:20px;">✕</button>
     </div>
 
@@ -4723,30 +4734,28 @@ console.log('🌍 Weather widget integrated with TrioForge');
       <button onclick="createWorkspace()" style="padding:6px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px;">+ Create</button>
     </div>
 
-    <label style="display:block; font-size:12px; margin-bottom:4px;">API keys for this workspace</label>
-    <div style="margin-bottom:8px;"><input id="wsKeyDeepseek" placeholder="DeepSeek API Key" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
-    <div style="margin-bottom:8px;"><input id="wsKeyGroq" placeholder="Groq API Key" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
-    <div style="margin-bottom:8px;"><input id="wsKeyAnthropic" placeholder="Anthropic API Key" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
-    <div style="margin-bottom:14px;"><input id="wsKeyHF" placeholder="Hugging Face Token" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
-
-    <label style="display:block; font-size:12px; margin-bottom:4px;">Default provider</label>
-    <input id="wsProvider" placeholder="ollama / groq / deepseek / claude / huggingface" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:12px;">
-
-    <label style="display:block; font-size:12px; margin-bottom:4px;">Thinking level (saves API tokens)</label>
-    <select id="wsThinking" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:12px;">
-      <option value="low">Low — minimal thinking (cheapest)</option>
-      <option value="mid">Mid — balanced</option>
-      <option value="high">High — full reasoning</option>
-    </select>
-
     <label style="display:block; font-size:12px; margin-bottom:4px;">Workspace folder (full path)</label>
     <input id="wsFolder" placeholder="C:\path\to\folder (leave blank to disable)" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:8px;">
 
     <label style="display:block; font-size:12px; margin-bottom:4px;">Folder access mode</label>
-    <select id="wsFolderMode" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:14px;">
+    <select id="wsFolderMode" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:12px;">
       <option value="read">Read-only</option>
       <option value="readwrite">Full access (read + write)</option>
     </select>
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Thinking level</label>
+    <select id="wsThinking" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:12px;">
+      <option value="low">Low — minimal thinking</option>
+      <option value="mid">Mid — balanced</option>
+      <option value="high">High — full reasoning</option>
+    </select>
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Dependencies (pip packages)</label>
+    <div style="display:flex; gap:6px; margin-bottom:6px;">
+      <input id="wsDepInput" placeholder="package name (e.g. pandas)" style="flex:1; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+      <button onclick="addDependency()" style="padding:6px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px;">+ Add</button>
+    </div>
+    <div id="wsDeps" style="margin-bottom:14px;"></div>
 
     <button onclick="saveWorkspace()" style="width:100%; padding:10px; background:#1f6feb; color:#fff; border:none; border-radius:8px; font-weight:bold;">💾 Save workspace</button>
     <div id="wsStatus" style="font-size:12px; margin-top:8px; color:#8b949e;"></div>

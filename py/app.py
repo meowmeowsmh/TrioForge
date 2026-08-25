@@ -838,8 +838,6 @@ def get_provider_models():
     data = request.get_json()
     provider_name = data.get('provider', 'ollama')
     api_key = sanitize_api_key(data.get('api_key', None))
-    if not api_key:
-        api_key = _workspace_key(_current_workspace_id(), provider_name)
     models = _cached_models(provider_name, api_key or 'None')
     return jsonify({'models': models})
 
@@ -1056,7 +1054,7 @@ def conversation_tree(cid):
         prev_id = str(row[0])
     return jsonify({"nodes": nodes})
 
-# ── Workspaces (server-side API keys) ──
+# ── Workspaces (folder + thinking + dependencies) ──
 def _ensure_workspace_default():
     os.makedirs(WORKSPACES_DIR, exist_ok=True)
     default = os.path.join(WORKSPACES_DIR, "default")
@@ -1064,9 +1062,9 @@ def _ensure_workspace_default():
     cfg_path = os.path.join(default, "config.json")
     if not os.path.exists(cfg_path):
         with open(cfg_path, "w", encoding="utf-8") as f:
-            std_json.dump({"id": "default", "name": "Default", "provider": "ollama",
-                           "model": "", "keys": {}, "thinking": "high",
-                           "folder": "", "folder_mode": "read"}, f, indent=2)
+            std_json.dump({"id": "default", "name": "Default",
+                           "folder": "", "folder_mode": "read",
+                           "thinking": "high", "dependencies": []}, f, indent=2)
     if not os.path.exists(CURRENT_WORKSPACE_FILE):
         with open(CURRENT_WORKSPACE_FILE, "w", encoding="utf-8") as f:
             f.write("default")
@@ -1085,12 +1083,10 @@ def _list_workspaces():
                 workspaces.append({
                     "id": cfg.get("id", name),
                     "name": cfg.get("name", name),
-                    "provider": cfg.get("provider", "ollama"),
-                    "model": cfg.get("model", ""),
-                    "thinking": cfg.get("thinking", "high"),
                     "folder": cfg.get("folder", ""),
                     "folder_mode": cfg.get("folder_mode", "read"),
-                    "keys_set": {k: bool(v) for k, v in (cfg.get("keys") or {}).items()},
+                    "thinking": cfg.get("thinking", "high"),
+                    "dependencies": cfg.get("dependencies", []),
                 })
             except Exception:
                 continue
@@ -1116,13 +1112,6 @@ def _get_workspace(wid):
             return std_json.load(f)
     except Exception:
         return None
-
-
-def _workspace_key(wid, provider):
-    cfg = _get_workspace(wid)
-    if cfg:
-        return (cfg.get("keys") or {}).get(provider)
-    return None
 
 
 def _workspace_setting(wid, key, default=None):
@@ -1437,8 +1426,8 @@ def create_workspace():
         return jsonify({"error": "Workspace '{}' already exists".format(name)}), 400
     os.makedirs(wdir, exist_ok=True)
     with open(os.path.join(wdir, "config.json"), "w", encoding="utf-8") as f:
-        std_json.dump({"id": wid, "name": name, "provider": "ollama", "model": "",
-                       "keys": {}, "thinking": "high", "folder": "", "folder_mode": "read"}, f, indent=2)
+        std_json.dump({"id": wid, "name": name, "folder": "", "folder_mode": "read",
+                       "thinking": "high", "dependencies": []}, f, indent=2)
     return jsonify({"ok": True, "id": wid})
 
 
@@ -1459,26 +1448,18 @@ def update_workspace(wid):
     if not os.path.isdir(wdir):
         return jsonify({"error": "Workspace not found"}), 404
     data = request.get_json(silent=True) or {}
-    cfg = _get_workspace(wid) or {"id": wid, "name": wid, "provider": "ollama", "model": "", "keys": {},
-                                  "thinking": "high", "folder": "", "folder_mode": "read"}
+    cfg = _get_workspace(wid) or {"id": wid, "name": wid, "folder": "", "folder_mode": "read",
+                                  "thinking": "high", "dependencies": []}
     if "name" in data and data["name"]:
         cfg["name"] = data["name"]
-    if "provider" in data:
-        cfg["provider"] = data["provider"]
-    if "model" in data:
-        cfg["model"] = data["model"]
     if "thinking" in data and data["thinking"] in ("low", "mid", "high"):
         cfg["thinking"] = data["thinking"]
     if "folder" in data:
         cfg["folder"] = data["folder"]
     if "folder_mode" in data and data["folder_mode"] in ("read", "readwrite"):
         cfg["folder_mode"] = data["folder_mode"]
-    if "keys" in data:
-        keys = dict(cfg.get("keys") or {})
-        for k, v in data["keys"].items():
-            if v:
-                keys[k] = v
-        cfg["keys"] = keys
+    if "dependencies" in data and isinstance(data["dependencies"], list):
+        cfg["dependencies"] = [str(d) for d in data["dependencies"]]
     with open(os.path.join(wdir, "config.json"), "w", encoding="utf-8") as f:
         std_json.dump(cfg, f, indent=2, ensure_ascii=False)
     return jsonify({"ok": True})
@@ -1565,8 +1546,6 @@ def chat():
         provider_name = data.get('provider', 'ollama')
         model = data.get('model', None)
         api_key = sanitize_api_key(data.get('api_key', None))
-        if not api_key:
-            api_key = _workspace_key(_current_workspace_id(), provider_name)
 
         if not user_message and not images and not files:
             return jsonify({'error': 'Nothing to send'}), 400
@@ -1667,8 +1646,6 @@ def chat_stream():
         api_key = sanitize_api_key(data.get('api_key', None))
 
         provider_name = data.get('provider', 'ollama')
-        if not api_key:
-            api_key = _workspace_key(_current_workspace_id(), provider_name)
         if provider_name != 'ollama':
             return jsonify({'error': 'Streaming only supported for Ollama in this version.'}), 400
 
