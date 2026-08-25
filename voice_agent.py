@@ -19,6 +19,8 @@ Press Ctrl+C to stop both services cleanly.
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -53,6 +55,20 @@ DEFAULT_CONFIG_DATA = {
 def _resolve(value):
     p = Path(str(value))
     return str(p) if p.is_absolute() else str((HERE / p).resolve())
+
+
+def _find_executable(value):
+    """Resolve a path OR a bare command name (found on PATH) to an executable."""
+    value = str(value)
+    p = Path(value)
+    # A real path: absolute, has a directory part, or already exists relative to cwd.
+    if p.is_absolute() or os.path.dirname(value) or os.path.exists(value):
+        return _resolve(value)
+    found = shutil.which(value)
+    if not found:
+        print("ERROR: executable '{}' not found on PATH or as a file.".format(value))
+        sys.exit(1)
+    return found
 
 
 def _now():
@@ -119,7 +135,7 @@ def main():
     # ---- 1. llama.cpp server ----
     _write("[{}] Starting llama.cpp server on {} ...".format(_now(), base_url), [agent_log])
     llama_cmd = [
-        _resolve(config.get("llama_server")),
+        _find_executable(config.get("llama_server")),
         "-m", _resolve(config.get("model")),
         "--host", host,
         "--port", str(port),
@@ -139,7 +155,7 @@ def main():
 
     # ---- 2. speech-to-speech agent ----
     _write("[{}] Starting speech-to-speech agent ...".format(_now()), [agent_log])
-    s2s_cmd = [_resolve(config.get("speech_to_speech"))] + config.get("speech_args", [])
+    s2s_cmd = [_find_executable(config.get("speech_to_speech"))] + config.get("speech_args", [])
     s2s_proc = subprocess.Popen(
         s2s_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
     )
