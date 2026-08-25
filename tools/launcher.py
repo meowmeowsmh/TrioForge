@@ -28,11 +28,11 @@ from typing import Iterator, List, Optional
 # Core files that must exist together for a folder to be a TrioForge project.
 REQUIRED_FILES = (
     "app.py",
-    "cork_board.py",
-    "notes.py",
-    "llm_providers.py",
-    "zoompicleftandright.py",
     "common.py",
+    "providers/llm_providers.py",
+    "features/notes.py",
+    "features/cork_board.py",
+    "features/viewer.py",
 )
 DEPS_MARKER = ".deps_installed"
 

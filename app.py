@@ -49,7 +49,7 @@ except ImportError:
     logger.info("Using standard json (install orjson for better performance)")
 
 # ── Imports ──
-from llm_providers import (
+from providers.llm_providers import (
     LLMProvider,
     OllamaProvider,
     LlamaCppProvider,
@@ -62,9 +62,9 @@ from llm_providers import (
     describe_or_extract_file,
     sanitize_api_key,
 )
-from notes import notes_bp
-from cork_board import corkboard_bp
-from zoompicleftandright import setup_viewer
+from features.notes import notes_bp
+from features.cork_board import corkboard_bp
+from features.viewer import setup_viewer
 
 try:
     import pynvml
