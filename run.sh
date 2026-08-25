@@ -9,4 +9,4 @@ else
     PY=python
 fi
 
-exec "$PY" tools/launcher.py --menu "$@"
+exec "$PY" py/tools/launcher.py --menu "$@"

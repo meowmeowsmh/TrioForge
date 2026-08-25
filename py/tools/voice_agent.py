@@ -28,8 +28,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Project root is one level up from tools/ (where this script lives).
-HERE = Path(__file__).resolve().parent.parent
+# Project root is two levels up from py/tools/ (where this script lives).
+HERE = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG = HERE / "voiceguide_llama.cpp_guide" / "config.json"
 
 DEFAULT_CONFIG_DATA = {

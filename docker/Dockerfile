@@ -19,4 +19,4 @@ RUN mkdir -p json_configuration sqlite_data cert_store static/uploads
 
 EXPOSE 5001
 
-CMD ["gunicorn", "-c", "gunicorn_conf.py", "app:app"]
+CMD ["gunicorn", "-c", "py/gunicorn_conf.py", "py.app:app"]

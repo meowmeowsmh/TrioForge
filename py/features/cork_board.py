@@ -24,6 +24,7 @@ from common import (
     get_embedder,
     embed_text,
 )
+from paths import root_path
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ from providers.llm_providers import (
 # ======================================================================
 # SQLite storage layer
 # ======================================================================
-DB_DIR = "sqlite_data"
+DB_DIR = root_path("sqlite_data")
 DB_PATH = os.path.join(DB_DIR, "notes.db")
 os.makedirs(DB_DIR, exist_ok=True)
 
@@ -745,7 +746,7 @@ def upload_file():
 
     # Handle images
     if ext in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
-        upload_dir = os.path.join('static', 'uploads', 'corkboard')
+        upload_dir = root_path("static", "uploads", "corkboard")
         os.makedirs(upload_dir, exist_ok=True)
         unique = str(uuid.uuid4()) + '.' + ext
         path = os.path.join(upload_dir, unique)

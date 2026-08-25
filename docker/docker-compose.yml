@@ -1,6 +1,8 @@
 services:
   app:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: trio-forge
     ports:
       - "5001:5001"
@@ -11,13 +13,13 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       # Persist conversations, notes, cork board data (JSON)
-      - ./json_configuration:/app/json_configuration
+      - ../json_configuration:/app/json_configuration
       # Use a Docker volume for SQLite to avoid Windows filesystem I/O errors
       - sqlite_volume:/app/sqlite_data
       # Persist uploaded images / attachments
-      - ./static/uploads:/app/static/uploads
+      - ../static/uploads:/app/static/uploads
       # (optional) keep certs if you ever generate them
-      - ./cert_store:/app/cert_store
+      - ../cert_store:/app/cert_store
     environment:
       # Point to Ollama – if you run Ollama on the host, use "host.docker.internal" (mac/win)
       # or the IP of your host (Linux: use --add-host or set to your host IP)

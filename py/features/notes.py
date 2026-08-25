@@ -23,6 +23,7 @@ from common import (
     get_embedder,
     embed_text,
 )
+from paths import root_path
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +45,16 @@ from pathlib import Path
 # ======================================================================
 # SQLite storage layer
 # ======================================================================
-DB_DIR = "sqlite_data"
+DB_DIR = root_path("sqlite_data")
 DB_PATH = os.path.join(DB_DIR, "notes.db")
 os.makedirs(DB_DIR, exist_ok=True)
 
 # JSON backup path
-NOTES_JSON = "json_configuration/notes.json"
+NOTES_JSON = root_path("json_configuration", "notes.json")
 os.makedirs(os.path.dirname(NOTES_JSON), exist_ok=True)
 
 # Sync config
-SYNC_CONFIG_PATH = "json_configuration/sync_config.json"
+SYNC_CONFIG_PATH = root_path("json_configuration", "sync_config.json")
 os.makedirs(os.path.dirname(SYNC_CONFIG_PATH), exist_ok=True)
 
 _write_lock = threading.Lock()
@@ -755,7 +756,7 @@ def upload_image():
     ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
     if ext not in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
         return jsonify({"error": "Unsupported image format"}), 400
-    upload_dir = os.path.join('static', 'uploads', 'notes')
+    upload_dir = root_path("static", "uploads", "notes")
     os.makedirs(upload_dir, exist_ok=True)
     unique = str(uuid.uuid4()) + '.' + ext
     path = os.path.join(upload_dir, unique)
