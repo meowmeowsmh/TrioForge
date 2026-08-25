@@ -1409,11 +1409,8 @@ body.light-mode .weather-country-select option {
           <div style="font-size:12px; margin-bottom:6px;">
             Start the combined local voice agent with <code>voice_agent.bat</code> (or <code>python voice_agent.py</code>),
             then just <b>speak</b> and it replies out loud using your llama.cpp GGUF model.
-            Conversations are saved to <code>voiceguide_llama.cpp_guide/</code>.
           </div>
-          <button onclick="refreshVoiceLogs()" style="padding:4px 10px;">🔄 Refresh logs</button>
-          <button onclick="toggleVoiceLogs()" style="padding:4px 10px;">📄 Show / hide logs</button>
-          <pre id="voiceLogs" style="display:none; max-height:220px; overflow:auto; font-size:11px; margin-top:6px; white-space:pre-wrap; padding:6px; background:#0a0a0f;"></pre>
+          <button onclick="refreshVoiceLogs()" style="padding:4px 10px;">📄 Load voice conversation</button>
         </div>
 
         <!-- Weather toggle and country dropdown -->
@@ -2043,22 +2040,37 @@ function refreshVoiceLogs() {
     fetch('/api/voice/logs')
         .then(r => r.json())
         .then(data => {
-            var pre = document.getElementById('voiceLogs');
-            if (!pre) return;
-            var txt = data.conversations || '';
-            if (!txt && !data.exists) txt = 'No voice conversation logs yet.\nStart the voice agent (voice_agent.bat), speak, then refresh.';
-            pre.textContent = txt || (data.log || '(no logs yet)');
+            var conv = data.conversation || [];
+            chatArea.innerHTML = '';
+            var header = document.createElement('div');
+            header.className = 'msg bot';
+            header.innerHTML = '🗣 Voice-to-Voice conversation';
+            chatArea.appendChild(header);
+            if (conv.length === 0) {
+                var empty = document.createElement('div');
+                empty.className = 'msg bot';
+                empty.textContent = 'No voice conversation yet. Start the voice agent (voice_agent.bat), speak, then load it here.';
+                chatArea.appendChild(empty);
+            } else {
+                conv.forEach(function(turn) {
+                    var div = document.createElement('div');
+                    div.className = 'msg ' + (turn.role === 'user' ? 'user' : 'bot');
+                    var body = document.createElement('div');
+                    body.className = 'body';
+                    body.textContent = turn.text;
+                    div.appendChild(body);
+                    chatArea.appendChild(div);
+                });
+            }
+            chatArea.scrollTop = chatArea.scrollHeight;
             var s = document.getElementById('status');
-            if (s) s.textContent = '🗣 Voice logs loaded';
+            if (s) s.textContent = '🗣 Voice conversation loaded (' + conv.length + ' turns)';
         })
-        .catch(err => console.warn('voice logs error', err));
-}
-function toggleVoiceLogs() {
-    var pre = document.getElementById('voiceLogs');
-    if (!pre) return;
-    var show = pre.style.display !== 'block';
-    pre.style.display = show ? 'block' : 'none';
-    if (show) refreshVoiceLogs();
+        .catch(err => {
+            console.warn('voice logs error', err);
+            var s = document.getElementById('status');
+            if (s) s.textContent = '⚠️ Could not load voice logs';
+        });
 }
 
 providerSelect.addEventListener('change', function() {
