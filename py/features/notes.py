@@ -216,6 +216,11 @@ def clear_all_notes_db():
     global _notes_cache
     with _write_lock:
         conn = get_conn()
+        for row in conn.execute("SELECT * FROM notes"):
+            try:
+                backup_store.archive_note(_note_row_to_dict(row))
+            except Exception as e:
+                logger.warning("Backup archive failed for note %s: %s", row["id"], e)
         conn.execute("DELETE FROM notes")
         conn.execute("DELETE FROM note_links")
         conn.commit()

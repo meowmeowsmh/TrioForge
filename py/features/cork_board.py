@@ -227,6 +227,15 @@ def delete_pin_row(pin_id):
 def clear_all_rows():
     with _write_lock:
         conn = get_conn()
+        for row in conn.execute("SELECT * FROM pins"):
+            try:
+                links = [dict(r) for r in conn.execute(
+                    "SELECT from_id AS 'from', to_id AS 'to', color FROM links WHERE from_id = ? OR to_id = ?",
+                    (row["id"], row["id"])
+                )]
+                backup_store.archive_pin(_pin_row_to_dict(row), links)
+            except Exception as e:
+                logger.warning("Backup archive failed for pin %s: %s", row["id"], e)
         conn.execute("DELETE FROM pins")
         conn.execute("DELETE FROM links")
         conn.commit()
