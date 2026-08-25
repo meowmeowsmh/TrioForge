@@ -488,6 +488,10 @@ def delete_conversation(cid: str) -> bool:
         with _cache_lock:
             del _conversations_cache[cid]
             _conversations_dirty = True
+        # Remove the conversation's messages from SQLite too, so no orphans remain.
+        with _sqlite_lock:
+            _sqlite_conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
+            _sqlite_conn.commit()
         save_conversations_async(_conversations_cache)
         return True
     return False
