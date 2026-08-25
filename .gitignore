@@ -64,6 +64,7 @@ json_configuration/model_config.json
 json_configuration/corkboard.json
 json_configuration/notes.json
 json_configuration/sync_config.json
+json_configuration/workspaces/
 sqlite_data/
 
 # ──────────────────────────────────────────────────────────────
