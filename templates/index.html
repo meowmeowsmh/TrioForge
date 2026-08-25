@@ -2106,6 +2106,9 @@ function activateWorkspace(id, list) {
     var w = (list || []).find(function(x) { return x.id === id; });
     if (!w) return;
     document.getElementById('wsProvider').value = w.provider || 'ollama';
+    document.getElementById('wsThinking').value = w.thinking || 'high';
+    document.getElementById('wsFolder').value = w.folder || '';
+    document.getElementById('wsFolderMode').value = w.folder_mode || 'read';
     document.getElementById('wsKeyDeepseek').value = '';
     document.getElementById('wsKeyGroq').value = '';
     document.getElementById('wsKeyAnthropic').value = '';
@@ -2141,7 +2144,13 @@ function saveWorkspace() {
         var v = document.getElementById('wsKey' + k).value.trim();
         if (v) keys[k.toLowerCase() === 'hf' ? 'huggingface' : k.toLowerCase()] = v;
     });
-    var body = { keys: keys, provider: document.getElementById('wsProvider').value.trim() || 'ollama' };
+    var body = {
+        keys: keys,
+        provider: document.getElementById('wsProvider').value.trim() || 'ollama',
+        thinking: document.getElementById('wsThinking').value || 'high',
+        folder: document.getElementById('wsFolder').value.trim(),
+        folder_mode: document.getElementById('wsFolderMode').value || 'read'
+    };
     fetch('/api/workspaces/' + id, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
@@ -4721,7 +4730,23 @@ console.log('🌍 Weather widget integrated with TrioForge');
     <div style="margin-bottom:14px;"><input id="wsKeyHF" placeholder="Hugging Face Token" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
 
     <label style="display:block; font-size:12px; margin-bottom:4px;">Default provider</label>
-    <input id="wsProvider" placeholder="ollama / groq / deepseek / claude / huggingface" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:14px;">
+    <input id="wsProvider" placeholder="ollama / groq / deepseek / claude / huggingface" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:12px;">
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Thinking level (saves API tokens)</label>
+    <select id="wsThinking" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:12px;">
+      <option value="low">Low — minimal thinking (cheapest)</option>
+      <option value="mid">Mid — balanced</option>
+      <option value="high">High — full reasoning</option>
+    </select>
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Workspace folder (full path)</label>
+    <input id="wsFolder" placeholder="C:\path\to\folder (leave blank to disable)" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:8px;">
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Folder access mode</label>
+    <select id="wsFolderMode" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:14px;">
+      <option value="read">Read-only</option>
+      <option value="readwrite">Full access (read + write)</option>
+    </select>
 
     <button onclick="saveWorkspace()" style="width:100%; padding:10px; background:#1f6feb; color:#fff; border:none; border-radius:8px; font-weight:bold;">💾 Save workspace</button>
     <div id="wsStatus" style="font-size:12px; margin-top:8px; color:#8b949e;"></div>

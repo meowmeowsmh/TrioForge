@@ -804,6 +804,9 @@ class DeepSeekProvider(LLMProvider):
             "max_tokens": max_tokens,
             "temperature": temperature
         }
+        thinking = kwargs.get("thinking")
+        if thinking:
+            payload["reasoning_effort"] = {"low": "low", "mid": "medium", "high": "high"}.get(thinking, "high")
         try:
             resp = requests.post("https://api.deepseek.com/v1/chat/completions",
                                  headers=headers, json=payload, timeout=120)

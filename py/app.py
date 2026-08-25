@@ -1065,7 +1065,8 @@ def _ensure_workspace_default():
     if not os.path.exists(cfg_path):
         with open(cfg_path, "w", encoding="utf-8") as f:
             std_json.dump({"id": "default", "name": "Default", "provider": "ollama",
-                           "model": "", "keys": {}}, f, indent=2)
+                           "model": "", "keys": {}, "thinking": "high",
+                           "folder": "", "folder_mode": "read"}, f, indent=2)
     if not os.path.exists(CURRENT_WORKSPACE_FILE):
         with open(CURRENT_WORKSPACE_FILE, "w", encoding="utf-8") as f:
             f.write("default")
@@ -1086,6 +1087,9 @@ def _list_workspaces():
                     "name": cfg.get("name", name),
                     "provider": cfg.get("provider", "ollama"),
                     "model": cfg.get("model", ""),
+                    "thinking": cfg.get("thinking", "high"),
+                    "folder": cfg.get("folder", ""),
+                    "folder_mode": cfg.get("folder_mode", "read"),
                     "keys_set": {k: bool(v) for k, v in (cfg.get("keys") or {}).items()},
                 })
             except Exception:
@@ -1119,6 +1123,13 @@ def _workspace_key(wid, provider):
     if cfg:
         return (cfg.get("keys") or {}).get(provider)
     return None
+
+
+def _workspace_setting(wid, key, default=None):
+    cfg = _get_workspace(wid)
+    if cfg:
+        return cfg.get(key, default)
+    return default
 
 
 # ── Route helpers ──
@@ -1326,12 +1337,14 @@ def create_workspace():
         return jsonify({"error": "Workspace '{}' already exists".format(name)}), 400
     os.makedirs(wdir, exist_ok=True)
     with open(os.path.join(wdir, "config.json"), "w", encoding="utf-8") as f:
-        std_json.dump({"id": wid, "name": name, "provider": "ollama", "model": "", "keys": {}}, f, indent=2)
+        std_json.dump({"id": wid, "name": name, "provider": "ollama", "model": "",
+                       "keys": {}, "thinking": "high", "folder": "", "folder_mode": "read"}, f, indent=2)
     return jsonify({"ok": True, "id": wid})
 
 
 @app.route('/api/workspaces/<wid>/select', methods=['POST'])
 def select_workspace(wid):
+    _ensure_workspace_default()
     if not os.path.isdir(os.path.join(WORKSPACES_DIR, wid)):
         return jsonify({"error": "Workspace not found"}), 404
     with open(CURRENT_WORKSPACE_FILE, "w", encoding="utf-8") as f:
@@ -1341,17 +1354,25 @@ def select_workspace(wid):
 
 @app.route('/api/workspaces/<wid>', methods=['PUT'])
 def update_workspace(wid):
+    _ensure_workspace_default()
     wdir = os.path.join(WORKSPACES_DIR, wid)
     if not os.path.isdir(wdir):
         return jsonify({"error": "Workspace not found"}), 404
     data = request.get_json(silent=True) or {}
-    cfg = _get_workspace(wid) or {"id": wid, "name": wid, "provider": "ollama", "model": "", "keys": {}}
+    cfg = _get_workspace(wid) or {"id": wid, "name": wid, "provider": "ollama", "model": "", "keys": {},
+                                  "thinking": "high", "folder": "", "folder_mode": "read"}
     if "name" in data and data["name"]:
         cfg["name"] = data["name"]
     if "provider" in data:
         cfg["provider"] = data["provider"]
     if "model" in data:
         cfg["model"] = data["model"]
+    if "thinking" in data and data["thinking"] in ("low", "mid", "high"):
+        cfg["thinking"] = data["thinking"]
+    if "folder" in data:
+        cfg["folder"] = data["folder"]
+    if "folder_mode" in data and data["folder_mode"] in ("read", "readwrite"):
+        cfg["folder_mode"] = data["folder_mode"]
     if "keys" in data:
         keys = dict(cfg.get("keys") or {})
         for k, v in data["keys"].items():
@@ -1361,6 +1382,72 @@ def update_workspace(wid):
     with open(os.path.join(wdir, "config.json"), "w", encoding="utf-8") as f:
         std_json.dump(cfg, f, indent=2, ensure_ascii=False)
     return jsonify({"ok": True})
+
+
+# ── Workspace folder access ──
+def _resolve_workspace_file(wid, rel_path):
+    """Resolve a path inside the workspace folder, blocking traversal."""
+    base = _workspace_setting(wid, "folder", "") or ""
+    if not base:
+        return None, "No folder configured for this workspace."
+    base = os.path.abspath(base)
+    if not os.path.isdir(base):
+        return None, "Configured folder does not exist: {}".format(base)
+    target = os.path.abspath(os.path.join(base, rel_path or ""))
+    if target != base and not target.startswith(base + os.sep):
+        return None, "Access denied: path is outside the configured folder."
+    return target, None
+
+
+@app.route('/api/workspace/files', methods=['GET'])
+def workspace_files():
+    wid = _current_workspace_id()
+    base = _workspace_setting(wid, "folder", "") or ""
+    if not base:
+        return jsonify({"error": "No folder configured for this workspace."}), 400
+    base = os.path.abspath(base)
+    if not os.path.isdir(base):
+        return jsonify({"error": "Configured folder does not exist: {}".format(base)}), 400
+    items = []
+    for name in sorted(os.listdir(base)):
+        p = os.path.join(base, name)
+        items.append({"name": name, "is_dir": os.path.isdir(p),
+                      "size": os.path.getsize(p) if os.path.isfile(p) else 0})
+    return jsonify({"folder": base, "mode": _workspace_setting(wid, "folder_mode", "read"), "files": items})
+
+
+@app.route('/api/workspace/read', methods=['POST'])
+def workspace_read_file():
+    data = request.get_json(silent=True) or {}
+    wid = _current_workspace_id()
+    target, err = _resolve_workspace_file(wid, data.get("path", ""))
+    if err:
+        return jsonify({"error": err}), 400
+    if not os.path.isfile(target):
+        return jsonify({"error": "File not found: {}".format(data.get("path"))}), 404
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as f:
+            return jsonify({"ok": True, "content": f.read()[:20000]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/workspace/write', methods=['POST'])
+def workspace_write_file():
+    data = request.get_json(silent=True) or {}
+    wid = _current_workspace_id()
+    mode = _workspace_setting(wid, "folder_mode", "read")
+    if mode != "readwrite":
+        return jsonify({"error": "This workspace folder is read-only."}), 403
+    target, err = _resolve_workspace_file(wid, data.get("path", ""))
+    if err:
+        return jsonify({"error": err}), 400
+    try:
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(data.get("content", ""))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Chat endpoints ──
@@ -1410,6 +1497,9 @@ def chat():
         extra_kwargs = {"model": model}
         if api_key:
             extra_kwargs['api_key'] = api_key
+        thinking = _workspace_setting(_current_workspace_id(), "thinking", "high")
+        if thinking:
+            extra_kwargs['thinking'] = thinking
 
         if provider_name == 'ollama':
             mem_settings = get_ollama_memory_settings()
