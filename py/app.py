@@ -75,7 +75,7 @@ try:
 except Exception:
     NVML_AVAILABLE = False
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=root_path("static"))
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25 MB request body cap (uploads + chat JSON)
 Compress(app)
 app.register_blueprint(notes_bp)
