@@ -99,8 +99,10 @@ def find_project(explicit: Optional[str]) -> Optional[Path]:
     print("Project not found in the current folder; searching common locations...")
     for root in _search_roots():
         for app in _bounded_rglob(root):
-            if is_project(app.parent):
-                return app.parent
+            # app.py lives at <project>/py/app.py (or <project>/app.py for older layouts).
+            for cand in (app.parent.parent, app.parent):
+                if is_project(cand):
+                    return cand
     return None
 
 
@@ -122,11 +124,12 @@ def install_deps(project: Path) -> None:
 
 def run_app(project: Path) -> None:
     """Start the Flask app, replacing this launcher process."""
+    app_path = project / "py" / "app.py"
     print("Project folder: {}".format(project))
     print("Starting TrioForge... open https://localhost:5001 in your browser.")
     print()
     os.chdir(str(project))
-    os.execv(sys.executable, [sys.executable, "py/app.py"])
+    os.execv(sys.executable, [sys.executable, str(app_path)])
 
 
 def prepare_and_run(project: Path, args) -> None:
