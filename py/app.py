@@ -522,6 +522,18 @@ def delete_conversation(cid: str) -> bool:
 
 def clear_conversation_messages(cid: str) -> bool:
     with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute(
+            "SELECT role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at",
+            (cid,),
+        )
+        for r in cur.fetchall():
+            try:
+                backup_store.archive_message(cid, {
+                    "role": r[0], "content": r[1], "attachments": r[2], "created_at": r[3],
+                })
+            except Exception as e:
+                logger.warning("Backup archive failed for message in %s: %s", cid, e)
         _sqlite_conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
         _sqlite_conn.commit()
     return True
