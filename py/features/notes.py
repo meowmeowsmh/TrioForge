@@ -24,6 +24,7 @@ from common import (
     embed_text,
 )
 from paths import root_path
+import backup_store
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,12 @@ def delete_note_from_db(note_id):
     global _notes_cache
     with _write_lock:
         conn = get_conn()
+        row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+        if row is not None:
+            try:
+                backup_store.archive_note(_note_row_to_dict(row))
+            except Exception as e:
+                logger.warning("Backup archive failed for note %s: %s", note_id, e)
         conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         conn.execute("DELETE FROM note_links WHERE from_note_id = ? OR to_note_id = ?", (note_id, note_id))
         conn.commit()
