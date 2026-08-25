@@ -1404,14 +1404,6 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
-        <div id="voicePanel" style="display:none; margin-top:10px; padding:10px; border:1px solid #333; border-radius:8px; background:#111;">
-          <div style="font-weight:bold; margin-bottom:6px;">🗣 Voice-to-Voice (local, hands-free)</div>
-          <div style="font-size:12px; margin-bottom:6px;">
-            Start the combined local voice agent with <code>voice_agent.bat</code> (or <code>python voice_agent.py</code>),
-            then just <b>speak</b> and it replies out loud using your llama.cpp GGUF model.
-          </div>
-          <button onclick="refreshVoiceLogs()" style="padding:4px 10px;">📄 Load voice conversation</button>
-        </div>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
@@ -2036,54 +2028,66 @@ function loadModels() {
         .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
 }
 
-function refreshVoiceLogs() {
+var voicePollTimer = null;
+var voiceTurnsShown = 0;
+
+function refreshVoiceLogs(appendOnly) {
     fetch('/api/voice/logs')
         .then(r => r.json())
         .then(data => {
             var conv = data.conversation || [];
-            chatArea.innerHTML = '';
-            var header = document.createElement('div');
-            header.className = 'msg bot';
-            header.innerHTML = '🗣 Voice-to-Voice conversation';
-            chatArea.appendChild(header);
-            if (conv.length === 0) {
-                var empty = document.createElement('div');
-                empty.className = 'msg bot';
-                empty.textContent = 'No voice conversation yet. Start the voice agent (voice_agent.bat), speak, then load it here.';
-                chatArea.appendChild(empty);
-            } else {
-                conv.forEach(function(turn) {
-                    var div = document.createElement('div');
-                    div.className = 'msg ' + (turn.role === 'user' ? 'user' : 'bot');
-                    var body = document.createElement('div');
-                    body.className = 'body';
-                    body.textContent = turn.text;
-                    div.appendChild(body);
-                    chatArea.appendChild(div);
-                });
+            if (!appendOnly) {
+                chatArea.innerHTML = '';
+                voiceTurnsShown = 0;
+                var header = document.createElement('div');
+                header.className = 'msg bot';
+                header.innerHTML = '🗣 Voice-to-Voice conversation (live)';
+                chatArea.appendChild(header);
+                if (conv.length === 0) {
+                    var empty = document.createElement('div');
+                    empty.className = 'msg bot';
+                    empty.textContent = 'Waiting for voice... start voice_agent.bat and speak.';
+                    chatArea.appendChild(empty);
+                }
             }
+            for (var i = voiceTurnsShown; i < conv.length; i++) {
+                var turn = conv[i];
+                var div = document.createElement('div');
+                div.className = 'msg ' + (turn.role === 'user' ? 'user' : 'bot');
+                var body = document.createElement('div');
+                body.className = 'body';
+                body.textContent = turn.text;
+                div.appendChild(body);
+                chatArea.appendChild(div);
+            }
+            voiceTurnsShown = conv.length;
             chatArea.scrollTop = chatArea.scrollHeight;
-            var s = document.getElementById('status');
-            if (s) s.textContent = '🗣 Voice conversation loaded (' + conv.length + ' turns)';
         })
-        .catch(err => {
-            console.warn('voice logs error', err);
-            var s = document.getElementById('status');
-            if (s) s.textContent = '⚠️ Could not load voice logs';
-        });
+        .catch(function() {});
+}
+
+function startVoicePolling() {
+    stopVoicePolling();
+    refreshVoiceLogs(false);
+    voicePollTimer = setInterval(function() { refreshVoiceLogs(true); }, 2500);
+}
+
+function stopVoicePolling() {
+    if (voicePollTimer) {
+        clearInterval(voicePollTimer);
+        voicePollTimer = null;
+    }
 }
 
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
     var keyInput = document.getElementById('apiKeyInput');
-    var voicePanel = document.getElementById('voicePanel');
     if (provider === 'voice') {
         keyInput.style.display = 'none';
-        if (voicePanel) voicePanel.style.display = 'block';
-        refreshVoiceLogs();
+        startVoicePolling();
         return;
     }
-    if (voicePanel) voicePanel.style.display = 'none';
+    stopVoicePolling();
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
         keyInput.style.display = 'inline-block';
         var placeholder = '';
