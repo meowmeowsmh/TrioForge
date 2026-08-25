@@ -1132,6 +1132,106 @@ def _workspace_setting(wid, key, default=None):
     return default
 
 
+# ── LLM tool definitions (workspace folder access) ──
+WORKSPACE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List the files currently in the workspace folder.",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a text file from the workspace folder.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "relative path inside the workspace folder"}},
+                "required": ["path"], "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write a text file to the workspace folder (only allowed when folder access is full).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "relative path inside the workspace folder"},
+                    "content": {"type": "string", "description": "full text content to write"},
+                },
+                "required": ["path", "content"], "additionalProperties": False,
+            },
+        },
+    },
+]
+
+
+def _execute_tool(name, args):
+    """Run a workspace-folder tool and return a JSON-serializable result."""
+    wid = _current_workspace_id()
+    if name == "list_files":
+        base = _workspace_setting(wid, "folder", "") or ""
+        if not base or not os.path.isdir(base):
+            return {"error": "No workspace folder configured."}
+        return {"files": sorted(os.listdir(base))}
+    if name == "read_file":
+        target, err = _resolve_workspace_file(wid, args.get("path", ""))
+        if err:
+            return {"error": err}
+        if not os.path.isfile(target):
+            return {"error": "File not found: {}".format(args.get("path"))}
+        try:
+            with open(target, "r", encoding="utf-8", errors="replace") as f:
+                return {"content": f.read()[:20000]}
+        except Exception as e:
+            return {"error": str(e)}
+    if name == "write_file":
+        if _workspace_setting(wid, "folder_mode", "read") != "readwrite":
+            return {"error": "Workspace folder is read-only."}
+        target, err = _resolve_workspace_file(wid, args.get("path", ""))
+        if err:
+            return {"error": err}
+        try:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(args.get("content", ""))
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+    return {"error": "Unknown tool: {}".format(name)}
+
+
+def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=6):
+    """Run an OpenAI-style tool-calling loop against an OpenAI-compatible provider."""
+    messages = list(messages)
+    for _ in range(max_steps):
+        resp = provider.generate_raw(messages, tools=WORKSPACE_TOOLS, **extra_kwargs)
+        content = resp.get("content")
+        tool_calls = resp.get("tool_calls") or []
+        if not tool_calls:
+            return content or ""
+        assistant = {"role": "assistant", "content": content}
+        assistant["tool_calls"] = [{
+            "id": tc["id"], "type": "function",
+            "function": {"name": tc["function"]["name"], "arguments": tc["function"]["arguments"]},
+        } for tc in tool_calls]
+        messages.append(assistant)
+        for tc in tool_calls:
+            try:
+                args = std_json.loads(tc["function"]["arguments"] or "{}")
+            except Exception:
+                args = {}
+            result = _execute_tool(tc["function"]["name"], args)
+            messages.append({"role": "tool", "tool_call_id": tc["id"],
+                             "content": std_json.dumps(result, ensure_ascii=False)})
+    return "The model did not finish within the tool-call limit."
+
+
 # ── Route helpers ──
 def _run_web_search(user_message: str, enabled: bool) -> str:
     """Return up to 3 web-search snippets joined into one context string."""
@@ -1506,6 +1606,9 @@ def chat():
             extra_kwargs['num_gpu'] = mem_settings['num_gpu']
             extra_kwargs['low_vram'] = mem_settings['low_vram']
 
+        use_tools = (not images) and provider_name in ("deepseek", "groq") \
+            and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
+
         start_time = time.time()
         if images:
             if cached_vision_check(provider_name, model):
@@ -1519,6 +1622,8 @@ def chat():
                     inject = "[Image description unavailable]\n\n[User question]\n"
                 messages[-1]['content'] = inject + messages[-1]['content']
                 reply = provider.generate(messages, **extra_kwargs)
+        elif use_tools:
+            reply = _run_chat_with_tools(provider, messages, extra_kwargs)
         else:
             reply = provider.generate(messages, **extra_kwargs)
         end_time = time.time()
