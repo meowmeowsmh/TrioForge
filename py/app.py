@@ -386,6 +386,7 @@ def save_conversations_async(convs: Dict[str, dict]) -> None:
         _save_timer.start()
 
 def create_conversation(title: Optional[str] = None) -> str:
+    global _conversations_dirty
     _ensure_cache()
     cid = str(uuid.uuid4())
     orders = [c.get('order', 0) for c in _conversations_cache.values()]
@@ -435,6 +436,7 @@ def get_messages(cid: str) -> List[dict]:
     return msgs
 
 def add_message(cid: str, role: str, text: str, images: Optional[List[dict]] = None, files: Optional[List[dict]] = None) -> bool:
+    global _conversations_dirty
     if images is None:
         images = []
     if files is None:
@@ -480,6 +482,7 @@ def add_message(cid: str, role: str, text: str, images: Optional[List[dict]] = N
     return True
 
 def delete_conversation(cid: str) -> bool:
+    global _conversations_dirty
     _ensure_cache()
     if cid in _conversations_cache:
         with _cache_lock:
@@ -959,6 +962,7 @@ def delete_message(cid, idx):
 
 @app.route('/conversations/<cid>/rename', methods=['PUT'])
 def rename_conversation(cid):
+    global _conversations_dirty
     data = request.get_json()
     new_title = data.get('title', '').strip()
     if not new_title:
@@ -974,6 +978,7 @@ def rename_conversation(cid):
 
 @app.route('/conversations/reorder', methods=['POST'])
 def reorder_conversations():
+    global _conversations_dirty
     data = request.get_json()
     order_map = data.get('order')
     if not order_map or not isinstance(order_map, dict):
