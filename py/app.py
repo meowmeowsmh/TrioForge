@@ -121,6 +121,10 @@ MODEL_CONFIG_FILE = root_path("json_configuration", "model_config.json")
 ATTACHMENTS_DIR = root_path("json_configuration", "attachments")
 SQLITE_DIR = root_path("sqlite_data")
 SQLITE_DB_PATH = os.path.join(SQLITE_DIR, "conversations.db")
+WORKSPACES_DIR = root_path("json_configuration", "workspaces")
+CURRENT_WORKSPACE_FILE = os.path.join(WORKSPACES_DIR, "current.txt")
+if not os.path.exists(WORKSPACES_DIR):
+    os.makedirs(WORKSPACES_DIR, exist_ok=True)
 
 try:
     from duckduckgo_search import DDGS
@@ -834,6 +838,8 @@ def get_provider_models():
     data = request.get_json()
     provider_name = data.get('provider', 'ollama')
     api_key = sanitize_api_key(data.get('api_key', None))
+    if not api_key:
+        api_key = _workspace_key(_current_workspace_id(), provider_name)
     models = _cached_models(provider_name, api_key or 'None')
     return jsonify({'models': models})
 
@@ -1050,6 +1056,71 @@ def conversation_tree(cid):
         prev_id = str(row[0])
     return jsonify({"nodes": nodes})
 
+# ── Workspaces (server-side API keys) ──
+def _ensure_workspace_default():
+    os.makedirs(WORKSPACES_DIR, exist_ok=True)
+    default = os.path.join(WORKSPACES_DIR, "default")
+    os.makedirs(default, exist_ok=True)
+    cfg_path = os.path.join(default, "config.json")
+    if not os.path.exists(cfg_path):
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            std_json.dump({"id": "default", "name": "Default", "provider": "ollama",
+                           "model": "", "keys": {}}, f, indent=2)
+    if not os.path.exists(CURRENT_WORKSPACE_FILE):
+        with open(CURRENT_WORKSPACE_FILE, "w", encoding="utf-8") as f:
+            f.write("default")
+
+
+def _list_workspaces():
+    _ensure_workspace_default()
+    workspaces = []
+    for name in sorted(os.listdir(WORKSPACES_DIR)):
+        wdir = os.path.join(WORKSPACES_DIR, name)
+        cfg_path = os.path.join(wdir, "config.json")
+        if os.path.isdir(wdir) and os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = std_json.load(f)
+                workspaces.append({
+                    "id": cfg.get("id", name),
+                    "name": cfg.get("name", name),
+                    "provider": cfg.get("provider", "ollama"),
+                    "model": cfg.get("model", ""),
+                    "keys_set": {k: bool(v) for k, v in (cfg.get("keys") or {}).items()},
+                })
+            except Exception:
+                continue
+    return workspaces
+
+
+def _current_workspace_id():
+    _ensure_workspace_default()
+    try:
+        with open(CURRENT_WORKSPACE_FILE, "r", encoding="utf-8") as f:
+            wid = f.read().strip()
+        return wid or "default"
+    except Exception:
+        return "default"
+
+
+def _get_workspace(wid):
+    cfg_path = os.path.join(WORKSPACES_DIR, wid, "config.json")
+    if not os.path.exists(cfg_path):
+        return None
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            return std_json.load(f)
+    except Exception:
+        return None
+
+
+def _workspace_key(wid, provider):
+    cfg = _get_workspace(wid)
+    if cfg:
+        return (cfg.get("keys") or {}).get(provider)
+    return None
+
+
 # ── Route helpers ──
 def _run_web_search(user_message: str, enabled: bool) -> str:
     """Return up to 3 web-search snippets joined into one context string."""
@@ -1239,6 +1310,59 @@ def voice_command():
     return jsonify({"ok": False, "message": "Unknown command '{}'. Try /help.".format(raw)}), 400
 
 
+# ── Workspace / API-key routes ──
+@app.route('/api/workspaces', methods=['GET'])
+def list_workspaces():
+    return jsonify({"workspaces": _list_workspaces(), "current": _current_workspace_id()})
+
+
+@app.route('/api/workspaces', methods=['POST'])
+def create_workspace():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or 'New Workspace').strip()
+    wid = re.sub(r'[^a-z0-9_-]+', '-', name.lower()).strip('-') or 'workspace'
+    wdir = os.path.join(WORKSPACES_DIR, wid)
+    if os.path.exists(wdir):
+        return jsonify({"error": "Workspace '{}' already exists".format(name)}), 400
+    os.makedirs(wdir, exist_ok=True)
+    with open(os.path.join(wdir, "config.json"), "w", encoding="utf-8") as f:
+        std_json.dump({"id": wid, "name": name, "provider": "ollama", "model": "", "keys": {}}, f, indent=2)
+    return jsonify({"ok": True, "id": wid})
+
+
+@app.route('/api/workspaces/<wid>/select', methods=['POST'])
+def select_workspace(wid):
+    if not os.path.isdir(os.path.join(WORKSPACES_DIR, wid)):
+        return jsonify({"error": "Workspace not found"}), 404
+    with open(CURRENT_WORKSPACE_FILE, "w", encoding="utf-8") as f:
+        f.write(wid)
+    return jsonify({"ok": True, "current": wid})
+
+
+@app.route('/api/workspaces/<wid>', methods=['PUT'])
+def update_workspace(wid):
+    wdir = os.path.join(WORKSPACES_DIR, wid)
+    if not os.path.isdir(wdir):
+        return jsonify({"error": "Workspace not found"}), 404
+    data = request.get_json(silent=True) or {}
+    cfg = _get_workspace(wid) or {"id": wid, "name": wid, "provider": "ollama", "model": "", "keys": {}}
+    if "name" in data and data["name"]:
+        cfg["name"] = data["name"]
+    if "provider" in data:
+        cfg["provider"] = data["provider"]
+    if "model" in data:
+        cfg["model"] = data["model"]
+    if "keys" in data:
+        keys = dict(cfg.get("keys") or {})
+        for k, v in data["keys"].items():
+            if v:
+                keys[k] = v
+        cfg["keys"] = keys
+    with open(os.path.join(wdir, "config.json"), "w", encoding="utf-8") as f:
+        std_json.dump(cfg, f, indent=2, ensure_ascii=False)
+    return jsonify({"ok": True})
+
+
 # ── Chat endpoints ──
 @app.route('/chat', methods=['POST'])
 @rate_limited(max_per_minute=20)
@@ -1254,6 +1378,8 @@ def chat():
         provider_name = data.get('provider', 'ollama')
         model = data.get('model', None)
         api_key = sanitize_api_key(data.get('api_key', None))
+        if not api_key:
+            api_key = _workspace_key(_current_workspace_id(), provider_name)
 
         if not user_message and not images and not files:
             return jsonify({'error': 'Nothing to send'}), 400
@@ -1346,6 +1472,8 @@ def chat_stream():
         api_key = sanitize_api_key(data.get('api_key', None))
 
         provider_name = data.get('provider', 'ollama')
+        if not api_key:
+            api_key = _workspace_key(_current_workspace_id(), provider_name)
         if provider_name != 'ollama':
             return jsonify({'error': 'Streaming only supported for Ollama in this version.'}), 400
 
