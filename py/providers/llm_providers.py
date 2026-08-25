@@ -247,6 +247,11 @@ class LLMProvider:
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         raise NotImplementedError
 
+    def generate_raw(self, messages, **kwargs):
+        """Return a raw assistant message dict (content + optional tool_calls).
+        Base default: plain generate() with no tool support."""
+        return {"role": "assistant", "content": self.generate(messages, **kwargs), "tool_calls": None}
+
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
         note = f"[{len(images)} image(s) attached – this model does not support native vision]"
@@ -655,21 +660,34 @@ class GroqProvider(LLMProvider):
             logger.warning("Failed to fetch Groq models: %s", e)
             return FALLBACK_MODELS
 
-    def generate(self, messages: List[Dict[str, str]],
-                 model: str = "llama-3.3-70b-versatile", **kwargs) -> str:
+    def generate_raw(self, messages: List[Dict[str, str]],
+                     model: str = "llama-3.3-70b-versatile", **kwargs) -> dict:
         client = self._get_client(kwargs.get("api_key"))
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        params = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        tools = kwargs.get("tools")
+        if tools:
+            params["tools"] = tools
+            params["tool_choice"] = "auto"
         try:
-            chat = client.chat.completions.create(
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-            return chat.choices[0].message.content
+            chat = client.chat.completions.create(**params)
+            msg = chat.choices[0].message
+            tool_calls = None
+            if getattr(msg, "tool_calls", None):
+                tool_calls = [
+                    {"id": tc.id, "type": "function",
+                     "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                    for tc in msg.tool_calls
+                ]
+            return {"role": "assistant", "content": msg.content, "tool_calls": tool_calls}
         except Exception as e:
             raise ProviderError(f"Groq API error: {e}")
+
+    def generate(self, messages: List[Dict[str, str]],
+                 model: str = "llama-3.3-70b-versatile", **kwargs) -> str:
+        msg = self.generate_raw(messages, model=model, **kwargs)
+        return msg.get("content") or ""
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
@@ -792,7 +810,7 @@ class DeepSeekProvider(LLMProvider):
             "pricing": {}
         })
 
-    def generate(self, messages: List[Dict[str, str]], model: str = "deepseek-chat", **kwargs) -> str:
+    def generate_raw(self, messages: List[Dict[str, str]], model: str = "deepseek-chat", **kwargs) -> dict:
         key = self._get_key(kwargs)
         headers = self._get_headers(key)
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
@@ -807,13 +825,21 @@ class DeepSeekProvider(LLMProvider):
         thinking = kwargs.get("thinking")
         if thinking:
             payload["reasoning_effort"] = {"low": "low", "mid": "medium", "high": "high"}.get(thinking, "high")
+        tools = kwargs.get("tools")
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         try:
             resp = requests.post("https://api.deepseek.com/v1/chat/completions",
-                                 headers=headers, json=payload, timeout=120)
+                                 headers=headers, json=payload, timeout=180)
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            return resp.json()["choices"][0]["message"]
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"DeepSeek API error: {e}")
+
+    def generate(self, messages: List[Dict[str, str]], model: str = "deepseek-chat", **kwargs) -> str:
+        msg = self.generate_raw(messages, model=model, **kwargs)
+        return msg.get("content") or ""
 
     # generate_with_image is inherited from LLMProvider – no override needed
 
