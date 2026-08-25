@@ -107,6 +107,32 @@ def _wait_ready(base_url, timeout=180):
     return False
 
 
+def _check_control(control_path, conversations_path):
+    """Read a one-shot command from the control file, if any."""
+    if not control_path.exists():
+        return None
+    try:
+        cmd = control_path.read_text(encoding="utf-8").strip().lower()
+    except Exception:
+        return None
+    if not cmd:
+        return None
+    # one-shot: consume the command
+    try:
+        control_path.write_text("", encoding="utf-8")
+    except Exception:
+        pass
+    if cmd in ("bye", "stop", "quit", "exit"):
+        return "bye"
+    if cmd in ("clear", "reset"):
+        try:
+            conversations_path.write_text("", encoding="utf-8")
+        except Exception:
+            pass
+        return "clear"
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="TrioForge combined voice-to-voice agent.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Path to config.json")
@@ -168,9 +194,16 @@ def main():
         [agent_log],
     )
 
+    control_path = log_dir / "control.txt"
+    conversations_path = log_dir / "conversations.log"
+
     try:
         while True:
             time.sleep(1)
+            action = _check_control(control_path, conversations_path)
+            if action == "bye":
+                _write("[{}] /bye received - shutting down.".format(_now()), [agent_log])
+                break
             if s2s_proc.poll() is not None:
                 _write("[{}] Voice agent exited (code {}).".format(_now(), s2s_proc.returncode), [agent_log])
                 break

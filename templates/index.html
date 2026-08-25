@@ -2589,7 +2589,33 @@ var tokenCount = 0;
 var startTimeToken = null;
 var speedInterval = null;
 
+function sendVoiceCommand(cmd) {
+    renderMsg('user', { role: 'user', text: cmd, ts: new Date().toLocaleTimeString() }, -1);
+    msgInput.value = '';
+    msgInput.style.height = '46px';
+    var botDiv = renderMsg('bot', { role: 'bot', text: '⏳ Processing...', ts: '' }, -1);
+    var bodyEl = botDiv.querySelector('.body');
+    fetch('/api/voice/command', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ command: cmd })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (bodyEl) bodyEl.textContent = data.message || (data.ok ? '✅ Done.' : '⚠️ Error.');
+        smoothScrollToBottom();
+    })
+    .catch(function() {
+        if (bodyEl) bodyEl.textContent = '⚠️ Could not reach the voice command endpoint.';
+        smoothScrollToBottom();
+    });
+}
+
 function actuallySend(text) {
+    if (providerSelect.value === 'voice' && text.trim().startsWith('/')) {
+        sendVoiceCommand(text.trim());
+        return;
+    }
     var images = pending.filter(p => p.type === 'image');
     var files  = pending.filter(p => p.type === 'file');
     var userEntry = {

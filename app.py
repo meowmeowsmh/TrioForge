@@ -1206,6 +1206,39 @@ def voice_logs():
     })
 
 
+@app.route('/api/voice/command', methods=['POST'])
+def voice_command():
+    """Handle slash commands typed in the voice-to-voice chat."""
+    data = request.get_json(silent=True) or {}
+    raw = (data.get('command') or '').strip()
+    cmd = raw.lstrip('/').strip().lower()
+    root = os.path.dirname(os.path.abspath(__file__))
+    log_dir = os.path.join(root, "voiceguide_llama.cpp_guide")
+    os.makedirs(log_dir, exist_ok=True)
+    control = os.path.join(log_dir, "control.txt")
+    conv = os.path.join(log_dir, "conversations.log")
+
+    if cmd in ('bye', 'stop', 'quit', 'exit'):
+        try:
+            with open(control, "w", encoding="utf-8") as f:
+                f.write("bye\n")
+            return jsonify({"ok": True, "message": "🛑 Stop signal sent. The voice agent will shut down within a moment."})
+        except Exception as e:
+            return jsonify({"ok": False, "message": "Could not send stop signal: {}".format(e)}), 500
+
+    if cmd in ('clear', 'reset'):
+        try:
+            open(conv, "w", encoding="utf-8").close()
+            return jsonify({"ok": True, "message": "🧹 Voice conversation cleared."})
+        except Exception as e:
+            return jsonify({"ok": False, "message": "Could not clear: {}".format(e)}), 500
+
+    if cmd in ('help', ''):
+        return jsonify({"ok": True, "message": "Voice commands:\n/bye  — stop the voice agent\n/clear — clear the conversation log\n/help — show this"})
+
+    return jsonify({"ok": False, "message": "Unknown command '{}'. Try /help.".format(raw)}), 400
+
+
 # ── Chat endpoints ──
 @app.route('/chat', methods=['POST'])
 @rate_limited(max_per_minute=20)
