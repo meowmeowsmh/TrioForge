@@ -1167,13 +1167,29 @@ def export_logs_csv():
                     headers={'Content-Disposition': 'attachment; filename=conversation_logs.csv'})
 
 # ── Voice agent logs ──
+def _parse_voice_turns(text):
+    """Extract only the real USER/ASSISTANT turns from the raw agent log."""
+    turns = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("[VOICE]"):
+            line = line[len("[VOICE]"):].strip()
+        elif line.startswith("[LLM]"):
+            continue
+        if line.startswith("USER: "):
+            turns.append({"role": "user", "text": line[len("USER: "):].strip()})
+        elif line.startswith("ASSISTANT: "):
+            turns.append({"role": "assistant", "text": line[len("ASSISTANT: "):].strip()})
+    return turns
+
+
 @app.route('/api/voice/logs', methods=['GET'])
 def voice_logs():
-    """Return the saved local voice-agent conversation logs for the UI."""
+    """Return the parsed voice conversation (clean turns) for the UI."""
     root = os.path.dirname(os.path.abspath(__file__))
     log_dir = os.path.join(root, "voiceguide_llama.cpp_guide")
 
-    def read_tail(name, lines=600):
+    def read_text(name, lines=10000):
         path = os.path.join(log_dir, name)
         if not os.path.exists(path):
             return ""
@@ -1183,11 +1199,10 @@ def voice_logs():
         except Exception:
             return ""
 
+    conv_text = read_text("conversations.log")
     return jsonify({
-        "conversations": read_tail("conversations.log"),
-        "log": read_tail("voice_agent.log"),
-        "exists": any(os.path.exists(os.path.join(log_dir, n))
-                      for n in ("conversations.log", "voice_agent.log")),
+        "conversation": _parse_voice_turns(conv_text),
+        "exists": os.path.exists(os.path.join(log_dir, "conversations.log")),
     })
 
 
