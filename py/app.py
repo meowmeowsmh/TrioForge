@@ -48,6 +48,8 @@ except ImportError:
     json_loads = std_json.loads
     logger.info("Using standard json (install orjson for better performance)")
 
+from paths import PROJECT_ROOT, root_path
+
 # ── Imports ──
 from providers.llm_providers import (
     LLMProvider,
@@ -114,10 +116,10 @@ def _add_security_headers(response):
 
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
-CONVERSATIONS_FILE = "json_configuration/conversations.json"
-MODEL_CONFIG_FILE = "json_configuration/model_config.json"
-ATTACHMENTS_DIR = "json_configuration/attachments"
-SQLITE_DIR = "sqlite_data"
+CONVERSATIONS_FILE = root_path("json_configuration", "conversations.json")
+MODEL_CONFIG_FILE = root_path("json_configuration", "model_config.json")
+ATTACHMENTS_DIR = root_path("json_configuration", "attachments")
+SQLITE_DIR = root_path("sqlite_data")
 SQLITE_DB_PATH = os.path.join(SQLITE_DIR, "conversations.db")
 
 try:
@@ -218,7 +220,7 @@ if not os.path.exists(MODEL_CONFIG_FILE):
 
 # ── SSL ──
 def ensure_certificates():
-    cert_dir = 'cert_store'
+    cert_dir = root_path('cert_store')
     cert_file = os.path.join(cert_dir, 'localhost+1.pem')
     key_file = os.path.join(cert_dir, 'localhost+1-key.pem')
     if os.path.exists(cert_file) and os.path.exists(key_file):
@@ -714,7 +716,7 @@ def get_cached_html():
     return _cached_html
 
 # ── Build HTML (served from templates/index.html) ──
-CHAT_HTML_PATH = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+CHAT_HTML_PATH = root_path("templates", "index.html")
 
 def build_html(model_name=None):
     with open(CHAT_HTML_PATH, "r", encoding="utf-8") as f:
@@ -1186,8 +1188,7 @@ def _parse_voice_turns(text):
 @app.route('/api/voice/logs', methods=['GET'])
 def voice_logs():
     """Return the parsed voice conversation (clean turns) for the UI."""
-    root = os.path.dirname(os.path.abspath(__file__))
-    log_dir = os.path.join(root, "voiceguide_llama.cpp_guide")
+    log_dir = root_path("voiceguide_llama.cpp_guide")
 
     def read_text(name, lines=10000):
         path = os.path.join(log_dir, name)
@@ -1212,8 +1213,7 @@ def voice_command():
     data = request.get_json(silent=True) or {}
     raw = (data.get('command') or '').strip()
     cmd = raw.lstrip('/').strip().lower()
-    root = os.path.dirname(os.path.abspath(__file__))
-    log_dir = os.path.join(root, "voiceguide_llama.cpp_guide")
+    log_dir = root_path("voiceguide_llama.cpp_guide")
     os.makedirs(log_dir, exist_ok=True)
     control = os.path.join(log_dir, "control.txt")
     conv = os.path.join(log_dir, "conversations.log")
@@ -1553,8 +1553,8 @@ if __name__ == '__main__':
     logger.info("Current model : %s", current_model)
     logger.info("Storage       : %s (metadata only), SQLite for messages", CONVERSATIONS_FILE)
 
-    cert_file = 'cert_store/localhost+1.pem'
-    key_file  = 'cert_store/localhost+1-key.pem'
+    cert_file = root_path('cert_store', 'localhost+1.pem')
+    key_file  = root_path('cert_store', 'localhost+1-key.pem')
 
     if os.path.exists(cert_file) and os.path.exists(key_file):
         ssl_context = (cert_file, key_file)

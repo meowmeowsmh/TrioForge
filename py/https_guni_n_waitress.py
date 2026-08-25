@@ -27,7 +27,7 @@ from app import app, ensure_certificates
 HOST = "0.0.0.0"
 PORT = 5001
 
-CERT_DIR = "cert_store"
+CERT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cert_store")
 CERT_FILE = os.path.join(CERT_DIR, "localhost+1.pem")
 KEY_FILE = os.path.join(CERT_DIR, "localhost+1-key.pem")
 

@@ -123,16 +123,16 @@ API keys can also be entered directly in the web UI. Keys are never written to d
 
 ### Windows / macOS — Waitress
 
-`python app.py` auto-generates SSL certificates (via **mkcert**) and serves HTTPS on port 5001. You can also run the dedicated Waitress entry point:
+`python py/app.py` auto-generates SSL certificates (via **mkcert**) and serves HTTPS on port 5001. You can also run the dedicated Waitress entry point:
 
 ```bash
-python https_guni_n_waitress.py
+python py/https_guni_n_waitress.py
 ```
 
 ### Linux / Docker — Gunicorn
 
 ```bash
-gunicorn -c gunicorn_conf.py app:app
+gunicorn -c py/gunicorn_conf.py py.app:app
 ```
 
 > Gunicorn relies on `fork()`, so it runs natively on Linux/WSL2, not Windows.
@@ -142,6 +142,7 @@ gunicorn -c gunicorn_conf.py app:app
 ## 🐳 Docker
 
 ```bash
+cd docker
 docker compose build     # build the image
 docker compose up -d     # start in detached mode
 docker compose logs -f   # follow the logs
@@ -168,31 +169,36 @@ All of the above are **git-ignored** — every user keeps their own data private
 
 ```
 TrioForge/
-├── app.py                    # Main Flask app + chat/conversation routes
-├── common.py                 # Shared JSON / SQLite / embedding helpers
-├── providers/
-│   └── llm_providers.py      # LLM provider abstraction (Ollama, Groq, DeepSeek, …)
-├── features/
-│   ├── notes.py              # Notes blueprint (Obsidian-style knowledge base)
-│   ├── cork_board.py         # Corkboard blueprint (pins, links, AI assist)
-│   └── viewer.py             # Image viewer blueprint
-├── tools/
-│   ├── launcher.py           # Cross-platform launcher (used by the two below)
-│   └── voice_agent.py        # Local voice-to-voice agent launcher
-├── application.bat           # Windows launcher (double-click)
-├── run.sh                    # Linux / macOS / WSL launcher
-├── voice_agent.bat           # Voice agent launcher (double-click)
-├── https_guni_n_waitress.py  # Waitress + HTTPS server (Windows)
-├── gunicorn_conf.py          # Gunicorn server config (Linux)
+├── py/                          # ← all Python code
+│   ├── app.py                   # Main Flask app + chat/conversation routes
+│   ├── common.py                # Shared JSON / SQLite / embedding helpers
+│   ├── paths.py                 # Project-root path helper
+│   ├── providers/
+│   │   └── llm_providers.py     # LLM provider abstraction (Ollama, Groq, DeepSeek, …)
+│   ├── features/
+│   │   ├── notes.py             # Notes blueprint (Obsidian-style knowledge base)
+│   │   ├── cork_board.py        # Corkboard blueprint (pins, links, AI assist)
+│   │   └── viewer.py            # Image viewer blueprint
+│   ├── tools/
+│   │   ├── launcher.py          # Cross-platform launcher
+│   │   └── voice_agent.py       # Local voice-to-voice agent launcher
+│   ├── https_guni_n_waitress.py # Waitress + HTTPS server (Windows)
+│   └── gunicorn_conf.py         # Gunicorn server config (Linux)
+├── docker/                      # ← Docker files
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   └── docker-entrypoint.sh
+├── application.bat              # Windows launcher (double-click)
+├── run.sh                       # Linux / macOS / WSL launcher
+├── voice_agent.bat              # Voice agent launcher (double-click)
 ├── templates/
-│   └── index.html            # Frontend (HTML/CSS/JS)
-├── static/                   # Static vendor assets (highlight, mermaid, …)
-├── models/                   # Ollama Modelfile + instruction (GGUF weights git-ignored)
+│   └── index.html               # Frontend (HTML/CSS/JS)
+├── static/                      # Static vendor assets (highlight, mermaid, …)
+├── models/                      # Ollama Modelfile + instruction (GGUF weights git-ignored)
 ├── voiceguide_llama.cpp_guide/  # Voice agent config + logs (logs git-ignored)
-├── json_configuration/       # User data (git-ignored)
-├── sqlite_data/              # SQLite databases (git-ignored)
-├── cert_store/               # Auto-generated SSL certificates (git-ignored)
-├── Dockerfile / docker-compose.yml / docker-entrypoint.sh
+├── json_configuration/          # User data (git-ignored)
+├── sqlite_data/                 # SQLite databases (git-ignored)
+├── cert_store/                  # Auto-generated SSL certificates (git-ignored)
 ├── requirements.txt / README.md / LICENSE / SECURITY.md / Disclaimer.md / CODE_REVIEW.md
 └── .gitignore / .dockerignore
 ```

@@ -27,12 +27,12 @@ from typing import Iterator, List, Optional
 
 # Core files that must exist together for a folder to be a TrioForge project.
 REQUIRED_FILES = (
-    "app.py",
-    "common.py",
-    "providers/llm_providers.py",
-    "features/notes.py",
-    "features/cork_board.py",
-    "features/viewer.py",
+    "py/app.py",
+    "py/common.py",
+    "py/providers/llm_providers.py",
+    "py/features/notes.py",
+    "py/features/cork_board.py",
+    "py/features/viewer.py",
 )
 DEPS_MARKER = ".deps_installed"
 
@@ -126,7 +126,7 @@ def run_app(project: Path) -> None:
     print("Starting TrioForge... open https://localhost:5001 in your browser.")
     print()
     os.chdir(str(project))
-    os.execv(sys.executable, [sys.executable, "app.py"])
+    os.execv(sys.executable, [sys.executable, "py/app.py"])
 
 
 def prepare_and_run(project: Path, args) -> None:

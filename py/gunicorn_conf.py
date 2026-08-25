@@ -11,7 +11,12 @@
 #   gunicorn -c gunicorn_conf.py app:app
 
 import os
+import sys
 import logging
+
+# Make this "py/" directory importable so `gunicorn py.app:app` works
+# regardless of the current working directory.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +30,7 @@ workers = 4
 threads = 2
 worker_class = "sync"
 
-CERT_DIR = "cert_store"
+CERT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cert_store")
 _certfile = os.path.join(CERT_DIR, "localhost+1.pem")
 _keyfile = os.path.join(CERT_DIR, "localhost+1-key.pem")
 
