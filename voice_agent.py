@@ -36,6 +36,7 @@ DEFAULT_CONFIG_DATA = {
     "model": "models/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
     "llama_host": "127.0.0.1",
     "llama_port": 8080,
+    "llama_args": [],
     "speech_to_speech": "speech-to-speech",
     "speech_args": [
         "--mode", "local", "--no_smart_turn",
@@ -139,7 +140,7 @@ def main():
         "-m", _resolve(config.get("model")),
         "--host", host,
         "--port", str(port),
-    ]
+    ] + [str(a) for a in config.get("llama_args", [])]
     llama_proc = subprocess.Popen(
         llama_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
     )
