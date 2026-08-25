@@ -1293,6 +1293,7 @@ body.light-mode .weather-country-select option {
     <div class="sidebar-header">
       <h2>💬 Chats</h2>
       <button class="new-chat-btn" onclick="newChat()">+ New</button>
+      <button class="new-chat-btn" onclick="openRestoreModal()" style="background:#2d2d3d; box-shadow:none;" title="Restore deleted chats, notes and pins">🗄️</button>
     </div>
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="🔍 Search chats... (title & messages)" oninput="searchChats()">
@@ -4715,6 +4716,81 @@ detectLocation = async function() {
 };
 
 console.log('🌍 Weather widget integrated with TrioForge');
+
+// ── Backup / Restore ──
+function openRestoreModal() {
+    var m = document.getElementById('restoreModal');
+    m.style.display = 'flex';
+    loadRestoreLists();
+}
+
+function closeRestoreModal() {
+    document.getElementById('restoreModal').style.display = 'none';
+}
+
+function loadRestoreLists() {
+    fetch('/api/backup/conversations').then(r => r.json())
+        .then(data => renderRestoreList('restoreConvs', data, 'conversation'))
+        .catch(() => renderRestoreList('restoreConvs', [], 'conversation'));
+    fetch('/api/backup/notes').then(r => r.json())
+        .then(data => renderRestoreList('restoreNotes', data, 'note'))
+        .catch(() => renderRestoreList('restoreNotes', [], 'note'));
+    fetch('/api/backup/pins').then(r => r.json())
+        .then(data => renderRestoreList('restorePins', data, 'pin'))
+        .catch(() => renderRestoreList('restorePins', [], 'pin'));
+}
+
+function restoreItem(type, id) {
+    fetch('/api/backup/' + type + 's/' + id + '/restore', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.ok) {
+                loadRestoreLists();
+                if (type === 'conversation') loadConversations();
+            } else {
+                alert(d.error || 'Restore failed');
+            }
+        })
+        .catch(() => alert('Restore failed'));
+}
+
+function purgeBackupItem(type, id) {
+    if (!confirm('Permanently discard this from backup?')) return;
+    fetch('/api/backup/' + type + 's/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(() => loadRestoreLists())
+        .catch(() => {});
+}
+
+function renderRestoreList(containerId, items, type) {
+    var el = document.getElementById(containerId);
+    el.innerHTML = '';
+    if (!items || !items.length) {
+        el.innerHTML = '<div style="color:#8b949e; font-size:13px; padding:6px 0;">Nothing here.</div>';
+        return;
+    }
+    items.forEach(function(it) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #222;';
+        var label = document.createElement('span');
+        label.style.cssText = 'flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        var extra = (type === 'conversation') ? ' · ' + (it.message_count || 0) + ' msgs' : '';
+        label.textContent = (it.title || it.id || 'untitled') + extra;
+        row.appendChild(label);
+        var restoreBtn = document.createElement('button');
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.style.cssText = 'padding:4px 10px; background:#1f6feb; color:#fff; border:none; border-radius:5px; cursor:pointer;';
+        restoreBtn.onclick = function() { restoreItem(type, it.id); };
+        row.appendChild(restoreBtn);
+        var delBtn = document.createElement('button');
+        delBtn.textContent = '✕';
+        delBtn.title = 'Discard permanently';
+        delBtn.style.cssText = 'padding:4px 8px; background:transparent; color:#f85149; border:1px solid #333; border-radius:5px; cursor:pointer;';
+        delBtn.onclick = function() { purgeBackupItem(type, it.id); };
+        row.appendChild(delBtn);
+        el.appendChild(row);
+    });
+}
 </script>
 
 <!-- Workspace / API key settings modal -->
@@ -4759,6 +4835,26 @@ console.log('🌍 Weather widget integrated with TrioForge');
 
     <button onclick="saveWorkspace()" style="width:100%; padding:10px; background:#1f6feb; color:#fff; border:none; border-radius:8px; font-weight:bold;">💾 Save workspace</button>
     <div id="wsStatus" style="font-size:12px; margin-top:8px; color:#8b949e;"></div>
+  </div>
+</div>
+
+<!-- Backup / Restore modal -->
+<div id="restoreModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10000; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(520px, 94vw); max-height:85vh; overflow:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:16px;">🗄️ Restore deleted data</strong>
+      <button onclick="closeRestoreModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 12px;">Deleted chats, notes and pins are kept here automatically. Restore anything you want back.</p>
+
+    <div style="font-size:13px; font-weight:bold; color:#58a6ff; margin-bottom:4px;">💬 Conversations</div>
+    <div id="restoreConvs" style="margin-bottom:14px;"></div>
+
+    <div style="font-size:13px; font-weight:bold; color:#3fb950; margin-bottom:4px;">📝 Notes</div>
+    <div id="restoreNotes" style="margin-bottom:14px;"></div>
+
+    <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:4px;">📌 Corkboard pins</div>
+    <div id="restorePins" style="margin-bottom:6px;"></div>
   </div>
 </div>
 

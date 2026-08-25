@@ -49,6 +49,7 @@ except ImportError:
     logger.info("Using standard json (install orjson for better performance)")
 
 from paths import PROJECT_ROOT, root_path
+import backup_store
 
 # ── Imports ──
 from providers.llm_providers import (
@@ -64,8 +65,8 @@ from providers.llm_providers import (
     describe_or_extract_file,
     sanitize_api_key,
 )
-from features.notes import notes_bp
-from features.cork_board import corkboard_bp
+from features.notes import notes_bp, upsert_note
+from features.cork_board import corkboard_bp, upsert_pin, add_link
 from features.viewer import setup_viewer
 
 try:
@@ -485,6 +486,29 @@ def delete_conversation(cid: str) -> bool:
     global _conversations_dirty
     _ensure_cache()
     if cid in _conversations_cache:
+        meta = _conversations_cache[cid]
+        # Archive the conversation + its messages before removing them, so the
+        # user can restore it later from the backup database.
+        try:
+            with _sqlite_lock:
+                cur = _sqlite_conn.cursor()
+                cur.execute(
+                    "SELECT role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at",
+                    (cid,),
+                )
+                rows = cur.fetchall()
+            backup_store.archive_conversation(
+                {
+                    "id": cid,
+                    "title": meta.get("title", ""),
+                    "created": meta.get("created"),
+                    "order": meta.get("order", 0),
+                    "last_activity": meta.get("last_activity"),
+                },
+                [{"role": r[0], "content": r[1], "attachments": r[2], "created_at": r[3]} for r in rows],
+            )
+        except Exception as e:
+            logger.warning("Backup archive failed for conversation %s: %s", cid, e)
         with _cache_lock:
             del _conversations_cache[cid]
             _conversations_dirty = True
@@ -955,11 +979,21 @@ def edit_message(cid, idx):
 def delete_message(cid, idx):
     with _sqlite_lock:
         cur = _sqlite_conn.cursor()
-        cur.execute("SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at", (cid,))
-        rowids = [row[0] for row in cur.fetchall()]
-        if idx < 0 or idx >= len(rowids):
+        cur.execute("SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at", (cid,))
+        rows = cur.fetchall()
+        if idx < 0 or idx >= len(rows):
             return jsonify({'error': 'Index out of range'}), 400
-        rowid = rowids[idx]
+        rowid = rows[idx][0]
+        # Archive the single message before deleting it.
+        try:
+            backup_store.archive_message(cid, {
+                "role": rows[idx][1],
+                "content": rows[idx][2],
+                "attachments": rows[idx][3],
+                "created_at": rows[idx][4],
+            })
+        except Exception as e:
+            logger.warning("Backup archive failed for message %s: %s", rowid, e)
         cur.execute("DELETE FROM messages WHERE id = ?", (rowid,))
         _sqlite_conn.commit()
     return jsonify({'ok': True})
@@ -1853,6 +1887,120 @@ if "ollama" in VISION_MODELS:
     VISION_MODELS["ollama"] = current
 else:
     VISION_MODELS["ollama"] = list(UNCENSORED_VISION_MODELS)
+
+# ── Backup / restore API (auto-archived deleted data) ──
+@app.route('/api/backup/conversations', methods=['GET'])
+def backup_list_conversations():
+    return jsonify(backup_store.list_conversations())
+
+
+@app.route('/api/backup/conversations/<cid>/restore', methods=['POST'])
+def backup_restore_conversation(cid):
+    data = backup_store.get_conversation(cid)
+    if not data:
+        return jsonify({'error': 'Not found in backup'}), 404
+    meta, messages = data
+    _ensure_cache()
+    already = cid in _conversations_cache
+    with _cache_lock:
+        if not already:
+            orders = [c.get('order', 0) for c in _conversations_cache.values()]
+            max_order = max(orders) if orders else 0
+            _conversations_cache[cid] = {
+                "id": cid,
+                "title": meta.get("title") or "Recovered Chat",
+                "created": meta.get("created") or datetime.now().isoformat(),
+                "order": max_order + 1,
+                "last_activity": meta.get("last_activity") or datetime.now().isoformat(),
+            }
+            _conversations_dirty = True
+    if not already:
+        with _sqlite_lock:
+            for m in messages:
+                _sqlite_conn.execute(
+                    "INSERT INTO messages (conversation_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (cid, m.get("role"), m.get("content"), m.get("attachments"), m.get("created_at")),
+                )
+            _sqlite_conn.commit()
+    save_conversations_async(_conversations_cache)
+    backup_store.purge_conversation(cid)
+    return jsonify({'ok': True, 'id': cid})
+
+
+@app.route('/api/backup/conversations/<cid>', methods=['DELETE'])
+def backup_purge_conversation(cid):
+    backup_store.purge_conversation(cid)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/backup/notes', methods=['GET'])
+def backup_list_notes():
+    return jsonify(backup_store.list_notes())
+
+
+@app.route('/api/backup/notes/<note_id>/restore', methods=['POST'])
+def backup_restore_note(note_id):
+    note = backup_store.get_note(note_id)
+    if not note:
+        return jsonify({'error': 'Not found in backup'}), 404
+    upsert_note(note_id, {
+        "title": note.get("title", "Untitled"),
+        "content": note.get("content", ""),
+        "created": note.get("created"),
+        "order": note.get("order", 0),
+        "pinned": note.get("pinned", False),
+        "color": note.get("color", "default"),
+        "tags": note.get("tags", []),
+        "embedding": note.get("embedding"),
+    }, created=note.get("created"))
+    backup_store.purge_note(note_id)
+    return jsonify({'ok': True, 'id': note_id})
+
+
+@app.route('/api/backup/notes/<note_id>', methods=['DELETE'])
+def backup_purge_note(note_id):
+    backup_store.purge_note(note_id)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/backup/pins', methods=['GET'])
+def backup_list_pins():
+    return jsonify(backup_store.list_pins())
+
+
+@app.route('/api/backup/pins/<pin_id>/restore', methods=['POST'])
+def backup_restore_pin(pin_id):
+    pin, links = backup_store.get_pin(pin_id)
+    if pin is None:
+        return jsonify({'error': 'Not found in backup'}), 404
+    upsert_pin(pin_id, {
+        "title": pin.get("title", "Untitled"),
+        "content": pin.get("content", ""),
+        "x": pin.get("x", 0),
+        "y": pin.get("y", 0),
+        "width": pin.get("width", 220),
+        "height": pin.get("height", 200),
+        "color": pin.get("color", "yellow"),
+        "rotation": pin.get("rotation", 0),
+        "tags": pin.get("tags", []),
+        "type": pin.get("type", "note"),
+        "filename": pin.get("filename"),
+        "image_url": pin.get("image_url"),
+        "embedding": pin.get("embedding"),
+    }, now=pin.get("created"))
+    for l in links:
+        a, b = l.get("from"), l.get("to")
+        if a and b:
+            add_link(a, b, l.get("color", "black"))
+    backup_store.purge_pin(pin_id)
+    return jsonify({'ok': True, 'id': pin_id})
+
+
+@app.route('/api/backup/pins/<pin_id>', methods=['DELETE'])
+def backup_purge_pin(pin_id):
+    backup_store.purge_pin(pin_id)
+    return jsonify({'ok': True})
+
 
 setup_viewer(app, get_conversation, get_messages)
 
