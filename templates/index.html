@@ -1404,6 +1404,7 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
+        <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Manage workspaces & API keys">⚙️ Workspaces</button>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
@@ -2077,6 +2078,83 @@ function stopVoicePolling() {
         clearInterval(voicePollTimer);
         voicePollTimer = null;
     }
+}
+
+// ── Workspaces & API keys ──
+function toggleWorkspaceSettings() {
+    var m = document.getElementById('workspaceModal');
+    var show = m.style.display !== 'flex';
+    m.style.display = show ? 'flex' : 'none';
+    if (show) refreshWorkspaces();
+}
+function refreshWorkspaces() {
+    fetch('/api/workspaces')
+        .then(r => r.json())
+        .then(data => {
+            var sel = document.getElementById('wsSelect');
+            sel.innerHTML = '';
+            data.workspaces.forEach(function(w) {
+                var opt = document.createElement('option');
+                opt.value = w.id;
+                opt.textContent = w.name + (w.id === data.current ? '  (active)' : '');
+                sel.appendChild(opt);
+            });
+            activateWorkspace(data.current, data.workspaces);
+        });
+}
+function activateWorkspace(id, list) {
+    var w = (list || []).find(function(x) { return x.id === id; });
+    if (!w) return;
+    document.getElementById('wsProvider').value = w.provider || 'ollama';
+    document.getElementById('wsKeyDeepseek').value = '';
+    document.getElementById('wsKeyGroq').value = '';
+    document.getElementById('wsKeyAnthropic').value = '';
+    document.getElementById('wsKeyHF').value = '';
+    var st = '';
+    if (w.keys_set && w.keys_set.deepseek) st += '· deepseek set   ';
+    if (w.keys_set && w.keys_set.groq) st += '· groq set   ';
+    if (w.keys_set && w.keys_set.anthropic) st += '· anthropic set   ';
+    if (w.keys_set && w.keys_set.huggingface) st += '· huggingface set   ';
+    document.getElementById('wsStatus').textContent = st || 'No API keys set yet.';
+}
+function switchWorkspace() {
+    var id = document.getElementById('wsSelect').value;
+    fetch('/api/workspaces/' + id + '/select', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => { refreshWorkspaces(); loadModels(); });
+}
+function createWorkspace() {
+    var name = document.getElementById('wsName').value.trim();
+    if (!name) return;
+    fetch('/api/workspaces', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: name})
+    })
+    .then(r => r.json())
+    .then(d => { document.getElementById('wsName').value = ''; refreshWorkspaces(); });
+}
+function saveWorkspace() {
+    var id = document.getElementById('wsSelect').value;
+    var keys = {};
+    ['Deepseek','Groq','Anthropic','HF'].forEach(function(k) {
+        var v = document.getElementById('wsKey' + k).value.trim();
+        if (v) keys[k.toLowerCase() === 'hf' ? 'huggingface' : k.toLowerCase()] = v;
+    });
+    var body = { keys: keys, provider: document.getElementById('wsProvider').value.trim() || 'ollama' };
+    fetch('/api/workspaces/' + id, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    })
+    .then(r => r.json())
+    .then(d => {
+        document.getElementById('wsStatus').textContent = '✅ Saved.';
+        refreshWorkspaces();
+    })
+    .catch(function() {
+        document.getElementById('wsStatus').textContent = '⚠️ Save failed.';
+    });
 }
 
 providerSelect.addEventListener('change', function() {
@@ -4618,6 +4696,37 @@ detectLocation = async function() {
 
 console.log('🌍 Weather widget integrated with TrioForge');
 </script>
+
+<!-- Workspace / API key settings modal -->
+<div id="workspaceModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(480px, 92vw); max-height:85vh; overflow:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <strong style="font-size:16px;">⚙️ Workspaces & API Keys</strong>
+      <button onclick="toggleWorkspaceSettings()" style="background:transparent;border:none;color:#aaa;font-size:20px;">✕</button>
+    </div>
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Active workspace</label>
+    <select id="wsSelect" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:10px;"></select>
+
+    <div style="display:flex; gap:6px; margin-bottom:14px;">
+      <button onclick="switchWorkspace()" style="padding:6px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px;">Switch</button>
+      <input id="wsName" placeholder="New workspace name" style="flex:1; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+      <button onclick="createWorkspace()" style="padding:6px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px;">+ Create</button>
+    </div>
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">API keys for this workspace</label>
+    <div style="margin-bottom:8px;"><input id="wsKeyDeepseek" placeholder="DeepSeek API Key" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
+    <div style="margin-bottom:8px;"><input id="wsKeyGroq" placeholder="Groq API Key" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
+    <div style="margin-bottom:8px;"><input id="wsKeyAnthropic" placeholder="Anthropic API Key" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
+    <div style="margin-bottom:14px;"><input id="wsKeyHF" placeholder="Hugging Face Token" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></div>
+
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Default provider</label>
+    <input id="wsProvider" placeholder="ollama / groq / deepseek / claude / huggingface" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:14px;">
+
+    <button onclick="saveWorkspace()" style="width:100%; padding:10px; background:#1f6feb; color:#fff; border:none; border-radius:8px; font-weight:bold;">💾 Save workspace</button>
+    <div id="wsStatus" style="font-size:12px; margin-top:8px; color:#8b949e;"></div>
+  </div>
+</div>
 
 </body>
 </html>
