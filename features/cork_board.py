@@ -28,7 +28,7 @@ from common import (
 logger = logging.getLogger(__name__)
 
 # ---------- LLM for AI assistance ----------
-from llm_providers import (
+from providers.llm_providers import (
     LLMProvider,
     OllamaProvider,
     LlamaCppProvider,

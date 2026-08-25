@@ -27,7 +27,7 @@ from common import (
 logger = logging.getLogger(__name__)
 
 # ---------- LLM providers ----------
-from llm_providers import (
+from providers.llm_providers import (
     OllamaProvider,
     DeepSeekProvider,
     ClaudeProvider,
