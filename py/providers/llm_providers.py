@@ -246,7 +246,7 @@ def describe_or_extract_file(name: str, b64: str, mime: str = "") -> str:
 class LLMProvider:
     # Default generation parameters – can be overridden per provider
     DEFAULT_TEMPERATURE = 0.7
-    DEFAULT_MAX_TOKENS = 2048
+    DEFAULT_MAX_TOKENS = 4096
 
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         raise NotImplementedError
