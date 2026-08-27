@@ -18,6 +18,7 @@ Options:
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -122,10 +123,54 @@ def install_deps(project: Path) -> None:
     print("Dependencies installed.")
 
 
-def run_app(project: Path) -> None:
+def _voice_config_path(project: Path) -> Optional[Path]:
+    """Return the voice agent config.json path if present, else None."""
+    cfg = project / "voiceguide_llama.cpp_guide" / "config.json"
+    return cfg if cfg.is_file() else None
+
+
+def start_voice_agent(project: Path, enabled: bool = True) -> None:
+    """Start the voice-to-voice agent (llama.cpp + speech-to-speech) in the background.
+
+    This is best-effort: if the config or llama-server executable are missing, it
+    prints a note and the app still starts normally (app-only).
+    """
+    if not enabled:
+        return
+    cfg_path = _voice_config_path(project)
+    if cfg_path is None:
+        print("Voice agent: no config.json found; starting app only.")
+        return
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except Exception:
+        print("Voice agent: could not read config.json; starting app only.")
+        return
+    llama = str(cfg.get("llama_server", ""))
+    llama_path = Path(llama)
+    has_llama = (llama_path.is_absolute() and llama_path.is_file()) or bool(shutil.which(llama))
+    if not has_llama:
+        print("Voice agent: llama-server not found; starting app only.")
+        return
+    agent = project / "py" / "tools" / "voice_agent.py"
+    print("Voice agent: starting llama.cpp + speech-to-speech in the background ...")
+    try:
+        subprocess.Popen(
+            [sys.executable, str(agent), "--config", str(cfg_path)],
+            cwd=str(project),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print("Voice agent: failed to start ({})".format(e))
+
+
+def run_app(project: Path, start_voice: bool = True) -> None:
     """Start the Flask app, replacing this launcher process."""
     app_path = project / "py" / "app.py"
     print("Project folder: {}".format(project))
+    start_voice_agent(project, start_voice)
     print("Starting TrioForge... open https://localhost:5001 in your browser.")
     print()
     os.chdir(str(project))
@@ -139,7 +184,7 @@ def prepare_and_run(project: Path, args) -> None:
         install_deps(project)
     elif not args.no_install and not marker.exists():
         install_deps(project)
-    run_app(project)
+    run_app(project, start_voice=not getattr(args, "no_voice", False))
 
 
 def run_native(args) -> int:
@@ -269,6 +314,8 @@ def main() -> int:
                         help="Force (re)install dependencies.")
     parser.add_argument("--no-install", action="store_true",
                         help="Skip dependency installation.")
+    parser.add_argument("--no-voice", action="store_true",
+                        help="Don't auto-start the voice agent; run the app only.")
     parser.add_argument("--unix", action="store_true",
                         help="(internal) Run natively; used when launched via WSL/bash.")
     args = parser.parse_args()

@@ -21,6 +21,7 @@ import threading
 import sqlite3
 import csv
 import logging
+from logging.handlers import RotatingFileHandler
 from io import StringIO
 from typing import Any, Dict, List, Optional
 
@@ -50,6 +51,19 @@ except ImportError:
 
 from paths import PROJECT_ROOT, root_path
 import backup_store
+
+# ── Server log file (tailable from the in-app Logs viewer) ──
+# Written in addition to stderr so the UI can show the server log live,
+# without needing a terminal / VS Code open.
+_SERVER_LOG_PATH = root_path("logs", "server.log")
+os.makedirs(os.path.dirname(_SERVER_LOG_PATH), exist_ok=True)
+_server_log_handler = RotatingFileHandler(
+    _SERVER_LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8"
+)
+_server_log_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)-8s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+))
+logging.getLogger().addHandler(_server_log_handler)
 
 # ── Imports ──
 from providers.llm_providers import (
@@ -1374,6 +1388,22 @@ def get_logs():
         'per_page': per_page
     })
 
+
+@app.route('/api/logs/server')
+def get_server_logs():
+    """Return the tail of the server log file for the in-app Logs viewer."""
+    lines = request.args.get('lines', 300, type=int)
+    lines = max(1, min(lines, 2000))
+    tail = []
+    try:
+        with open(_SERVER_LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        tail = [l.rstrip("\n") for l in all_lines[-lines:]]
+    except Exception:
+        pass
+    return jsonify({"lines": tail, "path": _SERVER_LOG_PATH})
+
+
 @app.route('/api/logs/export')
 def export_logs_csv():
     conv_filter = request.args.get('conv_id', '').strip()
@@ -1431,6 +1461,23 @@ def voice_logs():
         "conversation": _parse_voice_turns(conv_text),
         "exists": os.path.exists(os.path.join(log_dir, "conversations.log")),
     })
+
+
+@app.route('/api/voice/raw', methods=['GET'])
+def voice_raw_logs():
+    """Return the raw voice agent log (LLM + VOICE lines) for the Logs viewer."""
+    log_dir = root_path("voiceguide_llama.cpp_guide")
+    path = os.path.join(log_dir, "voice_agent.log")
+    lines = request.args.get('lines', 300, type=int)
+    lines = max(1, min(lines, 2000))
+    tail = []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        tail = [l.rstrip("\n") for l in all_lines[-lines:]]
+    except Exception:
+        pass
+    return jsonify({"lines": tail, "exists": os.path.exists(path)})
 
 
 @app.route('/api/voice/command', methods=['POST'])
