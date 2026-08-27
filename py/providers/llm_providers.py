@@ -246,7 +246,9 @@ def describe_or_extract_file(name: str, b64: str, mime: str = "") -> str:
 class LLMProvider:
     # Default generation parameters – can be overridden per provider
     DEFAULT_TEMPERATURE = 0.7
-    DEFAULT_MAX_TOKENS = 4096
+    DEFAULT_MAX_TOKENS = 65536
+    # Hard cap for providers whose API rejects very large max_tokens (cloud ones).
+    MAX_OUTPUT_TOKENS = 65536
 
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         raise NotImplementedError
@@ -360,7 +362,7 @@ class OllamaProvider(LLMProvider):
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: Optional[str] = None,
                  server_url: str = "http://127.0.0.1:8080/v1",
-                 context_length: int = 8192):  # matches the auto-configured server ctx
+                 context_length: int = 65536):  # 64k
         self.models_dir = os.path.abspath(models_dir) if models_dir else root_path("models")
         self.server_url = server_url.rstrip("/")
         self.context_length = context_length
@@ -452,7 +454,8 @@ class LlamaCppProvider(LLMProvider):
         model_path = self._resolve_model_path(model)
         n_ctx = kwargs.get("n_ctx", self.context_length)
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
+                         max(256, n_ctx - 256))
 
         payload = {
             "model": model_path,
@@ -483,7 +486,8 @@ class LlamaCppProvider(LLMProvider):
         model_path = self._resolve_model_path(kwargs.get("model"))
         n_ctx = kwargs.get("n_ctx", self.context_length)
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
+                         max(256, n_ctx - 256))
 
         content_parts = []
         for img in images:
@@ -521,6 +525,7 @@ class LlamaCppProvider(LLMProvider):
 
 
 class HuggingFaceProvider(LLMProvider):
+    MAX_OUTPUT_TOKENS = 4096  # HF inference is variable; keep a safe cap
     def __init__(self, model: str = "microsoft/DialoGPT-medium",
                  api_token: Optional[str] = None):
         self.model = model
@@ -565,7 +570,7 @@ class HuggingFaceProvider(LLMProvider):
         model = kwargs.get("model") or self.model
         prompt = messages[-1]["content"] if messages else ""
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
 
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -649,6 +654,7 @@ class HuggingFaceProvider(LLMProvider):
 
 
 class GroqProvider(LLMProvider):
+    MAX_OUTPUT_TOKENS = 32768  # Groq supports large outputs on many models
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("GROQ_API_KEY")
         self._available = bool(self._default_key)
@@ -702,7 +708,7 @@ class GroqProvider(LLMProvider):
                      model: str = "llama-3.3-70b-versatile", **kwargs) -> dict:
         client = self._get_client(kwargs.get("api_key"))
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
         params = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
         tools = kwargs.get("tools")
         if tools:
@@ -761,6 +767,7 @@ class GroqProvider(LLMProvider):
 class DeepSeekProvider(LLMProvider):
     # DeepSeek text models + the vision model (deepseek-v4-flash-vision-exp).
     FALLBACK_MODELS = ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp"]
+    MAX_OUTPUT_TOKENS = 8192  # DeepSeek chat API caps output here
 
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
@@ -857,7 +864,7 @@ class DeepSeekProvider(LLMProvider):
         key = self._get_key(kwargs)
         headers = self._get_headers(key)
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
         payload = {
             "model": model,
             "messages": messages,
@@ -925,6 +932,7 @@ class DeepSeekProvider(LLMProvider):
 
 
 class ClaudeProvider(LLMProvider):
+    MAX_OUTPUT_TOKENS = 8192  # Anthropic caps max_tokens at 8192 for most models
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self._available = bool(self._default_key)
@@ -969,7 +977,7 @@ class ClaudeProvider(LLMProvider):
         key = self._get_key(kwargs)
         headers = self._get_headers(key)
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
 
         system = ""
         claude_messages = []
