@@ -137,24 +137,19 @@ def status():
 
 
 def _default_server_args():
-    """GPU/performance defaults so llama-server runs at peak on a local GPU.
+    """Stable llama-server defaults for an 8 GB GPU.
 
-    -ngl 999        offload as many layers to the GPU as fit (model + mmproj fit in
-                    an 8 GB RTX 5060 here).
-    --flash-attn    Flash Attention → faster and lower VRAM (room for the KV cache).
-    --ctx-size 131072  128k context as requested.
-    --cache-type-*  Quantize the KV cache so a 128k context fits alongside the model
-                    in 8 GB VRAM instead of spilling to slow RAM/disk.
-    --threads       CPU threads for the parts that stay on CPU.
-    These are applied first, so anything in config.json `llama_args` overrides them.
+    -ngl is intentionally NOT forced to 999: leaving it unset lets llama-server
+    auto-fit the number of GPU layers so the model + KV cache + compute buffers all
+    fit in VRAM (forcing 999 crashed it). Flash attention + KV-cache quantization
+    keep memory low so a 16k context runs comfortably.
     """
     threads = (os.cpu_count() or 4)
     return [
-        "-ngl", "999",
-        "--flash-attn", "on",    # NOTE: newer llama-server needs an explicit value
-        "--ctx-size", "131072",   # 128k context as requested
-        "--cache-type-k", "q4_0",  # heavy KV-cache quant to fit 128k in 8 GB VRAM
-        "--cache-type-v", "q4_0",
+        "--flash-attn", "on",
+        "--ctx-size", "16384",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
         "--image-min-tokens", "1024",  # Qwen-VL needs this for accurate image reading
         "--threads", str(threads),
     ]
