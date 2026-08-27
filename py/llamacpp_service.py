@@ -23,6 +23,52 @@ _process = None
 _running_model = None
 _lock = threading.Lock()
 
+# Common GGUF quantization suffixes, used to split a model name into its base name
+# so the mmproj projector can be paired with the right text model.
+_QUANT_TOKENS = {
+    "q4_k_m", "q5_k_m", "q6_k", "q8_0", "q4_0", "q5_0", "bf16", "f16", "f32",
+    "q2_k", "q3_k", "q8_k", "q4_k_s", "q5_k_s", "q3_k_s", "q2_k_s", "q4_k", "q5_k",
+}
+_QUANT_SET = {q.replace("_", "") for q in _QUANT_TOKENS}
+
+
+def _base_gguf_name(filename: str):
+    """Return a model's base name: no .gguf, no mmproj- prefix, no trailing quant."""
+    name = os.path.splitext(filename)[0]
+    if name.lower().startswith("mmproj-"):
+        name = name[len("mmproj-"):]
+    parts = name.split("-")
+    while parts and parts[-1].lower().replace("_", "") in _QUANT_SET:
+        parts.pop()
+    return "-".join(parts)
+
+
+def _list_gguf_files(subdir="models"):
+    """All .gguf files under <project>/<subdir>, recursively, as absolute paths."""
+    import glob
+    pattern = os.path.abspath(root_path(subdir, "**", "*.gguf"))
+    return glob.glob(pattern, recursive=True)
+
+
+def find_mmproj(model_path: str):
+    """Find the vision-projector (mmproj-*.gguf) that pairs with a text model.
+
+    Works regardless of folder: it scans <project>/models recursively and matches
+    the shared base name (mmproj-BASE-<quant> pairs with BASE-<quant>.gguf).
+    """
+    model_base = _base_gguf_name(os.path.basename(model_path))
+    if not model_base:
+        return None
+    model_base_l = model_base.lower()
+    for f in _list_gguf_files():
+        bn = os.path.basename(f)
+        if bn.lower().startswith("mmproj-"):
+            mbase = _base_gguf_name(bn)
+            mbase_l = mbase.lower() if mbase else ""
+            if mbase_l and (mbase_l in model_base_l or model_base_l in mbase_l):
+                return f
+    return None
+
 
 def _config():
     try:
@@ -128,6 +174,10 @@ def start(model=None):
                     "message": "port {} already in use (another llama-server is running)".format(port)}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
+        # Pair a vision-projector (mmproj) so the model can read images too.
+        mmproj = find_mmproj(model_path)
+        if mmproj:
+            cmd += ["--mmproj", mmproj]
         cmd += [str(a) for a in cfg.get("llama_args", [])]
         try:
             _process = subprocess.Popen(
