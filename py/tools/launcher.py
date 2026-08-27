@@ -167,10 +167,17 @@ def start_voice_agent(project: Path, enabled: bool = True) -> None:
 
 
 def run_app(project: Path, start_voice: bool = True) -> None:
-    """Start the Flask app, replacing this launcher process."""
+    """Start the Flask app, replacing this launcher process.
+
+    The voice agent is NOT auto-started here: it runs its own llama-server on port
+    8080 and would conflict with the llama.cpp chat server. Start it separately
+    (py\\tools\\voice_agent.py) only when you actually want voice-to-voice.
+    """
     app_path = project / "py" / "app.py"
     print("Project folder: {}".format(project))
-    start_voice_agent(project, start_voice)
+    if start_voice:
+        print("Voice agent is NOT auto-started (it would clash on port 8080).")
+        print("Run py\\tools\\voice_agent.py separately for voice-to-voice.")
     print("Starting TrioForge... open https://localhost:5001 in your browser.")
     print()
     os.chdir(str(project))
