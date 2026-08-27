@@ -1407,6 +1407,7 @@ body.light-mode .weather-country-select option {
         <span id="modelInfo" style="display:none;"></span>
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Manage workspaces & API keys">⚙️ Workspaces</button>
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="View app logs (server, chat, voice)">🗒️ Logs</button>
+        <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle full screen">⛶ Fullscreen</button>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
@@ -2181,7 +2182,19 @@ function saveWorkspace() {
 
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
+    var prevProvider = this.dataset.prev || 'ollama';
+    this.dataset.prev = provider;
+
     var keyInput = document.getElementById('apiKeyInput');
+
+    // llama.cpp service lifecycle: auto-run the server when selected, stop it
+    // (auto-reset) when the user picks any other provider.
+    if (provider === 'llamacpp') {
+        fetch('/api/llamacpp/start', { method: 'POST' }).catch(function(){});
+    } else if (prevProvider === 'llamacpp') {
+        fetch('/api/llamacpp/stop', { method: 'POST' }).catch(function(){});
+    }
+
     if (provider === 'voice') {
         keyInput.style.display = 'none';
         startVoicePolling();
@@ -4872,6 +4885,30 @@ function loadVoiceLogs() {
         .then(r => r.json()).then(d => renderLogLines(d.lines))
         .catch(() => renderLogLines([]));
 }
+
+// ── Fullscreen toggle ──
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(function(){});
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(function(){});
+        }
+    }
+}
+
+// Try to go fullscreen automatically on the first user gesture (desktop-app feel).
+var _triedAutoFullscreen = false;
+function tryAutoFullscreen() {
+    if (_triedAutoFullscreen) return;
+    _triedAutoFullscreen = true;
+    if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(function(){});
+    }
+}
+document.addEventListener('click', tryAutoFullscreen, { once: true });
 </script>
 
 <!-- Workspace / API key settings modal -->

@@ -63,7 +63,9 @@ VISION_MODELS = {
         "claude-3-haiku-20240307",
         "claude-3-5-haiku-20241022",
     },
-    "deepseek": set(),  # no vision support
+    "deepseek": {
+        "deepseek-v4-flash-vision-exp",
+    },
 }
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -721,8 +723,8 @@ class GroqProvider(LLMProvider):
 
 
 class DeepSeekProvider(LLMProvider):
-    # DeepSeek does NOT support vision natively – we keep the base implementation
-    FALLBACK_MODELS = ["deepseek-v4-flash", "deepseek-v4-pro"]
+    # DeepSeek text models + the vision model (deepseek-v4-flash-vision-exp).
+    FALLBACK_MODELS = ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp"]
 
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
@@ -788,6 +790,11 @@ class DeepSeekProvider(LLMProvider):
                 "capabilities": ["Image analysis", "Multimodal", "Visual QA"],
                 "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
             },
+            "deepseek-v4-flash-vision-exp": {
+                "description": "DeepSeek V4 Flash vision model (experimental) – fast image understanding and multimodal chat.",
+                "capabilities": ["Image analysis", "Multimodal", "Visual QA", "Fast"],
+                "pricing": {"input": "$0.14/M", "output": "$0.28/M"}
+            },
             "deepseek-v2": {
                 "description": "Older general‑purpose chat model (V2) – still useful for basic tasks.",
                 "capabilities": ["Chat", "Text generation"],
@@ -841,7 +848,44 @@ class DeepSeekProvider(LLMProvider):
         msg = self.generate_raw(messages, model=model, **kwargs)
         return msg.get("content") or ""
 
-    # generate_with_image is inherited from LLMProvider – no override needed
+    def generate_with_image(self, messages: List[Dict[str, str]],
+                            images: List[Dict], **kwargs) -> str:
+        """OpenAI-compatible vision request for the deepseek-v4-flash-vision-exp model."""
+        key = self._get_key(kwargs)
+        headers = self._get_headers(key)
+        model = kwargs.get("model", "deepseek-v4-flash-vision-exp")
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+
+        content_parts = []
+        for img in images:
+            b64 = _strip_b64_prefix(img["b64"])
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+            })
+        last_text = messages[-1].get("content", "") if messages else ""
+        content_parts.append({"type": "text", "text": last_text})
+
+        vision_messages = [
+            {"role": m["role"], "content": m["content"]}
+            for m in messages[:-1]
+        ] + [{"role": "user", "content": content_parts}]
+
+        payload = {
+            "model": model,
+            "messages": vision_messages,
+            "stream": False,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        try:
+            resp = requests.post("https://api.deepseek.com/v1/chat/completions",
+                                 headers=headers, json=payload, timeout=180)
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException as e:
+            raise ProviderError(f"DeepSeek vision API error: {e}")
 
 
 class ClaudeProvider(LLMProvider):
