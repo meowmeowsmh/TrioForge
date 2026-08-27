@@ -142,7 +142,9 @@ def _default_server_args():
     -ngl 999        offload as many layers to the GPU as fit (model + mmproj fit in
                     an 8 GB RTX 5060 here).
     --flash-attn    Flash Attention → faster and lower VRAM (room for the KV cache).
-    --ctx-size N    context window sized to fit alongside the model in VRAM.
+    --ctx-size 65536  64k context as requested.
+    --cache-type-*  Quantize the KV cache so a 64k context fits alongside the model
+                    in 8 GB VRAM instead of spilling to slow RAM/disk.
     --threads       CPU threads for the parts that stay on CPU.
     These are applied first, so anything in config.json `llama_args` overrides them.
     """
@@ -150,7 +152,9 @@ def _default_server_args():
     return [
         "-ngl", "999",
         "--flash-attn",
-        "--ctx-size", "8192",
+        "--ctx-size", "65536",
+        "--cache-type-k", "q8_0",
+        "--cache-type-v", "q8_0",
         "--threads", str(threads),
     ]
 
