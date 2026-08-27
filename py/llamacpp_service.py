@@ -142,8 +142,8 @@ def _default_server_args():
     -ngl 999        offload as many layers to the GPU as fit (model + mmproj fit in
                     an 8 GB RTX 5060 here).
     --flash-attn    Flash Attention → faster and lower VRAM (room for the KV cache).
-    --ctx-size 65536  64k context as requested.
-    --cache-type-*  Quantize the KV cache so a 64k context fits alongside the model
+    --ctx-size 131072  128k context as requested.
+    --cache-type-*  Quantize the KV cache so a 128k context fits alongside the model
                     in 8 GB VRAM instead of spilling to slow RAM/disk.
     --threads       CPU threads for the parts that stay on CPU.
     These are applied first, so anything in config.json `llama_args` overrides them.
@@ -152,11 +152,27 @@ def _default_server_args():
     return [
         "-ngl", "999",
         "--flash-attn",
-        "--ctx-size", "65536",
-        "--cache-type-k", "q8_0",
-        "--cache-type-v", "q8_0",
+        "--ctx-size", "131072",   # 128k context as requested
+        "--cache-type-k", "q4_0",  # heavy KV-cache quant to fit 128k in 8 GB VRAM
+        "--cache-type-v", "q4_0",
         "--threads", str(threads),
     ]
+
+
+def _send_voice_bye():
+    """Send /bye to the voice agent so it stops its llama-server (frees port 8080).
+
+    This keeps things to ONE server at a time: when the user picks a llama.cpp model
+    that needs vision, the text-only voice-agent server is shut down first.
+    """
+    cfg = _config() or {}
+    log_dir = cfg.get("log_dir", "voiceguide_llama.cpp_guide")
+    control = root_path(log_dir, "control.txt")
+    try:
+        with open(control, "w", encoding="utf-8") as f:
+            f.write("/bye")
+    except Exception:
+        pass
 
 
 def start(model=None):
@@ -178,6 +194,9 @@ def start(model=None):
         if not exe or not os.path.isfile(exe):
             return {"running": False, "error": "llama-server executable not found: {}".format(cfg.get("llama_server"))}
 
+        # Pair a vision-projector (mmproj) so the model can read images too.
+        mmproj = find_mmproj(model_path)
+
         # Already running with the requested model → nothing to do.
         if _process is not None and _process.poll() is None and _running_model == model_path:
             return {"running": True, "model": os.path.basename(model_path), "message": "already running"}
@@ -190,15 +209,24 @@ def start(model=None):
                 pass
             _process = None
 
-        # If the port is taken by an external process (e.g. the voice agent), do not
-        # spawn a duplicate that will just fail to bind.
+        # If the port is taken by an external process (e.g. the text-only voice-agent
+        # server) and the selected model needs vision, stop it so only ONE server
+        # runs and it is vision-capable. Text-only models are fine to reuse it.
         if _port_in_use(host, port):
-            return {"running": True, "model": os.path.basename(model_path),
-                    "message": "port {} already in use (another llama-server is running)".format(port)}
+            if mmproj:
+                _send_voice_bye()
+                for _ in range(30):
+                    if not _port_in_use(host, port):
+                        break
+                    time.sleep(1)
+                if _port_in_use(host, port):
+                    return {"running": False,
+                            "error": "port {} is still busy; stop the other llama-server manually".format(port)}
+            else:
+                return {"running": True, "model": os.path.basename(model_path),
+                        "message": "port {} already in use (another llama-server is running)".format(port)}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
-        # Pair a vision-projector (mmproj) so the model can read images too.
-        mmproj = find_mmproj(model_path)
         if mmproj:
             cmd += ["--mmproj", mmproj]
         # Peak GPU/performance defaults (config llama_args may override).
