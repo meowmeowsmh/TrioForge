@@ -360,7 +360,7 @@ class OllamaProvider(LLMProvider):
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: Optional[str] = None,
                  server_url: str = "http://127.0.0.1:8080/v1",
-                 context_length: int = 65536): #64k
+                 context_length: int = 8192):  # matches the auto-configured server ctx
         self.models_dir = os.path.abspath(models_dir) if models_dir else root_path("models")
         self.server_url = server_url.rstrip("/")
         self.context_length = context_length

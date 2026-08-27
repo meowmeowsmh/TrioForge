@@ -136,6 +136,25 @@ def status():
     return {"running": running, "host": host, "port": port, "model": model}
 
 
+def _default_server_args():
+    """GPU/performance defaults so llama-server runs at peak on a local GPU.
+
+    -ngl 999        offload as many layers to the GPU as fit (model + mmproj fit in
+                    an 8 GB RTX 5060 here).
+    --flash-attn    Flash Attention → faster and lower VRAM (room for the KV cache).
+    --ctx-size N    context window sized to fit alongside the model in VRAM.
+    --threads       CPU threads for the parts that stay on CPU.
+    These are applied first, so anything in config.json `llama_args` overrides them.
+    """
+    threads = (os.cpu_count() or 4)
+    return [
+        "-ngl", "999",
+        "--flash-attn",
+        "--ctx-size", "8192",
+        "--threads", str(threads),
+    ]
+
+
 def start(model=None):
     global _process, _running_model
     with _lock:
@@ -178,6 +197,8 @@ def start(model=None):
         mmproj = find_mmproj(model_path)
         if mmproj:
             cmd += ["--mmproj", mmproj]
+        # Peak GPU/performance defaults (config llama_args may override).
+        cmd += _default_server_args()
         cmd += [str(a) for a in cfg.get("llama_args", [])]
         try:
             _process = subprocess.Popen(
