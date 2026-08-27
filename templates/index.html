@@ -1406,6 +1406,7 @@ body.light-mode .weather-country-select option {
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Manage workspaces & API keys">⚙️ Workspaces</button>
+        <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="View app logs (server, chat, voice)">🗒️ Logs</button>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
@@ -4791,6 +4792,86 @@ function renderRestoreList(containerId, items, type) {
         el.appendChild(row);
     });
 }
+
+// ── Logs viewer (server / chat / voice) ──
+var logsTab = 'server';
+var logsPollTimer = null;
+
+function openLogsModal() {
+    var m = document.getElementById('logsModal');
+    m.style.display = 'flex';
+    switchLogsTab('server');
+    startLogsPolling();
+}
+
+function closeLogsModal() {
+    document.getElementById('logsModal').style.display = 'none';
+    stopLogsPolling();
+}
+
+function startLogsPolling() {
+    stopLogsPolling();
+    refreshLogs();
+    logsPollTimer = setInterval(refreshLogs, 2000);
+}
+
+function stopLogsPolling() {
+    if (logsPollTimer) { clearInterval(logsPollTimer); logsPollTimer = null; }
+}
+
+function refreshLogs() {
+    if (logsTab === 'server') loadServerLogs();
+    else if (logsTab === 'chat') loadChatLogs();
+    else if (logsTab === 'voice') loadVoiceLogs();
+}
+
+function switchLogsTab(tab) {
+    logsTab = tab;
+    ['server', 'chat', 'voice'].forEach(function(t) {
+        var b = document.getElementById('logsTab_' + t);
+        if (b) {
+            b.style.background = (t === tab) ? '#1f6feb' : '#1c1c26';
+            b.style.color = (t === tab) ? '#fff' : '#8b949e';
+        }
+    });
+    refreshLogs();
+}
+
+function renderLogLines(lines) {
+    var el = document.getElementById('logsContent');
+    if (!el) return;
+    if (!lines || !lines.length) {
+        el.textContent = 'No log output yet.';
+        return;
+    }
+    el.textContent = lines.join('\n');
+    el.scrollTop = el.scrollHeight;
+}
+
+function loadServerLogs() {
+    fetch('/api/logs/server?lines=500')
+        .then(r => r.json()).then(d => renderLogLines(d.lines))
+        .catch(() => renderLogLines([]));
+}
+
+function loadChatLogs() {
+    fetch('/api/logs?page=1')
+        .then(r => r.json()).then(d => {
+            var logs = d.logs || [];
+            var lines = logs.map(function(l) {
+                var who = (l.role === 'user') ? 'USER' : 'ASSISTANT';
+                return '[' + (l.created_at || '') + '] ' + who + ': ' + (l.content || '').replace(/\n/g, ' ');
+            });
+            renderLogLines(lines);
+        })
+        .catch(() => renderLogLines([]));
+}
+
+function loadVoiceLogs() {
+    fetch('/api/voice/raw?lines=500')
+        .then(r => r.json()).then(d => renderLogLines(d.lines))
+        .catch(() => renderLogLines([]));
+}
 </script>
 
 <!-- Workspace / API key settings modal -->
@@ -4855,6 +4936,22 @@ function renderRestoreList(containerId, items, type) {
 
     <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:4px;">📌 Corkboard pins</div>
     <div id="restorePins" style="margin-bottom:6px;"></div>
+  </div>
+</div>
+
+<!-- Logs viewer modal -->
+<div id="logsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10001; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:16px; width:min(780px, 94vw); height:min(72vh, 680px); display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <strong style="font-size:16px;">🗒️ Logs</strong>
+      <button onclick="closeLogsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <button id="logsTab_server" onclick="switchLogsTab('server')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">🖥 Server</button>
+      <button id="logsTab_chat" onclick="switchLogsTab('chat')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">💬 Chat</button>
+      <button id="logsTab_voice" onclick="switchLogsTab('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">🗣 Voice</button>
+    </div>
+    <pre id="logsContent" style="flex:1; margin:0; padding:12px; background:#0a0a0f; border:1px solid #222; border-radius:8px; color:#c9d1d9; font-size:12px; font-family:Consolas,'Courier New',monospace; white-space:pre-wrap; word-break:break-word; overflow:auto;">Loading logs…</pre>
   </div>
 </div>
 
