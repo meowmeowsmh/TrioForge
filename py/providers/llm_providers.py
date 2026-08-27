@@ -372,8 +372,12 @@ class LlamaCppProvider(LLMProvider):
             os.makedirs(self.models_dir, exist_ok=True)
 
     def _discover_models(self) -> List[str]:
+        # Text GGUF models only. mmproj-*.gguf files are vision projectors — they
+        # must be paired with their text model via --mmproj (see llamacpp_service),
+        # so they are NOT listed as standalone selectable models here.
         gguf_files = glob.glob(os.path.join(self.models_dir, "*.gguf"))
-        local_models = [os.path.basename(f) for f in gguf_files]
+        local_models = [os.path.basename(f) for f in gguf_files
+                        if not os.path.basename(f).lower().startswith("mmproj-")]
 
         server_models = []
         try:
@@ -381,11 +385,20 @@ class LlamaCppProvider(LLMProvider):
             if resp.status_code == 200:
                 data = resp.json()
                 if "data" in data:
-                    server_models = [m["id"] for m in data["data"]]
+                    server_models = [m["id"] for m in data["data"]
+                                     if not str(m["id"]).lower().startswith("mmproj-")]
         except Exception:
             pass
 
-        all_models = list(set(local_models + server_models))
+        # Dedupe by basename (a running server may return absolute paths that
+        # duplicate the local basenames).
+        all_models = []
+        seen = set()
+        for m in local_models + server_models:
+            key = os.path.basename(str(m)).lower()
+            if key not in seen:
+                seen.add(key)
+                all_models.append(m)
         return all_models
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
