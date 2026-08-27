@@ -151,10 +151,11 @@ def _default_server_args():
     threads = (os.cpu_count() or 4)
     return [
         "-ngl", "999",
-        "--flash-attn",
+        "--flash-attn", "on",    # NOTE: newer llama-server needs an explicit value
         "--ctx-size", "131072",   # 128k context as requested
         "--cache-type-k", "q4_0",  # heavy KV-cache quant to fit 128k in 8 GB VRAM
         "--cache-type-v", "q4_0",
+        "--image-min-tokens", "1024",  # Qwen-VL needs this for accurate image reading
         "--threads", str(threads),
     ]
 
