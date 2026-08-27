@@ -51,6 +51,7 @@ except ImportError:
 
 from paths import PROJECT_ROOT, root_path
 import backup_store
+import llamacpp_service
 
 # ── Server log file (tailable from the in-app Logs viewer) ──
 # Written in addition to stderr so the UI can show the server log live,
@@ -930,6 +931,22 @@ def set_model():
     _cached_models.cache_clear()
     _cached_html = None
     return jsonify({'ok': True, 'model': model})
+
+
+# ── llama.cpp server lifecycle (auto-run when provider selected) ──
+@app.route('/api/llamacpp/status', methods=['GET'])
+def llamacpp_status():
+    return jsonify(llamacpp_service.status())
+
+
+@app.route('/api/llamacpp/start', methods=['POST'])
+def llamacpp_start():
+    return jsonify(llamacpp_service.start())
+
+
+@app.route('/api/llamacpp/stop', methods=['POST'])
+def llamacpp_stop():
+    return jsonify(llamacpp_service.stop())
 
 @app.route('/deepseek/model_info', methods=['GET'])
 def deepseek_model_info():
@@ -2063,6 +2080,28 @@ def backup_purge_pin(pin_id):
 
 setup_viewer(app, get_conversation, get_messages)
 
+
+def _auto_open_browser(url: str) -> None:
+    """Open the app in the default browser shortly after startup (unless disabled).
+
+    This makes the launcher a true "press the app and it opens itself" experience —
+    no need to manually open a browser tab. Set TRIOFORGE_NO_BROWSER=1 to disable.
+    """
+    if os.environ.get("TRIOFORGE_NO_BROWSER") == "1":
+        return
+
+    def _open():
+        import time
+        import webbrowser
+        time.sleep(2.0)
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    threading.Thread(target=_open, daemon=True).start()
+
+
 if __name__ == '__main__':
     logger.info("AI CHAT Interfacing Loading... - Multi-Conversation")
     logger.info("Default model : %s", DEFAULT_MODEL)
@@ -2087,6 +2126,7 @@ if __name__ == '__main__':
             url = "http://localhost:5001"
 
     logger.info("Open your browser at: %s", url)
+    _auto_open_browser(url)
 
     # For production, use gunicorn or waitress instead of app.run.
     # Example: gunicorn -w 4 -b 0.0.0.0:5001 app:app
