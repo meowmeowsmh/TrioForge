@@ -941,7 +941,9 @@ def llamacpp_status():
 
 @app.route('/api/llamacpp/start', methods=['POST'])
 def llamacpp_start():
-    return jsonify(llamacpp_service.start())
+    data = request.get_json(silent=True) or {}
+    model = data.get('model')
+    return jsonify(llamacpp_service.start(model=model))
 
 
 @app.route('/api/llamacpp/stop', methods=['POST'])

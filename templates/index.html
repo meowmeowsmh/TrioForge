@@ -1992,6 +1992,21 @@ function updateVisionBadge() {
         .catch(() => visionBadge.classList.remove('visible'));
 }
 
+function startLlamacpp(model) {
+    if (!model) return;
+    fetch('/api/llamacpp/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: model })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) status.textContent = '⚠️ ' + d.error;
+        else status.textContent = '🦙 llama.cpp loading: ' + (d.model || model) + ' …';
+    })
+    .catch(function(){});
+}
+
 function loadModels() {
     var provider = providerSelect.value;
     var apiKey = apiKeyInput.value;
@@ -2022,6 +2037,9 @@ function loadModels() {
                 unloadBtn.style.display = 'inline-block';
             } else {
                 unloadBtn.style.display = 'none';
+            }
+            if (provider === 'llamacpp' && modelSelect.value) {
+                startLlamacpp(modelSelect.value);
             }
             if (provider === 'deepseek' && modelSelect.value) {
                 checkDeepSeekStatus();
@@ -2187,11 +2205,9 @@ providerSelect.addEventListener('change', function() {
 
     var keyInput = document.getElementById('apiKeyInput');
 
-    // llama.cpp service lifecycle: auto-run the server when selected, stop it
-    // (auto-reset) when the user picks any other provider.
-    if (provider === 'llamacpp') {
-        fetch('/api/llamacpp/start', { method: 'POST' }).catch(function(){});
-    } else if (prevProvider === 'llamacpp') {
+    // llama.cpp service lifecycle: stop it when the user switches away.
+    // (Starting happens in loadModels() after the model list is populated.)
+    if (prevProvider === 'llamacpp' && provider !== 'llamacpp') {
         fetch('/api/llamacpp/stop', { method: 'POST' }).catch(function(){});
     }
 
@@ -2247,6 +2263,9 @@ modelSelect.addEventListener('change', function() {
             }
         })
         .catch(err => { status.textContent = '❌ Error: ' + err; });
+    }
+    if (provider === 'llamacpp') {
+        startLlamacpp(model);
     }
     document.getElementById('modelInfo').textContent = '';
 });

@@ -14,6 +14,8 @@ import json
 import logging
 from typing import List, Dict, Any, Optional
 
+from paths import root_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -356,10 +358,10 @@ class OllamaProvider(LLMProvider):
 
 
 class LlamaCppProvider(LLMProvider):
-    def __init__(self, models_dir: str = "./models",
+    def __init__(self, models_dir: Optional[str] = None,
                  server_url: str = "http://127.0.0.1:8080/v1",
                  context_length: int = 65536): #64k
-        self.models_dir = os.path.abspath(models_dir)
+        self.models_dir = os.path.abspath(models_dir) if models_dir else root_path("models")
         self.server_url = server_url.rstrip("/")
         self.context_length = context_length
         self._ensure_models_dir()
@@ -401,7 +403,28 @@ class LlamaCppProvider(LLMProvider):
                 return candidate
         return model
 
-    def _check_server(self):
+    def _check_server(self, wait_ready: bool = True):
+        """Verify the llama-server is reachable. When `wait_ready` is true, poll
+        /health until the model finishes loading (large GGUF files take a while),
+        so the first message doesn't fail just because the server is still starting."""
+        import time
+        base = self.server_url.rstrip("/")
+        base = base.rsplit("/v1", 1)[0]
+        health = base + "/health"
+        if wait_ready:
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                try:
+                    r = requests.get(health, timeout=2)
+                    if r.status_code == 200:
+                        return
+                except Exception:
+                    pass
+                time.sleep(1)
+            raise ConnectionError(
+                "llama.cpp server did not become ready (model may still be loading). "
+                "Check the Logs > Server tab or start it manually."
+            )
         try:
             requests.get(self.server_url, timeout=2)
         except Exception:
