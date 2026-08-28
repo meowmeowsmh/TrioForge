@@ -171,6 +171,22 @@ def _send_voice_bye():
         pass
 
 
+def _voice_agent_running():
+    """Return True if a voice_agent.py process is currently running."""
+    try:
+        import psutil
+        for p in psutil.process_iter(['cmdline']):
+            try:
+                cmdline = ' '.join(p.info.get('cmdline') or [])
+                if 'voice_agent.py' in cmdline:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
 def start(model=None):
     global _process, _running_model
     with _lock:
@@ -205,11 +221,11 @@ def start(model=None):
                 pass
             _process = None
 
-        # If the port is taken by an external process (e.g. the text-only voice-agent
-        # server) and the selected model needs vision, stop it so only ONE server
-        # runs and it is vision-capable. Text-only models are fine to reuse it.
+        # If the port is taken by an external process and the selected model needs
+        # vision, stop the TEXT-ONLY voice agent so only ONE (vision-capable) server
+        # runs. Otherwise reuse whatever is already listening.
         if _port_in_use(host, port):
-            if mmproj:
+            if mmproj and _voice_agent_running():
                 _send_voice_bye()
                 for _ in range(30):
                     if not _port_in_use(host, port):
@@ -220,7 +236,7 @@ def start(model=None):
                             "error": "port {} is still busy; stop the other llama-server manually".format(port)}
             else:
                 return {"running": True, "model": os.path.basename(model_path),
-                        "message": "port {} already in use (another llama-server is running)".format(port)}
+                        "message": "llama-server already running on port {}".format(port)}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
         if mmproj:
