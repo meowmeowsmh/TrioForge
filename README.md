@@ -37,7 +37,7 @@
 
 | Chat | Notes | Corkboard |
 |------|-------|-----------|
-| ![Chat interface](image-3.png) | ![Notes](image.png) | ![Cork Board](image-2.png) |
+| ![Chat interface](screenshot/chat.png) | ![Notes](screenshot/notes.png) | ![Cork Board](screenshot/cork_board.png) |
 
 ---
 
