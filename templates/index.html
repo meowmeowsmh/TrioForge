@@ -1984,6 +1984,26 @@ function loadModels() {
                 var opt = document.createElement('option');
                 opt.value = ''; opt.textContent = 'No models found';
                 modelSelect.appendChild(opt);
+                // If Ollama isn't running but local GGUF models exist, switch to llama.cpp
+                // automatically so your models show up.
+                if (provider === 'ollama') {
+                    fetch('/providers/models', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider: 'llamacpp', api_key: '' })
+                    })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.models && d.models.length) {
+                            providerSelect.value = 'llamacpp';
+                            providerSelect.dataset.prev = 'ollama';
+                            try { localStorage.setItem('provider', 'llamacpp'); } catch(e) {}
+                            status.textContent = '🦙 Ollama not running — switched to llama.cpp.';
+                            loadModels();
+                        }
+                    })
+                    .catch(function(){});
+                }
             }
             updateVisionBadge();
             if (provider === 'ollama') {
@@ -2155,6 +2175,7 @@ providerSelect.addEventListener('change', function() {
     var provider = this.value;
     var prevProvider = this.dataset.prev || 'ollama';
     this.dataset.prev = provider;
+    try { localStorage.setItem('provider', provider); } catch(e) {}
 
     var keyInput = document.getElementById('apiKeyInput');
 
@@ -2976,6 +2997,14 @@ resourceIntervalId = setInterval(updateResources, 15000);
 window.addEventListener('load', function() {
     // Run each init step in isolation so one error can never blank the sidebar.
     function safe(fn) { try { fn(); } catch(e) { console.error('init error:', e); } }
+
+    // Restore the last-used provider so the model list doesn't reset to Ollama.
+    try {
+        var savedProvider = localStorage.getItem('provider');
+        if (savedProvider && Array.prototype.some.call(providerSelect.options, function(o) { return o.value === savedProvider; })) {
+            providerSelect.value = savedProvider;
+        }
+    } catch(e) {}
     var provider = providerSelect.value;
 
     // Load the conversation list FIRST so your saved chats always appear.
