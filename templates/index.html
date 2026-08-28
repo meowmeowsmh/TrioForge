@@ -1673,70 +1673,30 @@ document.addEventListener('drop', function(e) {
 });
 
 function processDropItems(items) {
-    var entries = [];
+    var allFiles = [];
+    var pendingReads = 0;
+    function addFile(file) {
+        if (file) allFiles.push(file);
+        pendingReads--;
+        if (pendingReads === 0) {
+            allFiles.forEach(f => addDroppedFile(f));
+        }
+    }
     for (var i = 0; i < items.length; i++) {
         var item = items[i];
         var entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-        if (entry) entries.push(entry);
-    }
-    if (entries.length === 0) {
-        for (var i = 0; i < items.length; i++) {
-            var file = items[i].getAsFile ? items[i].getAsFile() : null;
-            if (file) addDroppedFile(file);
-        }
-        return;
-    }
-    var fileQueue = [];
-    var pendingReads = 0;
-    var maxFiles = 100;
-    function traverseEntry(entry, path) {
-        if (fileQueue.length >= maxFiles) return;
-        if (entry.isFile) {
-            entry.file(function(file) {
-                fileQueue.push(file);
-                pendingReads--;
-                if (pendingReads === 0) {
-                    fileQueue.forEach(f => addDroppedFile(f));
-                }
-            }, function(err) {
-                console.warn('Error reading file:', err);
-                pendingReads--;
-                if (pendingReads === 0) {
-                    fileQueue.forEach(f => addDroppedFile(f));
-                }
-            });
+        if (entry && entry.isFile) {
             pendingReads++;
-        } else if (entry.isDirectory) {
-            var reader = entry.createReader();
-            var allEntries = [];
-            function readEntries() {
-                reader.readEntries(function(results) {
-                    if (results.length === 0) {
-                        allEntries.forEach(function(subEntry) {
-                            traverseEntry(subEntry, path + entry.name + '/');
-                        });
-                    } else {
-                        allEntries = allEntries.concat(results);
-                        readEntries();
-                    }
-                }, function(err) {
-                    console.warn('Error reading directory:', err);
-                });
-            }
-            readEntries();
+            entry.file(addFile, function() { addFile(null); });
+        } else {
+            var file = item.getAsFile ? item.getAsFile() : null;
+            if (file) allFiles.push(file);
         }
     }
-    entries.forEach(function(entry) {
-        traverseEntry(entry, '');
-    });
-    if (pendingReads === 0 && fileQueue.length === 0) {
-        status.textContent = '📁 No files found in drop.';
+    if (pendingReads === 0) {
+        if (allFiles.length) allFiles.forEach(f => addDroppedFile(f));
+        else status.textContent = '📁 No files found in drop.';
     }
-    setTimeout(function() {
-        if (pendingReads === 0 && fileQueue.length > 0) {
-            fileQueue.forEach(f => addDroppedFile(f));
-        }
-    }, 100);
 }
 
 function addDroppedFile(file) {
@@ -2753,7 +2713,7 @@ function actuallySend(text) {
     var userEntry = {
         role: 'user',
         text: text,
-        images: images.map(i => ({ b64: i.b64, name: i.name })),
+        images: images.map(i => ({ b64: i.b64, name: i.name, mime: i.mime })),
         files: files.map(f => ({ name: f.name, mime: f.mime })),
         ts: new Date().toLocaleTimeString()
     };
@@ -2808,7 +2768,7 @@ function actuallySend(text) {
         body: JSON.stringify({
             conversation_id: currentConv,
             message: text,
-            images: images.map(i => ({ b64: i.b64, name: i.name })),
+            images: images.map(i => ({ b64: i.b64, name: i.name, mime: i.mime })),
             files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime })),
             search: searchEnabled,
             provider: provider,
