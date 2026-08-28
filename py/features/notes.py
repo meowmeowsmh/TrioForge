@@ -2050,6 +2050,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         <div class="sidebar-header">
             <h2>📖 Notes</h2>
             <button class="new-note-btn" onclick="createNewNote()">+ New</button>
+            <button class="new-note-btn" onclick="toggleFullscreen()" style="background:#2d2d3d; box-shadow:none;" title="Full screen">⛶</button>
         </div>
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="🔍 Search notes..." oninput="searchNotes()">
@@ -3087,9 +3088,18 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         document.getElementById('aiResult').style.display = 'none';
         document.getElementById('backlinksContainer').style.display = 'none';
         editingNoteId = null;
-        currentColor = 'default';
+        // Default colour from Settings (localStorage), else 'default'.
+        var defHex = (localStorage.getItem('note_default_color') || '').toLowerCase();
+        var colorName = 'default';
+        if (defHex === '#fdec8f') colorName = 'yellow';
+        else if (defHex === '#9fd3ff' || defHex === '#bfe3ff') colorName = 'blue';
+        else if (defHex === '#a9e6a1' || defHex === '#c8f0c2') colorName = 'green';
+        else if (defHex === '#ffb3cd' || defHex === '#ffd0e0') colorName = 'pink';
+        else if (defHex === '#ffc27a' || defHex === '#ffd9a8') colorName = 'orange';
+        currentColor = colorName;
         document.querySelectorAll('#colorPicker .color-option').forEach(c => c.classList.remove('active'));
-        document.querySelector('#colorPicker .color-default').classList.add('active');
+        var sel = document.querySelector('#colorPicker .color-' + colorName);
+        if (sel) sel.classList.add('active'); else document.querySelector('#colorPicker .color-default').classList.add('active');
         currentPinned = false;
         document.getElementById('pinToggle').classList.remove('active');
         document.getElementById('pinToggle').textContent = '📌 Pin';
@@ -4614,6 +4624,14 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         document.getElementById('noteTitleInput').focus();
         initWeatherWidget();
     });
+
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function(){});
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen().catch(function(){});
+        }
+    }
 </script>
 </body>
 </html>

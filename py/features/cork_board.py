@@ -1957,6 +1957,7 @@ body.light-mode .weather-controls select option {
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
         <button class="top-btn" id="suggestLinksBtn" onclick="openLinkSuggestions()">💡 Suggest Links</button>
         <button class="top-btn" id="importConvBtn" onclick="importConversationTree()">💬 Import Conversation</button>
+        <button class="top-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
     </div>
 
     <!-- TAG FILTER -->
@@ -3093,6 +3094,14 @@ function savePin(id, fields, immediate) {
 // ─── CRUD ────────────────────────────────────────────
 function createNewPin() {
     var wrap = document.getElementById('boardWrap');
+    // Use the default pin colour from Settings (localStorage), else yellow.
+    var defColor = localStorage.getItem('pin_default_color') || '#fdec8f';
+    var colorName = 'yellow';
+    if (defColor.toLowerCase() === '#fdec8f') colorName = 'yellow';
+    else if (defColor.toLowerCase() === '#bfe3ff' || defColor.toLowerCase() === '#9fd3ff') colorName = 'blue';
+    else if (defColor.toLowerCase() === '#c8f0c2' || defColor.toLowerCase() === '#a9e6a1') colorName = 'green';
+    else if (defColor.toLowerCase() === '#ffd0e0' || defColor.toLowerCase() === '#ffb3cd') colorName = 'pink';
+    else if (defColor.toLowerCase() === '#ffd9a8' || defColor.toLowerCase() === '#ffc27a') colorName = 'orange';
     fetch('/corkboard/api/pins', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3102,7 +3111,8 @@ function createNewPin() {
             x: wrap.scrollLeft + 60,
             y: wrap.scrollTop + 60,
             width: 220,
-            height: 200
+            height: 200,
+            color: colorName
         })
     }).then(r => r.json()).then(data => {
         if (data.ok) {
@@ -3111,6 +3121,14 @@ function createNewPin() {
             renderTagFilter();
         }
     });
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function(){});
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen().catch(function(){});
+    }
 }
 
 function deletePin(id) {
