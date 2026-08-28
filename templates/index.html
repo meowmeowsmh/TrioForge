@@ -3025,6 +3025,10 @@ window.addEventListener('load', function() {
     });
     safe(initWeather);
 });
+
+// Immediate fallback: load the conversation list right away, independent of the
+// window 'load' event (which can be delayed/blocked by slow CDN/deferred scripts).
+try { loadConversations(); } catch(e) { console.error('load fallback:', e); }
 </script>
 
 <script src="/viewer/static/viewer.js"></script>
