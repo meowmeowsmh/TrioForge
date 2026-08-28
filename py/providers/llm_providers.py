@@ -3,6 +3,7 @@ LLM Provider abstraction – all providers are optional and graceful.
 Supports image (vision) input for providers and models that allow it.
 """
 
+import importlib.util
 import os
 import glob
 import re
@@ -10,9 +11,8 @@ import hashlib
 import base64
 import unicodedata
 import requests
-import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 
 from paths import root_path
 
@@ -557,11 +557,8 @@ class HuggingFaceProvider(LLMProvider):
                  api_token: Optional[str] = None):
         self.model = model
         self.api_token = api_token or os.environ.get("HF_API_TOKEN")
-        self._available = True
-        try:
-            import huggingface_hub
-        except ImportError:
-            self._available = False
+        self._available = importlib.util.find_spec("huggingface_hub") is not None
+        if not self._available:
             logger.warning("huggingface_hub not installed. Run: pip install huggingface_hub")
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:

@@ -23,7 +23,7 @@ import csv
 import logging
 from logging.handlers import RotatingFileHandler
 from io import StringIO
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,7 +49,7 @@ except ImportError:
     json_loads = std_json.loads
     logger.info("Using standard json (install orjson for better performance)")
 
-from paths import PROJECT_ROOT, root_path
+from paths import root_path
 import backup_store
 import llamacpp_service
 import voice_service
@@ -69,7 +69,6 @@ logging.getLogger().addHandler(_server_log_handler)
 
 # ── Imports ──
 from providers.llm_providers import (
-    LLMProvider,
     OllamaProvider,
     LlamaCppProvider,
     HuggingFaceProvider,
@@ -2001,6 +2000,7 @@ def backup_list_conversations():
 
 @app.route('/api/backup/conversations/<cid>/restore', methods=['POST'])
 def backup_restore_conversation(cid):
+    global _conversations_dirty
     data = backup_store.get_conversation(cid)
     if not data:
         return jsonify({'error': 'Not found in backup'}), 404

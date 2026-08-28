@@ -8,7 +8,6 @@
 # + WEATHER WIDGET integrated at top‑right corner (persistent across pages).
 
 import os
-import json as std_json          # used for tags/embedding JSON columns + misc parsing
 import logging
 import threading
 import uuid
@@ -31,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 # ---------- LLM for AI assistance ----------
 from providers.llm_providers import (
-    LLMProvider,
     OllamaProvider,
     LlamaCppProvider,
     HuggingFaceProvider,

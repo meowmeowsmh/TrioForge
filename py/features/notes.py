@@ -13,7 +13,6 @@ import uuid
 import re
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template_string
-from concurrent.futures import ThreadPoolExecutor
 
 from common import (
     json_dumps,
