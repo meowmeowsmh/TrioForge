@@ -2293,21 +2293,20 @@ function loadConversations() {
         .then(r => r.json())
         .then(data => {
             conversations = data;
-            var query = document.getElementById('searchInput').value.trim();
-            if (query.length > 0) {
-                searchChats();
-            } else {
-                renderConvList(conversations);
-            }
+            // Load the selected conversation's messages FIRST so the chat is never blank.
             if (data.length > 0) {
-                if (!currentConv || !data.find(c => c.id === currentConv)) {
-                    selectConversation(data[0].id);
-                } else {
-                    selectConversation(currentConv);
-                }
+                var target = (!currentConv || !data.find(c => c.id === currentConv)) ? data[0].id : currentConv;
+                selectConversation(target);
             } else {
                 newChat();
+                return;
             }
+            // Then render the sidebar list (isolated so a hiccup can't hide the chat).
+            try {
+                var query = document.getElementById('searchInput').value.trim();
+                if (query.length > 0) searchChats();
+                else renderConvList(conversations);
+            } catch(e) { console.error('render list error:', e); }
         });
 }
 function renderConvList(convs) {
@@ -2453,7 +2452,6 @@ function renameChat(id) {
     });
 }
 function selectConversation(id) {
-    if (id === currentConv) return;
     currentConv = id;
     document.querySelectorAll('.conv-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
     fetch('/conversations/' + id + '/messages')
@@ -4904,17 +4902,6 @@ function toggleFullscreen() {
         }
     }
 }
-
-// Try to go fullscreen automatically on the first user gesture (desktop-app feel).
-var _triedAutoFullscreen = false;
-function tryAutoFullscreen() {
-    if (_triedAutoFullscreen) return;
-    _triedAutoFullscreen = true;
-    if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(function(){});
-    }
-}
-document.addEventListener('click', tryAutoFullscreen, { once: true });
 
 // ── Services control panel ──
 function openServicesModal() {
