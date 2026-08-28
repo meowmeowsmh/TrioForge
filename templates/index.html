@@ -1960,9 +1960,11 @@ function startLlamacpp(model) {
     .catch(function(){});
 }
 
+var loadModelsReq = 0;
 function loadModels() {
     var provider = providerSelect.value;
     var apiKey = apiKeyInput.value;
+    var myReq = ++loadModelsReq;
     fetch('/providers/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1970,6 +1972,7 @@ function loadModels() {
     })
         .then(r => r.json())
         .then(data => {
+            if (myReq !== loadModelsReq) return;  // ignore a stale response (e.g. old provider)
             if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
             var current = modelSelect.value;
             modelSelect.innerHTML = '';
@@ -2288,10 +2291,13 @@ function searchChats() {
     }, 300);
 }
 
+var loadConvsReq = 0;
 function loadConversations() {
+    var myReq = ++loadConvsReq;
     fetch('/conversations')
         .then(r => r.json())
         .then(data => {
+            if (myReq !== loadConvsReq) return;  // ignore a stale response
             conversations = data;
             // Load the selected conversation's messages FIRST so the chat is never blank.
             if (data.length > 0) {
@@ -2307,7 +2313,8 @@ function loadConversations() {
                 if (query.length > 0) searchChats();
                 else renderConvList(conversations);
             } catch(e) { console.error('render list error:', e); }
-        });
+        })
+        .catch(err => { console.error('load conversations error:', err); });
 }
 function renderConvList(convs) {
     if (!convs || convs.length === 0) {
@@ -3005,8 +3012,8 @@ window.addEventListener('load', function() {
     } catch(e) {}
     var provider = providerSelect.value;
 
-    // Load the conversation list FIRST so your saved chats always appear.
-    safe(loadConversations);
+    // (Conversation loading is handled by the immediate call at the end of the
+    // script, so it isn't gated on the window 'load' event.)
 
     safe(function() {
         if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
