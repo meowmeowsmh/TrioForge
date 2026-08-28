@@ -1404,10 +1404,6 @@ body.light-mode .weather-country-select option {
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
 
-        <!-- Weather toggle and country dropdown -->
-        <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
-        <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country"></select>
-
         <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Settings">⚙️ Settings</button>
       </div>
     </div>
@@ -5109,6 +5105,10 @@ document.addEventListener('input', function(e) {
     <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:6px;">📌 Corkboard</div>
     <label style="display:block; font-size:12px; margin-bottom:4px;">Default pin colour</label>
     <input type="color" id="setPinColor" style="width:100%; height:36px; background:#0a0a0f; border:1px solid #333; border-radius:6px; margin-bottom:12px; cursor:pointer;">
+
+    <div style="font-size:13px; font-weight:bold; color:#d29922; margin-bottom:6px;">🌤️ Weather</div>
+    <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather" style="margin-bottom:8px;">🌤️</button>
+    <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:10px;"></select>
   </div>
 </div>
 
