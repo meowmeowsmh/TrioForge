@@ -1400,11 +1400,20 @@ body.light-mode .weather-country-select option {
           <option value="voice">🗣 Voice-to-Voice</option>
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
+        <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
         <span id="visionBadge" class="vision-badge">👁 Vision</span>
+        <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
+        <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Manage workspaces & API keys">⚙️ Workspaces</button>
+        <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="View app logs (server, chat, voice)">🗒️ Logs</button>
+        <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Turn a specific service on/off">🧩 Services</button>
+        <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle full screen">⛶ Fullscreen</button>
+        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Notes & corkboard colours">🎨</button>
 
-        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Settings">⚙️ Settings</button>
+        <!-- Weather toggle and country dropdown -->
+        <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
+        <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country"></select>
       </div>
     </div>
 
@@ -5110,24 +5119,10 @@ document.addEventListener('input', function(e) {
 
 <!-- Settings dialog -->
 <div id="settingsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10002; align-items:center; justify-content:center;">
-  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(480px, 94vw); max-height:85vh; overflow:auto;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(420px, 94vw);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <strong style="font-size:16px;">⚙️ Settings</strong>
+      <strong style="font-size:16px;">🎨 Colours</strong>
       <button onclick="closeSettingsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
-    </div>
-
-    <div style="font-size:13px; font-weight:bold; color:#58a6ff; margin-bottom:6px;">🖥 App</div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
-      <button onclick="toggleFullscreen()" style="padding:7px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">⛶ Full screen</button>
-      <button onclick="clearAllChats()" style="padding:7px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">🗑 Clear chat</button>
-      <button id="unloadBtn" title="Unload current Ollama model from memory" style="padding:7px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">🗑 Unload model</button>
-    </div>
-
-    <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:6px;">🧩 Panels</div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
-      <button onclick="toggleWorkspaceSettings()" style="padding:7px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">⚙️ Workspaces</button>
-      <button onclick="openServicesModal()" style="padding:7px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">🧩 Services</button>
-      <button onclick="openLogsModal()" style="padding:7px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">🗒️ Logs</button>
     </div>
 
     <div style="font-size:13px; font-weight:bold; color:#3fb950; margin-bottom:6px;">📝 Notes</div>
@@ -5137,10 +5132,6 @@ document.addEventListener('input', function(e) {
     <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:6px;">📌 Corkboard</div>
     <label style="display:block; font-size:12px; margin-bottom:4px;">Default pin colour</label>
     <input type="color" id="setPinColor" style="width:100%; height:36px; background:#0a0a0f; border:1px solid #333; border-radius:6px; margin-bottom:12px; cursor:pointer;">
-
-    <div style="font-size:13px; font-weight:bold; color:#d29922; margin-bottom:6px;">🌤️ Weather</div>
-    <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather" style="margin-bottom:8px;">🌤️</button>
-    <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:10px;"></select>
   </div>
 </div>
 
