@@ -2974,24 +2974,29 @@ window.addEventListener('beforeunload', function() {
 resourceIntervalId = setInterval(updateResources, 15000);
 
 window.addEventListener('load', function() {
+    // Run each init step in isolation so one error can never blank the sidebar.
+    function safe(fn) { try { fn(); } catch(e) { console.error('init error:', e); } }
     var provider = providerSelect.value;
-    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
-        apiKeyInput.value = loadApiKey(provider);
-    }
-    loadModels();
-    loadConversations();
-    msgInput.focus();
-    setTimeout(updateResources, 500);
-    if (provider === 'deepseek') {
-        checkDeepSeekStatus();
-    }
-    var searchBtn = document.getElementById('searchToggleBtn');
-    searchBtn.classList.toggle('active', searchEnabled);
-    searchBtn.textContent = searchEnabled ? '🔍' : '🔍 off';
-    status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
 
-    // Init weather after chat is ready
-    initWeather();
+    // Load the conversation list FIRST so your saved chats always appear.
+    safe(loadConversations);
+
+    safe(function() {
+        if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
+            apiKeyInput.value = loadApiKey(provider);
+        }
+    });
+    safe(loadModels);
+    safe(function() { msgInput.focus(); });
+    setTimeout(function() { safe(updateResources); }, 500);
+    if (provider === 'deepseek') safe(checkDeepSeekStatus);
+    safe(function() {
+        var searchBtn = document.getElementById('searchToggleBtn');
+        searchBtn.classList.toggle('active', searchEnabled);
+        searchBtn.textContent = searchEnabled ? '🔍' : '🔍 off';
+        status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
+    });
+    safe(initWeather);
 });
 </script>
 
