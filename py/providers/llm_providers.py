@@ -508,9 +508,10 @@ class LlamaCppProvider(LLMProvider):
         content_parts = []
         for img in images:
             b64 = _strip_b64_prefix(img["b64"])
+            mime = img.get("mime", "image/jpeg")
             content_parts.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                "image_url": {"url": f"data:{mime};base64,{b64}"}
             })
         last_text = messages[-1].get("content", "") if messages else ""
         content_parts.append({"type": "text", "text": last_text})
