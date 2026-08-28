@@ -1400,16 +1400,16 @@ body.light-mode .weather-country-select option {
           <option value="voice">🗣 Voice-to-Voice</option>
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
-        <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑 Unload</button>
-        <span id="visionBadge" class="vision-badge">👁 Vision</span>
-        <button class="clear-btn" onclick="clearAllChats()" title="Clears only the currently open chat's messages">🗑 Clear Chat</button>
+        <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑</button>
+        <span id="visionBadge" class="vision-badge" title="Vision capable">👁</span>
+        <button class="clear-btn" onclick="clearAllChats()" title="Clear this chat's messages">🧹</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
         <span id="modelInfo" style="display:none;"></span>
-        <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Manage workspaces & API keys">⚙️ Workspaces</button>
-        <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="View app logs (server, chat, voice)">🗒️ Logs</button>
-        <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Turn a specific service on/off">🧩 Services</button>
-        <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle full screen">⛶ Fullscreen</button>
-        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Notes & corkboard colours">🎨</button>
+        <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">⚙️</button>
+        <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
+        <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
+        <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Full screen">⛶</button>
+        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Note & pin colours">🎨</button>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
