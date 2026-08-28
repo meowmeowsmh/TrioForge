@@ -2132,6 +2132,23 @@ def _auto_open_browser(url: str) -> None:
 
 
 if __name__ == '__main__':
+    # Single-instance guard: if port 5001 is already bound, another TrioForge
+    # instance is already running. Open the browser to it and exit cleanly so we
+    # never spawn zombie duplicate processes that fight over the database.
+    import socket as _socket
+    _probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    _probe.settimeout(1)
+    try:
+        if _probe.connect_ex(('127.0.0.1', 5001)) == 0:
+            print("TrioForge is already running at https://localhost:5001 — opening it.")
+            try:
+                _auto_open_browser("https://localhost:5001")
+            except Exception:
+                pass
+            sys.exit(0)
+    finally:
+        _probe.close()
+
     logger.info("AI CHAT Interfacing Loading... - Multi-Conversation")
     logger.info("Default model : %s", DEFAULT_MODEL)
     logger.info("Current model : %s", current_model)
