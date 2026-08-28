@@ -362,7 +362,7 @@ class OllamaProvider(LLMProvider):
 class LlamaCppProvider(LLMProvider):
     def __init__(self, models_dir: Optional[str] = None,
                  server_url: str = "http://127.0.0.1:8080/v1",
-                 context_length: int = 32768):  # matches the auto-configured server ctx
+                 context_length: int = 16384):  # matches the auto-configured server ctx
         self.models_dir = os.path.abspath(models_dir) if models_dir else root_path("models")
         self.server_url = server_url.rstrip("/")
         self.context_length = context_length
@@ -488,7 +488,13 @@ class LlamaCppProvider(LLMProvider):
                 timeout=180
             )
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            msg = resp.json()["choices"][0]["message"]
+            content = msg.get("content") or ""
+            reasoning = msg.get("reasoning_content") or ""
+            # Qwen3.5 is a reasoning model: it "thinks" before answering. If the final
+            # content is empty (reasoning used the token budget), fall back to showing
+            # the reasoning so the response isn't blank / "rejected".
+            return content or reasoning
         except requests.exceptions.Timeout:
             raise ProviderError("llama.cpp server timed out. Try reducing context size or use a smaller model.")
         except requests.exceptions.ConnectionError:
@@ -536,7 +542,10 @@ class LlamaCppProvider(LLMProvider):
                 timeout=180
             )
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            msg = resp.json()["choices"][0]["message"]
+            content = msg.get("content") or ""
+            reasoning = msg.get("reasoning_content") or ""
+            return content or reasoning
         except Exception as e:
             raise ProviderError(f"llama.cpp vision error: {e}")
 
