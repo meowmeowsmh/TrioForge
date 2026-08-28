@@ -1407,6 +1407,7 @@ body.light-mode .weather-country-select option {
         <span id="modelInfo" style="display:none;"></span>
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Manage workspaces & API keys">⚙️ Workspaces</button>
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="View app logs (server, chat, voice)">🗒️ Logs</button>
+        <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Turn a specific service on/off">🧩 Services</button>
         <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle full screen">⛶ Fullscreen</button>
 
         <!-- Weather toggle and country dropdown -->
@@ -4888,6 +4889,69 @@ function tryAutoFullscreen() {
     }
 }
 document.addEventListener('click', tryAutoFullscreen, { once: true });
+
+// ── Services control panel ──
+function openServicesModal() {
+    var m = document.getElementById('servicesModal');
+    m.style.display = 'flex';
+    refreshServices();
+}
+
+function closeServicesModal() {
+    document.getElementById('servicesModal').style.display = 'none';
+}
+
+function refreshServices() {
+    fetch('/api/services')
+        .then(r => r.json())
+        .then(d => {
+            setServiceUI('llama', d.llamacpp);
+            setServiceUI('voice', d.voice);
+        })
+        .catch(() => {});
+}
+
+function setServiceUI(name, st) {
+    var running = st && st.running;
+    var statusEl = document.getElementById('svc' + name.charAt(0).toUpperCase() + name.slice(1) + 'Status');
+    var btn = document.getElementById('svc' + name.charAt(0).toUpperCase() + name.slice(1) + 'Btn');
+    if (statusEl) {
+        statusEl.textContent = running ? '🟢 Running' : '⚪ Stopped';
+        statusEl.style.color = running ? '#3fb950' : '#8b949e';
+    }
+    if (btn) {
+        btn.textContent = running ? 'Stop' : 'Start';
+        btn.style.background = running ? '#da3633' : '#1f6feb';
+        btn.style.color = '#fff';
+    }
+}
+
+function toggleService(which) {
+    var svc = (which === 'llamacpp') ? 'llamacpp' : 'voice';
+    var statusDiv = document.getElementById('svcStatus');
+    if (statusDiv) statusDiv.textContent = '⏳ Working…';
+    fetch('/api/services', { method: 'GET' })
+        .then(r => r.json())
+        .then(state => {
+            var running = (svc === 'llamacpp') ? state.llamacpp.running : state.voice.running;
+            var url;
+            if (svc === 'llamacpp') {
+                url = running ? '/api/llamacpp/stop' : '/api/llamacpp/start';
+            } else {
+                url = running ? '/api/services/voice/stop' : '/api/services/voice/start';
+            }
+            return fetch(url, { method: 'POST' });
+        })
+        .then(r => r.json())
+        .then(d => {
+            refreshServices();
+            if (statusDiv) statusDiv.textContent = d.message || 'Done.';
+        })
+        .catch(function() {
+            refreshServices();
+            if (statusDiv) statusDiv.textContent = '⚠️ Failed to toggle service.';
+        });
+}
 </script>
 
 <!-- Workspace / API key settings modal -->
@@ -4968,6 +5032,31 @@ document.addEventListener('click', tryAutoFullscreen, { once: true });
       <button id="logsTab_voice" onclick="switchLogsTab('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">🗣 Voice</button>
     </div>
     <pre id="logsContent" style="flex:1; margin:0; padding:12px; background:#0a0a0f; border:1px solid #222; border-radius:8px; color:#c9d1d9; font-size:12px; font-family:Consolas,'Courier New',monospace; white-space:pre-wrap; word-break:break-word; overflow:auto;">Loading logs…</pre>
+  </div>
+</div>
+
+<!-- Services control panel -->
+<div id="servicesModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10000; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(480px, 94vw);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:16px;">🧩 Services</strong>
+      <button onclick="closeServicesModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">Turn a specific service on or off. Only one of llama.cpp / Voice should run at a time.</p>
+
+    <div id="svcLlama" style="display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #222;">
+      <span style="flex:1; font-size:14px;">🦙 llama.cpp server</span>
+      <span id="svcLlamaStatus" style="font-size:12px; color:#8b949e;">…</span>
+      <button id="svcLlamaBtn" onclick="toggleService('llamacpp')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer;">–</button>
+    </div>
+
+    <div id="svcVoice" style="display:flex; align-items:center; gap:10px; padding:10px 0;">
+      <span style="flex:1; font-size:14px;">🗣 Voice agent</span>
+      <span id="svcVoiceStatus" style="font-size:12px; color:#8b949e;">…</span>
+      <button id="svcVoiceBtn" onclick="toggleService('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer;">–</button>
+    </div>
+
+    <div id="svcStatus" style="font-size:12px; margin-top:12px; color:#8b949e;"></div>
   </div>
 </div>
 
