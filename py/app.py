@@ -2142,7 +2142,8 @@ if __name__ == '__main__':
         if _probe.connect_ex(('127.0.0.1', 5001)) == 0:
             print("TrioForge is already running at https://localhost:5001 — opening it.")
             try:
-                _auto_open_browser("https://localhost:5001")
+                import webbrowser
+                webbrowser.open("https://localhost:5001")  # synchronous: opens before we exit
             except Exception:
                 pass
             sys.exit(0)
