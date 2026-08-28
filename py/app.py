@@ -1709,6 +1709,13 @@ def chat():
         use_tools = (not images) and provider_name in ("deepseek", "groq") \
             and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
 
+        # llama.cpp is auto-started (and kept running) whenever it's the provider,
+        # so the user never has to launch it manually.
+        if provider_name == 'llamacpp':
+            st = llamacpp_service.start(model=model)
+            if st.get('error'):
+                return jsonify({'error': 'llama.cpp failed to start: ' + st['error']}), 500
+
         start_time = time.time()
         if images:
             if cached_vision_check(provider_name, model):

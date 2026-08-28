@@ -147,7 +147,7 @@ def _default_server_args():
     threads = (os.cpu_count() or 4)
     return [
         "--flash-attn", "on",
-        "--ctx-size", "16384",
+        "--ctx-size", "32768",
         "--cache-type-k", "q8_0",
         "--cache-type-v", "q8_0",
         "--image-min-tokens", "1024",  # Qwen-VL needs this for accurate image reading
