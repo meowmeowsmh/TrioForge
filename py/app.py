@@ -52,6 +52,7 @@ except ImportError:
 from paths import PROJECT_ROOT, root_path
 import backup_store
 import llamacpp_service
+import voice_service
 
 # ── Server log file (tailable from the in-app Logs viewer) ──
 # Written in addition to stderr so the UI can show the server log live,
@@ -949,6 +950,25 @@ def llamacpp_start():
 @app.route('/api/llamacpp/stop', methods=['POST'])
 def llamacpp_stop():
     return jsonify(llamacpp_service.stop())
+
+
+# ── Services control panel (turn a specific service on/off) ──
+@app.route('/api/services', methods=['GET'])
+def services_status():
+    return jsonify({
+        "llamacpp": llamacpp_service.status(),
+        "voice": voice_service.status(),
+    })
+
+
+@app.route('/api/services/voice/start', methods=['POST'])
+def voice_start():
+    return jsonify(voice_service.start())
+
+
+@app.route('/api/services/voice/stop', methods=['POST'])
+def voice_stop():
+    return jsonify(voice_service.stop())
 
 @app.route('/deepseek/model_info', methods=['GET'])
 def deepseek_model_info():
