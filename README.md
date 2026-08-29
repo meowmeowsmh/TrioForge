@@ -119,6 +119,40 @@ API keys can also be entered directly in the web UI. Keys are never written to d
 
 ---
 
+## 🗂️ Workspaces & folder access
+
+Workspaces let a model **read and write files on your machine**, scoped to one folder you choose. A workspace has just four fields:
+
+| Field | Purpose |
+|-------|---------|
+| **Folder** | The folder the model can access (e.g. `D:\TrioForge`). |
+| **Folder access** | `read` (list + read only) or `readwrite` (also write). |
+| **Thinking** | `low` / `mid` / `high` effort hint. |
+| **Dependencies** | Optional dependency notes for the model. |
+
+The model can call three workspace tools:
+
+- `list_files` — list what's in the folder
+- `read_file` — read a text file inside the folder
+- `write_file` — write a text file (only when folder access is `readwrite`)
+
+> 🔒 **Path safety:** every file path is resolved against the configured folder, and `..` traversal outside that folder is blocked.
+
+### Which providers support it
+
+| Provider | Workspace tools |
+|----------|-----------------|
+| Ollama | ✅ (chat + streaming) |
+| llama.cpp (local GGUF) | ✅ |
+| DeepSeek | ✅ |
+| Groq | ✅ |
+
+> ⚠️ Tool reliability depends on the model. For llama.cpp, **Qwen3.5** handles tools well; small models (e.g. 1B) often emit malformed tool calls.
+
+Just ask naturally — e.g. *"read py/app.py"* or *"create a file notes.txt with this content"* — and the model will call the tools for you.
+
+---
+
 ## 🔒 Running with HTTPS
 
 ### Windows / macOS — Waitress

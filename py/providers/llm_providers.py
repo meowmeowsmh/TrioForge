@@ -9,6 +9,7 @@ import glob
 import re
 import hashlib
 import base64
+import json
 import unicodedata
 import requests
 import logging
@@ -349,6 +350,73 @@ class OllamaProvider(LLMProvider):
                             images: List[Dict], **kwargs) -> str:
         return self.generate(messages, images=images, **kwargs)
 
+    def generate_raw(self, messages: List[Dict[str, str]], **kwargs) -> dict:
+        """Non-streaming call that also returns native tool_calls (workspace tools).
+
+        Ollama's /api/chat returns tool_calls as:
+            {"id": "call_x", "function": {"name": ..., "arguments": {...}}}
+        We normalize to the OpenAI-style shape the tool loop expects:
+            {"id": ..., "type": "function", "function": {"name": ..., "arguments": <json-str>}}
+        """
+        model = kwargs.get("model") or self.model
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        num_gpu = kwargs.get("num_gpu", 99)
+        low_vram = kwargs.get("low_vram", False)
+        tools = kwargs.get("tools")
+
+        chat_messages = self._prepare_messages(messages)
+
+        payload = {
+            "model": model,
+            "messages": chat_messages,
+            "stream": False,
+            "keep_alive": 300,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                "num_ctx": 4096,
+                "num_gpu": num_gpu,
+                "low_vram": low_vram,
+            }
+        }
+        if tools:
+            payload["tools"] = tools
+
+        try:
+            resp = requests.post(self.chat_url, json=payload, timeout=180)
+            resp.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise ProviderError(f"Ollama request failed: {e}")
+
+        data = resp.json()
+        msg = data.get("message", {})
+        content = msg.get("content") or ""
+        # Qwen3.5 (reasoning model) may put its final answer in `thinking` while
+        # leaving `content` empty — fall back so the response isn't blank.
+        if not content:
+            content = msg.get("thinking") or ""
+        raw_calls = msg.get("tool_calls") or []
+        tool_calls = None
+        if raw_calls:
+            tool_calls = []
+            for i, tc in enumerate(raw_calls):
+                fn = tc.get("function", {}) or {}
+                # Ollama natively uses a dict for `arguments` in BOTH directions,
+                # so we keep it as a dict (the shared tool loop echoes it back).
+                args = fn.get("arguments", {}) or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        args = {}
+                tool_calls.append({
+                    "id": tc.get("id") or f"call_{i}",
+                    "type": "function",
+                    "function": {"name": fn.get("name", ""), "arguments": args},
+                })
+        return {"role": "assistant", "content": content, "tool_calls": tool_calls}
+
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         try:
             resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
@@ -549,6 +617,66 @@ class LlamaCppProvider(LLMProvider):
             return content or reasoning
         except Exception as e:
             raise ProviderError(f"llama.cpp vision error: {e}")
+
+    def generate_raw(self, messages: List[Dict[str, str]],
+                     model: Optional[str] = None, **kwargs) -> dict:
+        """Non-streaming call that also returns tool_calls for workspace tools.
+
+        llama.cpp's OpenAI-compatible endpoint returns tool_calls in the standard
+        OpenAI shape already (id/type/function), so we pass it straight through.
+        """
+        self._check_server()
+        model_path = self._resolve_model_path(model)
+        n_ctx = kwargs.get("n_ctx", self.context_length)
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
+                         max(256, n_ctx - 256))
+        tools = kwargs.get("tools")
+
+        payload = {
+            "model": model_path,
+            "messages": messages,
+            "stream": False,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "n_ctx": n_ctx,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        try:
+            resp = requests.post(
+                f"{self.server_url}/chat/completions",
+                json=payload,
+                timeout=180
+            )
+            resp.raise_for_status()
+            msg = resp.json()["choices"][0]["message"]
+            content = msg.get("content") or ""
+            reasoning = msg.get("reasoning_content") or ""
+            raw_calls = msg.get("tool_calls") or []
+            tool_calls = None
+            if raw_calls:
+                tool_calls = []
+                for tc in raw_calls:
+                    fn = tc.get("function") or {}
+                    args = fn.get("arguments", "{}") or "{}"
+                    if not isinstance(args, str):
+                        args = json.dumps(args)
+                    tool_calls.append({
+                        "id": tc.get("id") or f"call_{len(tool_calls)}",
+                        "type": "function",
+                        "function": {"name": fn.get("name", ""), "arguments": args},
+                    })
+            return {"role": "assistant", "content": content or reasoning,
+                    "tool_calls": tool_calls}
+        except requests.exceptions.Timeout:
+            raise ProviderError("llama.cpp server timed out. Try reducing context size or use a smaller model.")
+        except requests.exceptions.ConnectionError:
+            raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
+        except Exception as e:
+            raise ProviderError(f"llama.cpp error: {e}")
 
 
 class HuggingFaceProvider(LLMProvider):
