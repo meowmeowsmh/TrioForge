@@ -1318,10 +1318,14 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=6):
         } for tc in tool_calls]
         messages.append(assistant)
         for tc in tool_calls:
-            try:
-                args = std_json.loads(tc["function"]["arguments"] or "{}")
-            except Exception:
-                args = {}
+            raw_args = tc["function"]["arguments"]
+            if isinstance(raw_args, dict):
+                args = raw_args
+            else:
+                try:
+                    args = std_json.loads(raw_args or "{}")
+                except Exception:
+                    args = {}
             result = _execute_tool(tc["function"]["name"], args)
             messages.append({"role": "tool", "tool_call_id": tc["id"],
                              "content": std_json.dumps(result, ensure_ascii=False)})
@@ -1725,7 +1729,7 @@ def chat():
             extra_kwargs['num_gpu'] = mem_settings['num_gpu']
             extra_kwargs['low_vram'] = mem_settings['low_vram']
 
-        use_tools = (not images) and provider_name in ("deepseek", "groq") \
+        use_tools = (not images) and provider_name in ("deepseek", "groq", "ollama", "llamacpp") \
             and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
@@ -1824,6 +1828,22 @@ def chat_stream():
 
         mem_settings = get_ollama_memory_settings()
 
+        use_tools = (not images) and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
+
+        # Workspace tools are resolved non-streaming first, then we stream the
+        # final answer so the client keeps its normal token-by-token UI.
+        tool_final_text = None
+        if use_tools:
+            extra_kwargs = {
+                "model": model or current_model,
+                "num_gpu": mem_settings['num_gpu'],
+                "low_vram": mem_settings['low_vram'],
+            }
+            try:
+                tool_final_text = _run_chat_with_tools(provider, messages, extra_kwargs)
+            except Exception as e:
+                tool_final_text = f"[tool error] {e}"
+
         payload = {
             "model": model or current_model,
             "messages": messages,
@@ -1851,6 +1871,15 @@ def chat_stream():
 
         def generate():
             full_response = ""
+            if tool_final_text is not None:
+                # Emit the already-resolved tool answer as a single token chunk,
+                # then finish. The frontend renders it identically to streaming.
+                full_response = tool_final_text
+                yield f"data: {json_dumps({'token': full_response})}\n\n"
+                yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {}})}\n\n"
+                add_message(conv_id, "user", user_message, images, files)
+                add_message(conv_id, "bot", full_response, [], [])
+                return
             try:
                 r = requests.post(
                     f"{OLLAMA_BASE_URL}/api/chat",
