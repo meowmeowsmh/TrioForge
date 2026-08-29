@@ -2197,6 +2197,12 @@ providerSelect.addEventListener('change', function() {
         fetch('/api/llamacpp/stop', { method: 'POST' }).catch(function(){});
     }
 
+    // Ollama keeps its model resident in VRAM/RAM (keep_alive); unload it when
+    // switching away so only ONE local model is ever loaded at a time.
+    if (prevProvider === 'ollama' && provider !== 'ollama') {
+        fetch('/unload_model', { method: 'POST' }).catch(function(){});
+    }
+
     if (provider === 'voice') {
         keyInput.style.display = 'none';
         startVoicePolling();
