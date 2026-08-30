@@ -79,6 +79,17 @@ Then open **https://localhost:5001/** in your browser.
 
 > **Tip:** if the app starts in plain HTTP (no certificates), use **http://localhost:5001/** instead.
 
+### ⬇ Downloading a GGUF model from Hugging Face
+
+You can download any GGUF model straight into the app without leaving the UI:
+
+1. Click the **⬇** button in the top bar.
+2. Enter the **repo id** (e.g. `bartowski/Qwen2.5-7B-Instruct-GGUF`).
+3. Enter the **GGUF filename** (e.g. `Qwen2.5-7B-Instruct-Q4_K_M.gguf`).
+4. Optionally enter a matching **mmproj** filename for vision models (e.g. `mmproj-Qwen2.5-7B-Instruct-BF16.gguf`).
+
+The file(s) land in `models/` and appear in the **llama.cpp** dropdown — ready to run locally (including workspace tools). The download is non-blocking and you'll see the result in the status bar.
+
 ---
 
 ## ▶️ How to run — which file do I use?

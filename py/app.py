@@ -909,6 +909,50 @@ def _cached_models(provider_name, api_key):
     except Exception:
         return []
 
+@app.route('/api/models/download', methods=['POST'])
+def download_hf_model():
+    """Download a GGUF model (and optional mmproj projector) from Hugging Face
+    into the local models/ folder so llama.cpp can run it locally."""
+    data = request.get_json(silent=True) or {}
+    repo_id = (data.get('repo_id') or '').strip()
+    filename = (data.get('filename') or '').strip()
+    mmproj_filename = (data.get('mmproj_filename') or '').strip()
+
+    if not repo_id:
+        return jsonify({'error': 'HuggingFace repo id is required (e.g. bartowski/Qwen2.5-7B-Instruct-GGUF).'}), 400
+    if not filename and not mmproj_filename:
+        return jsonify({'error': 'Specify a GGUF filename, an mmproj filename, or both.'}), 400
+
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        return jsonify({'error': 'huggingface_hub is not installed. Run: pip install huggingface_hub'}), 500
+
+    models_dir = root_path("models")
+    os.makedirs(models_dir, exist_ok=True)
+    downloaded = []
+
+    for fname in (filename, mmproj_filename):
+        if not fname:
+            continue
+        try:
+            local_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=fname,
+                local_dir=models_dir,
+            )
+            downloaded.append(os.path.basename(local_path))
+        except Exception as e:
+            return jsonify({'error': f'Failed to download {fname}: {e}'}), 500
+
+    # Invalidate cached model lists so the new file shows up immediately.
+    _cached_models.cache_clear()
+    llcpp = providers.get("llamacpp")
+    if llcpp:
+        llcpp.available_models = llcpp._discover_models()
+    return jsonify({'ok': True, 'downloaded': downloaded})
+
+
 @app.route('/set_model', methods=['POST'])
 def set_model():
     global current_model, _cached_html

@@ -1401,6 +1401,7 @@ body.light-mode .weather-country-select option {
         </select>
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑</button>
+        <button class="clear-btn" id="hfDownloadBtn" onclick="openHfDownload()" title="Download a model from Hugging Face (GGUF)">⬇</button>
         <span id="visionBadge" class="vision-badge" title="Vision capable">👁</span>
         <button class="clear-btn" onclick="clearAllChats()" title="Clear this chat's messages">🧹</button>
         <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
@@ -1621,6 +1622,41 @@ unloadBtn.addEventListener('click', function() {
         })
         .catch(() => status.textContent = '❌ Unload failed');
 });
+
+// ── Hugging Face model download ──
+function openHfDownload() {
+    var repo = prompt('Hugging Face repo id (e.g. bartowski/Qwen2.5-7B-Instruct-GGUF):');
+    if (!repo || !repo.trim()) return;
+    repo = repo.trim();
+    var file = prompt('GGUF filename to download (e.g. Qwen2.5-7B-Instruct-Q4_K_M.gguf).\nLeave empty to skip.', '');
+    if (file === null) return;
+    file = (file || '').trim();
+    var mmproj = prompt('mmproj (vision) filename to download (e.g. mmproj-Qwen2.5-7B-Instruct-BF16.gguf).\nLeave empty to skip.', '');
+    if (mmproj === null) return;
+    mmproj = (mmproj || '').trim();
+
+    if (!file && !mmproj) {
+        status.textContent = '❌ Enter at least one filename (GGUF or mmproj).';
+        return;
+    }
+    status.textContent = '⬇ Downloading from Hugging Face… (may take a while)';
+    fetch('/api/models/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo_id: repo, filename: file, mmproj_filename: mmproj })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { status.textContent = '❌ ' + d.error; return; }
+        status.textContent = '✅ Downloaded: ' + (d.downloaded || []).join(', ');
+        // Refresh the model list (switch provider to llama.cpp so the file shows up).
+        providerSelect.value = 'llamacpp';
+        providerSelect.dataset.prev = 'llamacpp';
+        try { localStorage.setItem('provider', 'llamacpp'); } catch(e) {}
+        loadModels();
+    })
+    .catch(err => { status.textContent = '❌ Download failed: ' + err; });
+}
 
 var dropOverlay = document.getElementById('dropOverlay');
 var dragCounter = 0;
