@@ -2690,7 +2690,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 var palette = ['#58a6ff', '#7ee787', '#d2a8ff', '#ffa657', '#79c0ff', '#f0883e'];
                 var nodes = new vis.DataSet(data.nodes.map((n, idx) => {
                     var d = degree[n.id] || 0;
-                    var size = 24 + (d / maxDegree) * 18; // 24–42px range
+                    var size = 22 + (d / maxDegree) * 16; // 22–38px range
                     var shape = d > 2 ? 'hexagon' : (d > 0 ? 'diamond' : 'star');
                     var base = d > 0 ? palette[idx % palette.length] : '#4a5568';
                     return {
@@ -2749,7 +2749,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         wind: { x: 0.6, y: 0.3 },
                         stabilization: { enabled: true, iterations: 220, fit: true }
                     },
-                    interaction: { hover: true, tooltipDelay: 100, dragView: true, zoomView: true },
+                    interaction: { hover: true, tooltipDelay: 100, dragNodes: true, dragView: true, zoomView: true },
                     layout: { improvedLayout: true, randomSeed: 20260830 }
                 };
                 var network = new vis.Network(container, { nodes, edges }, options);
@@ -2768,7 +2768,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                     nodes.forEach(function(n) {
                         var d = degree[n.id] || 0;
                         if (d > 2) {
-                            var breathe = 24 + (d / maxDegree) * 18 + Math.sin(t) * 2.5;
+                            var breathe = 22 + (d / maxDegree) * 16 + Math.sin(t) * 2.5;
                             nodes.update({ id: n.id, size: breathe });
                         }
                     });
