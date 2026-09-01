@@ -3824,7 +3824,7 @@ function drawWalkingBlob(ctx, blob, t) {
 }
 
 function drawWet(ctx, w, h, t, blobs) {
-    // Tropical wet season: grey sky, rain streaks, lush green ground.
+    // Tropical wet season: grey sky, falling rain with ground splashes, lush ground.
     const sky = ctx.createLinearGradient(0, 0, 0, h);
     sky.addColorStop(0, '#5b6e82');
     sky.addColorStop(0.5, '#7f94a6');
@@ -3832,19 +3832,36 @@ function drawWet(ctx, w, h, t, blobs) {
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
-    for (let i = 0; i < 60; i++) {
+    const groundY = h * 0.72;
+
+    // Rain drops fall from the top to the ground, then splash.
+    for (let i = 0; i < 70; i++) {
         const x = (i * 31 + 7) % w;
-        const y = (i * 23 + 5) % h;
-        const len = 8 + (i % 5) * 3;
+        // t advances by ~600 units/second (t = (now-start)*0.6 in ms). Use a
+        // small per-t-unit speed so drops fall at a natural ~120–240 px/sec.
+        const speed = 0.2 + (i % 7) * 0.045;
+        const span = groundY + 40;
+        const y = ((i * 41 + 5) + t * speed) % span;
+        const len = 9 + (i % 5) * 3;
         ctx.strokeStyle = `rgba(200,225,255,${0.25 + (i % 4) * 0.1})`;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.lineTo(x - 2, y + len);
         ctx.stroke();
+
+        // Splash when the drop reaches the ground.
+        if (y + len >= groundY - 2) {
+            const splashT = (y + len - groundY) / 12; // 0..~1 while entering ground
+            const r = 2 + splashT * 5;
+            ctx.strokeStyle = `rgba(220,235,255,${0.6 - splashT * 0.5})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(x - 1, groundY + 1, r, r * 0.35, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
 
-    const groundY = h * 0.72;
     const grd = ctx.createLinearGradient(0, groundY, 0, h);
     grd.addColorStop(0, '#4caf50');
     grd.addColorStop(1, '#2e7d32');
