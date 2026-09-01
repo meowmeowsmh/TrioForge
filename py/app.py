@@ -1028,6 +1028,9 @@ def deepseek_status():
     provider = providers.get('deepseek')
     if not provider:
         return jsonify({"ok": False, "error": "Provider not initialized"}), 503
+    key = sanitize_api_key(request.args.get('api_key', None))
+    if key:
+        provider._default_key = key
     return jsonify(provider.get_status())
 
 @app.route('/conversations', methods=['GET'])
@@ -1756,6 +1759,11 @@ def chat():
         provider = providers.get(provider_name)
         if not provider:
             return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
+
+        # Track the user-entered API key on the provider instance so status checks
+        # and subsequent requests reflect it (not just this one request).
+        if api_key and hasattr(provider, '_default_key'):
+            provider._default_key = api_key
 
         system_prompt = provider.get_system_prompt()
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
