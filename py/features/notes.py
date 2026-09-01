@@ -1746,6 +1746,10 @@ body.light-mode {
     background: #f6f8fa;
     color: #24292f;
 }
+/* Fullscreen uses the <html> surface — make it light too, otherwise it stays black. */
+html.light-mode {
+    background: #f6f8fa;
+}
 body.light-mode .sidebar { background: rgba(255, 255, 255, 0.92); border-right-color: rgba(0,0,0,0.08); }
 body.light-mode .sidebar .sidebar-header { border-bottom-color: rgba(0,0,0,0.06); }
 body.light-mode .sidebar .group-heading { color: #57606a; border-bottom-color: rgba(0,0,0,0.06); }
@@ -2298,6 +2302,8 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     var isLight = localStorage.getItem('theme') === 'light';
     function applyTheme(light) {
         document.body.classList.toggle('light-mode', light);
+        // Also toggle on <html> so the fullscreen surface follows the theme.
+        document.documentElement.classList.toggle('light-mode', light);
         localStorage.setItem('theme', light ? 'light' : 'dark');
         themeOuter.classList.toggle('day', light);
     }
