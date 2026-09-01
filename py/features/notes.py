@@ -2779,7 +2779,10 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 network.once('stabilizationIterationsDone', function() {
                     network.fit({ animation: { duration: 400, easingFunction: 'easeOutQuad' } });
                 });
-                network.on('click', function(params) {
+                // Single click = drag the node (dragNodes handles it, so no action
+                // here — opening the editor would fight with dragging).
+                // Double click = open the note for editing.
+                network.on('doubleClick', function(params) {
                     if (params.nodes.length) {
                         var id = params.nodes[0];
                         if (graphPulseTimer) { clearInterval(graphPulseTimer); graphPulseTimer = null; }
