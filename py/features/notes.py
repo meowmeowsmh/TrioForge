@@ -3886,6 +3886,52 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         ctx.restore();
     }
 
+    function drawTropical(ctx, w, h, t, blobs) {
+        // Tropical: hot sun AND rain at the same time, lush green ground.
+        const sky = ctx.createLinearGradient(0, 0, 0, h);
+        sky.addColorStop(0, '#3f7fc0');
+        sky.addColorStop(0.5, '#6aa8d8');
+        sky.addColorStop(1, '#b8cfe0');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, w, h);
+
+        const sunX = w*0.82, sunY = h*0.20;
+        const grd = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 55);
+        grd.addColorStop(0, 'rgba(255,240,150,1)');
+        grd.addColorStop(0.5, 'rgba(255,200,50,0.8)');
+        grd.addColorStop(1, 'rgba(255,200,50,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, 55, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#fdd835';
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, 26, 0, Math.PI*2);
+        ctx.fill();
+
+        for (let i = 0; i < 40; i++) {
+            const x = (i * 29 + 11) % (w * 0.55);
+            const speed = 0.18 + (i % 5) * 0.04;
+            const y = ((i * 37 + 3) + t * speed) % h;
+            ctx.strokeStyle = `rgba(200,225,255,${0.2 + (i % 4) * 0.08})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x - 2, y + (8 + (i % 4) * 3));
+            ctx.stroke();
+        }
+
+        const groundY = h * 0.72;
+        const ground = ctx.createLinearGradient(0, groundY, 0, h);
+        ground.addColorStop(0, '#43a047');
+        ground.addColorStop(1, '#1b5e20');
+        ctx.fillStyle = ground;
+        ctx.fillRect(0, groundY, w, h - groundY);
+        drawHouse(ctx, w*0.22, groundY + (h-groundY)*0.60, 0.85, t, { wall:'#f5e6ca', roof:'#6d4c2f', trim:'#d4a373', flowers:true, lights:false });
+        drawTree(ctx, w*0.76, groundY, 1.0, t, 'palm');
+        blobs.forEach(b => { updateBlob(b, w, h, t, 0.85); drawWalkingBlob(ctx, b, t); });
+    }
+
     function drawWet(ctx, w, h, t, blobs) {
         // Tropical wet season: grey sky, falling rain with ground splashes, lush ground.
         const sky = ctx.createLinearGradient(0, 0, 0, h);
@@ -4274,7 +4320,28 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         ctx.stroke();
 
         let colors, highlight;
-        if (type === 'maple') {
+        if (type === 'palm') {
+            ctx.strokeStyle = '#4e342e';
+            ctx.lineWidth = 5*s;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(0, 4*s);
+            ctx.lineTo(0, -trunkH);
+            ctx.stroke();
+            const fronds = [-1.2, -0.6, 0, 0.6, 1.2];
+            fronds.forEach((a, i) => {
+                const wob = Math.sin(t*0.02 + i)*0.08;
+                const ang = a + wob;
+                ctx.strokeStyle = '#2e7d32';
+                ctx.lineWidth = 3.5*s;
+                ctx.beginPath();
+                ctx.moveTo(0, -trunkH);
+                ctx.quadraticCurveTo(Math.cos(ang)*30*s, -trunkH - 14*s - Math.sin(ang)*8*s, Math.cos(ang)*55*s, -trunkH + Math.sin(ang)*10*s - 22*s);
+                ctx.stroke();
+            });
+            ctx.restore();
+            return;
+        } else if (type === 'maple') {
             colors = ['#b23b3b','#d84315','#e64a19','#a0392f','#c62828'];
             highlight = 'rgba(255,200,150,0.18)';
         } else {
@@ -4425,6 +4492,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
             case 'winter': drawWinter(ctx, w, h, time, blobInstances); break;
             case 'autumn': drawAutumn(ctx, w, h, time, blobInstances); break;
             case 'spring': drawSpring(ctx, w, h, time, blobInstances); break;
+            case 'tropical': drawTropical(ctx, w, h, time, blobInstances); break;
             case 'wet': drawWet(ctx, w, h, time, blobInstances); break;
             case 'dry': drawDry(ctx, w, h, time, blobInstances); break;
             default: drawSummer(ctx, w, h, time, blobInstances);
@@ -4499,11 +4567,9 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         const isNorth = effectiveLat >= 0;
         const absLat = Math.abs(effectiveLat);
 
-        // Tropics have no 4 seasons — hot year-round, only wet + summer (dry).
+        // Tropics are hot year-round — always "summer", just with rain. No 4 seasons.
         if (absLat < 23.5) {
-            const northWet = (month >= 5 && month <= 10);
-            const isWet = isNorth ? northWet : !northWet;
-            return isWet ? 'wet' : 'summer';
+            return 'tropical';
         }
 
         if (isNorth) {
@@ -4585,7 +4651,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         let locationDisplay = city;
         if (region && region !== city && region !== 'Unknown') locationDisplay += `, ${region}`;
         const mainText = `${flag} ${locationDisplay}`;
-        const subText = `${season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : season === 'winter' ? '❄️' : season === 'wet' ? '🌧️' : '☀️'} ${season === 'wet' ? 'Wet season' : season === 'dry' ? 'Dry season' : season.charAt(0).toUpperCase() + season.slice(1)}`;
+        const subText = `${season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : season === 'winter' ? '❄️' : season === 'tropical' ? '🌴' : '☀️'} ${season === 'tropical' ? 'Tropical (hot, rain)' : season.charAt(0).toUpperCase() + season.slice(1)}`;
         updateWidget(mainText, subText, subText.split(' ')[0], 80);
 
         if (currentTemp !== null && currentTemp !== undefined) {
