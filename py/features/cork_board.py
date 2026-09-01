@@ -4058,6 +4058,80 @@ function drawWalkingBlob(ctx, blob, t) {
 }
 
 // ─── Season drawing functions ──────────────────────
+function drawWet(ctx, w, h, t, blobs) {
+    // Tropical wet season: grey sky, falling rain with ground splashes, lush ground.
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#5b6e82');
+    sky.addColorStop(0.5, '#7f94a6');
+    sky.addColorStop(1, '#a8bcc8');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    const groundY = h * 0.72;
+    for (let i = 0; i < 70; i++) {
+        const x = (i * 31 + 7) % w;
+        const speed = 0.2 + (i % 7) * 0.045;
+        const span = groundY + 40;
+        const y = ((i * 41 + 5) + t * speed) % span;
+        const len = 9 + (i % 5) * 3;
+        ctx.strokeStyle = `rgba(200,225,255,${0.25 + (i % 4) * 0.1})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 2, y + len);
+        ctx.stroke();
+        if (y + len >= groundY - 2) {
+            const splashT = (y + len - groundY) / 12;
+            const r = 2 + splashT * 5;
+            ctx.strokeStyle = `rgba(220,235,255,${0.6 - splashT * 0.5})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(x - 1, groundY + 1, r, r * 0.35, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+    }
+
+    const grd = ctx.createLinearGradient(0, groundY, 0, h);
+    grd.addColorStop(0, '#4caf50');
+    grd.addColorStop(1, '#2e7d32');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, groundY, w, h - groundY);
+    drawHouse(ctx, w*0.22, groundY + (h-groundY)*0.60, 0.85, t, { wall:'#e8d5b5', roof:'#8d6e63', trim:'#d4a373', flowers:true, lights:false });
+    drawTree(ctx, w*0.78, groundY, 1.0, t, 'maple');
+    blobs.forEach(b => { updateBlob(b, w, h, t, 0.8); drawWalkingBlob(ctx, b, t); });
+}
+
+function drawDry(ctx, w, h, t, blobs) {
+    // Tropical dry season: bright sun, pale sky, drier tan ground.
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#4a90d9');
+    sky.addColorStop(0.5, '#a8d4f0');
+    sky.addColorStop(1, '#f0e6c8');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    const sunX = w*0.82, sunY = h*0.18;
+    const grd = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 60);
+    grd.addColorStop(0, 'rgba(255,240,150,1)');
+    grd.addColorStop(0.5, 'rgba(255,200,50,0.8)');
+    grd.addColorStop(1, 'rgba(255,200,50,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 60, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fdd835';
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 28, 0, Math.PI*2);
+    ctx.fill();
+    const groundY = h * 0.72;
+    const ground = ctx.createLinearGradient(0, groundY, 0, h);
+    ground.addColorStop(0, '#d4b483');
+    ground.addColorStop(1, '#b08d57');
+    ctx.fillStyle = ground;
+    ctx.fillRect(0, groundY, w, h - groundY);
+    drawHouse(ctx, w*0.22, groundY + (h-groundY)*0.60, 0.85, t, { wall:'#f5e6ca', roof:'#8d6e63', trim:'#d4a373', flowers:true, lights:false });
+    blobs.forEach(b => { updateBlob(b, w, h, t, 0.85); drawWalkingBlob(ctx, b, t); });
+}
+
 function drawSummer(ctx, w, h, t, blobs) {
     const sky = ctx.createLinearGradient(0, 0, 0, h);
     sky.addColorStop(0, '#4a90d9');
@@ -4559,6 +4633,8 @@ function renderScene(ctx, w, h, season, time) {
         case 'winter': drawWinter(ctx, w, h, time, blobInstances); break;
         case 'autumn': drawAutumn(ctx, w, h, time, blobInstances); break;
         case 'spring': drawSpring(ctx, w, h, time, blobInstances); break;
+        case 'wet': drawWet(ctx, w, h, time, blobInstances); break;
+        case 'dry': drawDry(ctx, w, h, time, blobInstances); break;
         default: drawSummer(ctx, w, h, time, blobInstances);
     }
 }
@@ -4615,8 +4691,18 @@ function getFlagFromCode(code) {
     return '🌍';
 }
 
-function getSeasonForCountry(country, code, lat) {
-    const month = new Date().getMonth() + 1;
+function getMonthInTimezone(timezone) {
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone || 'UTC', month: 'numeric' }).formatToParts(new Date());
+        const m = parts.find(p => p.type === 'month');
+        return m ? parseInt(m.value, 10) : (new Date().getMonth() + 1);
+    } catch (e) {
+        return new Date().getMonth() + 1;
+    }
+}
+
+function getSeasonForCountry(country, code, lat, timezone) {
+    const month = getMonthInTimezone(timezone);
     let effectiveLat = lat;
     if (!effectiveLat || Math.abs(effectiveLat) < 0.01) {
         if (code && countryLatMap[code]) {
@@ -4625,13 +4711,16 @@ function getSeasonForCountry(country, code, lat) {
             effectiveLat = 30;
         }
     }
-    const isNorth = effectiveLat > 0;
-    if (Math.abs(effectiveLat) < 10) {
-        if (month >= 11 || month <= 2) return 'winter';
-        if (month >= 3 && month <= 5) return 'spring';
-        if (month >= 6 && month <= 8) return 'summer';
-        return 'autumn';
+    const isNorth = effectiveLat >= 0;
+    const absLat = Math.abs(effectiveLat);
+
+    // Tropics have no 4 seasons — wet/dry, opposite across the equator.
+    if (absLat < 23.5) {
+        const northWet = (month >= 5 && month <= 10);
+        const isWet = isNorth ? northWet : !northWet;
+        return isWet ? 'wet' : 'dry';
     }
+
     if (isNorth) {
         if (month >= 3 && month <= 5) return 'spring';
         if (month >= 6 && month <= 8) return 'summer';
@@ -4730,7 +4819,7 @@ async function showWeatherWidget(season, city, country, code, region, lat, manua
         locationDisplay += `, ${region}`;
     }
     const mainText = `${flag} ${locationDisplay}`;
-    const subText = `${season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : '❄️'} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
+    const subText = `${season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : season === 'winter' ? '❄️' : season === 'wet' ? '🌧️' : '☀️'} ${season === 'wet' ? 'Wet season' : season === 'dry' ? 'Dry season' : season.charAt(0).toUpperCase() + season.slice(1)}`;
     updateWidget(mainText, subText, subText.split(' ')[0], 80);
 
     if (currentTemp !== null && currentTemp !== undefined) {
@@ -4814,7 +4903,7 @@ async function updateFromCountry(code) {
     currentLat = lat;
     currentLon = lon;
 
-    const season = getSeasonForCountry(countryName, code, lat);
+    const season = getSeasonForCountry(countryName, code, lat, currentTimezone);
     blobInstances = [];
     await showWeatherWidget(season, city, countryName, code, region, lat, true);
 }
@@ -4866,7 +4955,7 @@ async function useExactLocation(lat, lon) {
         currentWeatherEmoji = wData.emoji || '🌤️';
         currentTimezone = wData.timezone || currentTimezone;
     }
-    const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
+    const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat, currentTimezone);
     blobInstances = [];
     await showWeatherWidget(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
 }
@@ -4911,7 +5000,7 @@ async function detectLocation() {
                 }
                 currentTimezone = (wData && wData.timezone) || data.timezone || currentTimezone;
 
-                const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat);
+                const season = getSeasonForCountry(currentCountry, currentCountryCode, currentLat, currentTimezone);
                 blobInstances = [];
                 await showWeatherWidget(season, currentCity, currentCountry, currentCountryCode, currentRegion, currentLat, true);
                 return;
