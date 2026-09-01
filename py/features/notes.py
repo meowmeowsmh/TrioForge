@@ -28,15 +28,7 @@ import backup_store
 logger = logging.getLogger(__name__)
 
 # ---------- LLM providers ----------
-from providers.llm_providers import (
-    OllamaProvider,
-    DeepSeekProvider,
-    ClaudeProvider,
-    HuggingFaceProvider,
-    GroqProvider,
-    LlamaCppProvider,
-    sanitize_api_key,
-)
+from providers.llm_providers import get_provider, sanitize_api_key
 
 # ---------- Obsidian sync imports ----------
 import frontmatter
@@ -151,24 +143,13 @@ def upsert_note(note_id, data, created=None):
         """, vals)
         conn.commit()
 
-    # Update cache immediately
+    # Update cache immediately (single source of truth: _note_row_to_dict).
     if _notes_cache is None:
         load_notes()   # ensure cache exists
     with _cache_lock:
-        # Build a note dict from the row values
-        note = {
-            "id": vals["id"],
-            "title": vals["title"],
-            "content": vals["content"],
-            "created": vals["created"],
-            "last_modified": vals["last_modified"],
-            "order": vals["order_idx"],
-            "pinned": bool(vals["pinned"]),
-            "color": vals["color"],
-            "tags": json_loads(vals["tags"]),
-            "embedding": json_loads(vals["embedding"]) if vals["embedding"] else None,
-        }
-        _notes_cache[note_id] = note
+        row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+        if row is not None:
+            _notes_cache[note_id] = _note_row_to_dict(row)
 
     _schedule_backup()
 
@@ -695,7 +676,7 @@ def ai_assist():
     note_id = data.get('note_id')
     action = data.get('action')
     provider_name = data.get('provider', 'ollama')
-    model = data.get('model', 'llama3.2')
+    model = data.get('model') or None
     api_key = sanitize_api_key(data.get('api_key', None))
 
     if not note_id or not action:
@@ -710,10 +691,12 @@ def ai_assist():
     if not content and not title:
         return jsonify({"error": "Note is empty"}), 400
 
+    # Cap the text sent to the model so a huge note can't blow up the prompt.
+    content_snip = content[:4000]
     prompts = {
-        "summarise": f"Summarise the following note in one short paragraph (max 50 words):\n\nTitle: {title}\nContent: {content}\n\nSummary:",
-        "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this note:\n\nTitle: {title}\nContent: {content}\n\nTags:",
-        "improve": f"Rewrite the following note to improve clarity, grammar, and flow. Keep the same meaning but make it more concise and professional:\n\n{content}\n\nImproved version:"
+        "summarise": f"Summarise the following note in one short paragraph (max 50 words):\n\nTitle: {title}\nContent: {content_snip}\n\nSummary:",
+        "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this note:\n\nTitle: {title}\nContent: {content_snip}\n\nTags:",
+        "improve": f"Rewrite the following note to improve clarity, grammar, and flow. Keep the same meaning but make it more concise and professional:\n\n{content_snip}\n\nImproved version:"
     }
     user_prompt = prompts.get(action)
     if not user_prompt:
@@ -725,21 +708,7 @@ def ai_assist():
     ]
 
     try:
-        if provider_name == 'ollama':
-            provider = OllamaProvider(model=model)
-        elif provider_name == 'deepseek':
-            provider = DeepSeekProvider(api_key=api_key)
-        elif provider_name == 'claude':
-            provider = ClaudeProvider(api_key=api_key)
-        elif provider_name == 'huggingface':
-            provider = HuggingFaceProvider(api_token=api_key)
-        elif provider_name == 'groq':
-            provider = GroqProvider(api_key=api_key)
-        elif provider_name == 'llamacpp':
-            provider = LlamaCppProvider()
-        else:
-            return jsonify({"error": f"Unsupported provider: {provider_name}"}), 400
-
+        provider = get_provider(provider_name, api_key)
         response = provider.generate(messages, model=model, api_key=api_key)
         result = response.strip()
     except Exception as e:
