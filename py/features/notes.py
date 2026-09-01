@@ -2634,6 +2634,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     });
 
     // ─── GRAPH VIEW ──────────────────────────────────────
+    var graphPulseTimer = null;
     function openGraphView() {
         var modal = document.getElementById('graphModal');
         modal.style.display = 'block';
@@ -2652,32 +2653,38 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 });
                 var maxDegree = Math.max(1, ...Object.values(degree));
 
-                var nodes = new vis.DataSet(data.nodes.map(n => {
+                // Distinct, original node look: hexagon hubs, diamond connectors,
+                // rounded "gem" isolates — no default vis-network circles.
+                var palette = ['#58a6ff', '#7ee787', '#d2a8ff', '#ffa657', '#79c0ff', '#f0883e'];
+                var nodes = new vis.DataSet(data.nodes.map((n, idx) => {
                     var d = degree[n.id] || 0;
-                    var size = 14 + (d / maxDegree) * 18; // 14–32px range
+                    var size = 15 + (d / maxDegree) * 20; // 15–35px range
+                    var shape = d > 2 ? 'hexagon' : (d > 0 ? 'diamond' : 'star');
+                    var base = d > 0 ? palette[idx % palette.length] : '#4a5568';
                     return {
                         ...n,
-                        shape: 'dot',
+                        shape: shape,
                         size: size,
                         color: {
-                            background: d > 0 ? '#58a6ff' : '#3d4451',
-                            border: d > 0 ? '#79c0ff' : '#565f6e',
-                            highlight: { background: '#79c0ff', border: '#a5d6ff' },
-                            hover: { background: '#6cb6ff', border: '#a5d6ff' }
+                            background: base,
+                            border: '#e6edf3',
+                            highlight: { background: '#ffffff', border: base },
+                            hover: { background: base, border: '#ffffff' }
                         },
-                        borderWidth: 2,
-                        font: { size: 14, color: '#e6edf3', strokeWidth: 3, strokeColor: 'rgba(13,17,23,0.9)' }
+                        borderWidth: d > 2 ? 3 : 2,
+                        shadow: { enabled: true, color: base, size: 10, x: 0, y: 2 },
+                        font: { size: 13, color: '#e6edf3', strokeWidth: 3, strokeColor: 'rgba(13,17,23,0.95)' }
                     };
                 }));
                 var edges = new vis.DataSet(data.edges.map(e => ({
                     ...e,
-                    color: { color: 'rgba(139,148,158,0.5)', highlight: '#79c0ff', hover: '#79c0ff' },
+                    color: { color: 'rgba(139,148,158,0.45)', highlight: '#79c0ff', hover: '#79c0ff' },
                     width: 1.5,
                     smooth: { type: 'continuous', roundness: 0.4 }
                 })));
 
                 var options = {
-                    nodes: { shape: 'dot', shadow: { enabled: true, size: 6, x: 0, y: 2 } },
+                    nodes: { shape: 'hexagon', shadow: { enabled: true, size: 8, x: 0, y: 3 } },
                     edges: {
                         arrows: { to: { enabled: true, scaleFactor: 0.4 } },
                         selectionWidth: 2
@@ -2685,18 +2692,43 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                     physics: {
                         solver: 'barnesHut',
                         barnesHut: {
-                            gravitationalConstant: -4000,
-                            centralGravity: 0.3,
-                            springLength: 140,
-                            springConstant: 0.05,
-                            avoidOverlap: 0.5
+                            gravitationalConstant: -3500,
+                            centralGravity: 0.25,
+                            springLength: 150,
+                            springConstant: 0.045,
+                            damping: 0.12,
+                            avoidOverlap: 0.6
                         },
-                        stabilization: { enabled: true, iterations: 200, fit: true }
+                        // A gentle constant breeze keeps the graph slowly drifting
+                        // (alive/moving) instead of freezing solid after layout.
+                        wind: { x: 0.6, y: 0.3 },
+                        stabilization: { enabled: true, iterations: 220, fit: true }
                     },
                     interaction: { hover: true, tooltipDelay: 100, dragView: true, zoomView: true },
-                    layout: { improvedLayout: true }
+                    layout: { improvedLayout: true, randomSeed: 20260830 }
                 };
                 var network = new vis.Network(container, { nodes, edges }, options);
+
+                // Pulsing glow on hub nodes — a slow "breathing" ring so the graph
+                // feels alive without being distracting.
+                if (graphPulseTimer) clearInterval(graphPulseTimer);
+                graphPulseTimer = setInterval(function() {
+                    if (!document.getElementById('graphModal') ||
+                        document.getElementById('graphModal').style.display === 'none') {
+                        clearInterval(graphPulseTimer);
+                        graphPulseTimer = null;
+                        return;
+                    }
+                    var t = Date.now() / 900;
+                    nodes.forEach(function(n) {
+                        var d = degree[n.id] || 0;
+                        if (d > 2) {
+                            var breathe = 15 + (d / maxDegree) * 20 + Math.sin(t) * 2.5;
+                            nodes.update({ id: n.id, size: breathe });
+                        }
+                    });
+                }, 120);
+
                 // Frame the whole graph nicely once physics settles, instead of
                 // leaving it wherever the initial layout happened to land.
                 network.once('stabilizationIterationsDone', function() {
@@ -2705,6 +2737,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 network.on('click', function(params) {
                     if (params.nodes.length) {
                         var id = params.nodes[0];
+                        if (graphPulseTimer) { clearInterval(graphPulseTimer); graphPulseTimer = null; }
                         closeGraph();
                         selectNote(id);
                     }
@@ -2716,6 +2749,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     }
 
     function closeGraph() {
+        if (graphPulseTimer) { clearInterval(graphPulseTimer); graphPulseTimer = null; }
         document.getElementById('graphModal').style.display = 'none';
         document.getElementById('graphContainer').innerHTML = '';
     }
@@ -4405,11 +4439,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         const isNorth = effectiveLat >= 0;
         const absLat = Math.abs(effectiveLat);
 
-        // Tropics have no 4 seasons — wet/dry, opposite across the equator.
+        // Tropics have no 4 seasons — hot year-round, only wet + summer (dry).
         if (absLat < 23.5) {
             const northWet = (month >= 5 && month <= 10);
             const isWet = isNorth ? northWet : !northWet;
-            return isWet ? 'wet' : 'dry';
+            return isWet ? 'wet' : 'summer';
         }
 
         if (isNorth) {

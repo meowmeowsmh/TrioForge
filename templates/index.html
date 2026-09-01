@@ -4485,11 +4485,12 @@ function getSeasonForCountry(country, code, lat, timezone) {
     const absLat = Math.abs(effectiveLat);
 
     // Tropics (between the Tropic of Cancer and Capricorn) have no 4 seasons —
-    // only a wet season and a dry season, which are opposite across the equator.
+    // it's hot year-round, so only "wet" and "summer" (dry/hot) apply, and they
+    // are opposite across the equator.
     if (absLat < 23.5) {
         const northWet = (month >= 5 && month <= 10);
         const isWet = isNorth ? northWet : !northWet;
-        return isWet ? 'wet' : 'dry';
+        return isWet ? 'wet' : 'summer';
     }
 
     // Temperate / polar: 4 seasons, flipped by hemisphere.
