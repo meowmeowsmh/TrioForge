@@ -2558,7 +2558,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 
     function loadAIPreferences() {
         var provider = localStorage.getItem('notes_ai_provider') || 'ollama';
-        var apiKey = localStorage.getItem('notes_ai_api_key_' + provider) || '';
+        var apiKey = localStorage.getItem('api_key_' + provider) || '';
         aiProviderSelect.value = provider;
         aiApiKeyInput.value = apiKey;
         toggleApiKeyVisibility(provider);
@@ -2583,7 +2583,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                     return;
                 }
                 var models = data.models || [];
-                var current = localStorage.getItem('notes_ai_model') || '';
+                var current = localStorage.getItem('notes_ai_model_' + provider) || '';
                 aiModelSelect.innerHTML = '';
                 if (models.length) {
                     models.forEach(m => {
@@ -2596,7 +2596,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         aiModelSelect.value = current;
                     } else {
                         aiModelSelect.value = models[0];
-                        localStorage.setItem('notes_ai_model', models[0]);
+                        localStorage.setItem('notes_ai_model_' + provider, models[0]);
                     }
                 } else {
                     aiModelSelect.innerHTML = '<option value="">No models found</option>';
@@ -2610,7 +2610,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 
     aiProviderSelect.addEventListener('change', function() {
         var provider = this.value;
-        var apiKey = localStorage.getItem('notes_ai_api_key_' + provider) || '';
+        var apiKey = localStorage.getItem('api_key_' + provider) || '';
         aiApiKeyInput.value = apiKey;
         localStorage.setItem('notes_ai_provider', provider);
         toggleApiKeyVisibility(provider);
@@ -2619,16 +2619,20 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 
     aiApiKeyInput.addEventListener('input', function() {
         var provider = aiProviderSelect.value;
-        localStorage.setItem('notes_ai_api_key_' + provider, this.value);
+        var key = this.value.trim();
+        if (key) localStorage.setItem('api_key_' + provider, key);
+        else localStorage.removeItem('api_key_' + provider);
     });
 
     aiApiKeyInput.addEventListener('blur', function() {
         var provider = aiProviderSelect.value;
-        localStorage.setItem('notes_ai_api_key_' + provider, this.value);
+        var key = this.value.trim();
+        if (key) localStorage.setItem('api_key_' + provider, key);
     });
 
     aiModelSelect.addEventListener('change', function() {
-        localStorage.setItem('notes_ai_model', this.value);
+        var provider = aiProviderSelect.value;
+        localStorage.setItem('notes_ai_model_' + provider, this.value);
     });
 
     // ─── AI Assist ──────────────────────────────────
