@@ -2724,7 +2724,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         smooth: { type: 'continuous', roundness: 0.4 },
                         font: { size: 11, color: '#d2a8ff', strokeWidth: 3, strokeColor: 'rgba(13,17,23,0.9)', align: 'middle' }
                     };
-                })));
+                }));
 
                 var options = {
                     nodes: { shape: 'hexagon', shadow: { enabled: true, size: 8, x: 0, y: 3 } },
