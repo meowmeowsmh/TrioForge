@@ -1769,6 +1769,11 @@ body.light-mode .notes-panel .note-item { background: rgba(255,255,255,0.8); bor
 body.light-mode .notes-panel .note-item:hover { background: rgba(255,255,255,0.95); }
 body.light-mode .notes-panel .note-title { color: #24292f; }
 body.light-mode .notes-panel .note-content { color: #57606a; }
+body.light-mode .notes-panel .note-meta { color: #57606a; }
+body.light-mode .notes-panel .note-item .note-meta .tag {
+    background: rgba(31,111,235,0.10);
+    color: #1f6feb;
+}
 body.light-mode .notes-panel .note-editor { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.08); }
 body.light-mode .notes-panel .note-editor input,
 body.light-mode .notes-panel .note-editor textarea,
@@ -1788,9 +1793,9 @@ body.light-mode .notes-panel .note-editor .editor-header .toolbar button:hover {
 body.light-mode .notes-panel .note-editor .editor-footer .tags-input { background: rgba(0,0,0,0.04); color: #24292f; }
 body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle { color: #57606a; }
 body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle.active { background: rgba(31,111,235,0.1); color: #1f6feb; }
-body.light-mode .tag-filter .tag-pill { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #57606a; }
-body.light-mode .tag-filter .tag-pill.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-body.light-mode .tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149; }
+body.light-mode .tag-filter .tag-pill { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #57606a !important; }
+body.light-mode .tag-filter .tag-pill.active { background: #1f6feb; color: #fff !important; border-color: #1f6feb; }
+body.light-mode .tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149 !important; }
 body.light-mode .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.08); }
 .search-mode-toggle button { background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 4px 14px; font-size: 12px; color: #8b949e; cursor: pointer; transition: 0.2s; }
 .search-mode-toggle button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
