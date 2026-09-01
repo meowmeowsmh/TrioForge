@@ -1930,6 +1930,10 @@ body.light-mode #backlinksContainer .tag-pill:hover {
     pointer-events: none;
     z-index: 2;
 }
+body.light-mode .weather-widget .toast-scene { background:#e8f0e8; }
+body.light-mode .weather-widget .toast-scene::after {
+    background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.95));
+}
 .weather-widget .toast-content {
     position: relative;
     z-index: 3;
@@ -2019,18 +2023,19 @@ body.light-mode #backlinksContainer .tag-pill:hover {
 body.light-mode .weather-widget .toast {
     background:rgba(255,255,255,0.92); border-color:rgba(0,0,0,0.06); color:#24292f;
 }
-body.light-mode .weather-widget .toast-text .main { color:#24292f; }
-body.light-mode .weather-widget .toast-text .main .highlight { color:#000; }
-body.light-mode .weather-widget .toast-text .sub { color:rgba(0,0,0,0.65); }
-body.light-mode .weather-widget .toast-text .time-row .clock { color:#000; }
-body.light-mode .weather-widget .toast-text .time-row .date { color:rgba(0,0,0,0.5); }
-body.light-mode .weather-widget .toast-text .weather-row { color:rgba(0,0,0,0.75); }
-body.light-mode .weather-widget .toast-text .weather-row .temp { color:#000; }
-body.light-mode .weather-widget .toast-text .weather-row .condition { color:rgba(0,0,0,0.6); }
-body.light-mode .weather-widget .toast-text .weather-row .weather-emoji { color:inherit; }
-body.light-mode .weather-widget .toast-text .fetch-status { color:rgba(0,0,0,0.45); }
+body.light-mode .weather-widget .toast-text .main { color:#24292f !important; }
+body.light-mode .weather-widget .toast-text .main .highlight { color:#000 !important; }
+body.light-mode .weather-widget .toast-text .sub { color:rgba(0,0,0,0.65) !important; }
+body.light-mode .weather-widget .toast-text .time-row .clock { color:#000 !important; }
+body.light-mode .weather-widget .toast-text .time-row .date { color:rgba(0,0,0,0.5) !important; }
+body.light-mode .weather-widget .toast-text .weather-row { color:rgba(0,0,0,0.75) !important; }
+body.light-mode .weather-widget .toast-text .weather-row .temp { color:#000 !important; }
+body.light-mode .weather-widget .toast-text .weather-row .condition { color:rgba(0,0,0,0.6) !important; }
+body.light-mode .weather-widget .toast-text .weather-row .weather-emoji { color:inherit !important; }
+body.light-mode .weather-widget .toast-text .fetch-status { color:rgba(0,0,0,0.45) !important; }
 body.light-mode .weather-widget .toast .close-btn { background:rgba(0,0,0,0.08); color:rgba(0,0,0,0.7); }
 body.light-mode .weather-widget .toast .spinner { border-color:rgba(0,0,0,0.15); border-top-color:#24292f; }
+body.light-mode .weather-widget .toast-icon { background:rgba(0,0,0,0.06); }
 body.light-mode .weather-controls select {
     background:rgba(255,255,255,0.8); color:#1a1a2e; border-color:rgba(0,0,0,0.15);
 }
