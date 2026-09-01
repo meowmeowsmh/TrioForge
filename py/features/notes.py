@@ -904,6 +904,21 @@ body.light-mode::before { opacity: 0; }
     box-shadow: 0 4px 12px rgba(31,111,235,0.4); transition: all 0.2s;
 }
 .new-note-btn:hover { box-shadow: 0 6px 16px rgba(31,111,235,0.6); transform: translateY(-1px); }
+/* Icon-only button (e.g. fullscreen) — neutral surface, follows the theme. */
+.btn-icon {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #e6edf3;
+    box-shadow: none;
+    padding: 8px 12px;
+}
+.btn-icon:hover { background: rgba(255,255,255,0.16); box-shadow: none; }
+body.light-mode .btn-icon {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.12);
+    color: #24292f;
+}
+body.light-mode .btn-icon:hover { background: rgba(0,0,0,0.10); }
 .search-box { padding: 8px 16px; }
 .search-box input {
     width: 100%; padding: 8px 12px; border-radius: 20px;
@@ -2072,7 +2087,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         <div class="sidebar-header">
             <h2>📖 Notes</h2>
             <button class="new-note-btn" onclick="createNewNote()">+ New</button>
-            <button class="new-note-btn" onclick="toggleFullscreen()" style="background:#2d2d3d; box-shadow:none;" title="Full screen">⛶</button>
+            <button class="new-note-btn btn-icon" onclick="toggleFullscreen()" title="Full screen">⛶</button>
         </div>
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="🔍 Search notes..." oninput="searchNotes()">
