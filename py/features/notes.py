@@ -2690,7 +2690,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 var palette = ['#58a6ff', '#7ee787', '#d2a8ff', '#ffa657', '#79c0ff', '#f0883e'];
                 var nodes = new vis.DataSet(data.nodes.map((n, idx) => {
                     var d = degree[n.id] || 0;
-                    var size = 28 + (d / maxDegree) * 22; // 28–50px range (bigger & readable)
+                    var size = 24 + (d / maxDegree) * 18; // 24–42px range
                     var shape = d > 2 ? 'hexagon' : (d > 0 ? 'diamond' : 'star');
                     var base = d > 0 ? palette[idx % palette.length] : '#4a5568';
                     return {
@@ -2719,9 +2719,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         color: isTag
                             ? { color: 'rgba(210,168,255,0.6)', highlight: '#d2a8ff', hover: '#d2a8ff' }
                             : { color: 'rgba(139,148,158,0.45)', highlight: '#79c0ff', hover: '#79c0ff' },
-                        width: isTag ? 1.2 : 1.5,
+                        width: isTag ? 1.0 : 1.3,
                         dashes: isTag ? [4, 4] : false,
-                        smooth: { type: 'continuous', roundness: 0.4 },
+                        // 'dynamic' smooth = springy edges that bend and bounce back
+                        // when nodes are dragged or the graph drifts.
+                        smooth: { type: 'dynamic', roundness: 0.6 },
                         font: { size: 11, color: '#d2a8ff', strokeWidth: 3, strokeColor: 'rgba(13,17,23,0.9)', align: 'middle' }
                     };
                 }));
@@ -2766,7 +2768,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                     nodes.forEach(function(n) {
                         var d = degree[n.id] || 0;
                         if (d > 2) {
-                            var breathe = 28 + (d / maxDegree) * 22 + Math.sin(t) * 3;
+                            var breathe = 24 + (d / maxDegree) * 18 + Math.sin(t) * 2.5;
                             nodes.update({ id: n.id, size: breathe });
                         }
                     });
