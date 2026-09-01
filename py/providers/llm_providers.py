@@ -10,6 +10,7 @@ import re
 import hashlib
 import base64
 import json
+import threading
 import unicodedata
 import requests
 import logging
@@ -1203,3 +1204,40 @@ class ClaudeProvider(LLMProvider):
             return resp.json()["content"][0]["text"]
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"Claude vision API error: {e}")
+
+
+# ── Shared provider factory ────────────────────────────────────────────────
+# A single place to instantiate providers so every feature (notes, corkboard,
+# chat, …) uses the same constructors and can share cached instances.
+
+_PROVIDER_CLASSES = {
+    "ollama": OllamaProvider,
+    "llamacpp": LlamaCppProvider,
+    "huggingface": HuggingFaceProvider,
+    "groq": GroqProvider,
+    "deepseek": DeepSeekProvider,
+    "claude": ClaudeProvider,
+}
+
+_provider_cache = {}
+_provider_cache_lock = threading.Lock()
+
+
+def get_provider(provider_name: str, api_key: Optional[str] = None):
+    """Return a cached provider instance for `provider_name`.
+
+    api_key is only used to key the cache (e.g. different users/keys); most
+    providers read the key at call time via kwargs anyway.
+    """
+    name = (provider_name or "ollama").lower()
+    cls = _PROVIDER_CLASSES.get(name)
+    if cls is None:
+        raise ProviderError(f"Unknown provider: {provider_name}")
+
+    key = name if not api_key else f"{name}:{api_key}"
+    with _provider_cache_lock:
+        inst = _provider_cache.get(key)
+        if inst is None:
+            inst = cls()
+            _provider_cache[key] = inst
+        return inst

@@ -29,15 +29,7 @@ import backup_store
 logger = logging.getLogger(__name__)
 
 # ---------- LLM for AI assistance ----------
-from providers.llm_providers import (
-    OllamaProvider,
-    LlamaCppProvider,
-    HuggingFaceProvider,
-    GroqProvider,
-    DeepSeekProvider,
-    ClaudeProvider,
-    sanitize_api_key,
-)
+from providers.llm_providers import get_provider, sanitize_api_key
 
 # ======================================================================
 # SQLite storage layer
@@ -435,28 +427,6 @@ def semantic_search_pins():
 
     return jsonify(results)
 
-# ---------- Provider cache for AI assist ----------
-_provider_cache = {}
-
-def get_provider(provider_name, api_key=None):
-    key = (provider_name, api_key)
-    if key in _provider_cache:
-        return _provider_cache[key]
-    provider_map = {
-        "ollama": OllamaProvider,
-        "llamacpp": LlamaCppProvider,
-        "huggingface": HuggingFaceProvider,
-        "groq": GroqProvider,
-        "deepseek": DeepSeekProvider,
-        "claude": ClaudeProvider,
-    }
-    cls = provider_map.get(provider_name)
-    if not cls:
-        raise ValueError(f"Unknown provider: {provider_name}")
-    inst = cls()
-    _provider_cache[key] = inst
-    return inst
-
 # ---------- API: AI assistance ----------
 @corkboard_bp.route('/api/ai_assist', methods=['POST'])
 def ai_assist():
@@ -464,7 +434,7 @@ def ai_assist():
     pin_id = data.get('pin_id')
     action = data.get('action')
     provider_name = data.get('provider', 'ollama')
-    model = data.get('model', 'llama3.2')
+    model = data.get('model') or None
     api_key = sanitize_api_key(data.get('api_key', None))
 
     if not pin_id or not action:
@@ -530,12 +500,13 @@ def ai_assist():
         "You are a helpful assistant. Follow the user's instruction exactly. "
         "Do not add extra commentary. Output only the requested information in the specified format."
     )
+    content_snip = content[:4000]
     if action == 'summarise':
         user_prompt = f"""Summarise the following pin in one short paragraph (max 50 words). 
 Do not include any additional text, only the summary.
 
 Title: {title}
-Content: {content}
+Content: {content_snip}
 
 Summary:"""
     elif action == 'suggest_tags':
@@ -543,7 +514,7 @@ Summary:"""
 Output only the tags, separated by commas. Do not include any other text.
 
 Title: {title}
-Content: {content}
+Content: {content_snip}
 
 Tags:"""
     elif action == 'improve':
@@ -551,7 +522,7 @@ Tags:"""
 Keep the same meaning but make it more concise and professional. 
 Output only the improved version.
 
-{content}
+{content_snip}
 
 Improved version:"""
     else:
