@@ -1387,6 +1387,11 @@ body.light-mode .modal input[type="password"] {
     font-size:14px;
     white-space:pre-wrap;
     display:none;
+    /* Scroll internally only when the result is long, so the modal itself
+       doesn't expand and push the Save/Cancel buttons off-screen. */
+    max-height:180px;
+    overflow-y:auto;
+    overflow-x:hidden;
 }
 body.light-mode .modal .ai-section select,
 body.light-mode .modal .ai-section input[type="password"] {
@@ -4714,11 +4719,11 @@ function getSeasonForCountry(country, code, lat, timezone) {
     const isNorth = effectiveLat >= 0;
     const absLat = Math.abs(effectiveLat);
 
-    // Tropics have no 4 seasons — wet/dry, opposite across the equator.
+    // Tropics have no 4 seasons — hot year-round, only wet + summer (dry).
     if (absLat < 23.5) {
         const northWet = (month >= 5 && month <= 10);
         const isWet = isNorth ? northWet : !northWet;
-        return isWet ? 'wet' : 'dry';
+        return isWet ? 'wet' : 'summer';
     }
 
     if (isNorth) {
