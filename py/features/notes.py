@@ -396,17 +396,49 @@ def get_backlinks(note_id: str):
     return [dict(row) for row in rows]
 
 def get_graph_data():
-    """Fetch all notes and links for the graph view."""
+    """Fetch notes + links + tag-based edges for the graph view.
+
+    Notes that share a #tag are also connected, so the graph reveals topical
+    clusters, not just explicit [[wiki]] links.
+    """
     conn = get_conn()
-    nodes = conn.execute("SELECT id, title FROM notes ORDER BY title").fetchall()
-    edges = conn.execute("""
+    rows = conn.execute("SELECT id, title, tags FROM notes ORDER BY title").fetchall()
+    nodes = []
+    tag_map = {}  # normalized tag -> [note ids]
+    for row in rows:
+        try:
+            tags = json_loads(row[2]) if row[2] else []
+        except Exception:
+            tags = []
+        if not isinstance(tags, list):
+            tags = []
+        nodes.append({"id": row[0], "label": row[1], "tags": tags})
+        for t in tags:
+            key = str(t).strip().lower()
+            if key:
+                tag_map.setdefault(key, []).append(row[0])
+
+    edges = []
+    seen = set()
+    for link in conn.execute("""
         SELECT from_note_id AS 'from', to_note_id AS 'to', link_type
         FROM note_links
-    """).fetchall()
-    return {
-        "nodes": [{"id": row[0], "label": row[1]} for row in nodes],
-        "edges": [{"from": row[0], "to": row[1], "title": row[2]} for row in edges]
-    }
+    """):
+        e = {"from": link[0], "to": link[1], "title": link[2], "kind": "link"}
+        edges.append(e)
+        seen.add((link[0], link[1]))
+
+    # Tag edges: connect every note sharing a tag (a clique per tag, deduped).
+    for tag, ids in tag_map.items():
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                a, b = ids[i], ids[j]
+                if (a, b) in seen or (b, a) in seen:
+                    continue
+                seen.add((a, b))
+                edges.append({"from": a, "to": b, "title": f"#{tag}", "kind": "tag"})
+
+    return {"nodes": nodes, "edges": edges}
 
 # ======================================================================
 # OBSIDIAN VAULT SYNC (import/export) – IMPROVED
@@ -2658,11 +2690,14 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 var palette = ['#58a6ff', '#7ee787', '#d2a8ff', '#ffa657', '#79c0ff', '#f0883e'];
                 var nodes = new vis.DataSet(data.nodes.map((n, idx) => {
                     var d = degree[n.id] || 0;
-                    var size = 15 + (d / maxDegree) * 20; // 15–35px range
+                    var size = 28 + (d / maxDegree) * 22; // 28–50px range (bigger & readable)
                     var shape = d > 2 ? 'hexagon' : (d > 0 ? 'diamond' : 'star');
                     var base = d > 0 ? palette[idx % palette.length] : '#4a5568';
                     return {
                         ...n,
+                        // Always show the note's name (label) so people can read it.
+                        label: n.label || n.id,
+                        title: '<b>' + (n.label || n.id) + '</b>' + ((n.tags && n.tags.length) ? '<br><small>' + n.tags.map(t => '#' + t).join(' ') + '</small>' : ''),
                         shape: shape,
                         size: size,
                         color: {
@@ -2672,15 +2707,23 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                             hover: { background: base, border: '#ffffff' }
                         },
                         borderWidth: d > 2 ? 3 : 2,
-                        shadow: { enabled: true, color: base, size: 10, x: 0, y: 2 },
-                        font: { size: 13, color: '#e6edf3', strokeWidth: 3, strokeColor: 'rgba(13,17,23,0.95)' }
+                        shadow: { enabled: true, color: base, size: 12, x: 0, y: 3 },
+                        font: { size: 16, color: '#ffffff', strokeWidth: 4, strokeColor: 'rgba(13,17,23,0.95)', background: 'rgba(13,17,23,0.7)' }
                     };
                 }));
-                var edges = new vis.DataSet(data.edges.map(e => ({
-                    ...e,
-                    color: { color: 'rgba(139,148,158,0.45)', highlight: '#79c0ff', hover: '#79c0ff' },
-                    width: 1.5,
-                    smooth: { type: 'continuous', roundness: 0.4 }
+                var edges = new vis.DataSet(data.edges.map(e => {
+                    var isTag = e.kind === 'tag';
+                    return {
+                        ...e,
+                        label: isTag ? e.title : undefined,
+                        color: isTag
+                            ? { color: 'rgba(210,168,255,0.6)', highlight: '#d2a8ff', hover: '#d2a8ff' }
+                            : { color: 'rgba(139,148,158,0.45)', highlight: '#79c0ff', hover: '#79c0ff' },
+                        width: isTag ? 1.2 : 1.5,
+                        dashes: isTag ? [4, 4] : false,
+                        smooth: { type: 'continuous', roundness: 0.4 },
+                        font: { size: 11, color: '#d2a8ff', strokeWidth: 3, strokeColor: 'rgba(13,17,23,0.9)', align: 'middle' }
+                    };
                 })));
 
                 var options = {
@@ -2723,7 +2766,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                     nodes.forEach(function(n) {
                         var d = degree[n.id] || 0;
                         if (d > 2) {
-                            var breathe = 15 + (d / maxDegree) * 20 + Math.sin(t) * 2.5;
+                            var breathe = 28 + (d / maxDegree) * 22 + Math.sin(t) * 3;
                             nodes.update({ id: n.id, size: breathe });
                         }
                     });
