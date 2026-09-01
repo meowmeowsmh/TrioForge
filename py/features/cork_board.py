@@ -4505,25 +4505,26 @@ function drawTree(ctx, x, y, s, t, type) {
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
 
-    // Palm tree is drawn standalone and returns here — no leafy round canopy.
+    // Palm tree: one clean trunk + a few thin fronds. No branches, no round
+    // canopy, no floating leaf particles — just a simple palm silhouette.
     if (type === 'palm') {
         const trunkH = 46*s;
-        ctx.strokeStyle = '#4e342e';
-        ctx.lineWidth = 6*s;
+        ctx.strokeStyle = '#5d4037';
+        ctx.lineWidth = 5*s;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(0, 4*s);
-        ctx.quadraticCurveTo(3*s, -trunkH*0.5, -2*s, -trunkH);
+        ctx.quadraticCurveTo(4*s, -trunkH*0.5, 0, -trunkH);
         ctx.stroke();
-        const fronds = [-1.1, -0.55, 0, 0.55, 1.1];
+        const fronds = [-1.2, -0.6, 0, 0.6, 1.2];
         fronds.forEach((a, i) => {
-            const wob = Math.sin(t*0.02 + i)*0.08;
+            const wob = Math.sin(t*0.02 + i)*0.06;
             const ang = a + wob;
-            ctx.strokeStyle = '#2e7d32';
-            ctx.lineWidth = 3.5*s;
+            ctx.strokeStyle = '#388e3c';
+            ctx.lineWidth = 2.2*s;
             ctx.beginPath();
-            ctx.moveTo(-2*s, -trunkH);
-            ctx.quadraticCurveTo(Math.cos(ang)*34*s, -trunkH - 16*s - Math.sin(ang)*8*s, Math.cos(ang)*58*s, -trunkH + Math.sin(ang)*12*s - 24*s);
+            ctx.moveTo(0, -trunkH);
+            ctx.quadraticCurveTo(Math.cos(ang)*30*s, -trunkH - 22*s, Math.cos(ang)*52*s, -trunkH + Math.sin(ang)*16*s - 14*s);
             ctx.stroke();
         });
         ctx.restore();
