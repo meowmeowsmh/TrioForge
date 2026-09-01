@@ -861,8 +861,12 @@ class GroqProvider(LLMProvider):
                      model: str = "llama-3.3-70b-versatile", **kwargs) -> dict:
         client = self._get_client(kwargs.get("api_key"))
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
-        params = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        params = {"model": model, "messages": messages, "temperature": temperature}
+        # Only send max_tokens when the caller explicitly set it. Different Groq
+        # models have very different limits (some cap at 512, some at 32768), so
+        # forcing a large default makes small models reject the request with a 400.
+        if "max_tokens" in kwargs and kwargs["max_tokens"]:
+            params["max_tokens"] = min(int(kwargs["max_tokens"]), self.MAX_OUTPUT_TOKENS)
         tools = kwargs.get("tools")
         if tools:
             params["tools"] = tools
@@ -891,7 +895,9 @@ class GroqProvider(LLMProvider):
         client = self._get_client(kwargs.get("api_key"))
         model = kwargs.get("model", "meta-llama/llama-4-scout-17b-16e-instruct")
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+        params = {"model": model, "temperature": temperature}
+        if "max_tokens" in kwargs and kwargs["max_tokens"]:
+            params["max_tokens"] = min(int(kwargs["max_tokens"]), self.MAX_OUTPUT_TOKENS)
         content_parts = []
         for img in images:
             b64 = _strip_b64_prefix(img["b64"])
@@ -908,9 +914,7 @@ class GroqProvider(LLMProvider):
         try:
             chat = client.chat.completions.create(
                 messages=vision_messages,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens
+                **params
             )
             return chat.choices[0].message.content
         except Exception as e:
@@ -1037,6 +1041,10 @@ class DeepSeekProvider(LLMProvider):
                                  headers=headers, json=payload, timeout=180)
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 401:
+                raise ProviderError("DeepSeek API key is invalid or missing. Check the API Key field.")
+            raise ProviderError(f"DeepSeek API error: {e}")
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"DeepSeek API error: {e}")
 
@@ -1080,6 +1088,10 @@ class DeepSeekProvider(LLMProvider):
                                  headers=headers, json=payload, timeout=180)
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 401:
+                raise ProviderError("DeepSeek API key is invalid or missing. Check the API Key field.")
+            raise ProviderError(f"DeepSeek vision API error: {e}")
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"DeepSeek vision API error: {e}")
 
