@@ -1500,6 +1500,10 @@ body.light-mode {
     background: #f6f8fa;
     color: #24292f;
 }
+/* Fullscreen uses the <html> surface — make it light too, otherwise it stays black. */
+html.light-mode {
+    background: #f6f8fa;
+}
 body.light-mode .top-bar {
     background: rgba(255,255,255,0.9);
     border-bottom-color: rgba(0,0,0,0.08);
@@ -2092,6 +2096,8 @@ var themeKnob = document.getElementById('themeKnob');
 var isLight = localStorage.getItem('theme') === 'light';
 function applyTheme(light) {
     document.body.classList.toggle('light-mode', light);
+    // Also toggle on <html> so the fullscreen surface follows the theme.
+    document.documentElement.classList.toggle('light-mode', light);
     localStorage.setItem('theme', light ? 'light' : 'dark');
     themeOuter.classList.toggle('day', light);
 }
