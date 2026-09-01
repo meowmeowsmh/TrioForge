@@ -3299,7 +3299,7 @@ function loadOllamaModels(provider, apiKey) {
                 select.innerHTML = '<option value="">No models found</option>';
                 return;
             }
-            const saved = localStorage.getItem('corkboard_ai_model_' + provider) || '';
+            const saved = localStorage.getItem('corkboard_ai_model') || '';
             let options = '';
             data.models.forEach(m => {
                 const selected = (m === saved) ? 'selected' : '';
@@ -3309,7 +3309,7 @@ function loadOllamaModels(provider, apiKey) {
             if (!saved || !data.models.includes(saved)) {
                 if (data.models.length) {
                     select.value = data.models[0];
-                    localStorage.setItem('corkboard_ai_model_' + provider, data.models[0]);
+                    localStorage.setItem('corkboard_ai_model', data.models[0]);
                 }
             }
         })
@@ -3331,9 +3331,7 @@ document.getElementById('aiProviderSelect').addEventListener('change', function(
         else if (provider === 'deepseek') placeholder = 'DeepSeek API Key';
         else if (provider === 'claude') placeholder = 'Anthropic API Key';
         apiKeyInput.placeholder = placeholder;
-        // Unified key storage (api_key_<provider>) shared with chat + notes pages,
-        // so a key entered anywhere is available everywhere.
-        var savedKey = localStorage.getItem('api_key_' + provider) || '';
+        var savedKey = localStorage.getItem('corkboard_api_key_' + provider) || '';
         apiKeyInput.value = savedKey;
     } else {
         apiKeyInput.style.display = 'none';
@@ -3348,22 +3346,20 @@ document.getElementById('aiApiKeyInput').addEventListener('input', function() {
     var provider = document.getElementById('aiProviderSelect').value;
     var key = this.value.trim();
     if (key) {
-        localStorage.setItem('api_key_' + provider, key);
+        localStorage.setItem('corkboard_api_key_' + provider, key);
     } else {
-        localStorage.removeItem('api_key_' + provider);
+        localStorage.removeItem('corkboard_api_key_' + provider);
     }
 });
 
 document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
     var provider = document.getElementById('aiProviderSelect').value;
     var key = this.value.trim();
-    if (key) localStorage.setItem('api_key_' + provider, key);
     loadOllamaModels(provider, key);
 });
 
 document.getElementById('aiModelSelect').addEventListener('change', function() {
-    var provider = document.getElementById('aiProviderSelect').value;
-    localStorage.setItem('corkboard_ai_model_' + provider, this.value);
+    localStorage.setItem('corkboard_ai_model', this.value);
 });
 
 // ─── EDIT MODAL ──────────────────────────────────────
@@ -3389,7 +3385,7 @@ function openEditModal(id) {
     document.getElementById('aiProviderSelect').value = savedProvider;
     var evt = new Event('change');
     document.getElementById('aiProviderSelect').dispatchEvent(evt);
-    var savedModel = localStorage.getItem('corkboard_ai_model_' + savedProvider) || '';
+    var savedModel = localStorage.getItem('corkboard_ai_model') || '';
     if (savedModel) {
         var modelSelect = document.getElementById('aiModelSelect');
         for (var i = 0; i < modelSelect.options.length; i++) {
