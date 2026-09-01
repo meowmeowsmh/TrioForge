@@ -1625,7 +1625,8 @@ function checkDeepSeekStatus() {
         statusSpan.textContent = '';
         return;
     }
-    fetch('/deepseek/status')
+    var key = apiKeyInput.value.trim();
+    fetch('/deepseek/status' + (key ? '?api_key=' + encodeURIComponent(key) : ''))
         .then(r => r.json())
         .then(data => {
             if (data.ok) {
@@ -2257,6 +2258,12 @@ providerSelect.addEventListener('change', function() {
 
     var keyInput = document.getElementById('apiKeyInput');
 
+    // Persist the PREVIOUS provider's key before we overwrite the field, so
+    // switching never loses a key that was typed but not yet blurred.
+    if (['groq', 'huggingface', 'deepseek', 'claude'].includes(prevProvider)) {
+        saveApiKey(prevProvider, keyInput.value);
+    }
+
     // llama.cpp service lifecycle: stop it when the user switches away.
     // (Starting happens in loadModels() after the model list is populated.)
     if (prevProvider === 'llamacpp' && provider !== 'llamacpp') {
@@ -2293,6 +2300,14 @@ providerSelect.addEventListener('change', function() {
     } else {
         document.getElementById('deepseekStatus').textContent = '';
         document.getElementById('modelInfo').textContent = '';
+    }
+});
+apiKeyInput.addEventListener('input', function() {
+    // Save on every keystroke so a key is never lost if the field doesn't blur
+    // (e.g. switching provider or reloading mid-typing).
+    var provider = providerSelect.value;
+    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
+        saveApiKey(provider, this.value);
     }
 });
 apiKeyInput.addEventListener('blur', function() {
