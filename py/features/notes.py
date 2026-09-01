@@ -2779,6 +2779,18 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 network.once('stabilizationIterationsDone', function() {
                     network.fit({ animation: { duration: 400, easingFunction: 'easeOutQuad' } });
                 });
+
+                // Pause physics while dragging so the node follows the cursor
+                // instantly (no "fighting" the wind/breeze). Resume on release.
+                network.on('dragStart', function(params) {
+                    if (params.nodes.length) {
+                        network.setOptions({ physics: { enabled: false } });
+                    }
+                });
+                network.on('dragEnd', function(params) {
+                    network.setOptions({ physics: { enabled: true } });
+                });
+
                 // Single click = drag the node (dragNodes handles it, so no action
                 // here — opening the editor would fight with dragging).
                 // Double click = open the note for editing.
