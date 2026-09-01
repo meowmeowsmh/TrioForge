@@ -3928,7 +3928,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         ctx.fillStyle = ground;
         ctx.fillRect(0, groundY, w, h - groundY);
         drawHouse(ctx, w*0.22, groundY + (h-groundY)*0.60, 0.85, t, { wall:'#f5e6ca', roof:'#6d4c2f', trim:'#d4a373', flowers:true, lights:false });
-        drawTree(ctx, w*0.76, groundY, 1.0, t, 'palm');
+        drawTree(ctx, w*0.76, groundY, 1.0, t, 'green');
         blobs.forEach(b => { updateBlob(b, w, h, t, 0.85); drawWalkingBlob(ctx, b, t); });
     }
 
@@ -3971,7 +3971,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         ctx.fillStyle = grd;
         ctx.fillRect(0, groundY, w, h - groundY);
         drawHouse(ctx, w*0.22, groundY + (h-groundY)*0.60, 0.85, t, { wall:'#e8d5b5', roof:'#8d6e63', trim:'#d4a373', flowers:true, lights:false });
-        drawTree(ctx, w*0.78, groundY, 1.0, t, 'maple');
+        drawTree(ctx, w*0.78, groundY, 1.0, t, 'green');
         blobs.forEach(b => { updateBlob(b, w, h, t, 0.8); drawWalkingBlob(ctx, b, t); });
     }
 
@@ -4329,39 +4329,50 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         }
 
         const trunkH = 42*s;
-        ctx.strokeStyle = '#6d4c2f';
-        ctx.lineWidth = 7*s;
+        ctx.strokeStyle = '#5d4037';
+        ctx.lineWidth = 8*s;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(0, 4*s);
-        ctx.lineTo(-2*s, -trunkH);
+        ctx.lineTo(-1*s, -trunkH);
         ctx.stroke();
-        ctx.lineWidth = 4*s;
+
+        ctx.lineWidth = 4.5*s;
         ctx.beginPath();
-        ctx.moveTo(-1*s, -trunkH*0.55);
-        ctx.quadraticCurveTo(-16*s, -trunkH*0.7, -20*s, -trunkH*0.95);
+        ctx.moveTo(-1*s, -trunkH*0.5);
+        ctx.quadraticCurveTo(-15*s, -trunkH*0.7, -19*s, -trunkH*0.98);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(-1.5*s, -trunkH*0.8);
-        ctx.quadraticCurveTo(14*s, -trunkH*0.92, 20*s, -trunkH*1.1);
+        ctx.moveTo(-1.5*s, -trunkH*0.72);
+        ctx.quadraticCurveTo(13*s, -trunkH*0.9, 18*s, -trunkH*1.08);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-1*s, -trunkH*0.85);
+        ctx.quadraticCurveTo(-6*s, -trunkH*1.05, -8*s, -trunkH*1.18);
         ctx.stroke();
 
         let colors, highlight;
         if (type === 'maple') {
-            colors = ['#b23b3b','#d84315','#e64a19','#a0392f','#c62828'];
+            colors = ['#c62828','#e64a19','#b23b3b','#d84315','#a0392f'];
             highlight = 'rgba(255,200,150,0.18)';
-        } else {
-            colors = ['#f8bbd0','#f48fb1','#fce4ec','#f06292','#f5c1d9'];
+        } else if (type === 'sakura') {
+            colors = ['#f8bbd0','#f06292','#fce4ec','#f48fb1','#f5c1d9'];
             highlight = 'rgba(255,255,255,0.35)';
+        } else {
+            colors = ['#4caf50','#66bb6a','#43a047','#2e7d32','#81c784'];
+            highlight = 'rgba(255,255,255,0.22)';
         }
-        const canopyY = -trunkH - 6*s;
+        const canopyY = -trunkH - 10*s;
         const clusters = [
-            { dx:0, dy:-8, r:24 },
-            { dx:-20, dy:2, r:17 },
-            { dx:20, dy:0, r:18 },
-            { dx:-10, dy:14, r:15 },
-            { dx:12, dy:15, r:15 },
-            { dx:0, dy:6, r:20 }
+            { dx:0,   dy:-16, r:24 },
+            { dx:-22, dy:-6,  r:19 },
+            { dx:22,  dy:-8,  r:19 },
+            { dx:-14, dy:8,   r:17 },
+            { dx:14,  dy:7,   r:17 },
+            { dx:0,   dy:-2,  r:23 },
+            { dx:0,   dy:12,  r:16 },
+            { dx:-30, dy:2,   r:13 },
+            { dx:30,  dy:0,   r:13 }
         ];
         clusters.forEach((c, i) => {
             const wob = Math.sin(t*0.01 + i*1.7)*1.2*s;
@@ -4376,7 +4387,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         ctx.shadowBlur = 0;
         ctx.fillStyle = highlight;
         ctx.beginPath();
-        ctx.arc(-8*s, canopyY-10*s, 14*s, 0, Math.PI*2);
+        ctx.arc(-10*s, canopyY-12*s, 16*s, 0, Math.PI*2);
         ctx.fill();
         ctx.restore();
 
