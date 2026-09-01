@@ -4505,6 +4505,31 @@ function drawTree(ctx, x, y, s, t, type) {
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
 
+    // Palm tree is drawn standalone and returns here — no leafy round canopy.
+    if (type === 'palm') {
+        const trunkH = 46*s;
+        ctx.strokeStyle = '#4e342e';
+        ctx.lineWidth = 6*s;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 4*s);
+        ctx.quadraticCurveTo(3*s, -trunkH*0.5, -2*s, -trunkH);
+        ctx.stroke();
+        const fronds = [-1.1, -0.55, 0, 0.55, 1.1];
+        fronds.forEach((a, i) => {
+            const wob = Math.sin(t*0.02 + i)*0.08;
+            const ang = a + wob;
+            ctx.strokeStyle = '#2e7d32';
+            ctx.lineWidth = 3.5*s;
+            ctx.beginPath();
+            ctx.moveTo(-2*s, -trunkH);
+            ctx.quadraticCurveTo(Math.cos(ang)*34*s, -trunkH - 16*s - Math.sin(ang)*8*s, Math.cos(ang)*58*s, -trunkH + Math.sin(ang)*12*s - 24*s);
+            ctx.stroke();
+        });
+        ctx.restore();
+        return;
+    }
+
     const trunkH = 42*s;
     ctx.strokeStyle = '#6d4c2f';
     ctx.lineWidth = 7*s;
@@ -4525,28 +4550,7 @@ function drawTree(ctx, x, y, s, t, type) {
     ctx.stroke();
 
     let colors, highlight;
-    if (type === 'palm') {
-        ctx.strokeStyle = '#4e342e';
-        ctx.lineWidth = 5*s;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(0, 4*s);
-        ctx.lineTo(0, -trunkH);
-        ctx.stroke();
-        const fronds = [-1.2, -0.6, 0, 0.6, 1.2];
-        fronds.forEach((a, i) => {
-            const wob = Math.sin(t*0.02 + i)*0.08;
-            const ang = a + wob;
-            ctx.strokeStyle = '#2e7d32';
-            ctx.lineWidth = 3.5*s;
-            ctx.beginPath();
-            ctx.moveTo(0, -trunkH);
-            ctx.quadraticCurveTo(Math.cos(ang)*30*s, -trunkH - 14*s - Math.sin(ang)*8*s, Math.cos(ang)*55*s, -trunkH + Math.sin(ang)*10*s - 22*s);
-            ctx.stroke();
-        });
-        ctx.restore();
-        return;
-    } else if (type === 'maple') {
+    if (type === 'maple') {
         colors = ['#b23b3b','#d84315','#e64a19','#a0392f','#c62828'];
         highlight = 'rgba(255,200,150,0.18)';
     } else {
