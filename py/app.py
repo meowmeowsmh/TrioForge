@@ -83,6 +83,7 @@ from providers.llm_providers import (
 from features.notes import notes_bp, upsert_note
 from features.cork_board import corkboard_bp, upsert_pin, add_link
 from features.viewer import setup_viewer
+import personas
 
 try:
     import pynvml
@@ -446,12 +447,14 @@ def get_messages(cid: str) -> List[dict]:
                         f["b64"] = _load_attachment_from_disk(f["file"])
                 msg["images"] = att.get("images", [])
                 msg["files"] = att.get("files", [])
+                if att.get("meta"):
+                    msg["meta"] = att["meta"]
             except Exception:
                 pass
         msgs.append(msg)
     return msgs
 
-def add_message(cid: str, role: str, text: str, images: Optional[List[dict]] = None, files: Optional[List[dict]] = None) -> bool:
+def add_message(cid: str, role: str, text: str, images: Optional[List[dict]] = None, files: Optional[List[dict]] = None, meta: Optional[dict] = None) -> bool:
     global _conversations_dirty
     if images is None:
         images = []
@@ -477,7 +480,13 @@ def add_message(cid: str, role: str, text: str, images: Optional[List[dict]] = N
             "mime": f.get("mime", "application/octet-stream")
         })
 
-    attachments_json = std_json.dumps({"images": stored_images, "files": stored_files}) if (stored_images or stored_files) else None
+    att_data = {}
+    if stored_images or stored_files:
+        att_data["images"] = stored_images
+        att_data["files"] = stored_files
+    if meta:
+        att_data["meta"] = meta
+    attachments_json = std_json.dumps(att_data) if att_data else None
 
     with _sqlite_lock:
         _sqlite_conn.execute(
@@ -806,6 +815,18 @@ providers = {
     "claude": ClaudeProvider(),
 }
 
+API_PROVIDERS = {"groq", "huggingface", "deepseek", "claude"}
+
+
+def _bot_meta(provider_name, model):
+    """Tag a bot message so the UI can show whether it came from a local model
+    (free) or an API-key model (paid)."""
+    return {
+        "kind": "api" if provider_name in API_PROVIDERS else "local",
+        "provider": provider_name,
+        "model": model or None,
+    }
+
 @app.route('/')
 def index():
     html = get_cached_html()
@@ -968,6 +989,18 @@ def set_model():
                 return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 400
     except Exception:
         pass
+    # Unload the PREVIOUS Ollama model before switching, so RAM/VRAM doesn't
+    # stack up when the user jumps between several models in one session.
+    old_model = current_model
+    if old_model and old_model != model:
+        try:
+            requests.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={"model": old_model, "prompt": "", "keep_alive": 0},
+                timeout=5,
+            )
+        except Exception:
+            pass
     current_model = model
     save_model_config(model)
     providers["ollama"].model = model
@@ -1032,6 +1065,10 @@ def deepseek_status():
     if key:
         provider._default_key = key
     return jsonify(provider.get_status())
+
+@app.route('/api/personas', methods=['GET'])
+def personas_endpoint():
+    return jsonify(personas.list_personas())
 
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
@@ -1737,6 +1774,8 @@ def chat():
         provider_name = data.get('provider', 'ollama')
         model = data.get('model', None)
         api_key = sanitize_api_key(data.get('api_key', None))
+        persona = data.get('persona') or ''
+        persona_custom = data.get('persona_custom') or ''
 
         if not user_message and not images and not files:
             return jsonify({'error': 'Nothing to send'}), 400
@@ -1766,6 +1805,9 @@ def chat():
             provider._default_key = api_key
 
         system_prompt = provider.get_system_prompt()
+        _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
+        if _persona:
+            system_prompt = _persona + "\n\n" + system_prompt
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
         messages = _build_messages(conv_id, system_prompt, final_prompt)
 
@@ -1818,7 +1860,7 @@ def chat():
 
         if not add_message(conv_id, "user", original_message, images, files):
             return jsonify({'error': f'Failed to save user message to {conv_id}'}), 500
-        if not add_message(conv_id, "bot", reply, [], []):
+        if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model)):
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
 
         return jsonify({'response': reply, 'usage': usage})
@@ -1847,6 +1889,8 @@ def chat_stream():
         search_enabled = data.get('search', False)
         model = data.get('model', current_model)
         api_key = sanitize_api_key(data.get('api_key', None))
+        persona = data.get('persona') or ''
+        persona_custom = data.get('persona_custom') or ''
 
         provider_name = data.get('provider', 'ollama')
         if provider_name != 'ollama':
@@ -1875,6 +1919,9 @@ def chat_stream():
             return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
 
         system_prompt = provider.get_system_prompt()
+        _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
+        if _persona:
+            system_prompt = _persona + "\n\n" + system_prompt
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
         messages = _build_messages(conv_id, system_prompt, final_prompt)
 
@@ -1930,7 +1977,7 @@ def chat_stream():
                 yield f"data: {json_dumps({'token': full_response})}\n\n"
                 yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {}})}\n\n"
                 add_message(conv_id, "user", user_message, images, files)
-                add_message(conv_id, "bot", full_response, [], [])
+                add_message(conv_id, "bot", full_response, [], [], meta=_bot_meta("ollama", model))
                 return
             try:
                 r = requests.post(
@@ -1960,7 +2007,7 @@ def chat_stream():
                 yield f"data: {json_dumps({'error': str(e)})}\n\n"
 
             add_message(conv_id, "user", user_message, images, files)
-            add_message(conv_id, "bot", full_response, [], [])
+            add_message(conv_id, "bot", full_response, [], [], meta=_bot_meta("ollama", model))
 
         return Response(generate(), mimetype='text/event-stream')
 
