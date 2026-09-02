@@ -2556,9 +2556,99 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     var aiApiKeyInput = document.getElementById('aiApiKeyInput');
     var aiModelSelect = document.getElementById('aiModelSelect');
 
+    // ─── Shared AI preferences (provider + API key) across pages ──────
+    var AI_PROVIDER_KEY = 'trio_ai_provider';
+    var AI_MODEL_KEY = 'trio_ai_model';
+    var KEY_PROVIDERS = ['groq', 'huggingface', 'deepseek', 'claude'];
+
+    function readAiProvider() {
+        return localStorage.getItem(AI_PROVIDER_KEY)
+            || localStorage.getItem('notes_ai_provider')
+            || localStorage.getItem('corkboard_ai_provider')
+            || 'ollama';
+    }
+
+    function readAiApiKey(provider) {
+        var key = localStorage.getItem('trio_api_key_' + provider);
+        if (key !== null) return key;
+        key = localStorage.getItem('notes_ai_api_key_' + provider);
+        if (key !== null) return key;
+        key = localStorage.getItem('corkboard_api_key_' + provider);
+        return key || '';
+    }
+
+    function saveAiProvider(provider) {
+        localStorage.setItem(AI_PROVIDER_KEY, provider);
+        localStorage.setItem('notes_ai_provider', provider);
+        localStorage.setItem('corkboard_ai_provider', provider);
+    }
+
+    function saveAiApiKey(provider, key) {
+        var clean = (key || '').trim();
+        if (clean) {
+            localStorage.setItem('trio_api_key_' + provider, clean);
+            localStorage.setItem('notes_ai_api_key_' + provider, clean);
+            localStorage.setItem('corkboard_api_key_' + provider, clean);
+        } else {
+            localStorage.removeItem('trio_api_key_' + provider);
+            localStorage.removeItem('notes_ai_api_key_' + provider);
+            localStorage.removeItem('corkboard_api_key_' + provider);
+        }
+    }
+
+    function readAiModel() {
+        return localStorage.getItem(AI_MODEL_KEY)
+            || localStorage.getItem('notes_ai_model')
+            || localStorage.getItem('corkboard_ai_model')
+            || '';
+    }
+
+    function saveAiModel(model) {
+        localStorage.setItem(AI_MODEL_KEY, model);
+        localStorage.setItem('notes_ai_model', model);
+        localStorage.setItem('corkboard_ai_model', model);
+    }
+
+    function describeProvider(provider) {
+        return KEY_PROVIDERS.includes(provider) ? '💰 Paid (API)' : '🆓 Free (local)';
+    }
+
+    function formatAiError(provider, msg) {
+        msg = (msg || '').toString().trim();
+        var lower = msg.toLowerCase();
+        var friendly = msg;
+        var category = 'other';
+        if (/(invalid|missing|required|incorrect|wrong).*api key|api key.*(invalid|missing|required|incorrect|wrong)|401|unauthorized|forbidden|authentication|invalid.*key|key.*invalid/.test(lower)) {
+            category = 'auth';
+            friendly = 'Invalid or missing API key — re-enter it in the API Key field.';
+        } else if (/(token|context).*(limit|exceed|maximum|too (long|many))|too many tokens|max_tokens|context length/.test(lower)) {
+            category = 'token_limit';
+            friendly = 'Token/context limit reached — shorten the text or pick a larger-context model.';
+        } else if (/(insufficient|quota|billing|payment|balance|credit|exceeded.*quota|402|pay)/.test(lower)) {
+            category = 'payment';
+            friendly = 'Paid API has no remaining credit/quota — top up billing or switch to a free model (Ollama / llama.cpp).';
+        } else if (/(429|rate limit|too many requests)/.test(lower)) {
+            category = 'rate_limit';
+            friendly = 'Rate limit hit — wait a moment and retry.';
+        } else if (/(500|502|503|504|server error|overloaded|internal server)/.test(lower)) {
+            category = 'server';
+            friendly = 'Service returned a server error — try again later.';
+        } else if (/(timeout|timed out)/.test(lower)) {
+            category = 'timeout';
+            friendly = 'Request timed out — try again or shorten the message.';
+        } else if (/(connect|unreachable|refused|not running|not available|not installed|no models)/.test(lower)) {
+            category = 'network';
+            friendly = 'Could not reach the service — check connection, or start the local service / install the dependency.';
+        }
+        if (category === 'other' && KEY_PROVIDERS.includes(provider)) {
+            friendly = friendly + ' — this is a paid API; check your account/billing.';
+        }
+        return describeProvider(provider) + ' · ' + friendly;
+    }
+
     function loadAIPreferences() {
-        var provider = localStorage.getItem('notes_ai_provider') || 'ollama';
-        var apiKey = localStorage.getItem('notes_ai_api_key_' + provider) || '';
+        var provider = readAiProvider();
+        var apiKey = readAiApiKey(provider);
         aiProviderSelect.value = provider;
         aiApiKeyInput.value = apiKey;
         toggleApiKeyVisibility(provider);
@@ -2566,8 +2656,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     }
 
     function toggleApiKeyVisibility(provider) {
-        var show = ['groq', 'huggingface', 'deepseek', 'claude'].includes(provider);
-        aiApiKeyInput.style.display = show ? 'inline-block' : 'none';
+        aiApiKeyInput.style.display = KEY_PROVIDERS.includes(provider) ? 'inline-block' : 'none';
     }
 
     function loadModelsForProvider(provider, apiKey) {
@@ -2579,11 +2668,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
             .then(r => r.json())
             .then(data => {
                 if (data.error) {
-                    aiModelSelect.innerHTML = '<option value="">⚠️ ' + data.error + '</option>';
+                    aiModelSelect.innerHTML = '<option value="">⚠️ ' + formatAiError(provider, data.error) + '</option>';
                     return;
                 }
                 var models = data.models || [];
-                var current = localStorage.getItem('notes_ai_model') || '';
+                var current = readAiModel();
                 aiModelSelect.innerHTML = '';
                 if (models.length) {
                     models.forEach(m => {
@@ -2596,7 +2685,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         aiModelSelect.value = current;
                     } else {
                         aiModelSelect.value = models[0];
-                        localStorage.setItem('notes_ai_model', models[0]);
+                        saveAiModel(models[0]);
                     }
                 } else {
                     aiModelSelect.innerHTML = '<option value="">No models found</option>';
@@ -2610,25 +2699,25 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 
     aiProviderSelect.addEventListener('change', function() {
         var provider = this.value;
-        var apiKey = localStorage.getItem('notes_ai_api_key_' + provider) || '';
+        var apiKey = readAiApiKey(provider);
         aiApiKeyInput.value = apiKey;
-        localStorage.setItem('notes_ai_provider', provider);
+        saveAiProvider(provider);
         toggleApiKeyVisibility(provider);
         loadModelsForProvider(provider, apiKey);
     });
 
     aiApiKeyInput.addEventListener('input', function() {
-        var provider = aiProviderSelect.value;
-        localStorage.setItem('notes_ai_api_key_' + provider, this.value);
+        saveAiApiKey(aiProviderSelect.value, this.value);
     });
 
     aiApiKeyInput.addEventListener('blur', function() {
         var provider = aiProviderSelect.value;
-        localStorage.setItem('notes_ai_api_key_' + provider, this.value);
+        saveAiApiKey(provider, this.value);
+        loadModelsForProvider(provider, this.value.trim());
     });
 
     aiModelSelect.addEventListener('change', function() {
-        localStorage.setItem('notes_ai_model', this.value);
+        saveAiModel(this.value);
     });
 
     // ─── AI Assist ──────────────────────────────────
@@ -2664,7 +2753,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                resultDiv.textContent = '❌ ' + data.error;
+                resultDiv.textContent = '❌ ' + (model ? model + '\n' : '') + formatAiError(provider, data.error);
                 return;
             }
             if (action === 'suggest_tags' && data.tags) {

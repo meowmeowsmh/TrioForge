@@ -3279,6 +3279,96 @@ function removeLink(from, to) {
     }).catch(e => console.error('Failed to remove link:', e));
 }
 
+// ─── Shared AI preferences (provider + API key) across pages ─────────
+var AI_PROVIDER_KEY = 'trio_ai_provider';
+var AI_MODEL_KEY = 'trio_ai_model';
+var KEY_PROVIDERS = ['groq', 'huggingface', 'deepseek', 'claude'];
+
+function readAiProvider() {
+    return localStorage.getItem(AI_PROVIDER_KEY)
+        || localStorage.getItem('notes_ai_provider')
+        || localStorage.getItem('corkboard_ai_provider')
+        || 'ollama';
+}
+
+function readAiApiKey(provider) {
+    var key = localStorage.getItem('trio_api_key_' + provider);
+    if (key !== null) return key;
+    key = localStorage.getItem('notes_ai_api_key_' + provider);
+    if (key !== null) return key;
+    key = localStorage.getItem('corkboard_api_key_' + provider);
+    return key || '';
+}
+
+function saveAiProvider(provider) {
+    localStorage.setItem(AI_PROVIDER_KEY, provider);
+    localStorage.setItem('notes_ai_provider', provider);
+    localStorage.setItem('corkboard_ai_provider', provider);
+}
+
+function saveAiApiKey(provider, key) {
+    var clean = (key || '').trim();
+    if (clean) {
+        localStorage.setItem('trio_api_key_' + provider, clean);
+        localStorage.setItem('notes_ai_api_key_' + provider, clean);
+        localStorage.setItem('corkboard_api_key_' + provider, clean);
+    } else {
+        localStorage.removeItem('trio_api_key_' + provider);
+        localStorage.removeItem('notes_ai_api_key_' + provider);
+        localStorage.removeItem('corkboard_api_key_' + provider);
+    }
+}
+
+function readAiModel() {
+    return localStorage.getItem(AI_MODEL_KEY)
+        || localStorage.getItem('notes_ai_model')
+        || localStorage.getItem('corkboard_ai_model')
+        || '';
+}
+
+function saveAiModel(model) {
+    localStorage.setItem(AI_MODEL_KEY, model);
+    localStorage.setItem('notes_ai_model', model);
+    localStorage.setItem('corkboard_ai_model', model);
+}
+
+function describeProvider(provider) {
+    return KEY_PROVIDERS.includes(provider) ? '💰 Paid (API)' : '🆓 Free (local)';
+}
+
+function formatAiError(provider, msg) {
+    msg = (msg || '').toString().trim();
+    var lower = msg.toLowerCase();
+    var friendly = msg;
+    var category = 'other';
+    if (/(invalid|missing|required|incorrect|wrong).*api key|api key.*(invalid|missing|required|incorrect|wrong)|401|unauthorized|forbidden|authentication|invalid.*key|key.*invalid/.test(lower)) {
+        category = 'auth';
+        friendly = 'Invalid or missing API key — re-enter it in the API Key field.';
+    } else if (/(token|context).*(limit|exceed|maximum|too (long|many))|too many tokens|max_tokens|context length/.test(lower)) {
+        category = 'token_limit';
+        friendly = 'Token/context limit reached — shorten the text or pick a larger-context model.';
+    } else if (/(insufficient|quota|billing|payment|balance|credit|exceeded.*quota|402|pay)/.test(lower)) {
+        category = 'payment';
+        friendly = 'Paid API has no remaining credit/quota — top up billing or switch to a free model (Ollama / llama.cpp).';
+    } else if (/(429|rate limit|too many requests)/.test(lower)) {
+        category = 'rate_limit';
+        friendly = 'Rate limit hit — wait a moment and retry.';
+    } else if (/(500|502|503|504|server error|overloaded|internal server)/.test(lower)) {
+        category = 'server';
+        friendly = 'Service returned a server error — try again later.';
+    } else if (/(timeout|timed out)/.test(lower)) {
+        category = 'timeout';
+        friendly = 'Request timed out — try again or shorten the message.';
+    } else if (/(connect|unreachable|refused|not running|not available|not installed|no models)/.test(lower)) {
+        category = 'network';
+        friendly = 'Could not reach the service — check connection, or start the local service / install the dependency.';
+    }
+    if (category === 'other' && KEY_PROVIDERS.includes(provider)) {
+        friendly = friendly + ' — this is a paid API; check your account/billing.';
+    }
+    return describeProvider(provider) + ' · ' + friendly;
+}
+
 // ─── Load models dynamically ─────────────────────────
 function loadOllamaModels(provider, apiKey) {
     const select = document.getElementById('aiModelSelect');
@@ -3291,7 +3381,7 @@ function loadOllamaModels(provider, apiKey) {
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                select.innerHTML = '<option value="">⚠️ ' + data.error + '</option>';
+                select.innerHTML = '<option value="">⚠️ ' + formatAiError(provider, data.error) + '</option>';
                 console.warn('Model loading error:', data.error);
                 return;
             }
@@ -3299,7 +3389,7 @@ function loadOllamaModels(provider, apiKey) {
                 select.innerHTML = '<option value="">No models found</option>';
                 return;
             }
-            const saved = localStorage.getItem('corkboard_ai_model') || '';
+            const saved = readAiModel();
             let options = '';
             data.models.forEach(m => {
                 const selected = (m === saved) ? 'selected' : '';
@@ -3309,7 +3399,7 @@ function loadOllamaModels(provider, apiKey) {
             if (!saved || !data.models.includes(saved)) {
                 if (data.models.length) {
                     select.value = data.models[0];
-                    localStorage.setItem('corkboard_ai_model', data.models[0]);
+                    saveAiModel(data.models[0]);
                 }
             }
         })
@@ -3323,7 +3413,7 @@ function loadOllamaModels(provider, apiKey) {
 document.getElementById('aiProviderSelect').addEventListener('change', function() {
     var provider = this.value;
     var apiKeyInput = document.getElementById('aiApiKeyInput');
-    if (['groq', 'huggingface', 'deepseek', 'claude'].includes(provider)) {
+    if (KEY_PROVIDERS.includes(provider)) {
         apiKeyInput.style.display = 'inline-block';
         var placeholder = '';
         if (provider === 'groq') placeholder = 'Groq API Key';
@@ -3331,35 +3421,27 @@ document.getElementById('aiProviderSelect').addEventListener('change', function(
         else if (provider === 'deepseek') placeholder = 'DeepSeek API Key';
         else if (provider === 'claude') placeholder = 'Anthropic API Key';
         apiKeyInput.placeholder = placeholder;
-        var savedKey = localStorage.getItem('corkboard_api_key_' + provider) || '';
-        apiKeyInput.value = savedKey;
+        apiKeyInput.value = readAiApiKey(provider);
     } else {
         apiKeyInput.style.display = 'none';
         apiKeyInput.value = '';
     }
-    var apiKey = apiKeyInput.value;
-    loadOllamaModels(provider, apiKey);
-    localStorage.setItem('corkboard_ai_provider', provider);
+    saveAiProvider(provider);
+    loadOllamaModels(provider, apiKeyInput.value);
 });
 
 document.getElementById('aiApiKeyInput').addEventListener('input', function() {
-    var provider = document.getElementById('aiProviderSelect').value;
-    var key = this.value.trim();
-    if (key) {
-        localStorage.setItem('corkboard_api_key_' + provider, key);
-    } else {
-        localStorage.removeItem('corkboard_api_key_' + provider);
-    }
+    saveAiApiKey(document.getElementById('aiProviderSelect').value, this.value);
 });
 
 document.getElementById('aiApiKeyInput').addEventListener('blur', function() {
     var provider = document.getElementById('aiProviderSelect').value;
-    var key = this.value.trim();
-    loadOllamaModels(provider, key);
+    saveAiApiKey(provider, this.value);
+    loadOllamaModels(provider, this.value.trim());
 });
 
 document.getElementById('aiModelSelect').addEventListener('change', function() {
-    localStorage.setItem('corkboard_ai_model', this.value);
+    saveAiModel(this.value);
 });
 
 // ─── EDIT MODAL ──────────────────────────────────────
@@ -3381,11 +3463,11 @@ function openEditModal(id) {
     document.getElementById('pinPreview').innerHTML = '';
     document.getElementById('pinPreview').classList.remove('visible');
     document.getElementById('aiResult').style.display = 'none';
-    var savedProvider = localStorage.getItem('corkboard_ai_provider') || 'ollama';
+    var savedProvider = readAiProvider();
     document.getElementById('aiProviderSelect').value = savedProvider;
     var evt = new Event('change');
     document.getElementById('aiProviderSelect').dispatchEvent(evt);
-    var savedModel = localStorage.getItem('corkboard_ai_model') || '';
+    var savedModel = readAiModel();
     if (savedModel) {
         var modelSelect = document.getElementById('aiModelSelect');
         for (var i = 0; i < modelSelect.options.length; i++) {
@@ -3450,7 +3532,7 @@ document.getElementById('aiAssistBtn').addEventListener('click', function() {
     .then(r => r.json())
     .then(data => {
         if (data.error) {
-            resultDiv.textContent = '❌ ' + data.error;
+            resultDiv.textContent = '❌ ' + (model ? model + '\n' : '') + formatAiError(provider, data.error);
             return;
         }
         if (action === 'suggest_tags' && data.tags) {
@@ -5151,7 +5233,7 @@ function initWeatherWidget() {
 window.addEventListener('load', function() {
     loadBoard();
     pinImageViewer.init();
-    var savedProvider = localStorage.getItem('corkboard_ai_provider') || 'ollama';
+    var savedProvider = readAiProvider();
     document.getElementById('aiProviderSelect').value = savedProvider;
     var evt = new Event('change');
     document.getElementById('aiProviderSelect').dispatchEvent(evt);
