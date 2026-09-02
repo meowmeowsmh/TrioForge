@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 # ---------- LLM for AI assistance ----------
 from providers.llm_providers import get_provider, sanitize_api_key
+import personas
 
 # ======================================================================
 # SQLite storage layer
@@ -527,6 +528,15 @@ Output only the improved version.
 Improved version:"""
     else:
         return jsonify({"error": "Invalid action"}), 400
+
+    # Apply the selected persona's voice to prose actions only; suggest_tags /
+    # suggest_links stay machine-readable and ignore the persona.
+    persona = data.get('persona') or ''
+    persona_custom = data.get('persona_custom') or ''
+    if action in ('summarise', 'improve'):
+        _note = personas.note_block(persona, persona_custom)
+        if _note:
+            user_prompt = user_prompt + "\n\n" + _note
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -2029,6 +2039,8 @@ body.light-mode .weather-controls select option {
                     <option value="deepseek">DeepSeek</option>
                     <option value="claude">Claude (Anthropic)</option>
                 </select>
+                <select id="personaSelect" title="Assistant persona" style="max-width:150px;"></select>
+                <input type="text" id="personaCustomInput" placeholder="Describe persona…" style="display:none; max-width:160px;" autocomplete="off" autocorrect="off" spellcheck="false">
                 <!-- FIXED: API key input now type="text" with CSS masking -->
                 <input type="text" id="aiApiKeyInput" placeholder="API Key (if required)"
                        style="display:none; max-width:150px;"
@@ -3369,6 +3381,54 @@ function formatAiError(provider, msg) {
     return describeProvider(provider) + ' · ' + friendly;
 }
 
+// ─── Assistant persona selector ─────────────────────────
+var PERSONA_KEY = 'trio_persona';
+var PERSONA_CUSTOM_KEY = 'trio_persona_custom';
+function loadPersonaSelect() {
+    var sel = document.getElementById('personaSelect');
+    if (!sel) return;
+    fetch('/api/personas').then(function(r) { return r.json(); }).then(function(list) {
+        sel.innerHTML = '<option value="">None (default)</option>';
+        (list || []).forEach(function(p) {
+            var o = document.createElement('option');
+            o.value = p.id;
+            o.textContent = (p.emoji || '') + ' ' + p.name;
+            sel.appendChild(o);
+        });
+        var saved = localStorage.getItem(PERSONA_KEY) || '';
+        if (saved && Array.prototype.some.call(sel.options, function(o) { return o.value === saved; })) {
+            sel.value = saved;
+        }
+        applyPersonaCustomUI();
+    }).catch(function() {});
+}
+function applyPersonaCustomUI() {
+    var sel = document.getElementById('personaSelect');
+    var inp = document.getElementById('personaCustomInput');
+    if (!sel || !inp) return;
+    var isCustom = sel.value === 'custom';
+    inp.style.display = isCustom ? 'inline-block' : 'none';
+    if (isCustom) inp.value = localStorage.getItem(PERSONA_CUSTOM_KEY) || '';
+}
+function personaPayload() {
+    var sel = document.getElementById('personaSelect');
+    var id = sel ? sel.value : '';
+    var custom = '';
+    if (id === 'custom') custom = localStorage.getItem(PERSONA_CUSTOM_KEY) || '';
+    return { persona: id, persona_custom: custom };
+}
+(function() {
+    var sel = document.getElementById('personaSelect');
+    if (sel) sel.addEventListener('change', function() {
+        localStorage.setItem(PERSONA_KEY, this.value);
+        applyPersonaCustomUI();
+    });
+    var inp = document.getElementById('personaCustomInput');
+    if (inp) inp.addEventListener('input', function() {
+        localStorage.setItem(PERSONA_CUSTOM_KEY, this.value);
+    });
+})();
+
 // ─── Load models dynamically ─────────────────────────
 function loadOllamaModels(provider, apiKey) {
     const select = document.getElementById('aiModelSelect');
@@ -3526,7 +3586,9 @@ document.getElementById('aiAssistBtn').addEventListener('click', function() {
             action: action,
             provider: provider,
             api_key: apiKey,
-            model: model
+            model: model,
+            persona: personaPayload().persona,
+            persona_custom: personaPayload().persona_custom
         })
     })
     .then(r => r.json())
@@ -5232,6 +5294,7 @@ function initWeatherWidget() {
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('load', function() {
     loadBoard();
+    loadPersonaSelect();
     pinImageViewer.init();
     var savedProvider = readAiProvider();
     document.getElementById('aiProviderSelect').value = savedProvider;

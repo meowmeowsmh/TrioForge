@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # ---------- LLM providers ----------
 from providers.llm_providers import get_provider, sanitize_api_key
+import personas
 
 # ---------- Obsidian sync imports ----------
 import frontmatter
@@ -733,6 +734,15 @@ def ai_assist():
     user_prompt = prompts.get(action)
     if not user_prompt:
         return jsonify({"error": "Invalid action"}), 400
+
+    # Apply the selected persona's voice to prose-producing actions only; tag
+    # suggestions must stay a strict comma list, so they ignore the persona.
+    persona = data.get('persona') or ''
+    persona_custom = data.get('persona_custom') or ''
+    if action in ('summarise', 'improve'):
+        _note = personas.note_block(persona, persona_custom)
+        if _note:
+            user_prompt = user_prompt + "\n\n" + _note
 
     messages = [
         {"role": "system", "content": "You are a helpful assistant that helps improve notes."},
@@ -2230,6 +2240,8 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                             <option value="deepseek">DeepSeek</option>
                             <option value="claude">Claude</option>
                         </select>
+                        <select id="personaSelect" title="Assistant persona" style="max-width:150px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#8b949e; padding:4px 8px; font-size:13px;"></select>
+                        <input type="text" id="personaCustomInput" placeholder="Describe persona…" style="display:none; max-width:150px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#8b949e; padding:4px 8px; font-size:12px;" autocomplete="off">
                         <!-- FIXED: type="text" with CSS masking + anti‑autofill attributes -->
                         <input type="text" id="aiApiKeyInput" placeholder="API Key (if required)"
                                style="display:none; max-width:120px;"
@@ -2478,7 +2490,12 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         rendered = renderWikiPreview(rendered);
         preview.innerHTML = rendered;
     }
-    document.getElementById('noteContentInput').addEventListener('input', updatePreview);
+    // Update the preview only when editing finishes (blur) or when Preview is
+    // toggled on — never on each keystroke — for maximum typing speed.
+    document.getElementById('noteContentInput').addEventListener('change', function() {
+        var preview = document.getElementById('notePreview');
+        if (preview.classList.contains('visible')) updatePreview();
+    });
 
     // ─── Toolbar commands ──────────────────────────────
     document.querySelectorAll('#toolbar button[data-cmd]').forEach(btn => {
@@ -2503,8 +2520,10 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                                '| Row 2    | Data     | Data     |\n';
             }
             else if (cmd === 'preview') {
-                document.getElementById('notePreview').classList.toggle('visible');
+                var pv = document.getElementById('notePreview');
+                pv.classList.toggle('visible');
                 this.classList.toggle('active');
+                if (pv.classList.contains('visible')) updatePreview();
                 return;
             }
             if (replacement) {
@@ -2646,6 +2665,54 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         return describeProvider(provider) + ' · ' + friendly;
     }
 
+    // ─── Assistant persona selector ────────────────
+    var PERSONA_KEY = 'trio_persona';
+    var PERSONA_CUSTOM_KEY = 'trio_persona_custom';
+    function loadPersonaSelect() {
+        var sel = document.getElementById('personaSelect');
+        if (!sel) return;
+        fetch('/api/personas').then(function(r) { return r.json(); }).then(function(list) {
+            sel.innerHTML = '<option value="">None (default)</option>';
+            (list || []).forEach(function(p) {
+                var o = document.createElement('option');
+                o.value = p.id;
+                o.textContent = (p.emoji || '') + ' ' + p.name;
+                sel.appendChild(o);
+            });
+            var saved = localStorage.getItem(PERSONA_KEY) || '';
+            if (saved && Array.prototype.some.call(sel.options, function(o) { return o.value === saved; })) {
+                sel.value = saved;
+            }
+            applyPersonaCustomUI();
+        }).catch(function() {});
+    }
+    function applyPersonaCustomUI() {
+        var sel = document.getElementById('personaSelect');
+        var inp = document.getElementById('personaCustomInput');
+        if (!sel || !inp) return;
+        var isCustom = sel.value === 'custom';
+        inp.style.display = isCustom ? 'inline-block' : 'none';
+        if (isCustom) inp.value = localStorage.getItem(PERSONA_CUSTOM_KEY) || '';
+    }
+    function personaPayload() {
+        var sel = document.getElementById('personaSelect');
+        var id = sel ? sel.value : '';
+        var custom = '';
+        if (id === 'custom') custom = localStorage.getItem(PERSONA_CUSTOM_KEY) || '';
+        return { persona: id, persona_custom: custom };
+    }
+    (function() {
+        var sel = document.getElementById('personaSelect');
+        if (sel) sel.addEventListener('change', function() {
+            localStorage.setItem(PERSONA_KEY, this.value);
+            applyPersonaCustomUI();
+        });
+        var inp = document.getElementById('personaCustomInput');
+        if (inp) inp.addEventListener('input', function() {
+            localStorage.setItem(PERSONA_CUSTOM_KEY, this.value);
+        });
+    })();
+
     function loadAIPreferences() {
         var provider = readAiProvider();
         var apiKey = readAiApiKey(provider);
@@ -2747,7 +2814,9 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 action: action,
                 provider: provider,
                 model: model,
-                api_key: apiKey
+                api_key: apiKey,
+                persona: personaPayload().persona,
+                persona_custom: personaPayload().persona_custom
             })
         })
         .then(r => r.json())
@@ -4982,6 +5051,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     // ─── Init ────────────────────────────────────────────
     window.addEventListener('load', function() {
         loadAIPreferences();
+        loadPersonaSelect();
         loadNotes();
         document.getElementById('noteTitleInput').focus();
         initWeatherWidget();
