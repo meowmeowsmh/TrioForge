@@ -960,17 +960,43 @@ class DeepSeekProvider(LLMProvider):
             return self.FALLBACK_MODELS
 
     def get_status(self) -> dict:
-        """Check DeepSeek API reachability without exposing internals."""
+        """Check DeepSeek API reachability and classify the failure clearly
+        (auth / payment / rate-limit / server / network) instead of a vague
+        'API returned error'."""
         if not self._default_key:
-            return {"ok": False, "message": "No API key provided"}
+            return {
+                "ok": False, "paid": True, "category": "auth",
+                "message": "No DeepSeek API key provided (this is a paid service).",
+            }
         try:
             headers = self._get_headers(self._default_key)
             resp = requests.get("https://api.deepseek.com/v1/models", headers=headers, timeout=5)
             if resp.status_code == 200:
-                return {"ok": True, "message": "API online"}
-            return {"ok": False, "message": "API returned error"}
-        except Exception:
-            return {"ok": False, "message": "API unreachable or invalid key"}
+                return {"ok": True, "paid": True, "category": None, "message": "API online"}
+            code = resp.status_code
+            if code == 401:
+                return {"ok": False, "paid": True, "category": "auth",
+                        "message": "Invalid DeepSeek API key."}
+            if code == 402:
+                return {"ok": False, "paid": True, "category": "payment",
+                        "message": "DeepSeek account has insufficient balance — top up billing."}
+            if code == 429:
+                return {"ok": False, "paid": True, "category": "rate_limit",
+                        "message": "DeepSeek rate limit reached — wait and retry."}
+            if code in (500, 502, 503, 504):
+                return {"ok": False, "paid": True, "category": "server",
+                        "message": f"DeepSeek server error (HTTP {code}) — try again later."}
+            return {"ok": False, "paid": True, "category": "other",
+                    "message": f"DeepSeek API returned HTTP {code}."}
+        except requests.exceptions.Timeout:
+            return {"ok": False, "paid": True, "category": "timeout",
+                    "message": "DeepSeek timed out — try again."}
+        except requests.exceptions.ConnectionError:
+            return {"ok": False, "paid": True, "category": "network",
+                    "message": "Cannot reach DeepSeek — check your internet connection."}
+        except Exception as e:
+            return {"ok": False, "paid": True, "category": "other",
+                    "message": str(e)}
 
     def get_model_info(self, model_id: str) -> dict:
         """Return description, capabilities, and pricing for a given DeepSeek model."""
@@ -1042,9 +1068,15 @@ class DeepSeekProvider(LLMProvider):
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]
         except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code == 401:
-                raise ProviderError("DeepSeek API key is invalid or missing. Check the API Key field.")
-            raise ProviderError(f"DeepSeek API error: {e}")
+            detail = ""
+            if e.response is not None:
+                try:
+                    detail = (e.response.text or "").strip()[:400]
+                except Exception:
+                    detail = ""
+                if e.response.status_code == 401:
+                    raise ProviderError("DeepSeek API key is invalid or missing. Check the API Key field.")
+            raise ProviderError(f"DeepSeek API error: {e}" + (f" {detail}" if detail else ""))
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"DeepSeek API error: {e}")
 
@@ -1089,9 +1121,15 @@ class DeepSeekProvider(LLMProvider):
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
         except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code == 401:
-                raise ProviderError("DeepSeek API key is invalid or missing. Check the API Key field.")
-            raise ProviderError(f"DeepSeek vision API error: {e}")
+            detail = ""
+            if e.response is not None:
+                try:
+                    detail = (e.response.text or "").strip()[:400]
+                except Exception:
+                    detail = ""
+                if e.response.status_code == 401:
+                    raise ProviderError("DeepSeek API key is invalid or missing. Check the API Key field.")
+            raise ProviderError(f"DeepSeek vision API error: {e}" + (f" {detail}" if detail else ""))
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"DeepSeek vision API error: {e}")
 

@@ -1620,27 +1620,10 @@ function renderMermaidDiagrams(root) {
 }
 
 function checkDeepSeekStatus() {
-    const statusSpan = document.getElementById('deepseekStatus');
-    if (providerSelect.value !== 'deepseek') {
-        statusSpan.textContent = '';
-        return;
-    }
-    var key = apiKeyInput.value.trim();
-    fetch('/deepseek/status' + (key ? '?api_key=' + encodeURIComponent(key) : ''))
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok) {
-                statusSpan.textContent = '✅ ' + (data.message || 'API online');
-                statusSpan.style.color = '#3fb950';
-            } else {
-                statusSpan.textContent = '⚠️ ' + (data.message || 'API unavailable');
-                statusSpan.style.color = '#f85149';
-            }
-        })
-        .catch(() => {
-            statusSpan.textContent = '⚠️ Status check failed';
-            statusSpan.style.color = '#f85149';
-        });
+    // Provider status is now reported INSIDE the chat message after a prompt,
+    // not in the top bar. Keep the top status area clear.
+    var statusSpan = document.getElementById('deepseekStatus');
+    if (statusSpan) statusSpan.textContent = '';
 }
 
 unloadBtn.addEventListener('click', function() {
@@ -1681,7 +1664,7 @@ function openHfDownload() {
         // Refresh the model list (switch provider to llama.cpp so the file shows up).
         providerSelect.value = 'llamacpp';
         providerSelect.dataset.prev = 'llamacpp';
-        try { localStorage.setItem('provider', 'llamacpp'); } catch(e) {}
+        try { saveAiProvider('llamacpp'); } catch(e) {}
         loadModels();
     })
     .catch(err => { status.textContent = '❌ Download failed: ' + err; });
@@ -1995,12 +1978,87 @@ function speakText(text) {
     window.speechSynthesis.speak(utterance);
 }
 
+// ─── Shared AI preferences (provider + API key) across ALL pages ──────
+var TRIO_PROVIDER_KEY = 'trio_ai_provider';
+var TRIO_MODEL_KEY = 'trio_ai_model';
+var KEY_PROVIDERS = ['groq', 'huggingface', 'deepseek', 'claude'];
+
+function readAiProvider() {
+    return localStorage.getItem(TRIO_PROVIDER_KEY)
+        || localStorage.getItem('provider')
+        || localStorage.getItem('notes_ai_provider')
+        || localStorage.getItem('corkboard_ai_provider')
+        || 'ollama';
+}
+function saveAiProvider(provider) {
+    localStorage.setItem(TRIO_PROVIDER_KEY, provider);
+    localStorage.setItem('provider', provider);
+    localStorage.setItem('notes_ai_provider', provider);
+    localStorage.setItem('corkboard_ai_provider', provider);
+}
 function saveApiKey(provider, key) {
-    if (key && key.trim()) localStorage.setItem('api_key_' + provider, key.trim());
-    else localStorage.removeItem('api_key_' + provider);
+    var clean = (key || '').trim();
+    ['trio_api_key_' + provider, 'api_key_' + provider, 'notes_ai_api_key_' + provider, 'corkboard_api_key_' + provider].forEach(function(k) {
+        if (clean) localStorage.setItem(k, clean);
+        else localStorage.removeItem(k);
+    });
 }
 function loadApiKey(provider) {
-    return localStorage.getItem('api_key_' + provider) || '';
+    var key = localStorage.getItem('trio_api_key_' + provider);
+    if (key !== null) return key;
+    key = localStorage.getItem('api_key_' + provider);
+    if (key !== null) return key;
+    key = localStorage.getItem('notes_ai_api_key_' + provider);
+    if (key !== null) return key;
+    key = localStorage.getItem('corkboard_api_key_' + provider);
+    return key || '';
+}
+function readAiModel() {
+    return localStorage.getItem(TRIO_MODEL_KEY)
+        || localStorage.getItem('notes_ai_model')
+        || localStorage.getItem('corkboard_ai_model')
+        || '';
+}
+function saveAiModel(model) {
+    localStorage.setItem(TRIO_MODEL_KEY, model);
+    localStorage.setItem('notes_ai_model', model);
+    localStorage.setItem('corkboard_ai_model', model);
+}
+
+function describeProvider(provider) {
+    return KEY_PROVIDERS.indexOf(provider) !== -1 ? '💰 Paid (API)' : '🆓 Free (local)';
+}
+function formatAiError(provider, msg) {
+    msg = (msg || '').toString().trim();
+    var lower = msg.toLowerCase();
+    var friendly = msg;
+    var category = 'other';
+    if (/(invalid|missing|required|incorrect|wrong).*api key|api key.*(invalid|missing|required|incorrect|wrong)|401|unauthorized|forbidden|authentication|invalid.*key|key.*invalid/.test(lower)) {
+        category = 'auth';
+        friendly = 'Invalid or missing API key — re-enter it in the API Key field.';
+    } else if (/(token|context).*(limit|exceed|maximum|too (long|many))|too many tokens|max_tokens|context length/.test(lower)) {
+        category = 'token_limit';
+        friendly = 'Token/context limit reached — shorten the text or pick a larger-context model.';
+    } else if (/(insufficient|quota|billing|payment|balance|credit|exceeded.*quota|402|pay)/.test(lower)) {
+        category = 'payment';
+        friendly = 'Paid API has no remaining credit/quota — top up billing or switch to a free model (Ollama / llama.cpp).';
+    } else if (/(429|rate limit|too many requests)/.test(lower)) {
+        category = 'rate_limit';
+        friendly = 'Rate limit hit — wait a moment and retry.';
+    } else if (/(500|502|503|504|server error|overloaded|internal server)/.test(lower)) {
+        category = 'server';
+        friendly = 'Service returned a server error — try again later.';
+    } else if (/(timeout|timed out)/.test(lower)) {
+        category = 'timeout';
+        friendly = 'Request timed out — try again or shorten the message.';
+    } else if (/(connect|unreachable|refused|not running|not available|not installed|no models)/.test(lower)) {
+        category = 'network';
+        friendly = 'Could not reach the service — check connection, or start the local service / install the dependency.';
+    }
+    if (category === 'other' && KEY_PROVIDERS.indexOf(provider) !== -1) {
+        friendly = friendly + ' — this is a paid API; check your account/billing.';
+    }
+    return describeProvider(provider) + ' · ' + friendly;
 }
 
 function updateVisionBadge() {
@@ -2030,7 +2088,7 @@ function startLlamacpp(model) {
     })
     .then(r => r.json())
     .then(d => {
-        if (d.error) status.textContent = '⚠️ ' + d.error;
+        if (d.error) status.textContent = '⚠️ ' + formatAiError('llamacpp', d.error);
         else status.textContent = '🦙 llama.cpp loading: ' + (d.model || model) + ' …';
     })
     .catch(function(){});
@@ -2049,7 +2107,7 @@ function loadModels() {
         .then(r => r.json())
         .then(data => {
             if (myReq !== loadModelsReq) return;  // ignore a stale response (e.g. old provider)
-            if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
+            if (data.error) { status.textContent = '⚠️ ' + formatAiError(provider, data.error); return; }
             var current = modelSelect.value;
             modelSelect.innerHTML = '';
             if (data.models && data.models.length) {
@@ -2076,7 +2134,7 @@ function loadModels() {
                         if (d.models && d.models.length) {
                             providerSelect.value = 'llamacpp';
                             providerSelect.dataset.prev = 'ollama';
-                            try { localStorage.setItem('provider', 'llamacpp'); } catch(e) {}
+                            try { saveAiProvider('llamacpp'); } catch(e) {}
                             status.textContent = '🦙 Ollama not running — switched to llama.cpp.';
                             loadModels();
                         }
@@ -2254,7 +2312,7 @@ providerSelect.addEventListener('change', function() {
     var provider = this.value;
     var prevProvider = this.dataset.prev || 'ollama';
     this.dataset.prev = provider;
-    try { localStorage.setItem('provider', provider); } catch(e) {}
+    saveAiProvider(provider);
 
     var keyInput = document.getElementById('apiKeyInput');
 
@@ -2865,16 +2923,22 @@ function actuallySend(text) {
 
     function handleSendError(errMsg) {
         clearInterval(speedInterval);
-        if (userDiv && userDiv.parentNode) userDiv.remove();
-        if (botDiv && botDiv.parentNode) botDiv.remove();
         busy = false;
         sendBtn.disabled = false;
-        msgInput.value = text;
-        msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
-        status.textContent = '❌ ' + errMsg;
-        if (chatArea.children.length === 0) {
-            chatArea.innerHTML = '<div class="msg bot">👋 Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
+        var friendly = formatAiError(provider, errMsg);
+        var display = (model ? model + '\n' : '') + friendly;
+        // Show the classified error INSIDE the bot message bubble (below the
+        // user's prompt), not up in the status bar.
+        if (bodyEl) {
+            bodyEl.classList.remove('thinking-dots');
+            bodyEl.textContent = display;
         }
+        if (botDiv) {
+            var tsEl = botDiv.querySelector('.ts');
+            if (tsEl) tsEl.textContent = new Date().toLocaleTimeString();
+        }
+        status.textContent = '';
+        smoothScrollToBottom();
     }
 
     fetch(endpoint, {
@@ -3101,9 +3165,11 @@ window.addEventListener('load', function() {
 
     // Restore the last-used provider so the model list doesn't reset to Ollama.
     try {
-        var savedProvider = localStorage.getItem('provider');
+        var savedProvider = readAiProvider();
         if (savedProvider && Array.prototype.some.call(providerSelect.options, function(o) { return o.value === savedProvider; })) {
             providerSelect.value = savedProvider;
+            providerSelect.dataset.prev = savedProvider;
+            saveAiProvider(savedProvider);
         }
     } catch(e) {}
     var provider = providerSelect.value;
@@ -3112,8 +3178,19 @@ window.addEventListener('load', function() {
     // script, so it isn't gated on the window 'load' event.)
 
     safe(function() {
-        if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude') {
+        // Restore the right key input visibility for the restored provider, so a
+        // reload never leaves the field hidden (which made the key seem "gone").
+        if (KEY_PROVIDERS.indexOf(provider) !== -1) {
+            apiKeyInput.style.display = 'inline-block';
+            var placeholder = '';
+            if (provider === 'groq') placeholder = 'Enter Groq API Key';
+            else if (provider === 'huggingface') placeholder = 'Enter HF Token (optional)';
+            else if (provider === 'deepseek') placeholder = 'Enter DeepSeek API Key';
+            else if (provider === 'claude') placeholder = 'Enter Anthropic API Key';
+            apiKeyInput.placeholder = placeholder;
             apiKeyInput.value = loadApiKey(provider);
+        } else {
+            apiKeyInput.style.display = 'none';
         }
     });
     safe(loadModels);
