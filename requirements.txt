@@ -13,6 +13,7 @@ gunicorn==26.0.0         # Linux / Docker server
 # ── LLM providers ───────────────────────────────────────────────
 groq>=0.3.0              # Groq provider (SDK)
 huggingface_hub>=0.16.0  # Hugging Face provider
+google-genai>=2.0.0      # Gemini provider (chat + image + video)
 
 # ── File / PDF parsing ──────────────────────────────────────────
 pypdf>=3.0.0             # PDF text extraction (uploaded PDFs)
@@ -30,3 +31,9 @@ orjson>=3.9.0            # faster JSON (falls back to std json)
 psutil>=5.9.0            # RAM / VRAM live monitor
 pynvml>=11.525.0         # NVIDIA GPU monitoring
 duckduckgo-search>=6.0.0 # optional web search
+
+# ── Image generation (OPTIONAL — only needed for the 🖼️ Create tool) ──
+# Install PyTorch separately for your GPU, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Then:
+#   pip install diffusers accelerate transformers sentencepiece safetensors pillow

@@ -611,6 +611,21 @@ def delete_pin(pin_id):
     delete_pin_row(pin_id)
     return jsonify({"ok": True})
 
+@corkboard_bp.route('/api/pins/<pin_id>/duplicate', methods=['POST'])
+def duplicate_pin(pin_id):
+    """Clone a pin (slightly offset so it's visible next to the original)."""
+    existing = get_pin(pin_id)
+    if not existing:
+        return jsonify({"error": "Pin not found"}), 404
+    data = dict(existing)
+    data["id"] = str(uuid.uuid4())
+    data["title"] = (data.get("title") or "Untitled") + " (copy)"
+    data["x"] = float(data.get("x", 0) or 0) + 40
+    data["y"] = float(data.get("y", 0) or 0) + 40
+    data["created"] = datetime.now().isoformat()
+    upsert_pin(data["id"], data, now=data["created"])
+    return jsonify({"id": data["id"], "ok": True})
+
 # ---------- API: import a chat conversation's branch tree as pins + red threads ----------
 def _normalize_timestamp(value, fallback):
     """Coerce a timestamp of unknown shape (ISO string, epoch seconds, epoch ms,
@@ -2518,10 +2533,15 @@ function updatePinElement(el, pin) {
         ${tagsHtml ? `<div class="pin-tags">${tagsHtml}</div>` : ''}
         <div class="pin-timestamp">${formatPinTimestamp(pin)}</div>
         <div class="pin-toolbar">
+            <button class="dup-pin" title="Duplicate">📄</button>
             <button class="edit-pin" title="Edit">✏️</button>
             <button class="del-pin" title="Delete">🗑</button>
         </div>
     `;
+    el.querySelector('.dup-pin').addEventListener('click', function(e) {
+        e.stopPropagation();
+        duplicatePin(pin.id);
+    });
     el.querySelector('.edit-pin').addEventListener('click', function(e) {
         e.stopPropagation();
         openEditModal(pin.id);
@@ -3151,6 +3171,13 @@ function deletePin(id) {
         });
 }
 
+function duplicatePin(id) {
+    fetch('/corkboard/api/pins/' + id + '/duplicate', { method: 'POST' })
+        .then(r => r.json()).then(data => {
+            if (data.ok) loadBoard();
+        });
+}
+
 function clearAllPins() {
     if (!confirm('Delete ALL pins and links?')) return;
     fetch('/corkboard/api/clear_all', { method: 'POST' })
@@ -3356,6 +3383,9 @@ function formatAiError(provider, msg) {
     if (/(invalid|missing|required|incorrect|wrong).*api key|api key.*(invalid|missing|required|incorrect|wrong)|401|unauthorized|forbidden|authentication|invalid.*key|key.*invalid/.test(lower)) {
         category = 'auth';
         friendly = 'Invalid or missing API key — re-enter it in the API Key field.';
+    } else if (/(gated|lacks access|access to this model|accept.*(license|terms)|(license|terms).*accept|403)/.test(lower)) {
+        category = 'gate';
+        friendly = 'This model is gated — accept its license/terms on huggingface.co, then retry. (It may be free — gated is not the same as paid.)';
     } else if (/(token|context).*(limit|exceed|maximum|too (long|many))|too many tokens|max_tokens|context length/.test(lower)) {
         category = 'token_limit';
         friendly = 'Token/context limit reached — shorten the text or pick a larger-context model.';

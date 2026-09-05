@@ -108,7 +108,17 @@ def find_project(explicit: Optional[str]) -> Optional[Path]:
 
 
 def install_deps(project: Path) -> None:
-    """Install requirements.txt once, then write the marker file."""
+    """Install dependencies once (prefers uv, falls back to pip), then write the marker file."""
+    uv = shutil.which("uv")
+    if uv:
+        print("Installing dependencies with uv (uv sync)...")
+        result = subprocess.run([uv, "sync"], cwd=str(project))
+        if result.returncode == 0:
+            (project / DEPS_MARKER).touch()
+            print("Dependencies installed (uv).")
+            return
+        print("uv sync failed; falling back to pip.")
+
     req = project / "requirements.txt"
     if not req.is_file():
         print("No requirements.txt found; skipping dependency install.")
@@ -181,7 +191,11 @@ def run_app(project: Path, start_voice: bool = True) -> None:
     print("Starting TrioForge... open https://localhost:5001 in your browser.")
     print()
     os.chdir(str(project))
-    os.execv(sys.executable, [sys.executable, str(app_path)])
+    uv = shutil.which("uv")
+    if uv:
+        os.execv(uv, [uv, "run", "python", str(app_path)])
+    else:
+        os.execv(sys.executable, [sys.executable, str(app_path)])
 
 
 def prepare_and_run(project: Path, args) -> None:
