@@ -5,7 +5,10 @@ services:
       dockerfile: docker/Dockerfile
     container_name: trio-forge
     ports:
-      - "5001:5001"
+      # Host 5001 can be taken by a stale WSL port-relay. Use host 5002 to
+      # avoid the "address already in use" collision; the app still listens
+      # on 5001 inside the container.
+      - "5002:5001"
     extra_hosts:
       # Makes "host.docker.internal" resolve on native Linux Docker Engine
       # too (Docker Desktop on Mac/Windows/WSL2 already provides this
@@ -14,8 +17,10 @@ services:
     volumes:
       # Persist conversations, notes, cork board data (JSON)
       - ../json_configuration:/app/json_configuration
-      # Use a Docker volume for SQLite to avoid Windows filesystem I/O errors
-      - sqlite_volume:/app/sqlite_data
+      # Share the SAME SQLite databases as the native app so your chats/notes
+      # are identical in Docker and on the host (bind mount, not a separate
+      # volume — a named volume was previously creating an empty, divergent DB).
+      - ../sqlite_data:/app/sqlite_data
       # Persist uploaded images / attachments
       - ../static/uploads:/app/static/uploads
       # (optional) keep certs if you ever generate them
@@ -40,6 +45,5 @@ services:
   #     - ./ollama_data:/root/.ollama
   #   restart: unless-stopped
 
-# Define the Docker-managed volume for SQLite
-volumes:
-  sqlite_volume:
+# (No separate SQLite volume — we bind-mount ../sqlite_data so the container
+# shares the host's actual databases.)

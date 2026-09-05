@@ -19,4 +19,7 @@ RUN mkdir -p json_configuration sqlite_data cert_store static/uploads
 
 EXPOSE 5001
 
+# Generate a self-signed TLS cert (if none is mounted) before gunicorn starts,
+# so the container serves HTTPS like the native install does.
+ENTRYPOINT ["/bin/sh", "docker/docker-entrypoint.sh"]
 CMD ["gunicorn", "-c", "py/gunicorn_conf.py", "py.app:app"]

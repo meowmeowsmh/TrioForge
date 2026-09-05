@@ -27,16 +27,10 @@ body::before {
     top: 0; left: 0; right: 0; bottom: 0;
     background: radial-gradient(ellipse at 20% 50%, #1a1a2e 0%, transparent 50%),
                 radial-gradient(ellipse at 80% 20%, #16213e 0%, transparent 50%);
-    animation: bgMove 20s ease infinite;
     z-index: -1;
     transition: opacity 0.4s ease;
 }
 body.light-mode::before { opacity: 0; }
-@keyframes bgMove {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
-}
 .app {
     display:flex; height:100%;
     backdrop-filter: blur(2px);
@@ -419,7 +413,6 @@ body.light-mode .center-tabs .tab-btn.active {
 .chat-area {
     flex:1; overflow-y:auto; padding: 24px 40px;
     display:flex; flex-direction:column; gap: 16px;
-    will-change: transform;
     contain: layout style;
 }
 .chat-area::-webkit-scrollbar { width: 6px; }
@@ -750,7 +743,6 @@ body.light-mode .copy-code-btn:hover { background: rgba(0,0,0,0.1); }
     overflow-y: hidden;
     outline: none;
     transition: border-color 0.2s, background 0.3s, color 0.3s;
-    will-change: height;
 }
 #msgInput:focus { border-color: #58a6ff; }
 .input-bar .model-select {
@@ -1341,6 +1333,38 @@ body.light-mode .weather-country-select option {
     background: #fff;
     color: #24292f;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   PERFORMANCE PASS
+   backdrop-filter (the frosted-glass blur) is extremely expensive:
+   on every scroll frame the browser must re-rasterize the backdrop
+   behind each blurred element. With ~25 of them (sidebar, top bar,
+   every message bubble, every button/input) scrolling becomes janky.
+   We disable the blur and compensate by making surfaces more opaque.
+   ════════════════════════════════════════════════════════════════ */
+* {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+/* Keep the same "glass" look by making key surfaces near-opaque. */
+.sidebar { background: rgba(18,18,26,0.96); }
+.sidebar-footer { background: rgba(18,18,26,0.96); }
+.main { background: rgba(10,10,15,0.92); }
+.top-bar { background: rgba(22,27,34,0.94); }
+.input-bar { background: rgba(22,27,34,0.94); }
+#statusBar { background: rgba(22,27,34,0.92); }
+.msg.bot { background: rgba(28,35,51,0.92); }
+.msg .file-chip { background: rgba(13,17,23,0.9); }
+.model-select, .provider-select, .api-key-input,
+.weather-country-select { background: rgba(13,17,23,0.95); }
+#msgInput { background: rgba(13,17,23,0.95); will-change: auto; }
+.clear-btn, .unload-btn, .search-toggle-btn, .attach-btn, .record-btn,
+.voice-toggle, .weather-toggle-btn { background: rgba(33,38,45,0.9); }
+.center-tabs { background: rgba(255,255,255,0.08); }
+.att-thumb { background: rgba(13,17,23,0.92); }
+#dropOverlay { background: rgba(0,0,0,0.88); }
+/* Smooth scrolling with momentum, offloaded to the compositor. */
+.chat-area, .conv-list { -webkit-overflow-scrolling: touch; }
 </style>
 </head>
 <body>
