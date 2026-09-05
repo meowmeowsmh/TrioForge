@@ -1592,7 +1592,8 @@ def _ensure_workspace_default():
         with open(cfg_path, "w", encoding="utf-8") as f:
             std_json.dump({"id": "default", "name": "Default",
                            "folder": "", "folder_mode": "read",
-                           "thinking": "high", "dependencies": []}, f, indent=2)
+                           "thinking": "high", "dependencies": [],
+                           "full_access": False}, f, indent=2)
     if not os.path.exists(CURRENT_WORKSPACE_FILE):
         with open(CURRENT_WORKSPACE_FILE, "w", encoding="utf-8") as f:
             f.write("default")
@@ -1615,6 +1616,7 @@ def _list_workspaces():
                     "folder_mode": cfg.get("folder_mode", "read"),
                     "thinking": cfg.get("thinking", "high"),
                     "dependencies": cfg.get("dependencies", []),
+                    "full_access": bool(cfg.get("full_access", False)),
                 })
             except Exception:
                 continue
@@ -1647,6 +1649,41 @@ def _workspace_setting(wid, key, default=None):
     if cfg:
         return cfg.get(key, default)
     return default
+
+
+# ── Live coding (agent edits) ──────────────────────────
+# The agent's write_file / edit_file calls append a diff entry here, so the UI
+# can show a live "what the model is changing" panel in real time.
+AGENT_EDITS = []
+AGENT_EDITS_LOCK = threading.Lock()
+_agent_edit_seq = 0
+
+
+def _record_edit(tool, path, before="", after="", detail=""):
+    """Record one agent file mutation with a unified diff for the live panel."""
+    global _agent_edit_seq
+    import difflib
+    diff = "\n".join(difflib.unified_diff(
+        (before or "").splitlines(), (after or "").splitlines(),
+        fromfile=path or "", tofile=path or "", lineterm="",
+    ))
+    with AGENT_EDITS_LOCK:
+        _agent_edit_seq += 1
+        entry = {
+            "id": _agent_edit_seq,
+            "tool": tool,
+            "path": path,
+            "detail": detail or "",
+            "diff": diff,
+            "before": before[:4000] or "",
+            "after": after[:4000] or "",
+            "ts": time.time(),
+        }
+        AGENT_EDITS.append(entry)
+        # Keep the buffer bounded (last 200 edits).
+        if len(AGENT_EDITS) > 200:
+            del AGENT_EDITS[0 : len(AGENT_EDITS) - 200]
+    return entry
 
 
 # ── LLM tool definitions (workspace folder access) ──
@@ -1752,6 +1789,66 @@ WORKSPACE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_url",
+            "description": "Open a URL in the default web browser (requires full access).",
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string", "description": "the URL to open"}},
+                "required": ["url"], "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_app",
+            "description": "Open an installed application by name or path (requires full access).",
+            "parameters": {
+                "type": "object",
+                "properties": {"app": {"type": "string", "description": "app name or path, e.g. notepad, calc, chrome"}},
+                "required": ["app"], "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "type_text",
+            "description": "Type text into the currently focused window (requires full access + keyboard automation).",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "description": "text to type"}},
+                "required": ["text"], "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "press_keys",
+            "description": "Press a key combination, e.g. 'ctrl+c', 'enter', 'alt+tab' (requires full access + keyboard automation).",
+            "parameters": {
+                "type": "object",
+                "properties": {"keys": {"type": "string", "description": "key combo, e.g. 'ctrl+c'"}},
+                "required": ["keys"], "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "screenshot",
+            "description": "Take a screenshot of the screen and save it (requires full access + screenshot lib). Returns the saved path.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -1846,9 +1943,18 @@ def _execute_tool(name, args):
         if err:
             return {"error": err}
         try:
+            before = ""
+            if os.path.isfile(target):
+                try:
+                    with open(target, "r", encoding="utf-8", errors="replace") as f:
+                        before = f.read()[:4000]
+                except Exception:
+                    before = ""
+            after = args.get("content", "")
             os.makedirs(os.path.dirname(target), exist_ok=True) if os.path.dirname(target) else None
             with open(target, "w", encoding="utf-8") as f:
-                f.write(args.get("content", ""))
+                f.write(after)
+            _record_edit("write_file", args.get("path", ""), before, after)
             return {"ok": True, "path": args.get("path", "")}
         except Exception as e:
             return {"error": str(e)}
@@ -1878,6 +1984,7 @@ def _execute_tool(name, args):
         try:
             with open(target, "w", encoding="utf-8") as f:
                 f.write(text.replace(old, new, 1))
+            _record_edit("edit_file", args.get("path", ""), old, new)
             return {"ok": True, "path": args.get("path", ""), "replaced": 1}
         except Exception as e:
             return {"error": str(e)}
@@ -1913,6 +2020,79 @@ def _execute_tool(name, args):
             return {"results": snippets[:3]}
         except Exception as e:
             return {"error": "Search failed: {}".format(e)}
+
+    # ── Computer control (gated by workspace "full_access") ──
+    if name in ("open_url", "open_app", "type_text", "press_keys", "screenshot"):
+        if _workspace_setting(wid, "full_access", False) is not True:
+            return {"error": "Full computer access is disabled. Enable it in Workspace settings (⚙️)."}
+
+    if name == "open_url":
+        url = (args.get("url") or "").strip()
+        if not url:
+            return {"error": "url is required."}
+        if not re.match(r"^https?://", url, re.I):
+            return {"error": "Only http(s) URLs are allowed."}
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return {"ok": True, "opened": url}
+        except Exception as e:
+            return {"error": str(e)}
+
+    if name == "open_app":
+        app = (args.get("app") or "").strip()
+        if not app:
+            return {"error": "app is required."}
+        try:
+            if os.name == "nt":
+                # On Windows, `start` opens apps by name (notepad, calc, …) or path.
+                subprocess.Popen(["cmd", "/c", "start", "", app], shell=False)
+            else:
+                subprocess.Popen(["xdg-open", app] if not os.path.isfile(app) else [app])
+            return {"ok": True, "opened": app}
+        except Exception as e:
+            return {"error": str(e)}
+
+    if name == "type_text":
+        text = args.get("text", "")
+        if not text:
+            return {"error": "text is required."}
+        try:
+            import pyautogui
+            pyautogui.write(text, interval=0.02)
+            return {"ok": True}
+        except ImportError:
+            return {"error": "pyautogui not installed. Run: pip install pyautogui"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    if name == "press_keys":
+        keys = (args.get("keys") or "").strip()
+        if not keys:
+            return {"error": "keys is required."}
+        try:
+            import pyautogui
+            combo = [k.strip() for k in keys.split("+") if k.strip()]
+            pyautogui.hotkey(*combo)
+            return {"ok": True, "pressed": keys}
+        except ImportError:
+            return {"error": "pyautogui not installed. Run: pip install pyautogui"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    if name == "screenshot":
+        try:
+            import pyautogui
+            out_dir = root_path("static", "uploads", "screenshots")
+            os.makedirs(out_dir, exist_ok=True)
+            fname = uuid.uuid4().hex + ".png"
+            path = os.path.join(out_dir, fname)
+            pyautogui.screenshot(path)
+            return {"ok": True, "path": path, "url": f"/static/uploads/screenshots/{fname}"}
+        except ImportError:
+            return {"error": "pyautogui not installed. Run: pip install pyautogui"}
+        except Exception as e:
+            return {"error": str(e)}
 
     return {"error": "Unknown tool: {}".format(name)}
 
@@ -2251,7 +2431,21 @@ def voice_command():
             return jsonify({"ok": False, "message": "Could not clear: {}".format(e)}), 500
 
     if cmd in ('help', ''):
-        return jsonify({"ok": True, "message": "Voice commands:\n/bye  — stop the voice agent\n/clear — clear the conversation log\n/help — show this"})
+        return jsonify({"ok": True, "message": "Voice commands:\n/bye  — stop the voice agent\n/clear — clear the conversation log\n/open <url-or-app> — open a website or app (needs full access)\n/help — show this"})
+
+    if cmd.startswith('open '):
+        target = raw[len('/open '):].strip()
+        if not target:
+            return jsonify({"ok": False, "message": "Usage: /open <url or app name>"}), 400
+        if _workspace_setting(_current_workspace_id(), "full_access", False) is not True:
+            return jsonify({"ok": False, "message": "Full computer access is disabled. Enable it in Workspace settings (⚙️)."})
+        if re.match(r"^https?://", target, re.I):
+            res = _execute_tool("open_url", {"url": target})
+        else:
+            res = _execute_tool("open_app", {"app": target})
+        if res.get("ok"):
+            return jsonify({"ok": True, "message": "✅ Opened " + target})
+        return jsonify({"ok": False, "message": "Could not open: " + str(res.get("error", res))})
 
     return jsonify({"ok": False, "message": "Unknown command '{}'. Try /help.".format(raw)}), 400
 
@@ -2321,6 +2515,61 @@ def compare_models():
     })
 
 
+@app.route('/api/agent/multi', methods=['POST'])
+@rate_limited(max_per_minute=30)
+def multi_agent():
+    """Run N models in parallel on one task and return a merged summary.
+
+    Body: {message, agents: [{provider, model, api_key, role}, ...]}
+    Each agent answers independently (optionally with a role/persona prefix).
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    user_message = (data.get('message') or '').strip()
+    agents = data.get('agents') or []
+    if not user_message:
+        return jsonify({'error': 'Message is required'}), 400
+    if not isinstance(agents, list) or len(agents) < 2:
+        return jsonify({'error': 'Provide at least 2 agents.'}), 400
+    agents = agents[:6]  # cap concurrency
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    def run(agent):
+        provider_name = agent.get('provider', 'ollama')
+        model = agent.get('model')
+        api_key = sanitize_api_key(agent.get('api_key'))
+        role = (agent.get('role') or '').strip()
+        prompt = user_message
+        if role:
+            prompt = f"[You are acting as: {role}]\n\n{user_message}"
+        provider = providers.get(provider_name)
+        if not provider:
+            return {"provider": provider_name, "model": model, "role": role,
+                    "error": f"Unknown provider: {provider_name}"}
+        if api_key and hasattr(provider, '_default_key'):
+            provider._default_key = api_key
+        kwargs = {"model": model}
+        if api_key:
+            kwargs['api_key'] = api_key
+        sys_prompt = provider.get_system_prompt()
+        messages = [{"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": prompt}]
+        start = time.time()
+        try:
+            text = provider.generate(messages, **kwargs)
+            return {"provider": provider_name, "model": model, "role": role,
+                    "text": text or "", "reasoning": getattr(provider, "last_reasoning", "") or "",
+                    "duration_sec": round(time.time() - start, 2)}
+        except Exception as e:
+            return {"provider": provider_name, "model": model, "role": role,
+                    "error": str(e), "duration_sec": round(time.time() - start, 2)}
+
+    with ThreadPoolExecutor(max_workers=len(agents)) as ex:
+        results = list(ex.map(run, agents))
+
+    return jsonify({'prompt': user_message, 'agents': results})
+
+
 # ── Workspace / API-key routes ──
 @app.route('/api/workspaces', methods=['GET'])
 def list_workspaces():
@@ -2371,6 +2620,8 @@ def update_workspace(wid):
         cfg["folder_mode"] = data["folder_mode"]
     if "dependencies" in data and isinstance(data["dependencies"], list):
         cfg["dependencies"] = [str(d) for d in data["dependencies"]]
+    if "full_access" in data:
+        cfg["full_access"] = bool(data["full_access"])
     with open(os.path.join(wdir, "config.json"), "w", encoding="utf-8") as f:
         std_json.dump(cfg, f, indent=2, ensure_ascii=False)
     return jsonify({"ok": True})
@@ -2420,6 +2671,23 @@ def api_plugins():
 def setup_check_status():
     """Return which local services/files are present vs. missing (with links)."""
     return jsonify(setup_check.summary())
+
+
+# ── Live coding (agent edits) ─────────────────────────
+@app.route('/api/agent/edits', methods=['GET'])
+def agent_edits():
+    """Return the recent agent file edits (for the live coding panel)."""
+    since = request.args.get('since', type=float, default=0)
+    with AGENT_EDITS_LOCK:
+        items = [e for e in AGENT_EDITS if e.get("ts", 0) > since]
+        return jsonify({"edits": items, "count": len(items)})
+
+
+@app.route('/api/agent/edits/clear', methods=['POST'])
+def agent_edits_clear():
+    with AGENT_EDITS_LOCK:
+        AGENT_EDITS.clear()
+    return jsonify({"ok": True})
 
 
 # ── RAG document chat ───────────────────────────────────────────

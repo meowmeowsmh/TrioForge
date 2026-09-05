@@ -46,7 +46,10 @@
 - 🔓 **100% free** — no API keys, no limits when using local Ollama models.
 - 🧠 **Any local model** — Qwen, Llama, Mistral, DeepSeek, and more.
 - 🧰 **Multi-provider** — Ollama, llama.cpp, Hugging Face, Groq, DeepSeek, Claude, **Gemini**, and **OpenRouter** (one key → hundreds of models: GPT, Claude, Gemini, Llama, plus vision, workspace tools, image & video).
-- 🤖 **Coding agent** — pick a workspace folder; the AI can **list**, **search**, **read**, **write**, **edit** (surgical string replacement), **run shell commands**, and **search the web**, looping up to 20 tool steps per task.
+- 🤖 **Coding agent** — pick a workspace folder; the AI can **list**, **search**, **read**, **write**, **edit** (surgical string replacement), **run shell commands**, and **search the web**, looping up to 20 tool steps per task — with a **live diff panel** showing exactly what it edits.
+- 🤝 **Multi-agent** — run up to 6 models in parallel on one task, each with an optional role.
+- 🤖 **Full computer access** — optional, gated: open URLs/apps, type, press keys, screenshot (needs explicit opt-in).
+- 🗣️ **Voice (Jarvis-style)** — local speech-to-speech, browser STT/TTS, and `/open` voice commands for system control.
 - 🌐 **External web search** — DuckDuckGo integration gives local models real-world knowledge (toggle 🔍 in the input bar, or as an agent tool).
 - 🧠 **Thinking (reasoning) mode** — when a reasoning model returns its chain-of-thought, it streams **live** into a collapsible "🧠 Thinking" block (Ollama, llama.cpp, DeepSeek, Groq, OpenRouter, HF), with live generation timing.
 - 📚 **Document chat (RAG)** — upload PDFs, Word docs, Markdown, code, CSV, etc.; ask questions and get answers grounded in your documents (keyword retrieval out-of-the-box, semantic embeddings when installed).
@@ -326,8 +329,11 @@ def register(app):                 # optional — receives the Flask app
 
 | Feature | TrioForge | Notes |
 |---------|-----------|-------|
-| Coding agent (read/write/edit/run + loop) | ✅ | Scoped to one folder you choose; 20-step loop |
+| Coding agent (read/write/edit/run + loop) | ✅ | Scoped to one folder you choose; 20-step loop + live diff panel |
 | MCP-style tools (file ops, shell, web search) | ✅ | `list_files`/`search_files`/`read_file`/`write_file`/`edit_file`/`run_command`/`web_search` |
+| Computer control (browser/apps/typing) | ✅ | Opt-in via full-access; `open_url`/`open_app`/`type_text`/`press_keys`/`screenshot` |
+| Multi-agent (parallel models) | ✅ | 🤝 panel — up to 6 models on one task |
+| Voice (STT / TTS / speech-to-speech) | ✅ | Local speech-to-speech + `/open` voice command |
 | External web search | ✅ | DuckDuckGo, free, no API key |
 | Thinking / reasoning display | ✅ | Collapsible chain-of-thought + live timing |
 | Document chat (RAG) | ✅ | Keyword now, semantic with optional install |
@@ -354,6 +360,67 @@ Run two models side-by-side on the same prompt and compare answers, latency, and
 3. Type a prompt and click **⚔️ Compare**.
 
 Both models run in parallel (threaded) and their replies render side-by-side, each labeled with its provider, model, and generation time. Works across all providers (Ollama, llama.cpp, Groq, DeepSeek, Claude, OpenRouter, Gemini, HF).
+
+---
+
+## 🤝 Multi-agent (several models, one task)
+
+Run up to 6 models **in parallel** on the same task, each with an optional role.
+
+1. Click the **🤝** button in the top bar.
+2. Add agents (+ Add agent), each with a provider + model + optional role (e.g. *"code reviewer"*, *"security auditor"*).
+3. Type the task and click **🤝 Run**.
+
+Each agent answers independently and its reply renders in its own card. This is a parallel "council" mode — useful for cross-checking an answer, getting multiple code solutions, or comparing how different models reason about the same problem. (For a single-prompt head-to-head, use ⚔️ A/B compare instead.)
+
+---
+
+## 📝 Live coding panel
+
+When the coding agent modifies files (with a workspace folder set to `readwrite`), every `write_file` / `edit_file` is captured as a **unified diff** and shown in a real-time right-side panel.
+
+- Click **📝** in the top bar to open it.
+- Watch the model's edits stream in as it works — each entry shows the file, the tool used, and a colored `-` / `+` diff.
+- **Clear** resets the panel.
+
+This turns the coding agent into a *visible* editor: instead of a silent final answer, you see exactly what the model is changing, line by line.
+
+---
+
+## 🤖 Full computer access (browser / apps / typing / screenshots)
+
+The agent can control your whole machine — open URLs in the browser, launch apps, type text, press keys, and take screenshots — **only after you explicitly enable it**.
+
+1. Open **⚙️ Workspace settings**.
+2. Tick **"🤖 Full computer access"** and Save.
+
+This unlocks these agent tools (on top of the folder tools):
+
+| Tool | What it does | Needs |
+|------|--------------|-------|
+| `open_url` | Open a URL in the default browser | full access |
+| `open_app` | Launch an app by name/path (notepad, calc, chrome…) | full access |
+| `type_text` | Type into the focused window | full access + `pyautogui` |
+| `press_keys` | Press a key combo (`ctrl+c`, `alt+tab`…) | full access + `pyautogui` |
+| `screenshot` | Capture the screen to `static/uploads/screenshots/` | full access + `pyautogui` |
+
+> ⚠️ **This gives the AI control of your entire machine** (browser, apps, keyboard). Only enable it for a workspace/task you trust, and keep an eye on the live coding panel. `pyautogui` is optional — install it with `pip install pyautogui` for typing/keys/screenshots.
+
+---
+
+## 🗣️ Voice (Jarvis-style)
+
+TrioForge has local **speech-to-speech** (via `py/tools/voice_agent.py` — STT + llama.cpp + TTS, all on-device) plus browser **speech input** (🎤 button) and **text-to-speech output** (🔊 button).
+
+For *system control by voice*, use the voice chat's `/open` command (requires full access):
+
+```
+/open https://github.com        # open a website
+/open notepad                    # open an app
+/bye /clear /help                # voice agent control
+```
+
+> Honest limits: this is local STT→LLM→TTS, not a full cloud "assistant" with a wake word or OS-level microphone daemon. It won't reliably fill web forms or click buttons on its own — that requires a computer-use model (e.g. Claude Computer Use) plus a screenshot loop. The building blocks (voice + browser/app control + screenshot tools) are all here; a full autonomous Jarvis loop is the next step if you want it.
 
 ---
 
