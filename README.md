@@ -46,7 +46,12 @@
 - 🔓 **100% free** — no API keys, no limits when using local Ollama models.
 - 🧠 **Any local model** — Qwen, Llama, Mistral, DeepSeek, and more.
 - 🧰 **Multi-provider** — Ollama, llama.cpp, Hugging Face, Groq, DeepSeek, Claude, **Gemini**, and **OpenRouter** (one key → hundreds of models: GPT, Claude, Gemini, Llama, plus vision, workspace tools, image & video).
-- 🌐 **Optional web search** — DuckDuckGo integration for up-to-date answers.
+- 🤖 **Coding agent** — pick a workspace folder; the AI can **list**, **search**, **read**, **write**, **edit** (surgical string replacement), **run shell commands**, and **search the web**, looping up to 20 tool steps per task.
+- 🌐 **External web search** — DuckDuckGo integration gives local models real-world knowledge (toggle 🔍 in the input bar, or as an agent tool).
+- 🧠 **Thinking (reasoning) mode** — when a reasoning model returns its chain-of-thought, it streams **live** into a collapsible "🧠 Thinking" block (Ollama, llama.cpp, DeepSeek, Groq, OpenRouter, HF), with live generation timing.
+- 📚 **Document chat (RAG)** — upload PDFs, Word docs, Markdown, code, CSV, etc.; ask questions and get answers grounded in your documents (keyword retrieval out-of-the-box, semantic embeddings when installed).
+- ⚔️ **A/B model compare** — run two models side-by-side on one prompt and compare answers + latency.
+- 👁 **Multi-modal vision** — upload images and have the AI describe/answer about them (works with vision-capable models: Claude, Gemini, GPT, Qwen-VL, LLaVA, …).
 - 📎 **File & image upload** — attach images, PDFs, code files, and documents.
 - 🎤 **Voice input** — speech-to-text directly in your browser.
 - 🖱️ **Drag & drop** — drop files or folders onto the chat window.
@@ -56,12 +61,21 @@
 - 💾 **Live monitor** — real-time RAM & VRAM usage tracking.
 - 🖼️ **Image generation** — via **OpenRouter** (52 cloud image models), **Gemini** (Nano Banana / Imagen), or **ComfyUI** (Z-Image Turbo / FHDR, local).
 - 🎬 **Video generation** — via **OpenRouter** (28 cloud video models: Kling, Veo 3, Hailuo, …) or **ComfyUI** (Wan 2.2 / LTX, free & offline).
+- 🔌 **Plugins** — drop a `.py` file into `plugins/` to add routes/features; loads automatically at startup.
+- 🌐 **Remote access** — LAN (binds `0.0.0.0`) + optional internet tunnel (cloudflared/ngrok).
+- 🔓 **Uncensored by default** — ships with an abliterated Qwen model as the default.
+- 🚀 **First-run setup checker** — auto-detects missing local services/models and shows download links.
 - 🔒 **HTTPS** — auto-generates SSL certificates on Windows.
 
 ---
 
 ## 🆕 Recently added
 
+- ⚔️ **A/B model compare** — a new ⚔️ panel runs two models side-by-side on one prompt (threaded, in parallel) and shows each answer with its provider, model, and generation time.
+- 🧰 **MCP-style agent tools** — the coding agent gained a `web_search` tool (DuckDuckGo) alongside `list_files`, `search_files`, `read_file`, `write_file`, `edit_file`, and `run_command`.
+- 🤖 **Coding agent (upgraded)** — the workspace tools now include `list_files` (recursive), `search_files` (grep), `read_file`, `write_file`, `edit_file` (surgical string replacement), and `run_command` (bounded shell execution). The tool loop runs up to **20** model→tool round-trips per task.
+- 🧠 **Thinking (reasoning) mode** — DeepSeek, llama.cpp, Groq, and OpenRouter reasoning models now surface their `reasoning_content`, saved with the message and rendered as a collapsible "🧠 Thinking" block.
+- 📚 **Document chat (RAG)** — a new `📚` button + panel lets you upload documents (PDF/Word/Markdown/code/CSV), which are chunked and indexed into SQLite (`rag.db`). Toggle `📚` in the input bar and the most relevant chunks are injected into your prompt. Works with plain keyword retrieval out-of-the-box; upgrades to semantic search when `sentence-transformers` is installed.
 - 🧠 **Assistant personas** — pick from presets (🎓 Friendly Tutor, 💻 Code Mentor, 📊 Professional Analyst) or write your own **✏️ Custom** persona. Applies across **Chat**, **Notes**, and **Cork Board**, and remembers your choice.
 - 🎭 **Persona vs default voice** — the persona voice is used for **API-key providers** (Groq / Hugging Face / DeepSeek / Claude), while **local providers** (Ollama / llama.cpp) speak with the default assistant voice — so each bot sounds the way you'd expect.
 - 🖥️ / ☁️ **Local vs API badge** — every bot reply shows a small pill so you can instantly tell whether it came from a **local model** or an **API-key model**, even after a reload.
@@ -98,6 +112,20 @@ ollama pull vaultbox/qwen3.5-uncensored:9b
 Then open **https://localhost:5001/** in your browser.
 
 > **Tip:** if the app starts in plain HTTP (no certificates), use **http://localhost:5001/** instead.
+
+### 🚀 First-run setup checker
+
+On first launch, TrioForge shows a **Setup panel** that detects which local services/files are present vs. missing, each with a download link — so you're never left guessing why a provider says "connection refused".
+
+| Item | Required? | Auto? |
+|------|-----------|-------|
+| **Ollama** | ✅ | Manual install — [ollama.com/download](https://ollama.com/download) |
+| **llama.cpp** (`llama-server`) | ✅ | Installed via release or `winget install ggml.llamacpp`; the app **auto-starts** it |
+| **GGUF models** | ✅ | Via the ⬇ button or Hugging Face; app auto-loads from `models/` |
+| **ComfyUI** (image/video) | ❌ optional | Manual — [comfy.org/download](https://www.comfy.org/download); cloud image/video works without it |
+| **Voice-to-voice** | ❌ optional | Manual — speech-to-speech + `voiceguide_llama.cpp_guide/config.json` |
+
+You can reopen the panel anytime with the **🚀** button in the top bar.
 
 ### ⬇ Downloading a GGUF model from Hugging Face
 
@@ -197,13 +225,22 @@ Workspaces let a model **read and write files on your machine**, scoped to one f
 | **Thinking** | `low` / `mid` / `high` effort hint. |
 | **Dependencies** | Optional dependency notes for the model. |
 
-The model can call three workspace tools:
+The model can call six workspace tools:
 
-- `list_files` — list what's in the folder
-- `read_file` — read a text file inside the folder
-- `write_file` — write a text file (only when folder access is `readwrite`)
+| Tool | What it does | Needs `readwrite`? |
+|------|--------------|-------------------|
+| `list_files` | List a folder (optionally the whole tree, recursively) | no |
+| `search_files` | Grep file names + contents for a term or regex | no |
+| `read_file` | Read a text file (up to 20 KB) | no |
+| `write_file` | Create/overwrite a text file | ✅ yes |
+| `edit_file` | Surgical replacement of one exact string (safe, unique-match) | ✅ yes |
+| `run_command` | Run a shell command in the folder (30 s cap, output truncated to 4 KB) | no |
 
-> 🔒 **Path safety:** every file path is resolved against the configured folder, and `..` traversal outside that folder is blocked.
+> 🔒 **Path safety:** every file path is resolved against the configured folder, and `..` traversal outside that folder is blocked. `run_command` runs with the workspace folder as its working directory, so it inherits the same scoping.
+
+> ⚠️ `run_command` executes real shell commands on your machine. Only point the workspace at folders you trust, and keep `Folder access` at `read` unless you actually want the model to modify files.
+
+The tool loop runs up to **20** model↔tool round-trips per message, so a request like *"create a `hello.py` that prints hi, run it, then fix any errors"* can be completed end-to-end without you babysitting it.
 
 ### Which providers support it
 
@@ -219,6 +256,125 @@ The model can call three workspace tools:
 > ⚠️ Tool reliability depends on the model. For llama.cpp, **Qwen3.5** handles tools well; small models (e.g. 1B) often emit malformed tool calls.
 
 Just ask naturally — e.g. *"read py/app.py"* or *"create a file notes.txt with this content"* — and the model will call the tools for you.
+
+---
+
+## 📚 Document chat (RAG)
+
+Upload documents and chat with them — the AI retrieves the relevant parts and answers from your files instead of guessing.
+
+1. Click the **📚** button in the top bar to open the document panel.
+2. **⬆ Upload docs** — PDF, `.docx`, Markdown, `.txt`, code (`.py`/`.js`/…), CSV, HTML, and more.
+3. Documents are split into overlapping chunks and stored in `sqlite_data/rag.db` (survives restarts).
+4. Toggle the **📚** button in the message input bar to **ON**, then ask your question.
+
+### How retrieval works
+
+- **Out of the box** — fast keyword-overlap scoring (no extra dependencies needed).
+- **With `sentence-transformers` installed** (`pip install sentence-transformers scikit-learn numpy`) — semantic search using `all-MiniLM-L6-v2` embeddings, so it matches meaning, not just exact words.
+
+The top ~6 matching chunks are injected into the prompt with a `[Reference documents]` header, so the model answers grounded in your docs. Document indexing is stored per-file (re-uploading a file replaces its old chunks).
+
+> ℹ️ For best results with large PDFs, install the semantic-search stack. For quick Q&A over code/notes, the keyword fallback is already good.
+
+---
+
+## 🧠 Thinking (reasoning) mode
+
+When you use a reasoning model (DeepSeek R1/V3, Qwen3.5 via Ollama or llama.cpp, Groq, or OpenRouter reasoning models), the model's chain-of-thought is captured **live as it streams** and shown as a collapsible **"🧠 Thinking"** block above the answer — updating in real time while the model thinks, then finalized when it answers.
+
+- Works automatically — no toggle needed. Reasoning is captured from every streaming provider:
+  - **Ollama** → its `thinking` field (streamed live)
+  - **llama.cpp / DeepSeek / Groq / OpenRouter / Hugging Face** → `reasoning_content` / `reasoning` deltas (streamed live)
+- The ⏱️ status readout (bottom bar) shows **live token speed + elapsed time** while generating, and the final duration when it finishes.
+- Reasoning is saved with the message, so it's still there after a reload.
+- Set the thinking **effort** hint (`low`/`mid`/`high`) in the workspace settings (⚙️).
+
+---
+
+## 🔌 Plugins
+
+TrioForge has a lightweight plugin system. Drop a single `.py` file into the top-level `plugins/` folder and it loads automatically at startup.
+
+```python
+# plugins/my_plugin.py
+MANIFEST = {
+    "name": "my-plugin",
+    "title": "My Plugin",
+    "version": "1.0.0",
+    "description": "What it does",
+}
+
+def register(app):                 # optional — receives the Flask app
+    from flask import jsonify
+
+    @app.route("/api/plugin/my-plugin/ping")
+    def _ping():
+        return jsonify({"ok": True})
+```
+
+- Plugins can add routes, register blueprints, or hook into the app.
+- A broken plugin is **reported and skipped** — it never crashes the app.
+- The UI lists loaded plugins via `GET /api/plugins`. An example plugin (`plugins/example_hello.py`) ships with the repo.
+- See `plugins/README.md` for the full guide.
+
+> 🔒 Plugins are trusted Python that runs inside the app process — only install plugins you trust (same rule as browser/VSCode extensions).
+
+---
+
+## 🆚 Feature comparison vs. other tools
+
+| Feature | TrioForge | Notes |
+|---------|-----------|-------|
+| Coding agent (read/write/edit/run + loop) | ✅ | Scoped to one folder you choose; 20-step loop |
+| MCP-style tools (file ops, shell, web search) | ✅ | `list_files`/`search_files`/`read_file`/`write_file`/`edit_file`/`run_command`/`web_search` |
+| External web search | ✅ | DuckDuckGo, free, no API key |
+| Thinking / reasoning display | ✅ | Collapsible chain-of-thought + live timing |
+| Document chat (RAG) | ✅ | Keyword now, semantic with optional install |
+| Multi-modal vision | ✅ | Model-dependent |
+| A/B model compare (side-by-side) | ✅ | ⚔️ panel — two models, one prompt |
+| Remote access (LAN / tunnel) | ✅ | LAN via `0.0.0.0`; tunnel via cloudflared/ngrok |
+| Plugins / extensions | ✅ | Drop-in `.py` files in `plugins/` |
+| Uncensored by default | ✅ | Default is `vaultbox/qwen3.5-uncensored`; curated abliterated list |
+| Image generation | ✅ | OpenRouter / Gemini / ComfyUI |
+| Video generation | ✅ | OpenRouter / ComfyUI |
+| Notes + corkboard | ✅ | Unique advantage |
+| SQLite audit log | ✅ | Recover deleted chats |
+| HTTPS auto-SSL | ✅ | On Windows |
+| No-code drag-drop agent builder | 🟡 planned | Drag-drop exists; node-based agent graph not yet |
+
+---
+
+## ⚔️ A/B model compare
+
+Run two models side-by-side on the same prompt and compare answers, latency, and quality.
+
+1. Click the **⚔️** button in the top bar to open the compare panel.
+2. Pick a provider + model for side **A** and side **B** (they can differ by provider, model, or both).
+3. Type a prompt and click **⚔️ Compare**.
+
+Both models run in parallel (threaded) and their replies render side-by-side, each labeled with its provider, model, and generation time. Works across all providers (Ollama, llama.cpp, Groq, DeepSeek, Claude, OpenRouter, Gemini, HF).
+
+---
+
+## 🌐 Remote access (phone / LAN / tunnel)
+
+TrioForge binds to **`0.0.0.0`** (all interfaces), so it's reachable from any device on your network out of the box.
+
+- **LAN (same Wi-Fi):** open `https://<your-computer-IP>:5001` on your phone (the app logs the exact URL at startup, e.g. `https://192.168.1.113:5001`).
+  - You may need to allow the port through Windows Firewall (`5001`).
+  - Browsers warn about the self-signed cert on other devices — that's expected; proceed to `Advanced → Continue`.
+- **Internet (anywhere):** run a tunnel from another terminal, then open the tunnel URL:
+  - **cloudflared** (free): `cloudflared tunnel --url https://localhost:5001`
+  - **ngrok**: `ngrok http 5001`
+
+> ⚠️ Exposing the app to the internet lets *anyone* with the URL use it. TrioForge has no built-in auth — put a reverse proxy with a password (or a tunnel with auth) in front of it before exposing it publicly.
+
+---
+
+## 🔓 Uncensored by default
+
+The default model is **`vaultbox/qwen3.5-uncensored:9b`** — an abliterated (refusal-removed) model, so TrioForge answers freely out of the box with local Ollama. You can swap to any model you like, including the curated abliterated/uncensored vision list built into the app (`UNCENSORED_VISION_MODELS`).
 
 ---
 

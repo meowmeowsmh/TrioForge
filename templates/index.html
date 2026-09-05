@@ -1365,6 +1365,32 @@ body.light-mode .weather-country-select option {
 #dropOverlay { background: rgba(0,0,0,0.88); }
 /* Smooth scrolling with momentum, offloaded to the compositor. */
 .chat-area, .conv-list { -webkit-overflow-scrolling: touch; }
+/* Collapsible "thinking" (chain-of-thought) block. */
+.thinking-block {
+    margin: 6px 0 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    background: rgba(13,17,23,0.6);
+    overflow: hidden;
+    font-size: 12px;
+}
+.thinking-block summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    color: #a371f7;
+    font-weight: 600;
+    user-select: none;
+}
+.thinking-block summary:hover { color: #c297ff; }
+.thinking-body {
+    padding: 8px 12px;
+    color: #9da7b3;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    line-height: 1.5;
+}
 </style>
 </head>
 <body>
@@ -1497,12 +1523,15 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">⚙️</button>
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
+        <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup — install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🚀</button>
         <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Full screen">⛶</button>
         <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Note & pin colours">🎨</button>
         <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">⌨️</button>
         <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
+        <button class="clear-btn" id="compareBtn" onclick="toggleComparePanel()" title="A/B compare — run two models side-by-side" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">⚔️</button>
         <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">🖼️</button>
         <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
+        <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
@@ -1519,8 +1548,10 @@ body.light-mode .weather-country-select option {
       <div class="attachments" id="attachments"></div>
       <div class="input-bar">
         <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
+        <button class="search-toggle-btn" id="ragToggleBtn" title="Toggle document chat (RAG)" style="display:none;">📚</button>
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
+        <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
         <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
         <input id="modelSearchInput" type="text" placeholder="🔍 filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
         <select id="modelSelect" class="model-select" title="Select model"></select>
@@ -1590,6 +1621,41 @@ body.light-mode .weather-country-select option {
       <span style="font-size:11px; color:#8b949e;">Type your prompt below and press Enter.</span>
     </div>
 
+    <!-- RAG document-chat panel -->
+    <div id="ragPanel" style="display:none; padding:12px 40px; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.6);">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        <span style="font-size:13px; font-weight:600; color:#a371f7;">📚 Document chat (RAG)</span>
+        <button class="clear-btn" onclick="document.getElementById('ragFileInput').click()" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">⬆ Upload docs</button>
+        <span style="font-size:11px; color:#8b949e;">PDF, Word, Markdown, code, CSV… then toggle the 📚 button in the input bar to ask questions.</span>
+      </div>
+      <div id="ragDocList" style="max-height:140px; overflow-y:auto;"></div>
+    </div>
+
+    <!-- A/B model compare panel -->
+    <div id="comparePanel" style="display:none; padding:12px 40px; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.6);">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <span style="font-size:13px; font-weight:600; color:#f0883e;">⚔️ A/B Model Compare</span>
+        <span style="font-size:11px; color:#8b949e;">Same prompt, two models. Pick a provider + model for each side, type a prompt, hit Compare.</span>
+      </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+        <div style="flex:1; min-width:260px; display:flex; gap:6px; align-items:center;">
+          <span style="font-size:12px; color:#f0883e; font-weight:600;">A</span>
+          <select id="cmpProviderA" class="model-select" style="flex:0 0 auto;"></select>
+          <select id="cmpModelA" class="model-select" style="flex:1; min-width:140px;"></select>
+        </div>
+        <div style="flex:1; min-width:260px; display:flex; gap:6px; align-items:center;">
+          <span style="font-size:12px; color:#3fb950; font-weight:600;">B</span>
+          <select id="cmpProviderB" class="model-select" style="flex:0 0 auto;"></select>
+          <select id="cmpModelB" class="model-select" style="flex:1; min-width:140px;"></select>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <input id="cmpPrompt" type="text" placeholder="Prompt to compare…" style="flex:1; padding:10px 12px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:8px; font-size:14px;">
+        <button id="cmpRunBtn" onclick="runCompare()" style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border:none; border-radius:8px; padding:0 20px; font-weight:600; cursor:pointer;">⚔️ Compare</button>
+      </div>
+      <div id="cmpResults" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+    </div>
+
     <!-- Weather Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -1627,6 +1693,7 @@ var pending     = [];
 var conversations = [];
 var searchQuery = '';
 var searchEnabled = true;
+var ragEnabled = false;
 var unloadBtn = document.getElementById('unloadBtn');
 
 function smoothScrollToBottom() {
@@ -3333,6 +3400,32 @@ function saveProfile() {
     });
     closeProfile();
 }
+function renderThinkingBlock(container, reasoning) {
+    if (!container || !reasoning) return;
+    var existing = container.querySelector('.thinking-block');
+    if (existing) {
+        // Update in place — avoids DOM churn during streaming deltas.
+        var exBody = existing.querySelector('.thinking-body');
+        if (exBody) exBody.textContent = reasoning;
+        var exSum = existing.querySelector('summary');
+        if (exSum) exSum.textContent = '🧠 Thinking (' + reasoning.length + ' chars)';
+        return;
+    }
+    var thinkWrap = document.createElement('details');
+    thinkWrap.className = 'thinking-block';
+    var thinkSum = document.createElement('summary');
+    thinkSum.textContent = '🧠 Thinking (' + reasoning.length + ' chars)';
+    var thinkBody = document.createElement('div');
+    thinkBody.className = 'thinking-body';
+    thinkBody.textContent = reasoning;
+    thinkWrap.appendChild(thinkSum);
+    thinkWrap.appendChild(thinkBody);
+    // Insert before the message body so the reasoning appears above the answer.
+    var body = container.querySelector('.body');
+    if (body) container.insertBefore(thinkWrap, body);
+    else container.appendChild(thinkWrap);
+}
+
 function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
@@ -3379,6 +3472,9 @@ function renderMsg(role, entry, msgIndex) {
         vid.style.borderRadius = '12px';
         vid.style.border = '1px solid #333';
         div.appendChild(vid);
+    }
+    if (entry.meta && entry.meta.reasoning) {
+        renderThinkingBlock(div, entry.meta.reasoning);
     }
     var body = document.createElement('div');
     body.className = 'body';
@@ -3536,6 +3632,195 @@ document.getElementById('searchToggleBtn').addEventListener('click', function() 
     status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
 });
 
+// ─── RAG (document chat) ─────────────────────────────────────────
+try { if (document.getElementById('ragToggleBtn')) document.getElementById('ragToggleBtn').addEventListener('click', function() {
+    ragEnabled = !ragEnabled;
+    this.classList.toggle('active', ragEnabled);
+    this.textContent = ragEnabled ? '📚' : '📚 off';
+    this.style.borderColor = ragEnabled ? '#a371f7' : '';
+    this.style.color = ragEnabled ? '#a371f7' : '';
+    status.textContent = ragEnabled ? '📚 Document chat ON — asking your indexed docs' : '📚 Document chat OFF';
+    if (ragEnabled) refreshRagDocuments();
+}); } catch(e) {}
+try { if (document.getElementById('ragFileInput')) document.getElementById('ragFileInput').addEventListener('change', function(e) {
+    var files = e.target.files;
+    for (var i = 0; i < files.length; i++) {
+        (function(file) {
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                fetch('/api/rag/index', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name: file.name, b64: ev.target.result })
+                }).then(r => r.json()).then(d => {
+                    if (d.error) { status.textContent = '📚 ' + d.error; }
+                    else { status.textContent = '📚 Indexed ' + file.name + ' (' + d.chunks + ' chunks)'; refreshRagDocuments(); }
+                }).catch(err => status.textContent = '📚 ' + err.message);
+            };
+            reader.readAsDataURL(file);
+        })(files[i]);
+    }
+    e.target.value = '';
+}); } catch(e) {}
+
+function toggleRagPanel() {
+    var m = document.getElementById('ragPanel');
+    if (!m) return;
+    var show = m.style.display === 'none' || !m.style.display;
+    m.style.display = show ? 'block' : 'none';
+    if (show) refreshRagDocuments();
+}
+
+function refreshRagDocuments() {
+    var list = document.getElementById('ragDocList');
+    if (!list) return;
+    fetch('/api/rag/documents').then(r => r.json()).then(function(docs) {
+        list.innerHTML = '';
+        if (!docs || !docs.length) {
+            list.innerHTML = '<div style="color:#8b949e; font-size:12px;">No documents indexed yet. Upload one below, then toggle 📚 to ask about it.</div>';
+            return;
+        }
+        docs.forEach(function(d) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px;';
+            var nm = document.createElement('span');
+            nm.textContent = '📄 ' + d.name + ' (' + d.chunks + ' chunks)';
+            nm.style.flex = '1';
+            var del = document.createElement('button');
+            del.textContent = '×';
+            del.style.cssText = 'background:#f85149; color:#fff; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; line-height:1;';
+            del.onclick = function() {
+                fetch('/api/rag/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: d.name}) })
+                    .then(r => r.json()).then(refreshRagDocuments);
+            };
+            row.appendChild(nm); row.appendChild(del);
+            list.appendChild(row);
+        });
+    }).catch(function() { list.innerHTML = '<div style="color:#f85149; font-size:12px;">Failed to load documents.</div>'; });
+}
+
+// ─── A/B model compare ─────────────────────────────────────────
+var CMP_PROVIDERS = ['ollama', 'llamacpp', 'groq', 'deepseek', 'claude', 'openrouter', 'gemini', 'huggingface'];
+function populateCompareProviders() {
+    CMP_PROVIDERS.forEach(function(p) {
+        var name = p;
+        ['cmpProviderA', 'cmpProviderB'].forEach(function(id) {
+            var sel = document.getElementById(id);
+            if (!sel) return;
+            var opt = document.createElement('option');
+            opt.value = p; opt.textContent = name;
+            sel.appendChild(opt);
+        });
+    });
+    ['cmpProviderA', 'cmpProviderB'].forEach(function(id) {
+        var sel = document.getElementById(id);
+        if (!sel) return;
+        sel.addEventListener('change', function() { loadCompareModels(id); });
+    });
+}
+function loadCompareModels(providerSelId) {
+    var pid = providerSelId;
+    var modelSelId = (pid === 'cmpProviderA') ? 'cmpModelA' : 'cmpModelB';
+    var provider = document.getElementById(pid).value;
+    var modelSel = document.getElementById(modelSelId);
+    if (!modelSel) return;
+    var key = (typeof loadApiKey === 'function') ? loadApiKey(provider) : '';
+    modelSel.innerHTML = '<option value="">Loading…</option>';
+    fetch('/providers/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider, api_key: key })
+    })
+    .then(r => r.json())
+    .then(function(data) {
+        modelSel.innerHTML = '';
+        var models = (data.models || []);
+        if (models.length) {
+            models.forEach(function(m) {
+                var o = document.createElement('option');
+                o.value = m; o.textContent = m;
+                modelSel.appendChild(o);
+            });
+        } else {
+            var o = document.createElement('option');
+            o.value = ''; o.textContent = 'No models';
+            modelSel.appendChild(o);
+        }
+    })
+    .catch(function() { modelSel.innerHTML = '<option value="">Failed</option>'; });
+}
+function toggleComparePanel() {
+    var m = document.getElementById('comparePanel');
+    if (!m) return;
+    var show = m.style.display === 'none' || !m.style.display;
+    m.style.display = show ? 'block' : 'none';
+    if (show && !document.getElementById('cmpProviderA').options.length) {
+        populateCompareProviders();
+        loadCompareModels('cmpProviderA');
+        loadCompareModels('cmpProviderB');
+    }
+}
+function runCompare() {
+    var pa = document.getElementById('cmpProviderA').value;
+    var ma = document.getElementById('cmpModelA').value;
+    var pb = document.getElementById('cmpProviderB').value;
+    var mb = document.getElementById('cmpModelB').value;
+    var prompt = document.getElementById('cmpPrompt').value.trim();
+    var results = document.getElementById('cmpResults');
+    if (!prompt) { status.textContent = '⚔️ Enter a prompt to compare.'; return; }
+    if (!ma || !mb) { status.textContent = '⚔️ Pick a model for both sides.'; return; }
+    if (pa === pb && ma === mb) { status.textContent = '⚔️ Pick two different models.'; return; }
+    var btn = document.getElementById('cmpRunBtn');
+    btn.disabled = true; btn.textContent = '⏳ Comparing…';
+    results.innerHTML = '<div style="color:#8b949e; font-size:13px;">Generating both responses… this can take a moment.</div>';
+    var keyA = (typeof loadApiKey === 'function') ? loadApiKey(pa) : '';
+    var keyB = (typeof loadApiKey === 'function') ? loadApiKey(pb) : '';
+    fetch('/api/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            message: prompt,
+            a: { provider: pa, model: ma, api_key: keyA },
+            b: { provider: pb, model: mb, api_key: keyB },
+            persona: personaPayload().persona,
+            persona_custom: personaPayload().persona_custom
+        })
+    })
+    .then(r => r.json())
+    .then(function(d) {
+        btn.disabled = false; btn.textContent = '⚔️ Compare';
+        if (d.error) { results.innerHTML = '<div style="color:#f85149;">❌ ' + d.error + '</div>'; return; }
+        results.innerHTML = '';
+        results.appendChild(renderCompareSide('A', d.a));
+        results.appendChild(renderCompareSide('B', d.b));
+        status.textContent = '⚔️ Compared ' + d.a.model + ' vs ' + d.b.model;
+    })
+    .catch(function(e) {
+        btn.disabled = false; btn.textContent = '⚔️ Compare';
+        results.innerHTML = '<div style="color:#f85149;">❌ ' + (e.message || 'Failed') + '</div>';
+    });
+}
+function renderCompareSide(label, side) {
+    var card = document.createElement('div');
+    card.style.cssText = 'flex:1; min-width:260px; border:1px solid #333; border-radius:12px; padding:12px; background:rgba(13,17,23,0.7);';
+    var head = document.createElement('div');
+    head.style.cssText = 'font-size:12px; color:' + (label === 'A' ? '#f0883e' : '#3fb950') + '; font-weight:700; margin-bottom:6px;';
+    head.textContent = label + ' · ' + (side.provider) + ' · ' + (side.model) + ' · ' + (side.duration_sec || 0) + 's';
+    card.appendChild(head);
+    if (side.error) {
+        var err = document.createElement('div');
+        err.style.color = '#f85149';
+        err.textContent = '❌ ' + side.error;
+        card.appendChild(err);
+        return card;
+    }
+    var body = document.createElement('div');
+    body.style.cssText = 'font-size:13px; line-height:1.6; color:#e1e4e8; white-space:pre-wrap;';
+    body.textContent = side.text || '(empty)';
+    card.appendChild(body);
+    return card;
+}
+
 function doSend() {
     var text = msgInput.value.trim();
     if ((!text && pending.length === 0) || busy) return;
@@ -3618,7 +3903,8 @@ function actuallySend(text) {
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude' || provider === 'gemini' || provider === 'openrouter') {
         saveApiKey(provider, apiKey);
     }
-    var endpoint = (provider === 'ollama') ? '/chat_stream' : '/chat';
+    var streamingProviders = ['ollama', 'llamacpp', 'deepseek', 'groq', 'openrouter', 'huggingface'];
+    var endpoint = (streamingProviders.indexOf(provider) !== -1) ? '/chat_stream' : '/chat';
     tokenCount = 0;
     startTimeToken = Date.now();
     if (speedInterval) clearInterval(speedInterval);
@@ -3627,7 +3913,7 @@ function actuallySend(text) {
         var elapsed = (Date.now() - startTimeToken) / 1000;
         if (elapsed > 0) {
             var speed = (tokenCount / elapsed).toFixed(1);
-            tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens`;
+            tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens | ${elapsed.toFixed(1)}s`;
         }
     }, 200);
 
@@ -3661,6 +3947,7 @@ function actuallySend(text) {
             files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime })),
             videos: videos.map(v => ({ b64: v.b64, name: v.name, mime: v.mime })),
             search: searchEnabled,
+            rag: ragEnabled,
             provider: provider,
             model: model,
             api_key: apiKey,
@@ -3682,6 +3969,7 @@ function actuallySend(text) {
             var sseBuffer = '';
             var tokenQueue = [];
             var rafId = null;
+            var reasoningAcc = '';
             var botBody = botDiv.querySelector('.body');
             var textNode = null;
             botBody.innerHTML = '';
@@ -3754,6 +4042,10 @@ function actuallySend(text) {
                                 if (data.done && data.usage) {
                                     finalizeStats(data.usage);
                                 }
+                                if (data.reasoning) {
+                                    reasoningAcc += data.reasoning;
+                                    renderThinkingBlock(botDiv, reasoningAcc);
+                                }
                             } catch(e) {}
                         }
                     }
@@ -3793,7 +4085,7 @@ function finalizeStats(usage) {
     var tokens = usage.tokens || tokenCount;
     var secs = usage.duration_sec || ((Date.now() - startTimeToken) / 1000);
     var speed = secs > 0 ? (tokens / secs).toFixed(1) : '?';
-    tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens`;
+    tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens | ${secs.toFixed(1)}s`;
 }
 
 var recordBtn = document.getElementById('recordBtn');
@@ -3914,6 +4206,7 @@ window.addEventListener('load', function() {
     safe(loadImageModels);
     safe(function() { msgInput.focus(); });
     setTimeout(function() { safe(updateResources); }, 500);
+    safe(function() { checkSetup(false); });
     if (provider === 'deepseek') safe(checkDeepSeekStatus);
     safe(function() {
         var searchBtn = document.getElementById('searchToggleBtn');
@@ -6076,6 +6369,52 @@ function toggleService(which) {
         });
 }
 
+// ─── First-run setup checker ──────────────────────────────
+function closeSetupModal() {
+    document.getElementById('setupModal').style.display = 'none';
+    try { localStorage.setItem('trio_setup_dismissed', '1'); } catch(e) {}
+}
+function checkSetup(forceOpen) {
+    fetch('/api/setup/check')
+        .then(r => r.json())
+        .then(function(d) {
+            var container = document.getElementById('setupItems');
+            if (!container) return;
+            container.innerHTML = '';
+            (d.items || []).forEach(function(it) {
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid #222;';
+                var icon = it.status === 'ok' ? '✅' : (it.status === 'missing' ? '❌' : '⚠️');
+                var col = document.createElement('div');
+                col.style.cssText = 'flex:1; min-width:0;';
+                var name = document.createElement('div');
+                name.style.cssText = 'font-size:14px; font-weight:600;';
+                name.textContent = icon + ' ' + it.name + (it.required ? '' : ' (optional)');
+                var det = document.createElement('div');
+                det.style.cssText = 'font-size:11px; color:#8b949e; word-break:break-word;';
+                det.textContent = it.detail;
+                var hint = document.createElement('div');
+                hint.style.cssText = 'font-size:11px; color:#6b7280; margin-top:2px;';
+                hint.textContent = it.hint || '';
+                col.appendChild(name); col.appendChild(det); col.appendChild(hint);
+                row.appendChild(col);
+                if (it.status !== 'ok' && it.url) {
+                    var a = document.createElement('a');
+                    a.href = it.url; a.target = '_blank'; a.rel = 'noopener';
+                    a.style.cssText = 'padding:6px 12px; background:#1f6feb; color:#fff; border-radius:6px; text-decoration:none; font-size:12px; white-space:nowrap;';
+                    a.textContent = '⬇ Download';
+                    row.appendChild(a);
+                }
+                container.appendChild(row);
+            });
+            // Auto-open on first load if a required piece is missing and not dismissed.
+            if (forceOpen || (!d.all_required_ok && !localStorage.getItem('trio_setup_dismissed'))) {
+                document.getElementById('setupModal').style.display = 'flex';
+            }
+        })
+        .catch(function() {});
+}
+
 // ── Settings dialog ──
 function openSettingsModal() {
     var m = document.getElementById('settingsModal');
@@ -6204,6 +6543,22 @@ document.addEventListener('input', function(e) {
     </div>
 
     <div id="svcStatus" style="font-size:12px; margin-top:12px; color:#8b949e;"></div>
+  </div>
+</div>
+
+<!-- First-run setup / downloads -->
+<div id="setupModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10005; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(560px, 94vw); max-height:88vh; overflow:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:16px;">🚀 Setup — what you need for local AI</strong>
+      <button onclick="closeSetupModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">These are the local services/models TrioForge can use. Missing ones have a download link. Cloud providers (OpenRouter, Gemini, Groq, …) need nothing here.</p>
+    <div id="setupItems"></div>
+    <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:8px;">
+      <button onclick="checkSetup(true)" style="padding:8px 14px; background:#1c1c26; border:1px solid #333; border-radius:6px; color:#e1e4e8; cursor:pointer;">🔄 Re-check</button>
+      <button onclick="closeSetupModal()" style="padding:8px 18px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-weight:600; cursor:pointer;">Got it</button>
+    </div>
   </div>
 </div>
 

@@ -337,6 +337,11 @@ class LLMProvider:
     # Hard cap for providers whose API rejects very large max_tokens (cloud ones).
     MAX_OUTPUT_TOKENS = 65536
 
+    # The last captured reasoning/chain-of-thought (if the provider returned one).
+    # Populated by subclasses that surface `reasoning_content`; read by the app
+    # to show a collapsible "thinking" block.
+    last_reasoning = ""
+
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         raise NotImplementedError
 
@@ -444,7 +449,12 @@ class OllamaProvider(LLMProvider):
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"Ollama request failed: {e}")
         data = resp.json()
-        return data.get("message", {}).get("content", "")
+        msg = data.get("message", {})
+        thinking = msg.get("thinking") or ""
+        if thinking:
+            self.last_reasoning = thinking
+        content = msg.get("content") or ""
+        return content or thinking
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
@@ -492,10 +502,13 @@ class OllamaProvider(LLMProvider):
         data = resp.json()
         msg = data.get("message", {})
         content = msg.get("content") or ""
+        thinking = msg.get("thinking") or ""
+        if thinking:
+            self.last_reasoning = thinking
         # Qwen3.5 (reasoning model) may put its final answer in `thinking` while
         # leaving `content` empty — fall back so the response isn't blank.
         if not content:
-            content = msg.get("thinking") or ""
+            content = thinking
         raw_calls = msg.get("tool_calls") or []
         tool_calls = None
         if raw_calls:
@@ -663,6 +676,8 @@ class LlamaCppProvider(LLMProvider):
             msg = resp.json()["choices"][0]["message"]
             content = msg.get("content") or ""
             reasoning = msg.get("reasoning_content") or ""
+            if reasoning:
+                self.last_reasoning = reasoning
             # Qwen3.5 is a reasoning model: it "thinks" before answering. If the final
             # content is empty (reasoning used the token budget), fall back to showing
             # the reasoning so the response isn't blank / "rejected".
@@ -982,6 +997,9 @@ class GroqProvider(LLMProvider):
         try:
             chat = client.chat.completions.create(**params)
             msg = chat.choices[0].message
+            reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+            if reasoning:
+                self.last_reasoning = reasoning
             tool_calls = None
             if getattr(msg, "tool_calls", None):
                 tool_calls = [
@@ -1194,7 +1212,9 @@ class DeepSeekProvider(LLMProvider):
 
     def generate(self, messages: List[Dict[str, str]], model: str = "deepseek-chat", **kwargs) -> str:
         msg = self.generate_raw(messages, model=model, **kwargs)
-        return msg.get("content") or ""
+        if isinstance(msg, dict) and msg.get("reasoning_content"):
+            self.last_reasoning = msg.get("reasoning_content")
+        return (msg.get("content") or "") if isinstance(msg, dict) else (msg or "")
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
@@ -1958,6 +1978,9 @@ class OpenRouterProvider(LLMProvider):
         tools = kwargs.get("tools")
         data = self._chat(messages, key, model, temperature, max_tokens, tools=tools)
         msg = data["choices"][0]["message"]
+        reasoning = msg.get("reasoning") or msg.get("reasoning_content")
+        if reasoning:
+            self.last_reasoning = reasoning
         tool_calls = None
         if msg.get("tool_calls"):
             tool_calls = [{
