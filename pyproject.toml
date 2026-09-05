@@ -1,0 +1,45 @@
+[project]
+name = "trioforge"
+version = "0.1.0"
+description = "Your own private, free AI workspace — chat, notes, and corkboard with local + API models."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # ── Core web app ──
+    "flask>=3.0.0",
+    "flask-compress>=1.13",
+    "requests>=2.31.0",
+
+    # ── Servers ──
+    "waitress==3.0.2",                       # Windows / macOS HTTPS server
+    "gunicorn==26.0.0; sys_platform != 'win32'",  # Linux / Docker server
+
+    # ── LLM providers ──
+    "groq>=0.3.0",                           # Groq provider (SDK)
+    "huggingface_hub>=0.16.0",               # Hugging Face provider
+    "google-genai>=2.0.0",                   # Gemini provider (chat + image + video)
+
+    # ── File / PDF parsing ──
+    "pypdf>=3.0.0",                          # PDF text extraction (uploaded PDFs)
+
+    # ── Notes (Obsidian-style frontmatter) ──
+    "frontmatter>=3.0.0,<4.0.0",
+
+    # ── Performance / utilities ──
+    "orjson>=3.9.0",                         # faster JSON (falls back to std json)
+    "psutil>=5.9.0",                         # RAM / VRAM live monitor
+    "pynvml>=11.525.0",                      # NVIDIA GPU monitoring
+    "duckduckgo-search>=6.0.0",              # optional web search
+]
+
+[dependency-groups]
+# Optional extras. Install with:  uv sync --group semantic
+semantic = [
+    # Semantic search / embeddings (the app runs without these).
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "sentence-transformers>=2.2.0",
+]
+
+# Image generation now runs through ComfyUI (see py/comfyui_service.py), so the
+# old Diffusers stack (torch/diffusers/transformers/...) is no longer a dependency.

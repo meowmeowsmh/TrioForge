@@ -11,6 +11,7 @@ import hashlib
 import base64
 import json
 import threading
+import time
 import unicodedata
 import requests
 import logging
@@ -61,14 +62,22 @@ VISION_MODELS = {
         "openscan",
     },
     "claude": {
-        "claude-3-5-sonnet-20241022",
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        "claude-3-haiku-20240307",
-        "claude-3-5-haiku-20241022",
+        "claude-sonnet-4-5-20250929",
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-1-20250805",
+        "claude-opus-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "claude-3-7-sonnet-20250219",
     },
     "deepseek": {
         "deepseek-v4-flash-vision-exp",
+    },
+    "openrouter": {
+        "gpt-4o", "gpt-4.1", "gemini", "claude-3", "claude-4",
+        "llama-3.2", "llama-4", "qwen", "pixtral", "phi-3.5-vision", "minicpm",
+    },
+    "gemini": {
+        "gemini",
     },
 }
 
@@ -126,6 +135,61 @@ def model_supports_vision(provider_name: str, model_name: str) -> bool:
     # substring match for others (ollama, llamacpp)
     model_lower = model_name.lower()
     return any(keyword in model_lower for keyword in known)
+
+
+# ── Live model-list pagination ────────────────────────────────────────────────
+# Several providers return models in pages; pulling only the first page leaves
+# models missing. These helpers follow the cursor until the list is complete.
+
+def _dedup(ids: List[str]) -> List[str]:
+    seen, out = set(), []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
+def _fetch_openai_models(url: str, headers: Dict, timeout: int = 10,
+                         max_pages: int = 20) -> List[str]:
+    """Fetch every model id from an OpenAI-compatible `/models` endpoint,
+    following the standard `has_more` + `after` cursor pagination."""
+    after, out = None, []
+    for _ in range(max_pages):
+        params = {}
+        if after:
+            params["after"] = after
+        resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        batch = data.get("data", [])
+        for m in batch:
+            out.append(m["id"])
+        if not data.get("has_more") or not batch:
+            break
+        after = batch[-1]["id"]
+    return _dedup(out)
+
+
+def _fetch_anthropic_models(url: str, headers: Dict, timeout: int = 10,
+                            max_pages: int = 20) -> List[str]:
+    """Fetch every model id from Anthropic's `/v1/models` endpoint (uses the
+    `has_more` + `last_id` cursor)."""
+    after, out = None, []
+    for _ in range(max_pages):
+        params = {"limit": 100}
+        if after:
+            params["after"] = after
+        resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        batch = data.get("data", [])
+        for m in batch:
+            out.append(m["id"])
+        if not data.get("has_more") or not batch:
+            break
+        after = data.get("last_id") or batch[-1]["id"]
+    return _dedup(out)
 
 
 # ── Universal file reader ───────────────────────────────────────────────────────
@@ -266,6 +330,20 @@ class LLMProvider:
         messages = list(messages)
         if messages:
             messages[-1] = {**messages[-1], "content": note + "\n" + messages[-1].get("content", "")}
+        return self.generate(messages, **kwargs)
+
+    def generate_multimodal(self, messages: List[Dict[str, str]],
+                            images: Optional[List[Dict]] = None,
+                            videos: Optional[List[Dict]] = None, **kwargs) -> str:
+        """Text + image + video in one call. Default: images go through the
+        vision path; videos are only understood by providers that override this."""
+        if images:
+            return self.generate_with_image(messages, images, **kwargs)
+        if videos:
+            note = f"[{len(videos)} video(s) attached – this provider does not support native video]"
+            messages = list(messages)
+            if messages:
+                messages[-1] = {**messages[-1], "content": note + "\n" + messages[-1].get("content", "")}
         return self.generate(messages, **kwargs)
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
@@ -429,6 +507,10 @@ class OllamaProvider(LLMProvider):
 
 
 class LlamaCppProvider(LLMProvider):
+    # Keep llama.cpp max_tokens conservative: sending a huge value (e.g. the
+    # 65536 base default) makes some small/GGUF models return 400 Bad Request.
+    DEFAULT_MAX_TOKENS = 4096
+
     def __init__(self, models_dir: Optional[str] = None,
                  server_url: str = "http://127.0.0.1:8080/v1",
                  context_length: int = 16384):  # matches the auto-configured server ctx
@@ -549,7 +631,6 @@ class LlamaCppProvider(LLMProvider):
             "stream": False,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "n_ctx": n_ctx,
         }
         try:
             resp = requests.post(
@@ -569,6 +650,14 @@ class LlamaCppProvider(LLMProvider):
             raise ProviderError("llama.cpp server timed out. Try reducing context size or use a smaller model.")
         except requests.exceptions.ConnectionError:
             raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                if e.response is not None:
+                    detail = (e.response.text or "").strip()[:400]
+            except Exception:
+                detail = ""
+            raise ProviderError(f"llama.cpp error: {e}" + (f" {detail}" if detail else ""))
         except Exception as e:
             raise ProviderError(f"llama.cpp error: {e}")
 
@@ -603,7 +692,6 @@ class LlamaCppProvider(LLMProvider):
             "stream": False,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "n_ctx": n_ctx,
         }
         try:
             resp = requests.post(
@@ -616,6 +704,14 @@ class LlamaCppProvider(LLMProvider):
             content = msg.get("content") or ""
             reasoning = msg.get("reasoning_content") or ""
             return content or reasoning
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                if e.response is not None:
+                    detail = (e.response.text or "").strip()[:400]
+            except Exception:
+                detail = ""
+            raise ProviderError(f"llama.cpp vision error: {e}" + (f" {detail}" if detail else ""))
         except Exception as e:
             raise ProviderError(f"llama.cpp vision error: {e}")
 
@@ -640,7 +736,6 @@ class LlamaCppProvider(LLMProvider):
             "stream": False,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "n_ctx": n_ctx,
         }
         if tools:
             payload["tools"] = tools
@@ -676,39 +771,51 @@ class LlamaCppProvider(LLMProvider):
             raise ProviderError("llama.cpp server timed out. Try reducing context size or use a smaller model.")
         except requests.exceptions.ConnectionError:
             raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                if e.response is not None:
+                    detail = (e.response.text or "").strip()[:400]
+            except Exception:
+                detail = ""
+            raise ProviderError(f"llama.cpp error: {e}" + (f" {detail}" if detail else ""))
         except Exception as e:
             raise ProviderError(f"llama.cpp error: {e}")
 
 
 class HuggingFaceProvider(LLMProvider):
     MAX_OUTPUT_TOKENS = 4096  # HF inference is variable; keep a safe cap
-    def __init__(self, model: str = "microsoft/DialoGPT-medium",
+    # Modern Inference Providers endpoint (the legacy api-inference.huggingface.co
+    # was retired, which caused DNS failures / "Failed to resolve" errors).
+    BASE_URL = "https://router.huggingface.co"
+
+    def __init__(self, model: str = "microsoft/Phi-3-mini-4k-instruct",
                  api_token: Optional[str] = None):
         self.model = model
         self.api_token = api_token or os.environ.get("HF_API_TOKEN")
-        self._available = importlib.util.find_spec("huggingface_hub") is not None
-        if not self._available:
-            logger.warning("huggingface_hub not installed. Run: pip install huggingface_hub")
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
-        text_models = [
-            "microsoft/DialoGPT-medium",
-            "google/flan-t5-base",
-            "google/flan-t5-large",
-            "microsoft/Phi-3-mini-4k-instruct",
-            "HuggingFaceH4/zephyr-7b-beta",
-        ]
-        vision_models = [
-            "llava-hf/llava-1.5-7b-hf",
-            "llava-hf/llava-v1.6-mistral-7b-hf",
-            "google/gemma-3-4b-it",
-            "google/gemma-3-12b-it",
+        # Ask the router which models are actually supported (these are the ones
+        # that will work; a hardcoded list kept going stale and returned
+        # "model_not_supported").
+        try:
+            headers = self._make_headers(api_key or self.api_token)
+            resp = requests.get(f"{self.BASE_URL}/v1/models", headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, dict) and data.get("data"):
+                ids = [str(m.get("id")) for m in data["data"] if m.get("id")]
+                if ids:
+                    return ids
+        except Exception as e:
+            logger.warning("Failed to list Hugging Face models: %s", e)
+        # Fallback to a few known-good IDs (current router list).
+        return [
+            "Qwen/Qwen3-8B",
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "microsoft/phi-4",
             "google/gemma-3-27b-it",
-            "google/paligemma-3b-mix-448",
-            "microsoft/Phi-3-vision-128k-instruct",
-            "Qwen/Qwen2-VL-7B-Instruct",
         ]
-        return text_models + vision_models
 
     def _make_headers(self, api_key: Optional[str] = None) -> Dict:
         headers = {"Content-Type": "application/json"}
@@ -717,97 +824,91 @@ class HuggingFaceProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
-        if not self._available:
-            raise ProviderError("Hugging Face provider not available – missing huggingface_hub.")
-        model = kwargs.get("model") or self.model
-        prompt = messages[-1]["content"] if messages else ""
-        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
+    def _chat(self, messages, model, temperature, max_tokens, api_key, images=None) -> str:
+        headers = self._make_headers(api_key)
+        msgs = []
+        for m in messages:
+            if m.get("role") == "system":
+                # fold system into a leading user message so the endpoint always works
+                msgs.append({"role": "user", "content": m.get("content", "")})
+            else:
+                msgs.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+        if images:
+            content_parts = []
+            for img in images:
+                b64 = _strip_b64_prefix(img["b64"])
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                })
+            last_text = msgs[-1]["content"] if msgs else ""
+            content_parts.append({"type": "text", "text": last_text})
+            msgs[-1] = {"role": "user", "content": content_parts}
 
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        url = f"https://api-inference.huggingface.co/models/{model}"
         payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": max_tokens,
-                "temperature": temperature,
-                "do_sample": True,
-                "return_full_text": False
-            }
+            "model": model,
+            "messages": msgs,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": False,
         }
-        headers = self._make_headers(kwargs.get("api_key"))
         try:
-            resp = requests.post(url, headers=headers, json=payload,
-                                 timeout=60, verify=False)
+            resp = requests.post(
+                f"{self.BASE_URL}/v1/chat/completions",
+                headers=headers, json=payload, timeout=90,
+            )
             resp.raise_for_status()
-            result = resp.json()
-            if isinstance(result, list) and result:
-                return result[0].get("generated_text", str(result[0]))
-            elif isinstance(result, dict):
-                return result.get("generated_text", str(result))
-            return str(result)
+            data = resp.json()
+            if isinstance(data, dict) and data.get("choices"):
+                return data["choices"][0]["message"].get("content") or ""
+            return str(data)
         except requests.exceptions.HTTPError as e:
-            if resp.status_code == 401:
+            detail = ""
+            if e.response is not None:
+                try:
+                    detail = (e.response.text or "").strip()[:400]
+                except Exception:
+                    detail = ""
+            code = e.response.status_code if e.response is not None else None
+            if code == 401:
                 raise ProviderError("Invalid Hugging Face token. Please check your token.")
-            elif resp.status_code == 503:
-                raise ProviderError("Hugging Face API is overloaded. Please wait and retry.")
-            raise ProviderError(f"Hugging Face API error: {e}")
+            if code == 403:
+                raise ProviderError("Hugging Face token lacks access to this model (it may be gated).")
+            if code in (402, 429):
+                raise ProviderError("Hugging Face rate limit or billing/quota reached. Wait and retry.")
+            if code in (500, 503):
+                raise ProviderError("Hugging Face model is loading or the service is busy. Wait and retry.")
+            raise ProviderError(f"Hugging Face API error: {e}" + (f" {detail}" if detail else ""))
+        except requests.exceptions.RequestException as e:
+            raise ProviderError(f"Cannot reach Hugging Face: {e}")
         except Exception as e:
             raise ProviderError(f"Failed to generate response: {e}")
 
+    def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        model = kwargs.get("model") or self.model
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
+        return self._chat(messages, model, temperature, max_tokens, kwargs.get("api_key"))
+
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
-        if not self._available:
-            raise ProviderError("Hugging Face provider not available.")
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         model = kwargs.get("model") or self.model
-        prompt = messages[-1]["content"] if messages else ""
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
-        headers = self._make_headers(kwargs.get("api_key"))
-        content_parts = []
-        for img in images:
-            b64 = _strip_b64_prefix(img["b64"])
-            content_parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
-            })
-        content_parts.append({"type": "text", "text": prompt})
-        payload = {
-            "inputs": {
-                "messages": [{"role": "user", "content": content_parts}]
-            },
-            "parameters": {
-                "max_new_tokens": max_tokens,
-                "temperature": temperature,
-            }
-        }
-        url = f"https://api-inference.huggingface.co/models/{model}/v1/chat/completions"
-        try:
-            resp = requests.post(url, headers=headers, json=payload,
-                                 timeout=60, verify=False)
-            resp.raise_for_status()
-            result = resp.json()
-            if "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            if isinstance(result, list) and result:
-                return result[0].get("generated_text", str(result[0]))
-            return str(result)
-        except requests.exceptions.HTTPError as e:
-            if resp.status_code in (401, 403):
-                raise ProviderError("Invalid or missing Hugging Face token for this model.")
-            elif resp.status_code == 503:
-                raise ProviderError("Hugging Face model is loading. Wait a moment and retry.")
-            raise ProviderError(f"HuggingFace vision API error: {e}")
-        except Exception as e:
-            raise ProviderError(f"HuggingFace vision request failed: {e}")
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
+        return self._chat(messages, model, temperature, max_tokens, kwargs.get("api_key"), images=images)
 
 
 class GroqProvider(LLMProvider):
     MAX_OUTPUT_TOKENS = 32768  # Groq supports large outputs on many models
+
+    # Curated backup — always merged with the live scan so these free-tier models
+    # stay visible even if Groq's /models list omits them.
+    _BACKUP_MODELS = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "qwen/qwen3-32b",
+    ]
+
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("GROQ_API_KEY")
         self._available = bool(self._default_key)
@@ -832,30 +933,16 @@ class GroqProvider(LLMProvider):
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         key = api_key or self._default_key
-        FALLBACK_MODELS = [
-            "llama-3.1-8b-instant",
-            "llama-3.3-70b-versatile",
-            "meta-llama/llama-4-scout-17b-16e-instruct",
-            "meta-llama/llama-4-maverick-17b-128e-instruct",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "groq/compound",
-            "groq/compound-mini",
-            "qwen/qwen3-32b",
-            "qwen/qwen3.6-27b",
-        ]
+        backup = list(self._BACKUP_MODELS)
         if not key:
-            return FALLBACK_MODELS
+            return backup  # can't scan without a key — show the known free models
         try:
             headers = {"Authorization": f"Bearer {key}"}
-            resp = requests.get("https://api.groq.com/openai/v1/models",
-                                headers=headers, timeout=10)
-            resp.raise_for_status()
-            models = [m["id"] for m in resp.json().get("data", [])]
-            return models if models else FALLBACK_MODELS
+            live = _fetch_openai_models("https://api.groq.com/openai/v1/models", headers)
+            return _dedup(backup + live)  # backup first so free models stay on top
         except Exception as e:
             logger.warning("Failed to fetch Groq models: %s", e)
-            return FALLBACK_MODELS
+            return backup
 
     def generate_raw(self, messages: List[Dict[str, str]],
                      model: str = "llama-3.3-70b-versatile", **kwargs) -> dict:
@@ -923,8 +1010,14 @@ class GroqProvider(LLMProvider):
 
 class DeepSeekProvider(LLMProvider):
     # DeepSeek text models + the vision model (deepseek-v4-flash-vision-exp).
-    FALLBACK_MODELS = ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp"]
     MAX_OUTPUT_TOKENS = 8192  # DeepSeek chat API caps output here
+
+    # Curated backup merged with the live scan.
+    _BACKUP_MODELS = [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "deepseek-v4-flash-vision-exp",
+    ]
 
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
@@ -946,18 +1039,16 @@ class DeepSeekProvider(LLMProvider):
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         key = api_key or self._default_key
+        backup = list(self._BACKUP_MODELS)
         if not key:
-            return self.FALLBACK_MODELS
+            return backup  # can't scan without a key — show the known models
         try:
-            headers = self._get_headers(key)
-            resp = requests.get("https://api.deepseek.com/v1/models", headers=headers, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            models = [m["id"] for m in data.get("data", [])]
-            return models if models else self.FALLBACK_MODELS
+            live = _fetch_openai_models("https://api.deepseek.com/v1/models",
+                                        self._get_headers(key))
+            return _dedup(backup + live)
         except Exception as e:
             logger.warning("Failed to fetch DeepSeek models: %s", e)
-            return self.FALLBACK_MODELS
+            return backup
 
     def get_status(self) -> dict:
         """Check DeepSeek API reachability and classify the failure clearly
@@ -1136,6 +1227,14 @@ class DeepSeekProvider(LLMProvider):
 
 class ClaudeProvider(LLMProvider):
     MAX_OUTPUT_TOKENS = 8192  # Anthropic caps max_tokens at 8192 for most models
+
+    # Curated backup merged with the live scan.
+    _BACKUP_MODELS = [
+        "claude-sonnet-4-5-20250929",
+        "claude-opus-4-1-20250805",
+        "claude-haiku-4-5-20251001",
+        "claude-3-7-sonnet-20250219",
+    ]
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self._available = bool(self._default_key)
@@ -1157,26 +1256,18 @@ class ClaudeProvider(LLMProvider):
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         key = api_key or self._default_key
-        FALLBACK_MODELS = [
-            "claude-3-5-sonnet-20241022",
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307"
-        ]
+        backup = list(self._BACKUP_MODELS)
         if not key:
-            return FALLBACK_MODELS
+            return backup  # can't scan without a key — show the known models
         try:
-            headers = self._get_headers(key)
-            resp = requests.get("https://api.anthropic.com/v1/models", headers=headers, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            models = [m["id"] for m in data.get("data", [])]
-            return models if models else FALLBACK_MODELS
+            live = _fetch_anthropic_models("https://api.anthropic.com/v1/models",
+                                           self._get_headers(key))
+            return _dedup(backup + live)
         except Exception as e:
             logger.warning("Failed to fetch Claude models: %s", e)
-            return FALLBACK_MODELS
+            return backup
 
-    def generate(self, messages: List[Dict[str, str]], model: str = "claude-3-5-sonnet-20241022", **kwargs) -> str:
+    def generate(self, messages: List[Dict[str, str]], model: str = "claude-sonnet-4-5-20250929", **kwargs) -> str:
         key = self._get_key(kwargs)
         headers = self._get_headers(key)
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
@@ -1209,7 +1300,7 @@ class ClaudeProvider(LLMProvider):
 
     def generate_with_image(self, messages: List[Dict[str, str]], images: List[Dict], **kwargs) -> str:
         key = self._get_key(kwargs)
-        model = kwargs.get("model", "claude-3-5-sonnet-20241022")
+        model = kwargs.get("model", "claude-sonnet-4-5-20250929")
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
         headers = self._get_headers(key)
@@ -1256,6 +1347,638 @@ class ClaudeProvider(LLMProvider):
             raise ProviderError(f"Claude vision API error: {e}")
 
 
+class GeminiProvider(LLMProvider):
+    """Google Gemini (Generative Language API) — text + image + video (multimodal).
+
+    Talks to the REST API directly (no extra SDK needed). Images and videos are
+    sent inline as base64 ``inline_data`` parts; Gemini accepts inline video up
+    to roughly 20 MB (larger files would need the Files API, not wired here).
+    """
+    BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+    # Default used only when a call omits `model`. The visible model list is
+    # always scanned live from Google (requires an API key) — never hardcoded.
+    DEFAULT_MODEL = "gemini-3.6-flash"
+
+    # Ordering preference only, so a current model lands first in the dropdown.
+    _PREFERRED_ORDER = (
+        "gemini-3.6-flash", "gemini-3.6-pro", "gemini-3.5-flash",
+        "gemini-2.5-flash", "gemini-2.5-pro",
+    )
+
+    # Generation prefixes Google has retired — they still show up in the model
+    # list endpoint but return 404 on generateContent, so never surface them.
+    _RETIRED_MODEL_MARKERS = (
+        "gemini-1.0", "gemini-1.5", "gemini-2.0",
+        "gemini-exp", "gemini-experimental",
+    )
+    MAX_OUTPUT_TOKENS = 65536
+
+    def __init__(self, api_key: Optional[str] = None):
+        self._default_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        self._available = bool(self._default_key)
+        if not self._available:
+            logger.warning("GEMINI_API_KEY not set. Provide it via UI or set env var.")
+
+    def _get_key(self, kwargs) -> str:
+        key = _clean_api_key(kwargs.get("api_key") or self._default_key, "Gemini")
+        if not key:
+            raise ProviderError("Gemini API key is required. Enter it in the API Key field.")
+        return key
+
+    def _headers(self, key: str) -> Dict[str, str]:
+        return {"x-goog-api-key": key, "Content-Type": "application/json"}
+
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
+        key = api_key or self._default_key
+        backup = list(self._PREFERRED_ORDER)
+        if not key:
+            return backup  # can't scan without a key — show the known current models
+        models = []
+        try:
+            page_token = None
+            for _ in range(20):  # Google paginates with pageToken / nextPageToken
+                params = {}
+                if page_token:
+                    params["pageToken"] = page_token
+                resp = requests.get(f"{self.BASE_URL}/models", headers=self._headers(key),
+                                    params=params, timeout=10)
+                resp.raise_for_status()
+                data = resp.json()
+                for m in data.get("models", []):
+                    if "generateContent" not in (m.get("supportedGenerationMethods") or []):
+                        continue
+                    name = m["name"].replace("models/", "")
+                    if any(marker in name for marker in self._RETIRED_MODEL_MARKERS):
+                        continue  # retired model — skip so it can't be selected and 404
+                    models.append(name)
+                if not data.get("nextPageToken"):
+                    break
+                page_token = data["nextPageToken"]
+            models = _dedup(backup + models)  # backup first so current models stay on top
+            ordered = [m for m in self._PREFERRED_ORDER if m in models]
+            ordered += [m for m in models if m not in ordered]
+            return ordered
+        except Exception as e:
+            logger.warning("Failed to fetch Gemini models: %s", e)
+            return backup
+
+    def _to_contents(self, messages: List[Dict[str, str]],
+                     images: Optional[List[Dict]] = None,
+                     videos: Optional[List[Dict]] = None):
+        """Map TrioForge messages -> Gemini contents; media rides on the last user turn."""
+        system_parts = []
+        contents = []
+        for m in messages or []:
+            role = m.get("role")
+            content = m.get("content") or ""
+            if role == "system":
+                system_parts.append({"text": content})
+            elif role == "assistant":
+                contents.append({"role": "model", "parts": [{"text": content}]})
+            elif role == "user":
+                contents.append({"role": "user", "parts": [{"text": content}]})
+            # tool / function roles are skipped
+
+        media_parts = []
+        for img in (images or []):
+            b64 = _strip_b64_prefix(img.get("b64", "") or "")
+            if b64:
+                media_parts.append({"inline_data": {
+                    "mime_type": img.get("mime") or "image/jpeg", "data": b64}})
+        for vid in (videos or []):
+            b64 = _strip_b64_prefix(vid.get("b64", "") or "")
+            if b64:
+                media_parts.append({"inline_data": {
+                    "mime_type": vid.get("mime") or "video/mp4", "data": b64}})
+
+        if media_parts:
+            if contents and contents[-1].get("role") == "user":
+                contents[-1]["parts"].extend(media_parts)
+            else:
+                contents.append({"role": "user", "parts": media_parts})
+        return contents, system_parts
+
+    def _generate_content(self, messages, images=None, videos=None, **kwargs) -> str:
+        key = self._get_key(kwargs)
+        model = kwargs.get("model") or self.DEFAULT_MODEL
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
+
+        contents, system_parts = self._to_contents(messages, images, videos)
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+            },
+        }
+        if max_tokens:
+            payload["generationConfig"]["maxOutputTokens"] = min(int(max_tokens), self.MAX_OUTPUT_TOKENS)
+        if system_parts:
+            payload["system_instruction"] = {"parts": system_parts}
+
+        url = f"{self.BASE_URL}/models/{model}:generateContent"
+        try:
+            resp = requests.post(url, headers=self._headers(key), json=payload, timeout=180)
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates") or []
+            if not candidates:
+                raise ProviderError("Gemini returned no candidates.")
+            parts = candidates[0].get("content", {}).get("parts") or []
+            text = "".join(p.get("text", "") for p in parts if "text" in p)
+            if not text:
+                finish = candidates[0].get("finishReason")
+                raise ProviderError(f"Gemini returned no text (finishReason={finish}).")
+            return text
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                detail = (e.response.text or "")[:500]
+            except Exception:
+                pass
+            raise ProviderError(f"Gemini API error: {e}" + (f" — {detail}" if detail else ""))
+
+    def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        return self._generate_content(messages, **kwargs)
+
+    def generate_with_image(self, messages: List[Dict[str, str]],
+                            images: List[Dict], **kwargs) -> str:
+        return self._generate_content(messages, images=images, **kwargs)
+
+    def generate_multimodal(self, messages: List[Dict[str, str]],
+                            images: Optional[List[Dict]] = None,
+                            videos: Optional[List[Dict]] = None, **kwargs) -> str:
+        return self._generate_content(messages, images=images, videos=videos, **kwargs)
+
+    def generate_video(self, prompt: str, output_path: str, model: Optional[str] = None,
+                       aspect_ratio: str = "16:9", resolution: str = "720p",
+                       negative_prompt: str = "", seconds: Optional[int] = None, **kwargs) -> str:
+        """Gemini video generation was removed (Google kept changing the API)."""
+        raise ProviderError(
+            "Gemini video generation has been removed. Use ComfyUI (Wan 2.2 / LTX) for video.")
+
+    def _generate_omni_video(self, client, model, prompt, output_path, aspect_ratio, resolution):
+        """Omni models: use the dedicated Interactions API (`client.interactions`).
+
+        The SDK sends the request body through ``extra_body`` (per its own error
+        message), so we pass model/interactions/config there.
+        """
+        try:
+            interaction = client.interactions.create(
+                extra_body={
+                    "model": model,
+                    "interactions": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "config": {"response_modalities": ["video"]},
+                }
+            )
+        except Exception as e:
+            raise ProviderError(f"Gemini Omni video request failed: {e}")
+        data = self._extract_video_from(interaction)
+        if not data:
+            raise ProviderError("Gemini Omni returned no video.")
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(data)
+
+    def _extract_video_from(self, obj, depth=0):
+        """Best-effort: dig the video bytes out of an Omni interaction response."""
+        if obj is None or depth > 6:
+            return None
+        if isinstance(obj, (bytes, bytearray)):
+            return bytes(obj)
+        # Pydantic / dict-like
+        if hasattr(obj, "video_bytes"):
+            return obj.video_bytes
+        if isinstance(obj, dict):
+            for k in ("video_bytes", "bytesBase64Encoded", "data"):
+                v = obj.get(k)
+                if isinstance(v, bytes):
+                    return v
+                if isinstance(v, str) and v:
+                    try:
+                        return base64.b64decode(v)
+                    except Exception:
+                        pass
+            if isinstance(obj.get("video"), dict):
+                r = self._extract_video_from(obj["video"], depth + 1)
+                if r:
+                    return r
+        for attr in ("video", "generated_videos", "result", "response", "output", "parts"):
+            if hasattr(obj, attr):
+                r = self._extract_video_from(getattr(obj, attr), depth + 1)
+                if r:
+                    return r
+        return None
+
+    def _generate_veo_video(self, client, model, prompt, output_path,
+                            aspect_ratio, resolution, negative_prompt, seconds):
+        """Veo models: generate_videos (predictLongRunning under the hood)."""
+        from google.genai import types
+        cfg = types.GenerateVideosConfig(aspect_ratio=aspect_ratio, resolution=resolution)
+        if negative_prompt:
+            cfg.negative_prompt = negative_prompt
+        cfg.duration_seconds = max(4, min(8, int(seconds) if seconds else 8))
+
+        try:
+            op = client.models.generate_videos(model=model, prompt=prompt, config=cfg)
+        except Exception as e:
+            raise ProviderError(f"Gemini video generation failed: {e}")
+
+        deadline = time.time() + 600
+        while time.time() < deadline:
+            op = client.operations.get(op)
+            if getattr(op, "done", False):
+                break
+            time.sleep(5)
+        if not getattr(op, "done", False):
+            raise ProviderError("Gemini video operation timed out.")
+        if getattr(op, "error", None):
+            raise ProviderError(f"Gemini video operation error: {op.error}")
+
+        result = getattr(op, "result", None) or getattr(op, "response", None)
+        videos = getattr(result, "generated_videos", None) or []
+        if not videos:
+            reason = getattr(result, "rai_media_filtered_reasons", None)
+            raise ProviderError("Gemini returned no generated video."
+                                + (f" (filtered: {reason})" if reason else ""))
+        video = getattr(videos[0], "video", None)
+        data = getattr(video, "video_bytes", None) if video else None
+        if data:
+            out_dir = os.path.dirname(output_path)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            with open(output_path, "wb") as f:
+                f.write(data)
+            return
+        uri = getattr(video, "uri", None) if video else None
+        if uri:
+            self._download_media("", uri, output_path)
+            return
+        raise ProviderError("Gemini returned a video without bytes or URI.")
+
+    def _video_model_order(self, key, preferred):
+        """Ordered list of candidate video models, each with video methods to try."""
+        cands, seen = [], set()
+        if preferred:
+            cands.append({"name": preferred, "methods": ["generateInteractions", "generateContent",
+                                                         "predictLongRunning", "generateVideos"]})
+            seen.add(preferred)
+        for m in self._discover_video_models(key):
+            if m["name"] in seen:
+                continue
+            seen.add(m["name"])
+            cands.append(m)
+        if not cands:
+            # Last resort guesses (user can override via GEMINI_VIDEO_MODEL).
+            for name in ("gemini-omni-1.1-flash", "gemini-omni-flash-preview", "veo-3.1"):
+                cands.append({"name": name, "methods": ["generateInteractions", "generateContent",
+                                                        "predictLongRunning", "generateVideos"]})
+        return cands
+
+    def _discover_video_models(self, key):
+        """Query ModelService.ListModels; return video-capable models + their methods."""
+        try:
+            resp = requests.get(f"{self.BASE_URL}/models", headers={"x-goog-api-key": key}, timeout=15)
+            resp.raise_for_status()
+            models = resp.json().get("models", [])
+        except Exception:
+            return []
+        hints = ("veo", "omni", "video")
+        # Method priority: Omni/Veo 3.1 models now use the Interactions API
+        # (generateInteractions); older ones use generateContent / predictLongRunning.
+        method_priority = ("generateInteractions", "generateContent", "generateVideos",
+                           "predictLongRunning", "predict")
+        out = []
+        for m in models:
+            name = m.get("name", "").replace("models/", "")
+            methods = m.get("supportedGenerationMethods") or []
+            # Only NAME-based video hints count — "generateContent" alone is not a
+            # video signal (every text model has it and would pollute the dropdown).
+            if not any(h in name.lower() for h in hints):
+                continue
+            chosen = [meth for meth in method_priority if meth in methods]
+            if not chosen:
+                chosen = ["generateInteractions", "generateContent", "predictLongRunning", "generateVideos"]
+            out.append({"name": name, "methods": chosen})
+        return out
+
+    def _generate_video_once(self, key, model, method, prompt, output_path,
+                             aspect_ratio, resolution, negative_prompt, seconds):
+        endpoint = f"{self.BASE_URL}/models/{model}:{method}"
+        headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+
+        if method in ("generateContent", "generateInteractions"):
+            # Omni / Interactions API: the video comes back in the response parts
+            # (either candidates[].content.parts[] or interactions[].parts[]).
+            key_name = "interactions" if method == "generateInteractions" else "contents"
+            payload = {
+                key_name: [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"responseModalities": ["video"]},
+            }
+            try:
+                resp = requests.post(endpoint, headers=headers, json=payload, timeout=600)
+            except requests.exceptions.RequestException as e:
+                raise ProviderError(f"Gemini video request failed: {e}")
+            if resp.status_code != 200:
+                raise ProviderError(f"Gemini video API error ({resp.status_code}): "
+                                    + (resp.text or "")[:300])
+            self._extract_content_video(key, resp.json(), output_path)
+            return
+
+        parameters = {"aspectRatio": aspect_ratio, "resolution": resolution}
+        if negative_prompt:
+            parameters["negativePrompt"] = negative_prompt
+        if seconds:
+            parameters["durationSeconds"] = int(seconds)
+        payload = {"instances": [{"prompt": prompt}], "parameters": parameters}
+        try:
+            resp = requests.post(endpoint, headers=headers, json=payload, timeout=600)
+        except requests.exceptions.RequestException as e:
+            raise ProviderError(f"Gemini video request failed: {e}")
+        if resp.status_code != 200:
+            raise ProviderError(f"Gemini video API error ({resp.status_code}): "
+                                + (resp.text or "")[:300])
+        data = resp.json()
+        predictions = data.get("predictions")
+        if not predictions:
+            op_name = data.get("name")
+            if op_name:
+                predictions = self._poll_video_operation(key, op_name)
+            else:
+                raise ProviderError("Gemini returned no video predictions.")
+
+        pred = (predictions or [{}])[0]
+        b64 = self._find_b64(pred)
+        if not b64:
+            uri = self._find_video_uri(pred)
+            if uri:
+                self._download_media(key, uri, output_path)
+                return
+            reason = pred.get("raiMediaFilteredReason") or pred.get("reason")
+            raise ProviderError(
+                "Gemini produced no video for this prompt"
+                + (f" (filtered: {reason})" if reason else "")
+                + " | prediction keys: " + json.dumps(sorted(str(k) for k in pred.keys()))
+            )
+        self._write_media(b64, output_path)
+
+    def _extract_content_video(self, key, data, output_path):
+        """Pull a video out of a generateContent / Interactions response (Omni).
+
+        Handles both shapes: ``candidates[].content.parts[]`` (generateContent) and
+        ``interactions[].parts[]`` (Interactions API).
+        """
+        parts_lists = []
+        for cand in data.get("candidates") or []:
+            parts_lists.append((cand.get("content") or {}).get("parts") or [])
+        for inter in data.get("interactions") or []:
+            parts_lists.append(inter.get("parts") or [])
+
+        all_keys = []
+        for parts in parts_lists:
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                all_keys.append(sorted(str(k) for k in part.keys()))
+                inline = part.get("inlineData")
+                if isinstance(inline, dict) and inline.get("data"):
+                    self._write_media(inline["data"], output_path)
+                    return
+                fd = part.get("fileData")
+                uri = None
+                if isinstance(fd, dict):
+                    uri = fd.get("fileUri") or fd.get("uri")
+                elif isinstance(fd, str) and fd:
+                    uri = fd
+                if not uri:
+                    uri = part.get("fileUri") or part.get("uri")
+                if uri:
+                    self._download_media(key, uri, output_path)
+                    return
+        raise ProviderError("Omni video response contained no video part. part keys: " +
+                            json.dumps(all_keys or ["(no parts)"])[:400])
+
+    @staticmethod
+    def _find_b64(pred: dict):
+        """Locate base64 video bytes across Omni/Veo's different response shapes."""
+        for k in ("bytesBase64Encoded", "data", "b64"):
+            if isinstance(pred.get(k), str) and pred[k]:
+                return pred[k]
+        video = pred.get("video") if isinstance(pred.get("video"), dict) else None
+        if video:
+            for k in ("bytesBase64Encoded", "data", "b64"):
+                if isinstance(video.get(k), str) and video[k]:
+                    return video[k]
+        return None
+
+    @staticmethod
+    def _find_video_uri(pred: dict):
+        """Locate a video file URI (Omni sometimes returns a URI instead of bytes)."""
+        video = pred.get("video") if isinstance(pred.get("video"), dict) else None
+        fd = pred.get("fileData") if isinstance(pred.get("fileData"), dict) else None
+        for source in (video or {}, fd or {}, pred):
+            if not isinstance(source, dict):
+                continue
+            for k in ("uri", "fileUri"):
+                if isinstance(source.get(k), str) and source[k]:
+                    return source[k]
+        return None
+
+    def _download_media(self, key: str, uri: str, output_path: str):
+        resp = requests.get(uri, headers={"x-goog-api-key": key}, timeout=180)
+        resp.raise_for_status()
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(resp.content)
+
+    def _poll_video_operation(self, key: str, op_name: str, timeout: int = 360) -> list:
+        """Poll a Veo long-running operation until it finishes, return its predictions."""
+        # op_name looks like "operations/<id>" — ensure a leading slash after the base.
+        url = f"{self.BASE_URL}/{op_name.lstrip('/')}"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                resp = requests.get(url, headers={"x-goog-api-key": key}, timeout=30)
+            except requests.exceptions.RequestException:
+                time.sleep(3)
+                continue
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("done"):
+                    return data.get("response", {}).get("predictions") or []
+                time.sleep(3)
+            elif resp.status_code == 404:
+                # Operation not ready yet (or bad URL) — keep waiting, but bail early
+                # after a short grace so we don't spin forever on a malformed op.
+                time.sleep(3)
+            else:
+                raise ProviderError(f"Gemini video operation error: {resp.text[:300]}")
+        raise ProviderError("Gemini video operation timed out.")
+
+    @staticmethod
+    def _write_media(b64: str, output_path: str):
+        raw = base64.b64decode(_strip_b64_prefix(b64))
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(raw)
+
+    def generate_image(self, prompt: str, output_path: str, model: Optional[str] = None,
+                       aspect_ratio: str = "1:1", **kwargs) -> str:
+        """Generate an image with an image-capable Gemini model (Nano Banana / Imagen).
+
+        Uses ``generateContent`` (the modern path — the old Imagen ``:predict`` models
+        are being retired) and writes the inline base64 image to ``output_path``.
+        Returns the file extension (e.g. ``.png``). The model can be overridden with
+        the ``GEMINI_IMAGE_MODEL`` env var.
+        """
+        key = self._get_key(kwargs)
+        model = model or os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+        payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+        if aspect_ratio:
+            payload["generationConfig"] = {"imageConfig": {"aspectRatio": aspect_ratio}}
+
+        url = f"{self.BASE_URL}/models/{model}:generateContent"
+        try:
+            resp = requests.post(url, headers=self._headers(key), json=payload, timeout=300)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                detail = (e.response.text or "")[:400]
+            except Exception:
+                pass
+            raise ProviderError(f"Gemini image API error: {e}" + (f" — {detail}" if detail else ""))
+
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise ProviderError("Gemini returned no candidates.")
+        parts = candidates[0].get("content", {}).get("parts") or []
+        for part in parts:
+            if "inlineData" in part:
+                b64 = part["inlineData"].get("data", "")
+                mime = part["inlineData"].get("mimeType", "image/png")
+                self._write_media(b64, output_path)
+                return f".{mime.split('/')[-1] or 'png'}"
+        texts = "".join(p.get("text", "") for p in parts if "text" in p)
+        raise ProviderError("Gemini image response contained no image." +
+                            (f" (found text: {texts[:200]})" if texts else ""))
+
+
+class OpenRouterProvider(LLMProvider):
+    """OpenRouter provider — a gateway to hundreds of models (GPT, Claude, Gemini,
+    Llama, DeepSeek, …) behind one OpenAI-compatible API.
+
+    Uses ``/api/v1/chat/completions`` via ``requests`` (no extra dependency), so it
+    plugs into the workspace-tool loop and image(b64) input like Groq/DeepSeek.
+    """
+    BASE_URL = "https://openrouter.ai/api/v1"
+    MAX_OUTPUT_TOKENS = 16384
+    FALLBACK_MODELS = [
+        "openai/gpt-4o-mini", "openai/gpt-4o", "anthropic/claude-3.5-sonnet",
+        "meta-llama/llama-3.3-70b-instruct", "google/gemini-2.0-flash-001",
+        "deepseek/deepseek-chat", "qwen/qwen-2.5-72b-instruct",
+    ]
+
+    def __init__(self, api_key: Optional[str] = None):
+        self._default_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+        self._available = bool(self._default_key)
+        if not self._available:
+            logger.warning("OPENROUTER_API_KEY not set. Provide it via UI or set env var.")
+
+    def _get_key(self, kwargs) -> str:
+        key = _clean_api_key(kwargs.get("api_key") or self._default_key, "OpenRouter")
+        if not key:
+            raise ProviderError("OpenRouter API key is required. Enter it in the API Key field.")
+        return key
+
+    def _headers(self, key: str) -> Dict[str, str]:
+        return {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                "HTTP-Referer": "https://trioforge.local", "X-Title": "TrioForge"}
+
+    def list_models(self, api_key: Optional[str] = None) -> List[str]:
+        key = api_key or self._default_key
+        if not key:
+            return self.FALLBACK_MODELS
+        try:
+            resp = requests.get(f"{self.BASE_URL}/models", headers=self._headers(key), timeout=15)
+            resp.raise_for_status()
+            models = [m["id"] for m in resp.json().get("data", [])]
+            return models if models else self.FALLBACK_MODELS
+        except Exception as e:
+            logger.warning("Failed to fetch OpenRouter models: %s", e)
+            return self.FALLBACK_MODELS
+
+    def _chat(self, messages, key, model, temperature, max_tokens, tools=None, timeout=180):
+        payload = {"model": model, "messages": messages, "temperature": temperature}
+        if max_tokens:
+            payload["max_tokens"] = min(int(max_tokens), self.MAX_OUTPUT_TOKENS)
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        resp = requests.post(f"{self.BASE_URL}/chat/completions", headers=self._headers(key),
+                             json=payload, timeout=timeout)
+        if resp.status_code != 200:
+            raise ProviderError(f"OpenRouter API error ({resp.status_code}): " + (resp.text or "")[:300])
+        return resp.json()
+
+    def generate_raw(self, messages: List[Dict[str, str]],
+                     model: str = "openai/gpt-4o-mini", **kwargs) -> dict:
+        key = self._get_key(kwargs)
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = kwargs.get("max_tokens")
+        tools = kwargs.get("tools")
+        data = self._chat(messages, key, model, temperature, max_tokens, tools=tools)
+        msg = data["choices"][0]["message"]
+        tool_calls = None
+        if msg.get("tool_calls"):
+            tool_calls = [{
+                "id": tc["id"], "type": "function",
+                "function": {"name": tc["function"]["name"], "arguments": tc["function"]["arguments"]},
+            } for tc in msg["tool_calls"]]
+        return {"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls}
+
+    def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        return self.generate_raw(messages, **kwargs).get("content") or ""
+
+    def generate_with_image(self, messages: List[Dict[str, str]],
+                            images: List[Dict], **kwargs) -> str:
+        key = self._get_key(kwargs)
+        model = kwargs.get("model", "openai/gpt-4o-mini")
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = kwargs.get("max_tokens")
+        content_parts = []
+        for img in images:
+            b64 = _strip_b64_prefix(img.get("b64", "") or "")
+            mime = img.get("mime") or "image/png"
+            content_parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+        last_text = messages[-1].get("content", "") if messages else ""
+        content_parts.append({"type": "text", "text": last_text})
+        vision_messages = [{"role": m["role"], "content": m["content"]} for m in messages[:-1]] \
+            + [{"role": "user", "content": content_parts}]
+        data = self._chat(vision_messages, key, model, temperature, max_tokens)
+        return data["choices"][0]["message"].get("content") or ""
+
+    def generate_multimodal(self, messages: List[Dict[str, str]],
+                            images: Optional[List[Dict]] = None,
+                            videos: Optional[List[Dict]] = None, **kwargs) -> str:
+        if images:
+            return self.generate_with_image(messages, images, **kwargs)
+        if videos:
+            note = f"[{len(videos)} video(s) attached — this provider does not support native video input]"
+            messages = list(messages)
+            if messages:
+                messages[-1] = {**messages[-1], "content": note + "\n" + messages[-1].get("content", "")}
+        return self.generate(messages, **kwargs)
+
+
 # ── Shared provider factory ────────────────────────────────────────────────
 # A single place to instantiate providers so every feature (notes, corkboard,
 # chat, …) uses the same constructors and can share cached instances.
@@ -1267,6 +1990,8 @@ _PROVIDER_CLASSES = {
     "groq": GroqProvider,
     "deepseek": DeepSeekProvider,
     "claude": ClaudeProvider,
+    "openrouter": OpenRouterProvider,
+    "gemini": GeminiProvider,
 }
 
 _provider_cache = {}

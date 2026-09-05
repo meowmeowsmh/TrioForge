@@ -75,6 +75,8 @@ from providers.llm_providers import (
     GroqProvider,
     DeepSeekProvider,
     ClaudeProvider,
+    OpenRouterProvider,
+    GeminiProvider,
     model_supports_vision,
     VISION_MODELS,
     describe_or_extract_file,
@@ -84,6 +86,7 @@ from features.notes import notes_bp, upsert_note
 from features.cork_board import corkboard_bp, upsert_pin, add_link
 from features.viewer import setup_viewer
 import personas
+import comfyui_service
 
 try:
     import pynvml
@@ -170,6 +173,18 @@ def _init_sqlite():
                 content         TEXT,
                 attachments     TEXT,          -- JSON array: {"images":[...], "files":[...]}
                 created_at      TEXT NOT NULL
+            );
+        """)
+        _sqlite_conn.execute("""
+            CREATE TABLE IF NOT EXISTS usage_stats (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider           TEXT NOT NULL,
+                model              TEXT,
+                session_id         TEXT,
+                prompt_tokens      INTEGER DEFAULT 0,
+                completion_tokens  INTEGER DEFAULT 0,
+                cost               REAL DEFAULT 0,
+                created_at         TEXT NOT NULL
             );
         """)
         cur = _sqlite_conn.cursor()
@@ -813,9 +828,11 @@ providers = {
     "groq": GroqProvider(),
     "deepseek": DeepSeekProvider(),
     "claude": ClaudeProvider(),
+    "openrouter": OpenRouterProvider(),
+    "gemini": GeminiProvider(),
 }
 
-API_PROVIDERS = {"groq", "huggingface", "deepseek", "claude"}
+API_PROVIDERS = {"groq", "huggingface", "deepseek", "claude", "openrouter", "gemini"}
 
 
 def _bot_meta(provider_name, model):
@@ -826,6 +843,42 @@ def _bot_meta(provider_name, model):
         "provider": provider_name,
         "model": model or None,
     }
+
+# Estimated cost per 1,000,000 tokens (input, output) for paid providers.
+# These are rough averages and are editable here if your plan differs.
+PROVIDER_PRICING = {
+    "ollama":      {"input": 0.0, "output": 0.0},
+    "llamacpp":    {"input": 0.0, "output": 0.0},
+    "huggingface": {"input": 0.0, "output": 0.0},
+    "groq":        {"input": 0.05, "output": 0.08},
+    "deepseek":    {"input": 0.27, "output": 1.10},
+    "claude":      {"input": 3.00, "output": 15.00},
+    "openrouter":  {"input": 0.25, "output": 1.00},
+    "gemini":      {"input": 0.30, "output": 2.50},
+}
+
+
+def _estimate_tokens(text):
+    """Very rough token estimate (~4 chars/token) for usage tracking."""
+    if not text:
+        return 0
+    return max(1, int(len(text) / 4))
+
+
+def record_usage(provider, model, session_id, prompt_tokens, completion_tokens):
+    """Persist one generation's token/cost estimate to the usage table."""
+    rates = PROVIDER_PRICING.get(provider, {"input": 0.0, "output": 0.0})
+    cost = (prompt_tokens / 1_000_000) * rates["input"] + (completion_tokens / 1_000_000) * rates["output"]
+    try:
+        with _sqlite_lock:
+            _sqlite_conn.execute(
+                "INSERT INTO usage_stats (provider, model, session_id, prompt_tokens, completion_tokens, cost, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (provider, model, session_id, int(prompt_tokens), int(completion_tokens), round(cost, 8), datetime.now().isoformat())
+            )
+            _sqlite_conn.commit()
+    except Exception as e:
+        logger.warning("Failed to record usage: %s", e)
 
 @app.route('/')
 def index():
@@ -1069,6 +1122,220 @@ def deepseek_status():
 @app.route('/api/personas', methods=['GET'])
 def personas_endpoint():
     return jsonify(personas.list_personas())
+
+@app.route('/api/stats', methods=['GET'])
+def stats_endpoint():
+    """Aggregate token + estimated-cost usage, grouped by provider and by session."""
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute("""
+            SELECT provider,
+                   COUNT(*) AS requests,
+                   COALESCE(SUM(prompt_tokens), 0),
+                   COALESCE(SUM(completion_tokens), 0),
+                   COALESCE(SUM(cost), 0)
+            FROM usage_stats
+            GROUP BY provider
+            ORDER BY SUM(cost) DESC
+        """)
+        by_provider = [
+            {
+                "provider": r[0],
+                "requests": r[1],
+                "prompt_tokens": r[2],
+                "completion_tokens": r[3],
+                "total_tokens": r[2] + r[3],
+                "cost": round(r[4], 8),
+            }
+            for r in cur.fetchall()
+        ]
+        cur.execute("""
+            SELECT session_id, provider, model,
+                   COALESCE(SUM(prompt_tokens), 0),
+                   COALESCE(SUM(completion_tokens), 0),
+                   COALESCE(SUM(cost), 0),
+                   MAX(created_at)
+            FROM usage_stats
+            GROUP BY session_id, provider, model
+            ORDER BY MAX(created_at) DESC
+            LIMIT 200
+        """)
+        by_session = [
+            {
+                "session_id": r[0],
+                "provider": r[1],
+                "model": r[2],
+                "prompt_tokens": r[3],
+                "completion_tokens": r[4],
+                "total_tokens": r[3] + r[4],
+                "cost": round(r[5], 8),
+                "last_used": r[6],
+            }
+            for r in cur.fetchall()
+        ]
+    total_cost = round(sum(p["cost"] for p in by_provider), 8)
+    total_tokens = sum(p["total_tokens"] for p in by_provider)
+    return jsonify({
+        "by_provider": by_provider,
+        "by_session": by_session,
+        "total_cost": total_cost,
+        "total_tokens": total_tokens,
+        "pricing": PROVIDER_PRICING,
+    })
+
+@app.route('/api/generate_image', methods=['POST'])
+def generate_image():
+    """Generate an image: local .gguf models go through ComfyUI, HF IDs through Diffusers."""
+    data = request.get_json(silent=True) or {}
+    prompt = (data.get('prompt') or '').strip()
+    if not prompt:
+        return jsonify({'error': 'Prompt is required'}), 400
+    model = (data.get('model') or 'Tongyi-MAI/Z-Image-Turbo').strip()
+    width = int(data.get('width') or 1024)
+    height = int(data.get('height') or 1024)
+    steps = int(data.get('steps') or 4)
+
+    # Free VRAM first: unload the current Ollama model so the image model fits.
+    try:
+        requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={"model": current_model, "prompt": "", "keep_alive": 0},
+            timeout=3,
+        )
+    except Exception:
+        pass
+
+    out_dir = root_path("static", "uploads", "generated")
+    os.makedirs(out_dir, exist_ok=True)
+    base = os.path.join(out_dir, uuid.uuid4().hex)
+    tmp = base + ".bin"
+    backend = (data.get('backend') or 'gemini').strip().lower()
+    api_key = sanitize_api_key(data.get('api_key', None))
+
+    try:
+        if backend == 'gemini':
+            gp = providers.get('gemini')
+            ext = gp.generate_image(
+                prompt, tmp, model=data.get('image_model') or None, api_key=api_key,
+                aspect_ratio=data.get('aspect_ratio') or "1:1",
+            )
+        else:
+            comfy_workflow = (data.get('workflow') or '').strip()
+            if not comfy_workflow:
+                if model.startswith("comfyui::"):
+                    comfy_workflow = model[len("comfyui::"):]
+                elif model:
+                    comfy_workflow = model
+            comfyui_service.generate_image(
+                prompt, tmp, workflow=comfy_workflow or None, width=width,
+                height=height, steps=steps, timeout=900,
+            )
+            ext = ".png"
+        final = base + ext
+        os.replace(tmp, final)
+        out_name = os.path.basename(final)
+    except Exception as e:
+        return jsonify({'error': f'Image generation failed: {str(e)}'}), 500
+
+    url = f'/static/uploads/generated/{out_name}'
+    meta_kind = "api" if backend == 'gemini' else "local"
+    bot_label = "🖼️ Image generated via Gemini" if backend == 'gemini' else "🖼️ Image generated via ComfyUI"
+
+    cid = (data.get('conversation_id') or '').strip()
+    if cid:
+        try:
+            # Persist the prompt + image into the conversation so the history
+            # survives a reload and the delete buttons can remove it.
+            add_message(cid, "user", prompt)
+            img_b64 = ""
+            try:
+                with open(final, "rb") as f:
+                    img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            except Exception:
+                pass
+            add_message(
+                cid, "bot", bot_label,
+                images=[{"name": out_name, "b64": img_b64, "mime": "image/png"}],
+                meta={"kind": meta_kind},
+            )
+            return jsonify({'ok': True, 'url': url, 'conversation_id': cid})
+        except Exception as e:
+            return jsonify({'ok': True, 'url': url, 'conversation_id': cid,
+                            'warning': f'Image generated, but history was not saved: {e}'})
+    return jsonify({'ok': True, 'url': url})
+
+@app.route('/api/image_models', methods=['GET'])
+def image_models():
+    """Image generation is handled entirely by ComfyUI; expose its workflows."""
+    options = []
+    try:
+        for wf in comfyui_service.discover_workflows():
+            name = wf["name"].lower()
+            if wf.get("is_fhdr") or (
+                wf.get("is_z_image") and "text to image" in name and "turbo" in name
+            ):
+                options.append({
+                    "label": wf["name"],
+                    "value": "comfyui::" + wf["id"],
+                })
+    except Exception:
+        pass
+    return jsonify(options)
+
+@app.route('/api/comfyui/status', methods=['GET'])
+def comfyui_status():
+    """Live ComfyUI detection: running state, install path, workflows."""
+    try:
+        info = comfyui_service.detect_comfyui()
+        if info.get("running"):
+            info["install"] = comfyui_service.find_comfyui_install()
+            info["workflows"] = comfyui_service.discover_workflows()
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({"running": False, "error": str(e)})
+
+@app.route('/api/video_models', methods=['GET'])
+def video_models():
+    """ComfyUI video workflows for the video dropdown (live discovery)."""
+    try:
+        return jsonify([
+            {"label": wf["name"], "value": "comfyui::video::" + wf["id"]}
+            for wf in comfyui_service.discover_video_workflows()
+        ])
+    except Exception:
+        return jsonify([])
+
+@app.route('/api/generate_video', methods=['POST'])
+def generate_video():
+    """Generate a video via a running ComfyUI (local)."""
+    data = request.get_json(silent=True) or {}
+    prompt = (data.get('prompt') or '').strip()
+    if not prompt:
+        return jsonify({'error': 'Prompt is required'}), 400
+    workflow = (data.get('workflow') or '').strip()
+    if workflow.startswith("comfyui::video::"):
+        workflow = workflow[len("comfyui::video::"):]
+    elif workflow.startswith("comfyui::"):
+        workflow = workflow[len("comfyui::"):]
+
+    out_dir = root_path("static", "uploads", "generated_video")
+    os.makedirs(out_dir, exist_ok=True)
+    base = os.path.join(out_dir, uuid.uuid4().hex)
+    tmp = base + ".bin"
+
+    try:
+        _, media_name = comfyui_service.generate_video(
+            prompt, tmp, workflow=workflow or None,
+            width=int(data.get('width') or 1280), height=int(data.get('height') or 720),
+            length=int(data.get('length') or 81), steps=int(data.get('steps') or 20),
+            timeout=1800,
+        )
+        ext = os.path.splitext(media_name)[1] or ".mp4"
+        final = base + ext
+        os.replace(tmp, final)
+        return jsonify({'ok': True, 'url': f'/static/uploads/generated_video/{os.path.basename(final)}'})
+    except Exception as e:
+        return jsonify({'error': f'Video generation failed: {str(e)}'}), 500
 
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
@@ -1388,6 +1655,8 @@ def _execute_tool(name, args):
 
 def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=6):
     """Run an OpenAI-style tool-calling loop against an OpenAI-compatible provider."""
+    if isinstance(provider, ClaudeProvider):
+        return _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps)
     messages = list(messages)
     for _ in range(max_steps):
         resp = provider.generate_raw(messages, tools=WORKSPACE_TOOLS, **extra_kwargs)
@@ -1413,6 +1682,86 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=6):
             result = _execute_tool(tc["function"]["name"], args)
             messages.append({"role": "tool", "tool_call_id": tc["id"],
                              "content": std_json.dumps(result, ensure_ascii=False)})
+    return "The model did not finish within the tool-call limit."
+
+
+def _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps=6):
+    """Run the workspace-tool loop using Anthropic's native tool_use / tool_result format."""
+    key = extra_kwargs.get("api_key") or getattr(provider, "_default_key", None)
+    if not key:
+        return "Claude API key is required to use workspace tools."
+    model = extra_kwargs.get("model") or "claude-sonnet-4-5-20250929"
+    temperature = extra_kwargs.get("temperature", provider.DEFAULT_TEMPERATURE)
+    max_tokens = min(extra_kwargs.get("max_tokens", provider.DEFAULT_MAX_TOKENS), provider.MAX_OUTPUT_TOKENS)
+    headers = {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+
+    anthropic_tools = []
+    for t in WORKSPACE_TOOLS:
+        fn = t.get("function", {})
+        anthropic_tools.append({
+            "name": fn.get("name"),
+            "description": fn.get("description", ""),
+            "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+        })
+
+    system = ""
+    claude_msgs = []
+    for m in messages:
+        if m.get("role") == "system":
+            system = (system + "\n\n" + m.get("content", "")).strip()
+        elif m.get("role") in ("user", "assistant"):
+            claude_msgs.append({"role": m["role"], "content": m.get("content", "")})
+
+    for _ in range(max_steps):
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": claude_msgs,
+            "tools": anthropic_tools,
+        }
+        if system:
+            payload["system"] = system
+        try:
+            resp = requests.post("https://api.anthropic.com/v1/messages",
+                                 headers=headers, json=payload, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            if e.response is not None:
+                try:
+                    detail = (e.response.text or "").strip()[:400]
+                except Exception:
+                    detail = ""
+            return f"Claude workspace-tool error: {e}" + (f" {detail}" if detail else "")
+        except requests.exceptions.RequestException as e:
+            return f"Cannot reach Claude: {e}"
+
+        stop = data.get("stop_reason")
+        blocks = data.get("content", [])
+        text_parts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
+        tool_uses = [b for b in blocks if b.get("type") == "tool_use"]
+
+        if stop != "tool_use" or not tool_uses:
+            return "".join(text_parts).strip() or "(Claude returned no text)"
+
+        claude_msgs.append({"role": "assistant", "content": blocks})
+        tool_results = []
+        for tu in tool_uses:
+            args = tu.get("input") or {}
+            result = _execute_tool(tu.get("name"), args)
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tu.get("id"),
+                "content": std_json.dumps(result, ensure_ascii=False),
+            })
+        claude_msgs.append({"role": "user", "content": tool_results})
+
     return "The model did not finish within the tool-call limit."
 
 
@@ -1448,15 +1797,16 @@ def _build_final_prompt(system_prompt: str, user_message: str, files: List[dict]
     return final_prompt
 
 
-def _build_messages(conv_id: str, system_prompt: str, final_prompt: str) -> List[dict]:
+def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include_system: bool = True) -> List[dict]:
     """Build the full message list for a provider call from stored history."""
     messages = []
+    if include_system and system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
     for msg in get_messages(conv_id):
         if msg['role'] == 'user':
             messages.append({"role": "user", "content": msg['text']})
         elif msg['role'] == 'bot':
             messages.append({"role": "assistant", "content": msg['text']})
-    messages = [{"role": "system", "content": system_prompt}] + messages
     messages = trim_conversation_history(messages)
     messages.append({"role": "user", "content": final_prompt})
     return messages
@@ -1769,6 +2119,7 @@ def chat():
         user_message = data.get('message', '').strip()
         images = data.get('images', [])
         files = data.get('files', [])
+        videos = data.get('videos', [])
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
         provider_name = data.get('provider', 'ollama')
@@ -1777,7 +2128,7 @@ def chat():
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
 
-        if not user_message and not images and not files:
+        if not user_message and not images and not files and not videos:
             return jsonify({'error': 'Nothing to send'}), 400
 
         if not conv_id:
@@ -1809,7 +2160,11 @@ def chat():
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
-        messages = _build_messages(conv_id, system_prompt, final_prompt)
+        # llama.cpp GGUF chat templates often require strictly alternating
+        # user/assistant roles, so drop the separate "system" role there (the
+        # system prompt is already folded into final_prompt by _build_final_prompt).
+        messages = _build_messages(conv_id, system_prompt, final_prompt,
+                                   include_system=(provider_name != 'llamacpp'))
 
         extra_kwargs = {"model": model}
         if api_key:
@@ -1823,7 +2178,7 @@ def chat():
             extra_kwargs['num_gpu'] = mem_settings['num_gpu']
             extra_kwargs['low_vram'] = mem_settings['low_vram']
 
-        use_tools = (not images) and provider_name in ("deepseek", "groq", "ollama", "llamacpp") \
+        use_tools = (not images) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
             and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
@@ -1834,16 +2189,20 @@ def chat():
                 return jsonify({'error': 'llama.cpp failed to start: ' + st['error']}), 500
 
         start_time = time.time()
-        if images:
+        if images or videos:
             if cached_vision_check(provider_name, model):
-                reply = provider.generate_with_image(messages, images, **extra_kwargs)
-            else:
+                reply = provider.generate_multimodal(messages, images, videos, **extra_kwargs)
+            elif images:
                 future = _executor.submit(describe_image_with_llava, images[0]["b64"])
                 description = future.result(timeout=60)
                 if description:
                     inject = f"[Image description]\n{description.strip()}\n\n[User question]\n"
                 else:
                     inject = "[Image description unavailable]\n\n[User question]\n"
+                messages[-1]['content'] = inject + messages[-1]['content']
+                reply = provider.generate(messages, **extra_kwargs)
+            else:
+                inject = "[Video attached but this provider/model does not support video input]\n\n[User question]\n"
                 messages[-1]['content'] = inject + messages[-1]['content']
                 reply = provider.generate(messages, **extra_kwargs)
         elif use_tools:
@@ -1856,9 +2215,12 @@ def chat():
         duration = end_time - start_time if end_time > start_time else 1
         usage = {"tokens": int(token_estimate), "duration_sec": round(duration, 2)}
 
+        # Record token/cost estimate for the stats panel.
+        record_usage(provider_name, model, conv_id, _estimate_tokens(final_prompt), usage["tokens"])
+
         original_message = data.get('message', '').strip()
 
-        if not add_message(conv_id, "user", original_message, images, files):
+        if not add_message(conv_id, "user", original_message, images, files + videos):
             return jsonify({'error': f'Failed to save user message to {conv_id}'}), 500
         if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model)):
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
@@ -1978,6 +2340,7 @@ def chat_stream():
                 yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {}})}\n\n"
                 add_message(conv_id, "user", user_message, images, files)
                 add_message(conv_id, "bot", full_response, [], [], meta=_bot_meta("ollama", model))
+                record_usage("ollama", model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
                 return
             try:
                 r = requests.post(
@@ -2008,6 +2371,7 @@ def chat_stream():
 
             add_message(conv_id, "user", user_message, images, files)
             add_message(conv_id, "bot", full_response, [], [], meta=_bot_meta("ollama", model))
+            record_usage("ollama", model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
 
         return Response(generate(), mimetype='text/event-stream')
 

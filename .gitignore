@@ -85,6 +85,12 @@ static/uploads/
 /models/*.gguf
 
 # ──────────────────────────────────────────────────────────────
+# ComfyUI media generation (downloads + output, user-specific)
+# ──────────────────────────────────────────────────────────────
+static/uploads/generated/
+static/uploads/generated_video/
+
+# ──────────────────────────────────────────────────────────────
 # Personal / scratch files
 # ──────────────────────────────────────────────────────────────
 personal.txt

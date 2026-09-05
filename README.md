@@ -45,7 +45,7 @@
 
 - 🔓 **100% free** — no API keys, no limits when using local Ollama models.
 - 🧠 **Any local model** — Qwen, Llama, Mistral, DeepSeek, and more.
-- 🧰 **Multi-provider** — Ollama, Groq, Hugging Face, DeepSeek, Claude, and llama.cpp.
+- 🧰 **Multi-provider** — Ollama, Groq, Hugging Face, DeepSeek, Claude, **Gemini**, and llama.cpp.
 - 🌐 **Optional web search** — DuckDuckGo integration for up-to-date answers.
 - 📎 **File & image upload** — attach images, PDFs, code files, and documents.
 - 🎤 **Voice input** — speech-to-text directly in your browser.
@@ -54,6 +54,8 @@
 - 🗄️ **SQLite audit log** — every message is logged; recover deleted chats.
 - 📝 **Notes & corkboard** — built-in tools for organizing facts and ideas.
 - 💾 **Live monitor** — real-time RAM & VRAM usage tracking.
+- 🖼️ **Image generation** — via **ComfyUI** (Z-Image Turbo / FHDR) or **Gemini** (Nano Banana / Imagen).
+- 🎬 **Video generation (via ComfyUI)** — Wan 2.2 / LTX text-to-video, free & offline.
 - 🔒 **HTTPS** — auto-generates SSL certificates on Windows.
 
 ---
@@ -79,7 +81,10 @@ git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
 
 # 2. Install dependencies
-pip install -r requirements.txt
+#    With uv (recommended) — the launcher uses this automatically:
+#        uv sync
+#    Or with pip:
+#        pip install -r requirements.txt
 
 # 3. Pull a local model (or any model you prefer)
 ollama pull vaultbox/qwen3.5-uncensored:9b
@@ -127,6 +132,21 @@ The launcher also shows a small menu (Run on Windows / Run on Linux-macOS-WSL / 
 
 ---
 
+## 🎬 Image & video generation (ComfyUI)
+
+TrioForge generates images **and videos**. For **images** you can pick either backend in the 🖼️ panel: **Gemini** (Nano Banana / Imagen, cloud, needs a Gemini API key) or **ComfyUI** (local, Z-Image / FHDR). **Videos** run through **ComfyUI** (Wan 2.2 / LTX).
+
+ComfyUI is auto-detected and its workflows are discovered from `blueprints/` and `user/*/workflows/`.
+
+- **🖼️ Images** — click the 🖼️ button in the top bar, pick a workflow (e.g. `Text to Image (Z-Image-Turbo)` or `FHDR-Setup`), type a prompt, and the result is saved to your chat history.
+- **🎬 Videos** — click the 🎬 button, pick `Text to Video (Wan 2.2)` / `Text to Video (LTX-2.3)`, set width/height/length/steps, and generate a playable clip.
+
+> ⚠️ Video models (Wan 2.2 / LTX) are large and VRAM-hungry — start with a short length and small resolution. ComfyUI must be running on `COMFYUI_URL` (default `http://127.0.0.1:8188`).
+
+Generated images/videos are saved under `static/uploads/generated/` and `static/uploads/generated_video/`.
+
+---
+
 ## ⚙️ Configuration
 
 Configuration is done through environment variables — all optional, the app works out of the box with Ollama.
@@ -137,7 +157,11 @@ Configuration is done through environment variables — all optional, the app wo
 | `GROQ_API_KEY` | Groq provider key | *(unset)* |
 | `DEEPSEEK_API_KEY` | DeepSeek provider key | *(unset)* |
 | `ANTHROPIC_API_KEY` | Claude provider key | *(unset)* |
+| `OPENROUTER_API_KEY` | OpenRouter key — gateway to hundreds of models (GPT/Claude/Gemini/Llama/…) + workspace tools | *(unset)* |
+| `GEMINI_API_KEY` | Gemini provider key (or `GOOGLE_API_KEY`) | *(unset)* |
 | `OLLAMA_REGISTRY_TOKEN` | Token for `ollama push` | *(unset)* |
+| `COMFYUI_URL` | ComfyUI server URL (image + video generation) | `http://127.0.0.1:8188` |
+| `COMFYUI_INSTALL` | Optional explicit ComfyUI install path | *(auto-detected)* |
 
 API keys can also be entered directly in the web UI. Keys are never written to disk.
 
@@ -231,8 +255,9 @@ TrioForge/
 │   ├── app.py                   # Main Flask app + chat/conversation routes
 │   ├── common.py                # Shared JSON / SQLite / embedding helpers
 │   ├── paths.py                 # Project-root path helper
+│   ├── comfyui_service.py       # ComfyUI image + video generation (live workflow discovery)
 │   ├── providers/
-│   │   └── llm_providers.py     # LLM provider abstraction (Ollama, Groq, DeepSeek, …)
+│   │   └── llm_providers.py     # LLM provider abstraction (Ollama, Groq, DeepSeek, Gemini, …)
 │   ├── features/
 │   │   ├── notes.py             # Notes blueprint (Obsidian-style knowledge base)
 │   │   ├── cork_board.py        # Corkboard blueprint (pins, links, AI assist)
@@ -246,12 +271,14 @@ TrioForge/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   └── docker-entrypoint.sh
+├── pyproject.toml               # uv project (deps + optional groups)
+├── uv.lock                      # uv lockfile (reproducible env)
 ├── application.bat              # Windows launcher (double-click)
 ├── run.sh                       # Linux / macOS / WSL launcher
 ├── voice_agent.bat              # Voice agent launcher (double-click)
 ├── templates/
 │   └── index.html               # Frontend (HTML/CSS/JS)
-├── static/                      # Static vendor assets (highlight, mermaid, …)
+├── static/                      # Static vendor assets (highlight, mermaid, …) + generated media
 ├── models/                      # Ollama Modelfile + instruction (GGUF weights git-ignored)
 ├── voiceguide_llama.cpp_guide/  # Voice agent config + logs (logs git-ignored)
 ├── json_configuration/          # User data (git-ignored)

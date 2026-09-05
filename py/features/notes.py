@@ -635,6 +635,29 @@ def delete_note(note_id):
     delete_note_from_db(note_id)
     return jsonify({"ok": True})
 
+@notes_bp.route('/api/<note_id>/duplicate', methods=['POST'])
+def duplicate_note(note_id):
+    """Clone a note (new id) so you can fork an idea without retyping it."""
+    note = get_note_from_db(note_id)
+    if not note:
+        return jsonify({"error": "Note not found"}), 404
+    new_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+    new_note = {
+        "id": new_id,
+        "title": (note.get("title") or "Untitled") + " (copy)",
+        "content": note.get("content", ""),
+        "created": now,
+        "last_modified": now,
+        "order": len(load_notes()),
+        "tags": list(note.get("tags", [])),
+        "pinned": False,
+        "color": note.get("color", "default"),
+    }
+    upsert_note(new_id, new_note, created=now)
+    update_note_links(new_id, new_note["content"])
+    return jsonify({"id": new_id, "ok": True})
+
 # ---------- Keyword search ----------
 @notes_bp.route('/api/search', methods=['GET'])
 def search_notes():
@@ -2276,6 +2299,9 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 </div>
                 <div class="note-actions">
                     <button class="save-note" id="saveNoteBtn">💾 Save Note</button>
+                    <button id="dupNoteBtn" style="display:none;">📄 Duplicate</button>
+                    <button id="exportNoteBtn" style="display:none;">⬇️ .md</button>
+                    <span id="wordCount" style="font-size:12px; color:#8b949e; margin-left:6px;"></span>
                     <button id="cancelNoteBtn" style="display:none;">Cancel</button>
                 </div>
                 <div id="aiResult" style="display:none; margin-top:12px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid rgba(255,255,255,0.1); color:#e1e4e8; font-size:14px; white-space:pre-wrap;"></div>
@@ -2640,6 +2666,9 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         if (/(invalid|missing|required|incorrect|wrong).*api key|api key.*(invalid|missing|required|incorrect|wrong)|401|unauthorized|forbidden|authentication|invalid.*key|key.*invalid/.test(lower)) {
             category = 'auth';
             friendly = 'Invalid or missing API key — re-enter it in the API Key field.';
+        } else if (/(gated|lacks access|access to this model|accept.*(license|terms)|(license|terms).*accept|403)/.test(lower)) {
+            category = 'gate';
+            friendly = 'This model is gated — accept its license/terms on huggingface.co, then retry. (It may be free — gated is not the same as paid.)';
         } else if (/(token|context).*(limit|exceed|maximum|too (long|many))|too many tokens|max_tokens|context length/.test(lower)) {
             category = 'token_limit';
             friendly = 'Token/context limit reached — shorten the text or pick a larger-context model.';
@@ -3363,6 +3392,9 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         document.getElementById('pinToggle').classList.remove('active');
         document.getElementById('pinToggle').textContent = '📌 Pin';
         document.getElementById('saveNoteBtn').textContent = '💾 Save Note';
+        document.getElementById('dupNoteBtn').style.display = 'none';
+        document.getElementById('exportNoteBtn').style.display = 'none';
+        document.getElementById('wordCount').textContent = '';
         document.getElementById('cancelNoteBtn').style.display = 'inline-block';
         document.getElementById('noteEditor').scrollIntoView({ behavior: 'smooth' });
         document.getElementById('noteTitleInput').focus();
@@ -3387,6 +3419,9 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         document.getElementById('pinToggle').classList.toggle('active', currentPinned);
         document.getElementById('pinToggle').textContent = currentPinned ? '📌 Pinned' : '📌 Pin';
         document.getElementById('saveNoteBtn').textContent = '✏️ Update Note';
+        document.getElementById('dupNoteBtn').style.display = 'inline-block';
+        document.getElementById('exportNoteBtn').style.display = 'inline-block';
+        updateWordCount();
         document.getElementById('cancelNoteBtn').style.display = 'inline-block';
         updatePreview();
         document.getElementById('noteEditor').scrollIntoView({ behavior: 'smooth' });
@@ -3465,6 +3500,38 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         editingNoteId = null;
         loadNotes();
     });
+
+    // ─── Word count / Duplicate / Export .md ─────────────
+    function updateWordCount() {
+        const c = document.getElementById('noteContentInput').value;
+        const words = c.trim() ? c.trim().split(/\s+/).length : 0;
+        document.getElementById('wordCount').textContent = words + ' words';
+    }
+    document.getElementById('noteContentInput').addEventListener('input', updateWordCount);
+
+    function duplicateCurrentNote() {
+        if (!editingNoteId) return;
+        fetch('/notes/api/' + editingNoteId + '/duplicate', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => { if (data.ok && data.id) { loadNotes(); selectNote(data.id); } });
+    }
+    document.getElementById('dupNoteBtn').addEventListener('click', duplicateCurrentNote);
+
+    function exportNoteMarkdown() {
+        const title = document.getElementById('noteTitleInput').value || 'Untitled';
+        const content = document.getElementById('noteContentInput').value;
+        const tags = document.getElementById('noteTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
+        let md = '# ' + title + '\n\n';
+        if (tags.length) md += 'Tags: ' + tags.map(t => '#' + t.replace(/^#/, '')).join(' ') + '\n\n';
+        md += content + '\n';
+        const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = title.replace(/[^a-z0-9 ]/gi, '_').replace(/ +/g, '_') + '.md';
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+    }
+    document.getElementById('exportNoteBtn').addEventListener('click', exportNoteMarkdown);
 
     // ─── Drag & drop reorder ────────────────────────────
     var dragSrcId = null;
