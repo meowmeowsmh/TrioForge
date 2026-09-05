@@ -1219,6 +1219,13 @@ def generate_image():
                 prompt, tmp, model=data.get('image_model') or None, api_key=api_key,
                 aspect_ratio=data.get('aspect_ratio') or "1:1",
             )
+        elif backend == 'openrouter':
+            gp = providers.get('openrouter')
+            ext = gp.generate_image(
+                prompt, tmp, model=data.get('image_model') or None, api_key=api_key,
+                aspect_ratio=data.get('aspect_ratio') or "1:1",
+                image_size=data.get('image_size') or "1K",
+            )
         else:
             comfy_workflow = (data.get('workflow') or '').strip()
             if not comfy_workflow:
@@ -1238,8 +1245,13 @@ def generate_image():
         return jsonify({'error': f'Image generation failed: {str(e)}'}), 500
 
     url = f'/static/uploads/generated/{out_name}'
-    meta_kind = "api" if backend == 'gemini' else "local"
-    bot_label = "🖼️ Image generated via Gemini" if backend == 'gemini' else "🖼️ Image generated via ComfyUI"
+    meta_kind = "api" if backend in ('gemini', 'openrouter') else "local"
+    if backend == 'gemini':
+        bot_label = "🖼️ Image generated via Gemini"
+    elif backend == 'openrouter':
+        bot_label = "🖼️ Image generated via OpenRouter"
+    else:
+        bot_label = "🖼️ Image generated via ComfyUI"
 
     cid = (data.get('conversation_id') or '').strip()
     if cid:
@@ -1305,18 +1317,33 @@ def video_models():
     except Exception:
         return jsonify([])
 
+@app.route('/api/openrouter/video_models', methods=['GET'])
+def openrouter_video_models():
+    """Live list of OpenRouter video-generation models."""
+    try:
+        key = sanitize_api_key(request.args.get('api_key', None))
+        return jsonify(providers.get('openrouter').list_video_models(key or None))
+    except Exception:
+        return jsonify([])
+
+@app.route('/api/openrouter/image_models', methods=['GET'])
+def openrouter_image_models():
+    """Live list of OpenRouter image-generation models."""
+    try:
+        key = sanitize_api_key(request.args.get('api_key', None))
+        return jsonify(providers.get('openrouter').list_image_models(key or None))
+    except Exception:
+        return jsonify([])
+
 @app.route('/api/generate_video', methods=['POST'])
 def generate_video():
-    """Generate a video via a running ComfyUI (local)."""
+    """Generate a video via OpenRouter (cloud) or ComfyUI (local)."""
     data = request.get_json(silent=True) or {}
     prompt = (data.get('prompt') or '').strip()
     if not prompt:
         return jsonify({'error': 'Prompt is required'}), 400
-    workflow = (data.get('workflow') or '').strip()
-    if workflow.startswith("comfyui::video::"):
-        workflow = workflow[len("comfyui::video::"):]
-    elif workflow.startswith("comfyui::"):
-        workflow = workflow[len("comfyui::"):]
+    backend = (data.get('backend') or 'openrouter').strip().lower()
+    api_key = sanitize_api_key(data.get('api_key', None))
 
     out_dir = root_path("static", "uploads", "generated_video")
     os.makedirs(out_dir, exist_ok=True)
@@ -1324,16 +1351,47 @@ def generate_video():
     tmp = base + ".bin"
 
     try:
-        _, media_name = comfyui_service.generate_video(
-            prompt, tmp, workflow=workflow or None,
-            width=int(data.get('width') or 1280), height=int(data.get('height') or 720),
-            length=int(data.get('length') or 81), steps=int(data.get('steps') or 20),
-            timeout=1800,
-        )
-        ext = os.path.splitext(media_name)[1] or ".mp4"
+        if backend == 'openrouter':
+            gp = providers.get('openrouter')
+            gp.generate_video(
+                prompt, tmp, model=data.get('video_model') or None, api_key=api_key,
+                duration=data.get('duration') or None,
+                resolution=data.get('resolution') or None,
+                aspect_ratio=data.get('aspect_ratio') or None,
+                generate_audio=bool(data.get('generate_audio')),
+            )
+            ext = ".mp4"
+        else:
+            workflow = (data.get('workflow') or '').strip()
+            if workflow.startswith("comfyui::video::"):
+                workflow = workflow[len("comfyui::video::"):]
+            elif workflow.startswith("comfyui::"):
+                workflow = workflow[len("comfyui::"):]
+            _, media_name = comfyui_service.generate_video(
+                prompt, tmp, workflow=workflow or None,
+                width=int(data.get('width') or 1280), height=int(data.get('height') or 720),
+                length=int(data.get('length') or 81), steps=int(data.get('steps') or 20),
+                timeout=1800,
+            )
+            ext = os.path.splitext(media_name)[1] or ".mp4"
         final = base + ext
         os.replace(tmp, final)
-        return jsonify({'ok': True, 'url': f'/static/uploads/generated_video/{os.path.basename(final)}'})
+        url = f'/static/uploads/generated_video/{os.path.basename(final)}'
+
+        # Persist the prompt + video into the conversation so it survives reload.
+        cid = (data.get('conversation_id') or '').strip()
+        if cid:
+            try:
+                add_message(cid, "user", prompt)
+                meta_kind = "api" if backend == 'openrouter' else "local"
+                bot_label = ("🎬 Video generated via OpenRouter" if backend == 'openrouter'
+                             else "🎬 Video generated via ComfyUI")
+                add_message(cid, "bot", bot_label, meta={"kind": meta_kind, "video": url})
+                return jsonify({'ok': True, 'url': url, 'conversation_id': cid})
+            except Exception as e:
+                return jsonify({'ok': True, 'url': url, 'conversation_id': cid,
+                                'warning': f'Video generated, but history not saved: {e}'})
+        return jsonify({'ok': True, 'url': url})
     except Exception as e:
         return jsonify({'error': f'Video generation failed: {str(e)}'}), 500
 

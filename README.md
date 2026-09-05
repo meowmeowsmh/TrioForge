@@ -45,7 +45,7 @@
 
 - 🔓 **100% free** — no API keys, no limits when using local Ollama models.
 - 🧠 **Any local model** — Qwen, Llama, Mistral, DeepSeek, and more.
-- 🧰 **Multi-provider** — Ollama, Groq, Hugging Face, DeepSeek, Claude, **Gemini**, and llama.cpp.
+- 🧰 **Multi-provider** — Ollama, llama.cpp, Hugging Face, Groq, DeepSeek, Claude, **Gemini**, and **OpenRouter** (one key → hundreds of models: GPT, Claude, Gemini, Llama, plus vision, workspace tools, image & video).
 - 🌐 **Optional web search** — DuckDuckGo integration for up-to-date answers.
 - 📎 **File & image upload** — attach images, PDFs, code files, and documents.
 - 🎤 **Voice input** — speech-to-text directly in your browser.
@@ -54,8 +54,8 @@
 - 🗄️ **SQLite audit log** — every message is logged; recover deleted chats.
 - 📝 **Notes & corkboard** — built-in tools for organizing facts and ideas.
 - 💾 **Live monitor** — real-time RAM & VRAM usage tracking.
-- 🖼️ **Image generation** — via **ComfyUI** (Z-Image Turbo / FHDR) or **Gemini** (Nano Banana / Imagen).
-- 🎬 **Video generation (via ComfyUI)** — Wan 2.2 / LTX text-to-video, free & offline.
+- 🖼️ **Image generation** — via **OpenRouter** (52 cloud image models), **Gemini** (Nano Banana / Imagen), or **ComfyUI** (Z-Image Turbo / FHDR, local).
+- 🎬 **Video generation** — via **OpenRouter** (28 cloud video models: Kling, Veo 3, Hailuo, …) or **ComfyUI** (Wan 2.2 / LTX, free & offline).
 - 🔒 **HTTPS** — auto-generates SSL certificates on Windows.
 
 ---
@@ -66,6 +66,8 @@
 - 🎭 **Persona vs default voice** — the persona voice is used for **API-key providers** (Groq / Hugging Face / DeepSeek / Claude), while **local providers** (Ollama / llama.cpp) speak with the default assistant voice — so each bot sounds the way you'd expect.
 - 🖥️ / ☁️ **Local vs API badge** — every bot reply shows a small pill so you can instantly tell whether it came from a **local model** or an **API-key model**, even after a reload.
 - 🔑 **Cross-page key/provider persistence** — your selected provider, model, and API key now carry over between Chat, Notes, and Cork Board (shared localStorage) and survive reloads.
+- 🔏 **Independent per-provider API keys** — each provider (OpenRouter, Gemini, Groq, DeepSeek, Claude, …) stores its **own** key in its own slot, so switching never overwrites another provider's key. One shared input box just shows/saves whichever provider is currently selected.
+- 🧰 **OpenRouter as the all-in-one provider** — one key gets you text chat, **workspace tools** (read/write files in a folder), **image generation** (52 models), and **video generation** (28 models), with a searchable live model dropdown. Image/video routes use the dedicated `/api/v1/images/generations` (image) and `/api/v1/videos` (video) endpoints.
 - 🧾 **Clear error messages** — service errors are classified instead of raw codes: invalid/missing key (401), payment/credit (402), rate limit (429), server error (5xx), timeout, or unreachable — shown in the message area with a **Paid (API)** / **Free (local)** tag.
 - 🧹 **Ollama memory cleanup** — switching models now unloads the previous model first, so RAM/VRAM stops stacking up.
 - 💬 **Circular loading spinner** — a clean rotating spinner while the bot is generating.
@@ -132,16 +134,33 @@ The launcher also shows a small menu (Run on Windows / Run on Linux-macOS-WSL / 
 
 ---
 
-## 🎬 Image & video generation (ComfyUI)
+## 🎬 Image & video generation
 
-TrioForge generates images **and videos**. For **images** you can pick either backend in the 🖼️ panel: **Gemini** (Nano Banana / Imagen, cloud, needs a Gemini API key) or **ComfyUI** (local, Z-Image / FHDR). **Videos** run through **ComfyUI** (Wan 2.2 / LTX).
+TrioForge generates images **and videos**. Pick the backend in each panel, then type a prompt.
+
+### 🖼️ Images
+Three backends, chosen in the 🖼️ panel:
+
+| Backend | Models | Needs | Notes |
+|---------|--------|-------|-------|
+| **OpenRouter** | 52 cloud image models (Mai-Image, Recraft, Seedream, Grok Imagine, …) | OpenRouter API key | Aspect ratio + size (1K/2K/4K) controls |
+| **Gemini** | Nano Banana (`gemini-2.5-flash-image`) / Imagen | Gemini API key | Cloud |
+| **ComfyUI** | Z-Image Turbo / FHDR | Local ComfyUI | Free & offline |
+
+### 🎬 Videos
+Two backends, chosen in the 🎬 panel:
+
+| Backend | Models | Needs | Notes |
+|---------|--------|-------|-------|
+| **OpenRouter** | 28 cloud video models (Kling, Veo 3, Hailuo, …) | OpenRouter API key | Set duration in seconds (5–15s typical) |
+| **ComfyUI** | Wan 2.2 / LTX | Local ComfyUI | Free & offline, VRAM-hungry |
 
 ComfyUI is auto-detected and its workflows are discovered from `blueprints/` and `user/*/workflows/`.
 
-- **🖼️ Images** — click the 🖼️ button in the top bar, pick a workflow (e.g. `Text to Image (Z-Image-Turbo)` or `FHDR-Setup`), type a prompt, and the result is saved to your chat history.
-- **🎬 Videos** — click the 🎬 button, pick `Text to Video (Wan 2.2)` / `Text to Video (LTX-2.3)`, set width/height/length/steps, and generate a playable clip.
+- **🖼️ Images** — click the 🖼️ button in the top bar, pick a backend + model, type a prompt, and the result is saved to your chat history.
+- **🎬 Videos** — click the 🎬 button, pick a backend + model, set resolution/duration, and generate a playable clip.
 
-> ⚠️ Video models (Wan 2.2 / LTX) are large and VRAM-hungry — start with a short length and small resolution. ComfyUI must be running on `COMFYUI_URL` (default `http://127.0.0.1:8188`).
+> ⚠️ ComfyUI video models (Wan 2.2 / LTX) are large and VRAM-hungry — start with a short length and small resolution. ComfyUI must be running on `COMFYUI_URL` (default `http://127.0.0.1:8188`).
 
 Generated images/videos are saved under `static/uploads/generated/` and `static/uploads/generated_video/`.
 
@@ -194,6 +213,8 @@ The model can call three workspace tools:
 | llama.cpp (local GGUF) | ✅ |
 | DeepSeek | ✅ |
 | Groq | ✅ |
+| Claude | ✅ |
+| **OpenRouter** | ✅ (any model that supports tools — GPT/Claude/Gemini/Llama) |
 
 > ⚠️ Tool reliability depends on the model. For llama.cpp, **Qwen3.5** handles tools well; small models (e.g. 1B) often emit malformed tool calls.
 
@@ -257,7 +278,7 @@ TrioForge/
 │   ├── paths.py                 # Project-root path helper
 │   ├── comfyui_service.py       # ComfyUI image + video generation (live workflow discovery)
 │   ├── providers/
-│   │   └── llm_providers.py     # LLM provider abstraction (Ollama, Groq, DeepSeek, Gemini, …)
+│   │   └── llm_providers.py     # LLM provider abstraction (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter)
 │   ├── features/
 │   │   ├── notes.py             # Notes blueprint (Obsidian-style knowledge base)
 │   │   ├── cork_board.py        # Corkboard blueprint (pins, links, AI assist)
