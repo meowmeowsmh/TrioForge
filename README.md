@@ -244,6 +244,8 @@ gunicorn -c py/gunicorn_conf.py py.app:app
 
 ## 🐳 Docker
 
+Docker runs the app with **gunicorn** (a Linux production WSGI server — the native Windows path uses Waitress instead). This is the recommended way to run TrioForge on a **Linux server, WSL2, or a NAS**.
+
 ```bash
 cd docker
 docker compose build     # build the image
@@ -251,7 +253,35 @@ docker compose up -d     # start in detached mode
 docker compose logs -f   # follow the logs
 ```
 
-Then open **https://localhost:5001/**.
+Then open **https://localhost:5001/** (or `http://localhost:5001/` if you skip certs — see below).
+
+### How it works
+
+1. **`Dockerfile`** — a slim `python:3.10-slim` image. It installs the system build tools, the Python deps from `requirements.txt`, copies the app, then starts gunicorn on port **5001**. The CMD runs `docker-entrypoint.sh` as the entrypoint *before* gunicorn.
+2. **`docker-entrypoint.sh`** — a tiny script that generates a **self-signed TLS certificate** (`cert_store/localhost+1.pem` + `-key.pem`) if you haven't mounted one, then execs gunicorn. `gunicorn_conf.py` reads those certs and serves **HTTPS**. Your browser will warn the cert isn't trusted — mount your own `cert_store/` volume (e.g. mkcert-issued) if you want a trusted cert, or ignore it.
+3. **`docker-compose.yml`** — binds port **`5001:5001`**, mounts your data directories as volumes, and points the app at your host's Ollama via `OLLAMA_BASE_URL=http://host.docker.internal:11434`. `extra_hosts: host.docker.internal:host-gateway` makes that hostname resolve on Linux Docker Engine too (Docker Desktop on Mac/Windows/WSL2 already maps it).
+
+### Connecting Ollama
+
+The app talks to Ollama on the host (not in a container). Two options:
+
+- **Ollama on the host** (default) — leave `OLLAMA_BASE_URL` as `http://host.docker.internal:11434`. Works out of the box on Docker Desktop and on Linux with `host-gateway`.
+- **Ollama in its own container** — uncomment the `ollama:` service in `docker-compose.yml`, then point the app at `OLLAMA_BASE_URL=http://ollama:11434`.
+
+### Data persistence & git-ignore
+
+The compose file mounts these as volumes so your data survives restarts:
+
+| Host path | Container path | Purpose |
+|-----------|----------------|---------|
+| `../json_configuration` | `/app/json_configuration` | Conversations, notes, model config |
+| `sqlite_volume` (named volume) | `/app/sqlite_data` | SQLite chat history (named volume avoids Windows FS I/O errors) |
+| `../static/uploads` | `/app/static/uploads` | Uploaded files & generated media |
+| `../cert_store` | `/app/cert_store` | TLS certificates |
+
+**Important:** the image deliberately excludes your local models. `models/` (~11 GB of GGUF weights) is in `.dockerignore`, and your `.venv/` is too — the container installs its own deps and runs its own model files locally on the host. Cloud providers (OpenRouter / Gemini / Groq / etc.) need no local weights.
+
+> ⚠️ The app uses `fork()`/POSIX signals, so gunicorn only runs on **Linux / WSL2 / macOS**, not native Windows. On Windows use `application.bat` (Waitress) instead.
 
 ---
 

@@ -7,7 +7,13 @@ __pycache__/
 .git/
 .vscode/
 .idea/
+.venv/
 venv/
 env/
+models/
+*.gguf
 *.log
 *.tmp
+personal.txt
+weather.html
+docker/ollama_data/
