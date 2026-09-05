@@ -87,6 +87,9 @@ from features.cork_board import corkboard_bp, upsert_pin, add_link
 from features.viewer import setup_viewer
 import personas
 import comfyui_service
+import rag
+import plugin_loader
+import setup_check
 
 try:
     import pynvml
@@ -100,6 +103,12 @@ app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25 MB request body cap (u
 Compress(app)
 app.register_blueprint(notes_bp)
 app.register_blueprint(corkboard_bp)
+
+# ── Plugins (loaded best-effort at startup) ──
+try:
+    plugin_loader.load_all(app)
+except Exception as _plugin_exc:
+    logger.warning("Plugin loading failed: %s", _plugin_exc)
 
 # ── Lightweight per-IP rate limiting ──
 _rate_limit_lock = threading.Lock()
@@ -835,14 +844,17 @@ providers = {
 API_PROVIDERS = {"groq", "huggingface", "deepseek", "claude", "openrouter", "gemini"}
 
 
-def _bot_meta(provider_name, model):
+def _bot_meta(provider_name, model, reasoning=None):
     """Tag a bot message so the UI can show whether it came from a local model
-    (free) or an API-key model (paid)."""
-    return {
+    (free) or an API-key model (paid), and optionally its chain-of-thought."""
+    meta = {
         "kind": "api" if provider_name in API_PROVIDERS else "local",
         "provider": provider_name,
         "model": model or None,
     }
+    if reasoning:
+        meta["reasoning"] = reasoning
+    return meta
 
 # Estimated cost per 1,000,000 tokens (input, output) for paid providers.
 # These are rough averages and are editable here if your plan differs.
@@ -1643,8 +1655,30 @@ WORKSPACE_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_files",
-            "description": "List the files currently in the workspace folder.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            "description": "List files and folders in the workspace folder, optionally recursively under a sub-path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "relative sub-folder to list (empty for the root)"},
+                    "recursive": {"type": "boolean", "description": "list the whole tree recursively"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_files",
+            "description": "Search file names and contents in the workspace folder for a term or regular expression.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "text or regex to search for"},
+                    "regex": {"type": "boolean", "description": "treat query as a regular expression"},
+                },
+                "required": ["query"], "additionalProperties": False,
+            },
         },
     },
     {
@@ -1663,7 +1697,7 @@ WORKSPACE_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write a text file to the workspace folder (only allowed when folder access is full).",
+            "description": "Write (create or overwrite) a text file in the workspace folder. Only allowed when folder access is readwrite.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1674,17 +1708,125 @@ WORKSPACE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Make a surgical text replacement in a file: replace the first exact occurrence of old_string with new_string. Safer than rewriting the whole file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "relative path inside the workspace folder"},
+                    "old_string": {"type": "string", "description": "exact text to replace"},
+                    "new_string": {"type": "string", "description": "replacement text"},
+                },
+                "required": ["path", "old_string", "new_string"], "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Run a shell command inside the workspace folder and return its stdout/stderr (bounded to a few seconds). Use for building, testing, git, or inspecting files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "the shell command to run"},
+                },
+                "required": ["command"], "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web (DuckDuckGo) and return the top snippet(s) for up-to-date facts, docs, or APIs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "the search query"},
+                },
+                "required": ["query"], "additionalProperties": False,
+            },
+        },
+    },
 ]
+
+
+def _list_files_recursive(base, rel=""):
+    """Return a sorted list of relative paths (dirs end with '/') under `base`."""
+    out = []
+    try:
+        entries = sorted(os.listdir(os.path.join(base, rel) if rel else base))
+    except OSError as e:
+        return [{"error": str(e)}]
+    for name in entries:
+        if name.startswith('.git') or name in ('__pycache__', 'node_modules', '.venv', 'venv'):
+            continue
+        p = os.path.join(base, rel, name) if rel else os.path.join(base, name)
+        relp = (rel + "/" + name) if rel else name
+        if os.path.isdir(p):
+            out.append(relp + "/")
+            out.extend(_list_files_recursive(base, relp))
+        else:
+            out.append(relp)
+    return out
 
 
 def _execute_tool(name, args):
     """Run a workspace-folder tool and return a JSON-serializable result."""
     wid = _current_workspace_id()
+    base = _workspace_setting(wid, "folder", "") or ""
+
     if name == "list_files":
-        base = _workspace_setting(wid, "folder", "") or ""
         if not base or not os.path.isdir(base):
             return {"error": "No workspace folder configured."}
-        return {"files": sorted(os.listdir(base))}
+        sub = args.get("path") or ""
+        target, err = _resolve_workspace_file(wid, sub)
+        if err:
+            return {"error": err}
+        if not os.path.isdir(target):
+            return {"error": "Not a folder: {}".format(sub)}
+        if args.get("recursive"):
+            return {"files": _list_files_recursive(target)}
+        return {"files": sorted(os.listdir(target))}
+
+    if name == "search_files":
+        if not base or not os.path.isdir(base):
+            return {"error": "No workspace folder configured."}
+        query = args.get("query", "")
+        if not query:
+            return {"error": "Query is required."}
+        use_regex = bool(args.get("regex"))
+        try:
+            rx = re.compile(query) if use_regex else None
+        except re.error as e:
+            return {"error": "Invalid regex: {}".format(e)}
+        matches = []
+        for relp in _list_files_recursive(base):
+            if relp.endswith("/"):
+                continue
+            full = os.path.join(base, relp)
+            hit = False
+            if rx:
+                hit = bool(rx.search(relp))
+            else:
+                hit = query.lower() in relp.lower()
+            if not hit:
+                try:
+                    with open(full, "r", encoding="utf-8", errors="replace") as f:
+                        text = f.read(20000)
+                    hit = (bool(rx.search(text)) if rx else (query.lower() in text.lower()))
+                except Exception:
+                    hit = False
+            if hit:
+                matches.append(relp)
+            if len(matches) >= 50:
+                break
+        return {"matches": matches}
+
     if name == "read_file":
         target, err = _resolve_workspace_file(wid, args.get("path", ""))
         if err:
@@ -1696,6 +1838,7 @@ def _execute_tool(name, args):
                 return {"content": f.read()[:20000]}
         except Exception as e:
             return {"error": str(e)}
+
     if name == "write_file":
         if _workspace_setting(wid, "folder_mode", "read") != "readwrite":
             return {"error": "Workspace folder is read-only."}
@@ -1703,16 +1846,83 @@ def _execute_tool(name, args):
         if err:
             return {"error": err}
         try:
+            os.makedirs(os.path.dirname(target), exist_ok=True) if os.path.dirname(target) else None
             with open(target, "w", encoding="utf-8") as f:
                 f.write(args.get("content", ""))
-            return {"ok": True}
+            return {"ok": True, "path": args.get("path", "")}
         except Exception as e:
             return {"error": str(e)}
+
+    if name == "edit_file":
+        if _workspace_setting(wid, "folder_mode", "read") != "readwrite":
+            return {"error": "Workspace folder is read-only."}
+        target, err = _resolve_workspace_file(wid, args.get("path", ""))
+        if err:
+            return {"error": err}
+        if not os.path.isfile(target):
+            return {"error": "File not found: {}".format(args.get("path"))}
+        old = args.get("old_string", "")
+        new = args.get("new_string", "")
+        if old == "" or old == new:
+            return {"error": "old_string must be non-empty and different from new_string."}
+        try:
+            with open(target, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except Exception as e:
+            return {"error": str(e)}
+        count = text.count(old)
+        if count == 0:
+            return {"error": "old_string not found in file."}
+        if count > 1:
+            return {"error": "old_string is ambiguous (found {} times). Provide a longer, unique string.".format(count)}
+        try:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(text.replace(old, new, 1))
+            return {"ok": True, "path": args.get("path", ""), "replaced": 1}
+        except Exception as e:
+            return {"error": str(e)}
+
+    if name == "run_command":
+        if not base or not os.path.isdir(base):
+            return {"error": "No workspace folder configured."}
+        cmd = args.get("command", "")
+        if not cmd:
+            return {"error": "Command is required."}
+        try:
+            proc = subprocess.run(
+                cmd, shell=True, cwd=base, capture_output=True, text=True,
+                timeout=30, errors="replace",
+            )
+            out = (proc.stdout or "") + (proc.stderr or "")
+            return {"exit_code": proc.returncode, "output": out[-4000:]}
+        except subprocess.TimeoutExpired:
+            return {"error": "Command timed out after 30s."}
+        except Exception as e:
+            return {"error": str(e)}
+
+    if name == "web_search":
+        query = (args.get("query") or "").strip()
+        if not query:
+            return {"error": "Query is required."}
+        if not SEARCH_AVAILABLE:
+            return {"error": "Web search unavailable (install duckduckgo-search)."}
+        try:
+            future = _executor.submit(lambda: DDGS().text(query, max_results=3))
+            results = future.result(timeout=3)
+            snippets = [r.get("body", "") for r in results if r.get("body")]
+            return {"results": snippets[:3]}
+        except Exception as e:
+            return {"error": "Search failed: {}".format(e)}
+
     return {"error": "Unknown tool: {}".format(name)}
 
 
-def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=6):
-    """Run an OpenAI-style tool-calling loop against an OpenAI-compatible provider."""
+def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
+    """Run an OpenAI-style tool-calling loop against an OpenAI-compatible provider.
+
+    max_steps caps the number of model→tool round-trips (a "coding agent" loop:
+    read, edit, run, repeat until done). 20 is enough for a multi-file task.
+    """
     if isinstance(provider, ClaudeProvider):
         return _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps)
     messages = list(messages)
@@ -1743,7 +1953,7 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=6):
     return "The model did not finish within the tool-call limit."
 
 
-def _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps=6):
+def _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps=20):
     """Run the workspace-tool loop using Anthropic's native tool_use / tool_result format."""
     key = extra_kwargs.get("api_key") or getattr(provider, "_default_key", None)
     if not key:
@@ -2046,6 +2256,71 @@ def voice_command():
     return jsonify({"ok": False, "message": "Unknown command '{}'. Try /help.".format(raw)}), 400
 
 
+# ── A/B model compare ─────────────────────────────────────────
+def _compare_single(provider_name, model, api_key, system_prompt, user_message, persona, persona_custom):
+    """Run one model and return {text, reasoning, error, duration_sec}."""
+    provider = providers.get(provider_name)
+    if not provider:
+        return {"error": f"Unknown provider: {provider_name}"}
+    if api_key and hasattr(provider, '_default_key'):
+        provider._default_key = api_key
+    sys_prompt = provider.get_system_prompt()
+    _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
+    if _persona:
+        sys_prompt = _persona + "\n\n" + sys_prompt
+    messages = [{"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_message}]
+    kwargs = {"model": model}
+    if api_key:
+        kwargs['api_key'] = api_key
+    start = time.time()
+    try:
+        text = provider.generate(messages, **kwargs)
+        reasoning = getattr(provider, "last_reasoning", "") or ""
+        return {"text": text or "", "reasoning": reasoning,
+                "duration_sec": round(time.time() - start, 2)}
+    except Exception as e:
+        return {"error": str(e), "duration_sec": round(time.time() - start, 2)}
+
+
+@app.route('/api/compare', methods=['POST'])
+@rate_limited(max_per_minute=30)
+def compare_models():
+    """Run two models side-by-side on the same prompt."""
+    data = request.get_json(force=True, silent=True) or {}
+    user_message = (data.get('message') or '').strip()
+    if not user_message:
+        return jsonify({'error': 'Message is required'}), 400
+    a = data.get('a') or {}
+    b = data.get('b') or {}
+    a_provider = a.get('provider', 'ollama')
+    b_provider = b.get('provider', 'ollama')
+    if a_provider == b_provider and (a.get('model') == b.get('model')):
+        return jsonify({'error': 'Choose two different models (or providers) to compare.'}), 400
+
+    persona = data.get('persona') or ''
+    persona_custom = data.get('persona_custom') or ''
+
+    from concurrent.futures import ThreadPoolExecutor
+    def run(side):
+        p, m = (a_provider, a.get('model')) if side == 'A' else (b_provider, b.get('model'))
+        key = (a.get('api_key') if side == 'A' else b.get('api_key'))
+        key = sanitize_api_key(key)
+        return _compare_single(p, m, key, None, user_message, persona, persona_custom)
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fa = ex.submit(run, 'A')
+        fb = ex.submit(run, 'B')
+        res_a = fa.result()
+        res_b = fb.result()
+
+    return jsonify({
+        'prompt': user_message,
+        'a': {'provider': a_provider, 'model': a.get('model'), **res_a},
+        'b': {'provider': b_provider, 'model': b.get('model'), **res_b},
+    })
+
+
 # ── Workspace / API-key routes ──
 @app.route('/api/workspaces', methods=['GET'])
 def list_workspaces():
@@ -2133,6 +2408,58 @@ def workspace_files():
     return jsonify({"folder": base, "mode": _workspace_setting(wid, "folder_mode", "read"), "files": items})
 
 
+# ── Plugins ───────────────────────────────────────────
+@app.route('/api/plugins', methods=['GET'])
+def api_plugins():
+    """List loaded plugins (for the services/plugins panel)."""
+    return jsonify(plugin_loader.list_loaded())
+
+
+# ── First-run setup checker ───────────────────────────
+@app.route('/api/setup/check', methods=['GET'])
+def setup_check_status():
+    """Return which local services/files are present vs. missing (with links)."""
+    return jsonify(setup_check.summary())
+
+
+# ── RAG document chat ───────────────────────────────────────────
+@app.route('/api/rag/documents', methods=['GET'])
+def rag_documents():
+    """List indexed documents (for the RAG panel)."""
+    return jsonify(rag.list_documents())
+
+
+@app.route('/api/rag/index', methods=['POST'])
+def rag_index():
+    """Index one uploaded document (base64)."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or 'document').strip()
+    b64 = data.get('b64') or ''
+    if not name or not b64:
+        return jsonify({'error': 'name and b64 are required'}), 400
+    try:
+        if ',' in b64:
+            b64 = b64.split(',', 1)[1]
+        raw = base64.b64decode(b64)
+    except Exception as e:
+        return jsonify({'error': 'Invalid base64: {}'.format(e)}), 400
+    try:
+        n = rag.index_document(name, raw)
+        return jsonify({'ok': True, 'name': name, 'chunks': n})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/rag/delete', methods=['POST'])
+def rag_delete():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    rag.delete_document(name)
+    return jsonify({'ok': True})
+
+
 @app.route('/api/workspace/read', methods=['POST'])
 def workspace_read_file():
     data = request.get_json(silent=True) or {}
@@ -2180,6 +2507,7 @@ def chat():
         videos = data.get('videos', [])
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
+        rag_enabled = data.get('rag', False)
         provider_name = data.get('provider', 'ollama')
         model = data.get('model', None)
         api_key = sanitize_api_key(data.get('api_key', None))
@@ -2203,6 +2531,7 @@ def chat():
             return jsonify({'response': output})
 
         search_context = _run_web_search(user_message, search_enabled)
+        rag_context = rag.build_context(user_message) if rag_enabled else ""
 
         provider = providers.get(provider_name)
         if not provider:
@@ -2218,6 +2547,11 @@ def chat():
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
+        if rag_context:
+            final_prompt += (
+                "\n\n[Reference documents — use these to answer the user's question]\n"
+                + rag_context
+            )
         # llama.cpp GGUF chat templates often require strictly alternating
         # user/assistant roles, so drop the separate "system" role there (the
         # system prompt is already folded into final_prompt by _build_final_prompt).
@@ -2280,7 +2614,8 @@ def chat():
 
         if not add_message(conv_id, "user", original_message, images, files + videos):
             return jsonify({'error': f'Failed to save user message to {conv_id}'}), 500
-        if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model)):
+        reasoning = getattr(provider, "last_reasoning", "") or ""
+        if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model, reasoning)):
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
 
         return jsonify({'response': reply, 'usage': usage})
@@ -2297,6 +2632,56 @@ def chat():
         logger.error("Error: %s", e)
         return jsonify({'error': str(e)}), 500
 
+def _openai_stream_target(provider_name, api_key):
+    """Return (url, headers) for an OpenAI-compatible chat.completions stream, or None."""
+    if provider_name == "llamacpp":
+        lp = providers.get("llamacpp")
+        url = (getattr(lp, "server_url", "http://127.0.0.1:8080/v1")).rstrip("/") + "/chat/completions"
+        return url, {"Content-Type": "application/json"}
+    if provider_name == "deepseek":
+        return "https://api.deepseek.com/v1/chat/completions", {
+            "Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    if provider_name == "groq":
+        return "https://api.groq.com/openai/v1/chat/completions", {
+            "Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    if provider_name == "openrouter":
+        return "https://openrouter.ai/api/v1/chat/completions", {
+            "Content-Type": "application/json", "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://trioforge.local", "X-Title": "TrioForge"}
+    if provider_name == "huggingface":
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        return "https://router.huggingface.co/v1/chat/completions", headers
+    return None
+
+
+def _iter_openai_stream(url, headers, payload):
+    """Yield {'reasoning': …} / {'token': …} dicts from an OpenAI-compatible SSE stream."""
+    resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=300)
+    resp.raise_for_status()
+    for raw in resp.iter_lines():
+        if not raw:
+            continue
+        line = raw.decode("utf-8", errors="replace").strip()
+        if not line.startswith("data:"):
+            continue
+        data_str = line[5:].strip()
+        if data_str == "[DONE]":
+            break
+        try:
+            obj = std_json.loads(data_str)
+        except Exception:
+            continue
+        delta = (obj.get("choices") or [{}])[0].get("delta") or {}
+        reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
+        content = delta.get("content") or ""
+        if reasoning:
+            yield {"reasoning": reasoning}
+        if content:
+            yield {"token": content}
+
+
 @app.route('/chat_stream', methods=['POST'])
 @rate_limited(max_per_minute=20)
 def chat_stream():
@@ -2307,14 +2692,13 @@ def chat_stream():
         files = data.get('files', [])
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
+        rag_enabled = data.get('rag', False)
         model = data.get('model', current_model)
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
 
         provider_name = data.get('provider', 'ollama')
-        if provider_name != 'ollama':
-            return jsonify({'error': 'Streaming only supported for Ollama in this version.'}), 400
 
         if not user_message and not images and not files:
             return jsonify({'error': 'Nothing to send'}), 400
@@ -2326,110 +2710,120 @@ def chat_stream():
             if conv is None:
                 return jsonify({'error': 'Conversation not found'}), 404
 
-        if is_ollama_command(user_message):
+        if is_ollama_command(user_message) and provider_name == 'ollama':
             return Response(
                 handle_ollama_command_stream(conv_id, user_message, images, files),
                 mimetype='text/event-stream'
             )
 
         search_context = _run_web_search(user_message, search_enabled)
+        rag_context = rag.build_context(user_message) if rag_enabled else ""
 
         provider = providers.get(provider_name)
         if not provider:
             return jsonify({'error': f'Unknown provider: {provider_name}'}), 400
+        if api_key and hasattr(provider, '_default_key'):
+            provider._default_key = api_key
 
         system_prompt = provider.get_system_prompt()
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
-        messages = _build_messages(conv_id, system_prompt, final_prompt)
+        if rag_context:
+            final_prompt += "\n\n[Reference documents — use these to answer the user's question]\n" + rag_context
+        include_system = (provider_name != 'llamacpp')
+        messages = _build_messages(conv_id, system_prompt, final_prompt, include_system=include_system)
 
         mem_settings = get_ollama_memory_settings()
-
-        use_tools = (not images) and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
+        use_tools = (not images) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
+            and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
 
         # Workspace tools are resolved non-streaming first, then we stream the
         # final answer so the client keeps its normal token-by-token UI.
         tool_final_text = None
         if use_tools:
-            extra_kwargs = {
-                "model": model or current_model,
-                "num_gpu": mem_settings['num_gpu'],
-                "low_vram": mem_settings['low_vram'],
-            }
+            extra_kwargs = {"model": model or current_model}
+            if api_key:
+                extra_kwargs['api_key'] = api_key
             try:
                 tool_final_text = _run_chat_with_tools(provider, messages, extra_kwargs)
             except Exception as e:
                 tool_final_text = f"[tool error] {e}"
 
-        payload = {
-            "model": model or current_model,
-            "messages": messages,
-            "stream": True,
-            "options": {
-                "temperature": 0.7,
-                "num_predict": 16384,
-                "num_ctx": 16384,
-                "num_gpu": mem_settings['num_gpu'],
-            }
-        }
-        if images:
-            last_msg = messages[-1]
-            b64_list = []
-            for img in images:
-                b64 = img["b64"]
-                if "," in b64:
-                    b64 = b64.split(",", 1)[1]
-                b64_list.append(b64)
-            payload["messages"][-1] = {
-                "role": "user",
-                "content": last_msg["content"],
-                "images": b64_list
-            }
-
         def generate():
             full_response = ""
+            thinking_acc = ""
             if tool_final_text is not None:
-                # Emit the already-resolved tool answer as a single token chunk,
-                # then finish. The frontend renders it identically to streaming.
-                full_response = tool_final_text
-                yield f"data: {json_dumps({'token': full_response})}\n\n"
-                yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {}})}\n\n"
+                yield f"data: {json_dumps({'token': tool_final_text})}\n\n"
+                yield f"data: {json_dumps({'done': True, 'full_response': tool_final_text, 'usage': {}})}\n\n"
                 add_message(conv_id, "user", user_message, images, files)
-                add_message(conv_id, "bot", full_response, [], [], meta=_bot_meta("ollama", model))
-                record_usage("ollama", model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
+                add_message(conv_id, "bot", tool_final_text, [], [], meta=_bot_meta(provider_name, model))
+                record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(tool_final_text))
                 return
-            try:
-                r = requests.post(
-                    f"{OLLAMA_BASE_URL}/api/chat",
-                    json=payload,
-                    stream=True,
-                    timeout=300
-                )
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if line:
+
+            # ── Ollama: native NDJSON streaming with live `thinking` ──
+            if provider_name == "ollama":
+                payload = {
+                    "model": model or current_model,
+                    "messages": messages,
+                    "stream": True,
+                    "options": {
+                        "temperature": 0.7, "num_predict": 16384, "num_ctx": 16384,
+                        "num_gpu": mem_settings['num_gpu'],
+                    }
+                }
+                if images:
+                    b64_list = [i["b64"].split(",", 1)[1] if "," in i["b64"] else i["b64"] for i in images]
+                    payload["messages"][-1] = {"role": "user", "content": messages[-1]["content"], "images": b64_list}
+                try:
+                    r = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, stream=True, timeout=300)
+                    r.raise_for_status()
+                    for line in r.iter_lines():
+                        if not line:
+                            continue
                         chunk = json_loads(line)
-                        if "message" in chunk and "content" in chunk["message"]:
-                            token = chunk["message"]["content"]
-                            if token:
-                                full_response += token
-                                yield f"data: {json_dumps({'token': token})}\n\n"
+                        msg = chunk.get("message") or {}
+                        if msg.get("thinking"):
+                            thinking_acc += msg["thinking"]
+                            yield f"data: {json_dumps({'reasoning': msg['thinking']})}\n\n"
+                        if msg.get("content"):
+                            full_response += msg["content"]
+                            yield f"data: {json_dumps({'token': msg['content']})}\n\n"
                         if chunk.get("done", False):
                             usage = {}
                             if "eval_count" in chunk and "eval_duration" in chunk:
-                                duration_sec = chunk.get("eval_duration", 0) / 1e9
-                                token_count = chunk.get("eval_count", 0)
-                                usage = {"tokens": token_count, "duration_sec": duration_sec}
-                            yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': usage})}\n\n"
+                                usage = {"tokens": chunk.get("eval_count", 0),
+                                         "duration_sec": chunk.get("eval_duration", 0) / 1e9}
+                            yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': usage, 'reasoning': thinking_acc})}\n\n"
                             break
-            except Exception as e:
-                yield f"data: {json_dumps({'error': str(e)})}\n\n"
+                except Exception as e:
+                    yield f"data: {json_dumps({'error': str(e)})}\n\n"
+
+            # ── OpenAI-compatible providers: live reasoning_content deltas ──
+            else:
+                target = _openai_stream_target(provider_name, api_key)
+                if target is None:
+                    yield f"data: {json_dumps({'error': 'Streaming not supported for ' + provider_name})}\n\n"
+                else:
+                    url, headers = target
+                    payload = {"model": model, "messages": messages, "stream": True, "temperature": 0.7}
+                    try:
+                        for ev in _iter_openai_stream(url, headers, payload):
+                            if "reasoning" in ev:
+                                thinking_acc += ev["reasoning"]
+                                yield f"data: {json_dumps({'reasoning': ev['reasoning']})}\n\n"
+                            if "token" in ev:
+                                full_response += ev["token"]
+                                yield f"data: {json_dumps({'token': ev['token']})}\n\n"
+                        yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {'tokens': _estimate_tokens(full_response), 'duration_sec': 0}, 'reasoning': thinking_acc})}\n\n"
+                    except Exception as e:
+                        yield f"data: {json_dumps({'error': str(e)})}\n\n"
 
             add_message(conv_id, "user", user_message, images, files)
-            add_message(conv_id, "bot", full_response, [], [], meta=_bot_meta("ollama", model))
-            record_usage("ollama", model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
+            add_message(conv_id, "bot", full_response or "(empty response)", [], [],
+                        meta=_bot_meta(provider_name, model, thinking_acc))
+            record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
 
         return Response(generate(), mimetype='text/event-stream')
 
@@ -2439,7 +2833,7 @@ def chat_stream():
         return jsonify({'error': 'Request timed out. Try a shorter message.'}), 504
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
-            return jsonify({'error': f'Model "{model}" not found in Ollama. Please pull it first.'}), 404
+            return jsonify({'error': f'Model "{model}" not found. Please check the model name.'}), 404
         raise
     except Exception as e:
         logger.error("chat_stream error: %s", e)
