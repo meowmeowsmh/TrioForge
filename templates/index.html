@@ -1529,6 +1529,8 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">⌨️</button>
         <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
         <button class="clear-btn" id="compareBtn" onclick="toggleComparePanel()" title="A/B compare — run two models side-by-side" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">⚔️</button>
+        <button class="clear-btn" id="multiBtn" onclick="toggleMultiPanel()" title="Multi-agent — run several models on one task" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🤝</button>
+        <button class="clear-btn" id="liveCodeBtn" onclick="toggleLiveCodePanel()" title="Live coding — watch the agent edit files in real time" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📝</button>
         <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">🖼️</button>
         <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
         <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
@@ -1654,6 +1656,35 @@ body.light-mode .weather-country-select option {
         <button id="cmpRunBtn" onclick="runCompare()" style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border:none; border-radius:8px; padding:0 20px; font-weight:600; cursor:pointer;">⚔️ Compare</button>
       </div>
       <div id="cmpResults" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- Multi-agent panel -->
+    <div id="multiPanel" style="display:none; padding:12px 40px; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.6);">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <span style="font-size:13px; font-weight:600; color:#3fb950;">🤝 Multi-agent — several models, one task</span>
+        <span style="font-size:11px; color:#8b949e;">Each agent gets an optional role; they answer in parallel and results merge below.</span>
+      </div>
+      <div id="multiAgents" style="margin-bottom:10px;"></div>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button onclick="addMultiAgent()" style="padding:6px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">+ Add agent</button>
+        <input id="multiPrompt" type="text" placeholder="Task for the agents…" style="flex:1; padding:10px 12px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:8px; font-size:14px;">
+        <button id="multiRunBtn" onclick="runMultiAgent()" style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border:none; border-radius:8px; padding:0 20px; font-weight:600; cursor:pointer;">🤝 Run</button>
+      </div>
+      <div id="multiResults" style="display:flex; flex-direction:column; gap:10px;"></div>
+    </div>
+
+    <!-- Live coding panel (right side) -->
+    <div id="liveCodePanel" style="display:none; position:fixed; top:60px; right:0; width:min(440px, 92vw); bottom:60px; z-index:5000; background:#0d0d13; border-left:1px solid #333; box-shadow:-4px 0 20px rgba(0,0,0,0.5); display:flex; flex-direction:column;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222;">
+        <strong style="font-size:14px; color:#a371f7;">📝 Live coding — agent edits</strong>
+        <div style="display:flex; gap:6px;">
+          <button onclick="clearLiveCode()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">Clear</button>
+          <button onclick="toggleLiveCodePanel()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
+        </div>
+      </div>
+      <div id="liveCodeBody" style="flex:1; overflow-y:auto; padding:12px 14px; font-size:12px;">
+        <div style="color:#8b949e;">No edits yet. When the agent writes/edits files (with a workspace configured), changes appear here live.</div>
+      </div>
     </div>
 
     <!-- Weather Toast Container -->
@@ -2516,6 +2547,7 @@ function activateWorkspace(id, list) {
     document.getElementById('wsThinking').value = w.thinking || 'high';
     document.getElementById('wsFolder').value = w.folder || '';
     document.getElementById('wsFolderMode').value = w.folder_mode || 'read';
+    document.getElementById('wsFullAccess').checked = !!w.full_access;
     wsDeps = (w.dependencies || []).slice();
     renderDeps();
     document.getElementById('wsStatus').textContent = '';
@@ -2543,7 +2575,8 @@ function saveWorkspace() {
         thinking: document.getElementById('wsThinking').value || 'high',
         folder: document.getElementById('wsFolder').value.trim(),
         folder_mode: document.getElementById('wsFolderMode').value || 'read',
-        dependencies: wsDeps
+        dependencies: wsDeps,
+        full_access: document.getElementById('wsFullAccess').checked
     };
     fetch('/api/workspaces/' + id, {
         method: 'PUT',
@@ -3819,6 +3852,189 @@ function renderCompareSide(label, side) {
     body.textContent = side.text || '(empty)';
     card.appendChild(body);
     return card;
+}
+
+// ─── Multi-agent ────────────────────────────────────────────
+var multiAgentCount = 0;
+function addMultiAgent(provider, model, role) {
+    var box = document.getElementById('multiAgents');
+    multiAgentCount++;
+    var row = document.createElement('div');
+    row.className = 'multi-agent-row';
+    row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-bottom:6px;';
+    var prov = document.createElement('select');
+    prov.className = 'multi-provider model-select';
+    prov.style.cssText = 'flex:0 0 auto;';
+    CMP_PROVIDERS.forEach(function(p) {
+        var o = document.createElement('option');
+        o.value = p; o.textContent = p;
+        if (p === (provider || 'ollama')) o.selected = true;
+        prov.appendChild(o);
+    });
+    var mod = document.createElement('select');
+    mod.className = 'multi-model model-select';
+    mod.style.cssText = 'flex:1; min-width:120px;';
+    mod.innerHTML = '<option value="">Loading…</option>';
+    var roleInp = document.createElement('input');
+    roleInp.type = 'text';
+    roleInp.placeholder = 'role (optional)';
+    roleInp.value = role || '';
+    roleInp.style.cssText = 'flex:0 0 130px; padding:6px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;';
+    var rm = document.createElement('button');
+    rm.textContent = '✕';
+    rm.style.cssText = 'background:#f85149; color:#fff; border:none; border-radius:6px; padding:4px 10px; cursor:pointer;';
+    rm.onclick = function() { row.remove(); };
+    row.appendChild(prov); row.appendChild(mod); row.appendChild(roleInp); row.appendChild(rm);
+    box.appendChild(row);
+    prov.addEventListener('change', function() { loadMultiModels(mod, prov.value); });
+    loadMultiModels(mod, prov.value);
+}
+function loadMultiModels(modelSel, provider) {
+    var key = (typeof loadApiKey === 'function') ? loadApiKey(provider) : '';
+    modelSel.innerHTML = '<option value="">Loading…</option>';
+    fetch('/providers/models', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ provider: provider, api_key: key })
+    })
+    .then(r => r.json())
+    .then(function(d) {
+        modelSel.innerHTML = '';
+        (d.models || []).forEach(function(m) {
+            var o = document.createElement('option');
+            o.value = m; o.textContent = m;
+            modelSel.appendChild(o);
+        });
+        if (!(d.models || []).length) {
+            var o = document.createElement('option');
+            o.value = ''; o.textContent = 'No models';
+            modelSel.appendChild(o);
+        }
+    })
+    .catch(function() { modelSel.innerHTML = '<option value="">Failed</option>'; });
+}
+function toggleMultiPanel() {
+    var m = document.getElementById('multiPanel');
+    var show = m.style.display === 'none' || !m.style.display;
+    m.style.display = show ? 'block' : 'none';
+    if (show && multiAgentCount === 0) {
+        addMultiAgent('ollama');
+        addMultiAgent('ollama');
+    }
+}
+function runMultiAgent() {
+    var prompt = document.getElementById('multiPrompt').value.trim();
+    var results = document.getElementById('multiResults');
+    if (!prompt) { status.textContent = '🤝 Enter a task.'; return; }
+    var agents = [];
+    document.querySelectorAll('.multi-agent-row').forEach(function(row) {
+        var prov = row.querySelector('.multi-provider').value;
+        var mod = row.querySelector('.multi-model').value;
+        var role = row.querySelector('input').value.trim();
+        if (!mod) return;
+        agents.push({ provider: prov, model: mod, role: role, api_key: (typeof loadApiKey === 'function' ? loadApiKey(prov) : '') });
+    });
+    if (agents.length < 2) { status.textContent = '🤝 Add at least 2 agents.'; return; }
+    var btn = document.getElementById('multiRunBtn');
+    btn.disabled = true; btn.textContent = '⏳ Running…';
+    results.innerHTML = '<div style="color:#8b949e; font-size:13px;">Agents working in parallel…</div>';
+    fetch('/api/agent/multi', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ message: prompt, agents: agents })
+    })
+    .then(r => r.json())
+    .then(function(d) {
+        btn.disabled = false; btn.textContent = '🤝 Run';
+        if (d.error) { results.innerHTML = '<div style="color:#f85149;">❌ ' + d.error + '</div>'; return; }
+        results.innerHTML = '';
+        (d.agents || []).forEach(function(a, i) {
+            var card = document.createElement('div');
+            card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:10px; background:rgba(13,17,23,0.7);';
+            var head = document.createElement('div');
+            head.style.cssText = 'font-size:12px; color:#3fb950; font-weight:700; margin-bottom:4px;';
+            head.textContent = 'Agent ' + (i+1) + (a.role ? ' · ' + a.role : '') + ' · ' + a.provider + ' · ' + a.model + ' · ' + (a.duration_sec || 0) + 's';
+            card.appendChild(head);
+            if (a.error) {
+                var err = document.createElement('div');
+                err.style.cssText = 'color:#f85149; font-size:13px;';
+                err.textContent = '❌ ' + a.error;
+                card.appendChild(err);
+            } else {
+                var body = document.createElement('div');
+                body.style.cssText = 'font-size:13px; line-height:1.6; color:#e1e4e8; white-space:pre-wrap;';
+                body.textContent = a.text || '(empty)';
+                card.appendChild(body);
+            }
+            results.appendChild(card);
+        });
+    })
+    .catch(function(e) {
+        btn.disabled = false; btn.textContent = '🤝 Run';
+        results.innerHTML = '<div style="color:#f85149;">❌ ' + (e.message || 'Failed') + '</div>';
+    });
+}
+
+// ─── Live coding panel ──────────────────────────────────────
+var liveCodeTimer = null;
+var liveCodeLastTs = 0;
+function toggleLiveCodePanel() {
+    var m = document.getElementById('liveCodePanel');
+    var show = m.style.display !== 'flex';
+    m.style.display = show ? 'flex' : 'none';
+    if (show) {
+        pollLiveCode();
+        if (liveCodeTimer) clearInterval(liveCodeTimer);
+        liveCodeTimer = setInterval(pollLiveCode, 2000);
+    } else {
+        if (liveCodeTimer) clearInterval(liveCodeTimer);
+        liveCodeTimer = null;
+    }
+}
+function pollLiveCode() {
+    fetch('/api/agent/edits?since=' + liveCodeLastTs)
+        .then(r => r.json())
+        .then(function(d) {
+            var body = document.getElementById('liveCodeBody');
+            if (!body) return;
+            if (d.edits && d.edits.length) {
+                if (body.querySelector('div[data-placeholder]')) body.innerHTML = '';
+                d.edits.forEach(function(e) {
+                    liveCodeLastTs = Math.max(liveCodeLastTs, e.ts);
+                    body.prepend(renderLiveCodeEdit(e));
+                });
+                while (body.children.length > 50) body.removeChild(body.lastChild);
+            }
+        })
+        .catch(function() {});
+}
+function renderLiveCodeEdit(e) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:10px; margin-bottom:10px; background:#101018;';
+    var head = document.createElement('div');
+    head.style.cssText = 'font-size:12px; font-weight:700; margin-bottom:6px;';
+    head.innerHTML = (e.tool === 'edit_file' ? '✏️' : '📄') + ' ' + (e.path || '(file)');
+    head.style.color = e.tool === 'edit_file' ? '#a371f7' : '#3fb950';
+    card.appendChild(head);
+    if (e.detail) {
+        var det = document.createElement('div');
+        det.style.cssText = 'font-size:11px; color:#8b949e; margin-bottom:6px;';
+        det.textContent = e.detail;
+        card.appendChild(det);
+    }
+    if (e.diff) {
+        var pre = document.createElement('pre');
+        pre.style.cssText = 'font-size:11px; line-height:1.4; white-space:pre-wrap; word-break:break-word; background:#0a0a0f; border:1px solid #222; border-radius:6px; padding:8px; max-height:240px; overflow:auto; margin:0;';
+        pre.textContent = e.diff;
+        card.appendChild(pre);
+    }
+    return card;
+}
+function clearLiveCode() {
+    liveCodeLastTs = 0;
+    var body = document.getElementById('liveCodeBody');
+    if (body) body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">No edits yet.</div>';
+    fetch('/api/agent/edits/clear', { method: 'POST' }).catch(function() {});
 }
 
 function doSend() {
@@ -6472,6 +6688,12 @@ document.addEventListener('input', function(e) {
       <option value="mid">Mid — balanced</option>
       <option value="high">High — full reasoning</option>
     </select>
+
+    <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px; cursor:pointer;">
+      <input type="checkbox" id="wsFullAccess" style="width:18px; height:18px; accent-color:#f0883e;">
+      <span style="font-size:13px;">🤖 Full computer access (open browser/apps, type, screenshot)</span>
+    </label>
+    <div style="font-size:11px; color:#f0883e; margin:-8px 0 12px 26px;">⚠️ Lets the AI control your whole machine. Only enable for a folder/workspace you trust.</div>
 
     <label style="display:block; font-size:12px; margin-bottom:4px;">Dependencies (pip packages)</label>
     <div style="display:flex; gap:6px; margin-bottom:6px;">
