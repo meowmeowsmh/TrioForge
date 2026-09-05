@@ -1456,8 +1456,8 @@ body.light-mode .weather-country-select option {
           <option value="gemini">Gemini (Google)</option>
           <option value="openrouter">OpenRouter (models)</option>
           <option value="voice">🗣 Voice-to-Voice</option>
-          <option value="comfyui">🖼️ Image (Gemini / ComfyUI)</option>
-          <option value="comfyui-video">🎬 Video (ComfyUI)</option>
+          <option value="comfyui">🖼️ Image (OpenRouter / Gemini / ComfyUI)</option>
+          <option value="comfyui-video">🎬 Video (OpenRouter / ComfyUI)</option>
         </select>
         <select id="personaSelect" title="Assistant persona" class="provider-select" style="max-width:180px;"></select>
         <input type="text" id="personaCustomInput" placeholder="Describe your persona… (free text)"
@@ -1477,8 +1477,8 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Note & pin colours">🎨</button>
         <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">⌨️</button>
         <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
-        <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (ComfyUI)">🖼️</button>
-        <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (ComfyUI)">🎬</button>
+        <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">🖼️</button>
+        <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
 
         <!-- Weather toggle and country dropdown -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
@@ -1511,8 +1511,9 @@ body.light-mode .weather-country-select option {
     <div id="imageGenPanel" style="display:none; padding:10px 40px; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.5);">
       <span style="font-size:13px; font-weight:600; color:#58a6ff;">🖼️ Image settings:</span>
       <select id="imageBackendSelect" title="Image backend" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+        <option value="openrouter">🛰 OpenRouter (models)</option>
         <option value="gemini">🐦 Gemini (Google)</option>
-        <option value="comfyui">ComfyUI</option>
+        <option value="comfyui">ComfyUI (local)</option>
       </select>
       <select id="imageModelSelect" title="Image model" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
         <option value="comfyui::Text to Image (Z-Image-Turbo)">Text to Image (Z-Image-Turbo)</option>
@@ -1522,6 +1523,21 @@ body.light-mode .weather-country-select option {
       <input id="imageWidth" type="number" value="1024" style="width:80px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <label style="font-size:12px; color:#8b949e;">H</label>
       <input id="imageHeight" type="number" value="1024" style="width:80px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+      <label style="font-size:12px; color:#8b949e;">Aspect</label>
+      <select id="imageAspect" title="Aspect ratio (OpenRouter/Gemini)" style="padding:6px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+        <option value="1:1">1:1</option>
+        <option value="16:9">16:9</option>
+        <option value="9:16">9:16</option>
+        <option value="4:3">4:3</option>
+        <option value="3:4">3:4</option>
+        <option value="21:9">21:9</option>
+      </select>
+      <label style="font-size:12px; color:#8b949e;">Size</label>
+      <select id="imageSize" title="Image size (OpenRouter)" style="padding:6px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+        <option value="1K">1K</option>
+        <option value="2K">2K</option>
+        <option value="4K">4K</option>
+      </select>
       <label style="font-size:12px; color:#8b949e;">Steps</label>
       <input id="imageSteps" type="number" value="4" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <label style="font-size:12px; color:#8b949e;">Guidance</label>
@@ -1532,6 +1548,10 @@ body.light-mode .weather-country-select option {
     <!-- ComfyUI video settings bar -->
     <div id="videoGenPanel" style="display:none; padding:10px 40px; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.5);">
       <span style="font-size:13px; font-weight:600; color:#58a6ff;">🎬 Video settings:</span>
+      <select id="videoBackendSelect" title="Video backend" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+        <option value="openrouter">🛰 OpenRouter (models)</option>
+        <option value="comfyui">ComfyUI (local)</option>
+      </select>
       <select id="videoModelSelect" title="Video model" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></select>
       <label style="font-size:12px; color:#8b949e;">W</label>
       <input id="videoWidth" type="number" value="1280" style="width:80px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
@@ -1539,6 +1559,8 @@ body.light-mode .weather-country-select option {
       <input id="videoHeight" type="number" value="720" style="width:80px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <label style="font-size:12px; color:#8b949e;">Length</label>
       <input id="videoLength" type="number" value="81" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+      <label style="font-size:12px; color:#8b949e;">Sec</label>
+      <input id="videoDuration" type="number" value="8" min="2" max="30" style="width:56px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <label style="font-size:12px; color:#8b949e;">Steps</label>
       <input id="videoSteps" type="number" value="20" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <span style="font-size:11px; color:#8b949e;">Type your prompt below and press Enter.</span>
@@ -2928,7 +2950,24 @@ function selectVideoGen() {
 function loadVideoModels() {
     var sel = document.getElementById('videoModelSelect');
     if (!sel) return;
+    var backendEl = document.getElementById('videoBackendSelect');
+    var backend = backendEl ? backendEl.value : 'openrouter';
     sel.innerHTML = '<option value="">Loading…</option>';
+    if (backend === 'openrouter') {
+        var rkey = (typeof loadApiKey === 'function') ? loadApiKey('openrouter') : '';
+        fetch('/api/openrouter/video_models?api_key=' + encodeURIComponent(rkey))
+            .then(function(r) { return r.json(); })
+            .then(function(list) {
+                sel.innerHTML = '';
+                ((list && list.length) ? list : ['kwaivgi/kling-video-o1', 'google/veo-3.1-fast', 'minimax/hailuo-3']).forEach(function(m) {
+                    var opt = document.createElement('option');
+                    opt.value = m; opt.textContent = m;
+                    sel.appendChild(opt);
+                });
+            })
+            .catch(function() { sel.innerHTML = ''; });
+        return;
+    }
     fetch('/api/video_models')
         .then(function(r) { return r.json(); })
         .then(function(list) {
@@ -2945,36 +2984,53 @@ function loadVideoModels() {
 function generateVideoChat(text) {
     if (!text || !text.trim()) return;
     if (busy) return;
-    busy = true;
-    renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
-    msgInput.value = '';
-    msgInput.style.height = '46px';
-    pending = [];
-    attachments.innerHTML = '';
-    var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
-    var bodyEl = botDiv.querySelector('.body');
-    bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">⏳ Generating video… this can take 1–3 minutes. Please wait.</div>';
-    smoothScrollToBottom();
-    var req = {
-        prompt: text.trim(),
-        workflow: document.getElementById('videoModelSelect').value,
-        width: parseInt(document.getElementById('videoWidth').value) || 1280,
-        height: parseInt(document.getElementById('videoHeight').value) || 720,
-        length: parseInt(document.getElementById('videoLength').value) || 81,
-        steps: parseInt(document.getElementById('videoSteps').value) || 20
-    };
-    fetch('/api/generate_video', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req)
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-        busy = false;
-        if (d.error) { bodyEl.textContent = '❌ ' + formatAiError('comfyui', d.error); smoothScrollToBottom(); return; }
-        bodyEl.innerHTML = '<video src="' + d.url + '" controls style="max-width:100%; border-radius:12px; border:1px solid #333;"></video>';
-        var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
+    // Save the video into the active conversation (creating one if needed) so
+    // the prompt + video survive a reload and can be deleted from the sidebar.
+    function go() {
+        busy = true;
+        renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
+        msgInput.value = '';
+        msgInput.style.height = '46px';
+        pending = [];
+        attachments.innerHTML = '';
+        var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
+        var bodyEl = botDiv.querySelector('.body');
+        bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">⏳ Generating video… this can take 1–3 minutes. Please wait.</div>';
         smoothScrollToBottom();
-    })
-    .catch(function(e) { busy = false; bodyEl.textContent = '❌ ' + (e.message || 'Failed'); smoothScrollToBottom(); });
+        var backend = document.getElementById('videoBackendSelect').value;
+        var req = {
+            prompt: text.trim(),
+            backend: backend,
+            api_key: backend === 'openrouter' ? (typeof loadApiKey === 'function' ? loadApiKey('openrouter') : '') : (apiKeyInput.value || ''),
+            workflow: document.getElementById('videoModelSelect').value,
+            video_model: document.getElementById('videoModelSelect').value,
+            duration: parseInt(document.getElementById('videoDuration').value) || 8,
+            width: parseInt(document.getElementById('videoWidth').value) || 1280,
+            height: parseInt(document.getElementById('videoHeight').value) || 720,
+            length: parseInt(document.getElementById('videoLength').value) || 81,
+            steps: parseInt(document.getElementById('videoSteps').value) || 20,
+            conversation_id: currentConv || ''
+        };
+        fetch('/api/generate_video', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            busy = false;
+            if (d.error) { bodyEl.textContent = '❌ ' + formatAiError(backend, d.error); smoothScrollToBottom(); return; }
+            if (d.conversation_id) currentConv = d.conversation_id;
+            bodyEl.innerHTML = '<video src="' + d.url + '" controls style="max-width:100%; border-radius:12px; border:1px solid #333;"></video>';
+            var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
+            smoothScrollToBottom();
+            if (typeof loadConversations === 'function') loadConversations();
+        })
+        .catch(function(e) { busy = false; bodyEl.textContent = '❌ ' + (e.message || 'Failed'); smoothScrollToBottom(); });
+    }
+    if (currentConv) { go(); return; }
+    fetch('/conversations', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { currentConv = d.id; if (typeof loadConversations === 'function') loadConversations(); go(); })
+        .catch(function() { go(); });
 }
 // Image generation runs through the normal chat: you type a prompt in the message
 // box and the bot replies with the generated image.
@@ -3000,11 +3056,13 @@ function generateImageChat(text) {
         var req = {
             prompt: text.trim(),
             backend: backend,
-            api_key: backend === 'gemini' ? (typeof loadApiKey === 'function' ? loadApiKey('gemini') : '') : (apiKeyInput.value || ''),
+            api_key: (backend === 'gemini' || backend === 'openrouter') ? (typeof loadApiKey === 'function' ? loadApiKey(backend) : '') : (apiKeyInput.value || ''),
             model: modelSel,
             image_model: modelSel,
             width: parseInt(document.getElementById('imageWidth').value) || 1024,
             height: parseInt(document.getElementById('imageHeight').value) || 1024,
+            aspect_ratio: document.getElementById('imageAspect') ? document.getElementById('imageAspect').value : '1:1',
+            image_size: document.getElementById('imageSize') ? document.getElementById('imageSize').value : '1K',
             steps: parseInt(document.getElementById('imageSteps').value) || 4,
             conversation_id: currentConv || ''
         };
@@ -3017,7 +3075,7 @@ function generateImageChat(text) {
         .then(function(d) {
             busy = false;
             if (d.error) {
-                bodyEl.textContent = '❌ ' + formatAiError('comfyui', d.error);
+                bodyEl.textContent = '❌ ' + formatAiError(backend, d.error);
                 smoothScrollToBottom();
                 return;
             }
@@ -3042,6 +3100,7 @@ function generateImageChat(text) {
 }
 // Re-query the model list when the image backend switches.
 try { if (document.getElementById('imageBackendSelect')) document.getElementById('imageBackendSelect').addEventListener('change', loadImageModels); } catch(e) {}
+try { if (document.getElementById('videoBackendSelect')) document.getElementById('videoBackendSelect').addEventListener('change', loadVideoModels); } catch(e) {}
 function loadImageModels() {
     var sel = document.getElementById('imageModelSelect');
     if (!sel) return;
@@ -3052,6 +3111,30 @@ function loadImageModels() {
         ['gemini-2.5-flash-image', 'gemini-3.0-imagen'].forEach(function(m) {
             var o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o);
         });
+        return;
+    }
+    if (backend === 'openrouter') {
+        sel.innerHTML = '<option value="">Loading…</option>';
+        var key = typeof loadApiKey === 'function' ? (loadApiKey('openrouter') || '') : '';
+        fetch('/api/openrouter/image_models?api_key=' + encodeURIComponent(key))
+            .then(function(r) { return r.json(); })
+            .then(function(list) {
+                sel.innerHTML = '';
+                (list || []).forEach(function(m) {
+                    var opt = document.createElement('option');
+                    opt.value = (typeof m === 'string') ? m : m.value;
+                    opt.textContent = (typeof m === 'string') ? m : (m.label || m.value);
+                    sel.appendChild(opt);
+                });
+                if (!(list || []).length) {
+                    var nf = document.createElement('option');
+                    nf.value = ''; nf.textContent = 'No models — check OpenRouter API key';
+                    sel.appendChild(nf);
+                }
+            })
+            .catch(function() {
+                sel.innerHTML = '<option value="">Failed to load models</option>';
+            });
         return;
     }
     sel.innerHTML = '<option value="">Loading…</option>';
@@ -3263,6 +3346,15 @@ function renderMsg(role, entry, msgIndex) {
             chip.textContent = '📄 ' + (f.name || 'file');
             div.appendChild(chip);
         });
+    }
+    if (entry.meta && entry.meta.video) {
+        var vid = document.createElement('video');
+        vid.src = entry.meta.video;
+        vid.controls = true;
+        vid.style.maxWidth = '100%';
+        vid.style.borderRadius = '12px';
+        vid.style.border = '1px solid #333';
+        div.appendChild(vid);
     }
     var body = document.createElement('div');
     body.className = 'body';

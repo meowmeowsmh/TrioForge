@@ -88,6 +88,27 @@ def _strip_b64_prefix(b64: str) -> str:
         return b64.split(",", 1)[1]
     return b64
 
+def _openrouter_image_size(image_size: str = "1K", aspect_ratio: str = "1:1") -> str:
+    """Map an OpenRouter image_size (1K/2K/4K) + aspect ratio to a WxH string.
+
+    Only the short side is fixed by ``image_size``; the longer side is derived
+    from the aspect ratio so the output matches the requested orientation. If we
+    can't parse the ratio we fall back to a square of the requested size.
+    """
+    bases = {"1K": 1024, "2K": 2048, "4K": 4096}
+    long = bases.get((image_size or "1K").upper(), 1024)
+    m = re.match(r"^(\d+)\s*[:x]\s*(\d+)$", (aspect_ratio or "1:1").strip())
+    if not m:
+        return f"{long}x{long}"
+    w, h = int(m.group(1)), int(m.group(2))
+    if w <= 0 or h <= 0:
+        return f"{long}x{long}"
+    if w >= h:
+        short_edge = int(round(long * h / w))
+        return f"{long}x{short_edge}"
+    short_edge = int(round(long * w / h))
+    return f"{short_edge}x{long}"
+
 def _clean_api_key(key: Optional[str], provider_label: str) -> Optional[str]:
     """Strip whitespace and catch stray non-ASCII characters (en-dashes, smart
     quotes, etc.) that sneak in when a key is copy-pasted from a document,
@@ -1977,6 +1998,211 @@ class OpenRouterProvider(LLMProvider):
             if messages:
                 messages[-1] = {**messages[-1], "content": note + "\n" + messages[-1].get("content", "")}
         return self.generate(messages, **kwargs)
+
+    def list_video_models(self, api_key: Optional[str] = None) -> List[str]:
+        """Return OpenRouter video-generation models (via output_modalities=video)."""
+        key = api_key or self._default_key
+        if not key:
+            return []
+        try:
+            resp = requests.get(f"{self.BASE_URL}/models", headers=self._headers(key),
+                                params={"output_modalities": "video"}, timeout=15)
+            resp.raise_for_status()
+            return [m["id"] for m in resp.json().get("data", [])]
+        except Exception as e:
+            logger.warning("Failed to fetch OpenRouter video models: %s", e)
+            return []
+
+    def generate_video(self, prompt: str, output_path: str, model: Optional[str] = None,
+                       duration: Optional[int] = None, resolution: Optional[str] = None,
+                       aspect_ratio: Optional[str] = None, generate_audio: bool = False,
+                       **kwargs) -> str:
+        """Generate a video via OpenRouter's video API.
+
+        Submit ``POST /api/v1/videos``, poll ``GET /api/v1/videos/{id}`` until the
+        status is ``completed``, then download ``GET /api/v1/videos/{id}/content``.
+        """
+        key = self._get_key(kwargs)
+        model = model or os.environ.get("OPENROUTER_VIDEO_MODEL") or "kwaivgi/kling-video-o1"
+        payload = {"model": model, "prompt": prompt}
+        if duration:
+            payload["duration"] = int(duration)
+        if resolution:
+            payload["resolution"] = resolution
+        if aspect_ratio:
+            payload["aspect_ratio"] = aspect_ratio
+        if generate_audio:
+            payload["generate_audio"] = True
+        headers = self._headers(key)
+
+        try:
+            resp = requests.post(f"{self.BASE_URL}/videos", headers=headers, json=payload, timeout=60)
+        except requests.exceptions.RequestException as e:
+            raise ProviderError(f"OpenRouter video submit failed: {e}")
+        # 202 = accepted (job created); 200 also treated as success.
+        if resp.status_code not in (200, 202):
+            raise ProviderError(f"OpenRouter video error ({resp.status_code}): " + (resp.text or "")[:300])
+        job_id = resp.json().get("id")
+        if not job_id:
+            raise ProviderError("OpenRouter returned no video job id.")
+
+        deadline = time.time() + 900
+        while time.time() < deadline:
+            poll = requests.get(f"{self.BASE_URL}/videos/{job_id}", headers=headers, timeout=30)
+            if poll.status_code == 200:
+                status = (poll.json().get("status") or "").lower()
+                if status == "completed":
+                    content = requests.get(f"{self.BASE_URL}/videos/{job_id}/content?index=0",
+                                           headers=headers, timeout=180)
+                    if content.status_code == 200:
+                        out_dir = os.path.dirname(output_path)
+                        if out_dir:
+                            os.makedirs(out_dir, exist_ok=True)
+                        with open(output_path, "wb") as f:
+                            f.write(content.content)
+                        return model
+                    raise ProviderError(f"OpenRouter video download failed ({content.status_code}).")
+                if status in ("failed", "cancelled", "expired"):
+                    raise ProviderError(f"OpenRouter video {status}.")
+            time.sleep(5)
+        raise ProviderError("OpenRouter video timed out.")
+
+    def list_image_models(self, api_key: Optional[str] = None) -> List[str]:
+        """Return OpenRouter image-generation models (via output_modalities=image)."""
+        key = api_key or self._default_key
+        if not key:
+            return []
+        try:
+            resp = requests.get(f"{self.BASE_URL}/models", headers=self._headers(key),
+                                params={"output_modalities": "image"}, timeout=15)
+            resp.raise_for_status()
+            return [m["id"] for m in resp.json().get("data", [])]
+        except Exception as e:
+            logger.warning("Failed to fetch OpenRouter image models: %s", e)
+            return []
+
+    @staticmethod
+    def _write_media(b64: str, output_path: str):
+        """Decode a base64 data-URL / raw base64 string and write it to disk."""
+        raw = base64.b64decode(_strip_b64_prefix(b64))
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(raw)
+
+    def _download_media(self, key: str, uri: str, output_path: str):
+        """Download a media URL (temporary OpenRouter URL) to disk."""
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        resp = requests.get(uri, headers=self._headers(key), timeout=120)
+        resp.raise_for_status()
+        with open(output_path, "wb") as f:
+            f.write(resp.content)
+
+    def generate_image(self, prompt: str, output_path: str, model: Optional[str] = None,
+                       aspect_ratio: str = "1:1", image_size: str = "1K", **kwargs) -> str:
+        """Generate an image via OpenRouter.
+
+        Primary path: the dedicated ``POST /api/v1/images/generations`` endpoint,
+        which works for every image model (``openai/gpt-image-2``, ``gemini-3.1-flash``,
+        ``mai-image``, …). Some models only accept the *multimodal chat* form
+        (``POST /chat/completions`` + ``modalities:["image"]``), so if the images
+        endpoint rejects the model we fall back to that form.
+
+        Returns the file extension. The raw bytes are written to ``output_path``.
+        """
+        key = self._get_key(kwargs)
+        model = model or os.environ.get("OPENROUTER_IMAGE_MODEL") or "google/gemini-3.1-flash-image-preview"
+        headers = self._headers(key)
+
+        b64, url, ext = self._generate_image_dedicated(
+            key, headers, model, prompt, aspect_ratio, image_size)
+
+        if b64:
+            self._write_media(b64, output_path)
+            return ext
+        if url:
+            self._download_media(key, url, output_path)
+            return ext
+
+        # Fallback: some image models only work through the multimodal chat form.
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "modalities": ["image"],
+            "imageConfig": {"aspect_ratio": aspect_ratio, "image_size": image_size},
+        }
+        resp = requests.post(f"{self.BASE_URL}/chat/completions", headers=headers, json=payload, timeout=180)
+        if resp.status_code != 200:
+            raise ProviderError(f"OpenRouter image error ({resp.status_code}): " + (resp.text or "")[:300])
+        msg = ((resp.json().get("choices") or [{}])[0].get("message") or {})
+        url = None
+        for img in (msg.get("images") or []):
+            url = (img.get("image_url") or {}).get("url")
+            if url:
+                break
+        if not url:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "image_url":
+                        url = (part.get("image_url") or {}).get("url")
+                        if url:
+                            break
+            elif isinstance(content, str) and content.startswith("data:image"):
+                url = content
+        if not url:
+            raise ProviderError("OpenRouter image response contained no image.")
+
+        if url.startswith("data:"):
+            mime = url.split(";")[0].split(":")[-1]
+            ext = "." + (mime.split("/")[-1] or "png")
+            self._write_media(url, output_path)
+        else:
+            self._download_media(key, url, output_path)
+            ext = ".png"
+        return ext
+
+    def _generate_image_dedicated(self, key: str, headers: dict, model: str, prompt: str,
+                                  aspect_ratio: str, image_size: str):
+        """Try the dedicated ``/api/v1/images/generations`` endpoint.
+
+        Returns ``(b64, url, ext)`` — exactly one of ``b64``/``url`` is set, or both
+        are None if this model isn't supported by the endpoint.
+        """
+        payload = {"model": model, "prompt": prompt, "n": 1}
+        # Optional size hint — derive a WxH string from image_size + aspect_ratio.
+        size = _openrouter_image_size(image_size, aspect_ratio)
+        if size:
+            payload["size"] = size
+        try:
+            resp = requests.post(f"{self.BASE_URL}/images/generations",
+                                 headers=headers, json=payload, timeout=240)
+        except Exception as e:
+            logger.warning("OpenRouter images endpoint request failed: %s", e)
+            return None, None, None
+
+        if resp.status_code not in (200, 201):
+            # Model not supported by the dedicated endpoint → let caller fall back.
+            return None, None, None
+
+        data = resp.json().get("data") or []
+        if not data:
+            raise ProviderError("OpenRouter images endpoint returned no data.")
+        item = data[0]
+        if item.get("b64_json"):
+            ext = ".png"
+            mime = item.get("mime_type") or ""
+            if "jpeg" in mime or "jpg" in mime:
+                ext = ".jpg"
+            elif "webp" in mime:
+                ext = ".webp"
+            return item["b64_json"], None, ext
+        if item.get("url"):
+            return None, item["url"], ".png"
+        raise ProviderError("OpenRouter images endpoint returned an image with no data.")
 
 
 # ── Shared provider factory ────────────────────────────────────────────────
