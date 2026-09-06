@@ -578,10 +578,16 @@ class LlamaCppProvider(LLMProvider):
     def _discover_models(self) -> List[str]:
         # Text GGUF models only. mmproj-*.gguf files are vision projectors — they
         # must be paired with their text model via --mmproj (see llamacpp_service),
-        # so they are NOT listed as standalone selectable models here.
-        gguf_files = glob.glob(os.path.join(self.models_dir, "*.gguf"))
-        local_models = [os.path.basename(f) for f in gguf_files
-                        if not os.path.basename(f).lower().startswith("mmproj-")]
+        # so they are NOT listed as standalone selectable models here. Scan models/
+        # recursively so models can be organized one subfolder per model.
+        gguf_files = glob.glob(os.path.join(self.models_dir, "**", "*.gguf"), recursive=True)
+        local_models = []
+        for f in gguf_files:
+            bn = os.path.basename(f)
+            if bn.lower().startswith("mmproj-"):
+                continue
+            rel = os.path.relpath(f, self.models_dir)  # e.g. "gemma-4/gemma-4-...gguf"
+            local_models.append(rel)
 
         server_models = []
         try:
@@ -614,11 +620,20 @@ class LlamaCppProvider(LLMProvider):
                 model = self.available_models[0]
             else:
                 raise ProviderError("No models found in ./models folder and no model specified.")
-        if os.path.sep not in model and not model.startswith("/") and not model.startswith("\\"):
-            candidate = os.path.join(self.models_dir, model)
-            if os.path.exists(candidate):
-                return candidate
-        return model
+        # Direct path on disk.
+        if os.path.isfile(model):
+            return model
+        # Relative to models_dir (e.g. "gemma-4/gemma-4-...gguf").
+        cand = os.path.join(self.models_dir, model)
+        if os.path.isfile(cand):
+            return cand
+        # Bare filename → search models/ (and subfolders) recursively.
+        base = os.path.basename(str(model))
+        mdir = os.path.abspath(self.models_dir)
+        for f in glob.glob(os.path.join(mdir, "**", "*.gguf"), recursive=True):
+            if os.path.basename(f).lower() == base.lower():
+                return f
+        return str(model)
 
     def _check_server(self, wait_ready: bool = True):
         """Verify the llama-server is reachable. When `wait_ready` is true, poll

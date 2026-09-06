@@ -28,6 +28,11 @@ _lock = threading.Lock()
 _QUANT_TOKENS = {
     "q4_k_m", "q5_k_m", "q6_k", "q8_0", "q4_0", "q5_0", "bf16", "f16", "f32",
     "q2_k", "q3_k", "q8_k", "q4_k_s", "q5_k_s", "q3_k_s", "q2_k_s", "q4_k", "q5_k",
+    # XL / L variants (e.g. gemma-4 Q4_K_XL, Q4_K_L) — without these the quant is
+    # not stripped, so a gemma-4 model's base name stays full and its mmproj pair
+    # ("mmproj-BF16.gguf") fails to match.
+    "q4_k_xl", "q5_k_xl", "q6_k_xl", "q4_k_l", "q5_k_l", "q4_k_m_xl",
+    "q8_0_xl", "f16_xl",
 }
 _QUANT_SET = {q.replace("_", "") for q in _QUANT_TOKENS}
 
@@ -50,16 +55,51 @@ def _list_gguf_files(subdir="models"):
     return glob.glob(pattern, recursive=True)
 
 
+def _folder_mmproj(model_path: str):
+    """Find an mmproj-*.gguf in the SAME folder as the model.
+
+    This is the recommended, conflict-free layout: each model lives in its own
+    subfolder under models/ with its projector beside it, e.g.
+        models/gemma-4/gemma-4-...-Q4_K_XL.gguf
+        models/gemma-4/mmproj-BF16.gguf
+    Pairing by folder is automatic and unambiguous — no name heuristics, no
+    hard-coding. Returns the projector path or None.
+    """
+    model_dir = os.path.dirname(os.path.abspath(model_path))
+    # Only trust folder pairing when the model is inside a subfolder of models/,
+    # not in the root (where multiple models would otherwise collide).
+    models_root = os.path.abspath(root_path("models"))
+    if model_dir == models_root or not model_dir.startswith(models_root + os.sep):
+        return None
+    for f in _list_gguf_files():
+        if os.path.dirname(os.path.abspath(f)) != model_dir:
+            continue
+        bn = os.path.basename(f)
+        if bn.lower().startswith("mmproj-"):
+            return f
+    return None
+
+
 def find_mmproj(model_path: str):
     """Find the vision-projector (mmproj-*.gguf) that pairs with a text model.
 
-    Works regardless of folder: it scans <project>/models recursively and matches
-    the shared base name (mmproj-BASE-<quant> pairs with BASE-<quant>.gguf).
+    Priority (all automatic, none hard-coded):
+      1) Same folder as the model (recommended organized layout).
+      2) Shared base name across models/ (mmproj-BASE-<quant> pairs with BASE-<quant>.gguf).
+      3) Explicit `mmproj_pairs` map in voiceguide_llama.cpp_guide/config.json (optional override).
+      4) A generic quant-only projector (mmproj-BF16.gguf) for a known vision model.
     """
+    # 1) Folder pairing — matches the "one subfolder per model" layout.
+    folder_mp = _folder_mmproj(model_path)
+    if folder_mp:
+        return folder_mp
+
     model_base = _base_gguf_name(os.path.basename(model_path))
     if not model_base:
         return None
     model_base_l = model_base.lower()
+
+    # 2) Name-based match across all gguf files.
     for f in _list_gguf_files():
         bn = os.path.basename(f)
         if bn.lower().startswith("mmproj-"):
@@ -67,6 +107,29 @@ def find_mmproj(model_path: str):
             mbase_l = mbase.lower() if mbase else ""
             if mbase_l and (mbase_l in model_base_l or model_base_l in mbase_l):
                 return f
+
+    # 3) Explicit pairing map (config): { "model_base": "mmproj-file.gguf" }
+    cfg = _config() or {}
+    pairs = cfg.get("mmproj_pairs") or {}
+    for mb, mp in pairs.items():
+        if mb.lower() in model_base_l or model_base_l in mb.lower():
+            p = os.path.abspath(root_path("models", mp))
+            if os.path.isfile(p):
+                return p
+
+    # 4) Generic quant-only projector (e.g. mmproj-BF16.gguf) for a known vision
+    #    model. Only used when it is UNAMBIGUOUS — i.e. there is exactly one such
+    #    generic projector. If several exist we can't tell which belongs to which
+    #    model, so we refuse to guess rather than load a wrong projector (which
+    #    crashes the server on startup).
+    vision_hints = ("vl", "-vl", "vision", "gemma", "llava", "minicpm",
+                    "pixtral", "phi-3.5", "phi3", "qwen2.5-vl", "qwen2vl", "smolvlm", "internvl")
+    if any(h in model_base_l for h in vision_hints):
+        generic = [f for f in _list_gguf_files()
+                   if os.path.basename(f).lower().startswith("mmproj-")
+                   and not _base_gguf_name(os.path.basename(f))]
+        if len(generic) == 1:
+            return generic[0]
     return None
 
 
@@ -80,17 +143,19 @@ def _config():
 
 def resolve_model(value):
     """Resolve a model reference (absolute path, relative path, or bare .gguf name)
-    to an absolute path on disk. Bare names are looked up in <project>/models/."""
+    to an absolute path on disk. Bare names are looked up anywhere under models/
+    (so models can be organized into one subfolder per model)."""
     if not value:
         return None
     value = str(value).strip().strip('"')
     p = os.path.abspath(value)
     if os.path.isfile(p):
         return p
-    # Bare filename → look in the models/ folder.
-    cand = os.path.abspath(root_path("models", os.path.basename(value)))
-    if os.path.isfile(cand):
-        return cand
+    # Bare filename → search models/ (and its subfolders) recursively.
+    base = os.path.basename(value)
+    for f in _list_gguf_files():
+        if os.path.basename(f).lower() == base.lower():
+            return f
     return p
 
 
@@ -136,21 +201,27 @@ def status():
     return {"running": running, "host": host, "port": port, "model": model}
 
 
-def _default_server_args():
+def _default_server_args(model_path=None):
     """Stable llama-server defaults for an 8 GB GPU.
 
     -ngl is intentionally NOT forced to 999: leaving it unset lets llama-server
     auto-fit the number of GPU layers so the model + KV cache + compute buffers all
     fit in VRAM (forcing 999 crashed it). Flash attention + KV-cache quantization
     keep memory low so a 16k context runs comfortably.
+
+    `--image-min-tokens 1024` is applied ONLY for Qwen-VL style vision models,
+    which need a high minimum for accurate image reading. Forcing it on every
+    model breaks other projectors: e.g. gemma-4's mmproj-BF16 was built with a
+    small image_max_pixels, so a 1024-token minimum makes it fail to load
+    ("image_max_pixels ... is less than image_min_pixels") and the whole server
+    exits. We drop it for non-Qwen-VL models.
     """
     threads = (os.cpu_count() or 4)
-    return [
+    args = [
         "--flash-attn", "on",
         "--ctx-size", "16384",     # 16k: stable in 8 GB VRAM (32k crashed it)
         "--cache-type-k", "q8_0",
         "--cache-type-v", "q8_0",
-        "--image-min-tokens", "1024",  # Qwen-VL needs this for accurate image reading
         "--threads", str(threads),
         # Use the GGUF's embedded chat template (Jinja). This is what makes
         # Qwen3.5's separate reasoning/thinking role work: without --jinja the
@@ -158,6 +229,10 @@ def _default_server_args():
         # is NOT surfaced as reasoning_content, so the 🧠 Thinking block is empty.
         "--jinja",
     ]
+    mn = os.path.basename(model_path or "").lower()
+    if any(h in mn for h in ("qwen2-vl", "qwen2vl", "qwen2.5-vl", "qwen3-vl", "llava", "minicpm-v", "minicpmv", "pixtral")):
+        args += ["--image-min-tokens", "1024"]
+    return args
 
 
 def _send_voice_bye():
@@ -247,7 +322,7 @@ def start(model=None):
         if mmproj:
             cmd += ["--mmproj", mmproj]
         # Peak GPU/performance defaults (config llama_args may override).
-        cmd += _default_server_args()
+        cmd += _default_server_args(model_path)
         cmd += [str(a) for a in cfg.get("llama_args", [])]
         try:
             _process = subprocess.Popen(
