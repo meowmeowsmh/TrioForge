@@ -1,0 +1,2 @@
+FROM /root/.ollama/models/gemma-4-12B-it-qat-UD-Q4_K_XL
+MMPROJ /root/.ollama/models/mmproj-BF16.gguf

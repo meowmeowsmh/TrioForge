@@ -4587,6 +4587,7 @@ function actuallySend(text) {
                     handleSendError(data.error);
                 } else {
                     var text = data.response || '(no response)';
+                    if (data.reasoning) renderThinkingBlock(botDiv, data.reasoning);
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
                     botDiv.querySelector('.body').innerHTML = renderMarkdown(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
