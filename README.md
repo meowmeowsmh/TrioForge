@@ -46,7 +46,7 @@
 - 🔓 **100% free** — no API keys, no limits when using local Ollama models.
 - 🧠 **Any local model** — Qwen, Llama, Mistral, DeepSeek, and more.
 - 🧰 **Multi-provider** — Ollama, llama.cpp, Hugging Face, Groq, DeepSeek, Claude, **Gemini**, and **OpenRouter** (one key → hundreds of models: GPT, Claude, Gemini, Llama, plus vision, workspace tools, image & video).
-- 🤖 **Coding agent** — pick a workspace folder; the AI can **list**, **search**, **read**, **write**, **edit** (surgical string replacement), **run shell commands**, and **search the web**, looping up to 20 tool steps per task — with a **live diff panel** showing exactly what it edits.
+- 🤖 **Coding agent** — pick a workspace folder; the AI can **list**, **search**, **read**, **write**, **edit** (surgical string replacement), **run shell commands**, and **search the web**, looping up to 20 tool steps per task — with a **live diff panel** showing exactly what it edits (and any code it prints, persisted across restarts).
 - 🤝 **Multi-agent** — run up to 6 models in parallel on one task, each with an optional role.
 - 🤖 **Full computer access** — optional, gated: open URLs/apps, type, press keys, screenshot (needs explicit opt-in).
 - 🗣️ **Voice (Jarvis-style)** — local speech-to-speech, browser STT/TTS, and `/open` voice commands for system control.
@@ -60,7 +60,7 @@
 - 🖱️ **Drag & drop** — drop files or folders onto the chat window.
 - 📑 **Persistent chats** — conversations auto-save and survive restarts.
 - 🗄️ **SQLite audit log** — every message is logged; recover deleted chats.
-- 📝 **Notes & corkboard** — built-in tools for organizing facts and ideas.
+- 📝 **Notes & corkboard** — built-in tools for organizing facts and ideas. Notes **auto-save as you type** (debounced), and the knowledge graph animates with unique node shapes, isolated-node motion, and boundary bounce so no node drifts off-screen.
 - 💾 **Live monitor** — real-time RAM & VRAM usage tracking.
 - 🖼️ **Image generation** — via **OpenRouter** (52 cloud image models), **Gemini** (Nano Banana / Imagen), or **ComfyUI** (Z-Image Turbo / FHDR, local).
 - 🎬 **Video generation** — via **OpenRouter** (28 cloud video models: Kling, Veo 3, Hailuo, …) or **ComfyUI** (Wan 2.2 / LTX, free & offline).
@@ -74,6 +74,9 @@
 
 ## 🆕 Recently added
 
+- 📝 **Live coding panel (fixed & upgraded)** — now captures **any code the model prints** (fenced, indented, or code-heavy replies) from **any provider** — not just agent tool calls. A **frontend path** reports rendered code even if the server misses it, and everything is **persisted to `sqlite_data/edits.db`** so it survives restarts. Auto-opens on a coding burst, shows a green-dot notification, and the 📝 button no longer pops open on page load.
+- 🐛 **llama.cpp streaming fix** — streaming mode now auto-starts the llama-server (and resolves the bare GGUF filename to its full path), so local models connect and stream instead of returning 500.
+- 📚 **RAG error clarity** — unreadable/scanned PDFs and unsupported files now return a clear message ("scanned/image-only, requires OCR") instead of silently storing 0 chunks.
 - ⚔️ **A/B model compare** — a new ⚔️ panel runs two models side-by-side on one prompt (threaded, in parallel) and shows each answer with its provider, model, and generation time.
 - 🧰 **MCP-style agent tools** — the coding agent gained a `web_search` tool (DuckDuckGo) alongside `list_files`, `search_files`, `read_file`, `write_file`, `edit_file`, and `run_command`.
 - 🤖 **Coding agent (upgraded)** — the workspace tools now include `list_files` (recursive), `search_files` (grep), `read_file`, `write_file`, `edit_file` (surgical string replacement), and `run_command` (bounded shell execution). The tool loop runs up to **20** model→tool round-trips per task.
@@ -377,13 +380,24 @@ Each agent answers independently and its reply renders in its own card. This is 
 
 ## 📝 Live coding panel
 
-When the coding agent modifies files (with a workspace folder set to `readwrite`), every `write_file` / `edit_file` is captured as a **unified diff** and shown in a real-time right-side panel.
+The live-coding panel shows a real-time, right-side view of everything the AI produces as **code** — whether it's editing files with the agent tools or simply **printing code in the chat**.
 
 - Click **📝** in the top bar to open it.
-- Watch the model's edits stream in as it works — each entry shows the file, the tool used, and a colored `-` / `+` diff.
-- **Clear** resets the panel.
+- Each entry shows the file, the tool used, and a colored `-` / `+` **unified diff**.
 
-This turns the coding agent into a *visible* editor: instead of a silent final answer, you see exactly what the model is changing, line by line.
+### What gets captured (auto-detected, any provider)
+The panel records code from **any** source, big or small:
+- **Agent file edits** — `write_file` / `edit_file` tool calls (with a workspace folder set to `readwrite`).
+- **Printed code blocks** — fenced ```` ```lang … ``` ```` blocks, indented (pasted) code, and code-heavy replies. Captured by **both** the backend and the browser (frontend posts the rendered reply), so no provider or route is missed.
+- **Direct workspace writes** — any file written through the app's write API.
+
+### Persistence
+Edits are stored in **`sqlite_data/edits.db`** (via `edits_store`), so they **survive app restarts**. The panel rebuilds from disk on launch. **Clear** wipes the history (memory + DB).
+
+### Notifications
+When code/edits arrive, the 📝 button shows a **green dot**. If the model produces a genuine burst of edits (or code), the panel **auto-opens**; an idle timeout auto-closes it. You can also open/close it manually.
+
+This turns the agent into a *visible* editor: you see exactly what it's changing or generating, line by line, and it never disappears on restart.
 
 ---
 

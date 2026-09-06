@@ -90,6 +90,7 @@ import comfyui_service
 import rag
 import plugin_loader
 import setup_check
+import edits_store
 
 try:
     import pynvml
@@ -109,6 +110,12 @@ try:
     plugin_loader.load_all(app)
 except Exception as _plugin_exc:
     logger.warning("Plugin loading failed: %s", _plugin_exc)
+
+# ── Live-coding edits: load persisted edits so the panel survives restarts ──
+try:
+    edits_store.init()
+except Exception as _edits_exc:
+    logger.warning("edits_store init failed: %s", _edits_exc)
 
 # ── Lightweight per-IP rate limiting ──
 _rate_limit_lock = threading.Lock()
@@ -1653,7 +1660,8 @@ def _workspace_setting(wid, key, default=None):
 
 # ── Live coding (agent edits) ──────────────────────────
 # The agent's write_file / edit_file calls append a diff entry here, so the UI
-# can show a live "what the model is changing" panel in real time.
+# can show a live "what the model is changing" panel. Edits are also persisted
+# to sqlite_data/edits.db (via edits_store) so they survive a restart.
 AGENT_EDITS = []
 AGENT_EDITS_LOCK = threading.Lock()
 _agent_edit_seq = 0
@@ -1661,29 +1669,83 @@ _agent_edit_seq = 0
 
 def _record_edit(tool, path, before="", after="", detail=""):
     """Record one agent file mutation with a unified diff for the live panel."""
-    global _agent_edit_seq
-    import difflib
-    diff = "\n".join(difflib.unified_diff(
-        (before or "").splitlines(), (after or "").splitlines(),
-        fromfile=path or "", tofile=path or "", lineterm="",
-    ))
+    entry = edits_store.insert(tool, path, before=before, after=after, detail=detail)
     with AGENT_EDITS_LOCK:
-        _agent_edit_seq += 1
-        entry = {
-            "id": _agent_edit_seq,
-            "tool": tool,
-            "path": path,
-            "detail": detail or "",
-            "diff": diff,
-            "before": before[:4000] or "",
-            "after": after[:4000] or "",
-            "ts": time.time(),
-        }
         AGENT_EDITS.append(entry)
         # Keep the buffer bounded (last 200 edits).
         if len(AGENT_EDITS) > 200:
             del AGENT_EDITS[0 : len(AGENT_EDITS) - 200]
     return entry
+
+
+_EXT_MAP = {
+    "python": "py", "py": "py", "javascript": "js", "js": "js",
+    "typescript": "ts", "ts": "ts", "json": "json", "html": "html",
+    "css": "css", "bash": "sh", "sh": "sh", "shell": "sh",
+    "ruby": "rb", "go": "go", "rust": "rs", "rs": "rs",
+    "java": "java", "c": "c", "cpp": "cpp", "c++": "cpp",
+    "csharp": "cs", "cs": "cs", "yaml": "yaml", "yml": "yml",
+    "toml": "toml", "md": "md", "markdown": "md", "sql": "sql",
+    "xml": "xml", "php": "php", "swift": "swift", "kt": "kt",
+    "kotlin": "kt", "dart": "dart", "r": "r", "perl": "pl",
+}
+
+# Lines that look like real code (not prose). Used to decide whether a chunk of
+# the reply is code even when it isn't fenced or indented.
+_CODE_HINT_RE = re.compile(r"^(def |class |import |from |function |const |let |var |return |print\(|if |else|elif |for |while |try:|except|public |private |#include|using |fn |func )", re.M)
+
+
+def _ext_for_lang(lang):
+    lang = (lang or "").lower().strip()
+    if not lang:
+        return "txt"
+    return _EXT_MAP.get(lang, lang.split(".")[-1].split("-")[0] or "txt")
+
+
+def _record_code_blocks(text):
+    """Capture code the model emits (big or small) as live "write" edits.
+
+    Handles three shapes, so it isn't limited to one provider's formatting:
+      1. Fenced blocks:      ```lang ... ```
+      2. Indented blocks:    lines with 4+ leading spaces (pasted code)
+      3. Code-heavy replies: a chunk that is mostly code-looking lines
+
+    Returns the number of blocks captured.
+    """
+    if not text:
+        return 0
+    blocks = []  # (label, code)
+    # 1) Fenced ``` ... ``` blocks.
+    for lang, body in re.findall(r"```([A-Za-z0-9_+\-]*)\s*\n(.*?)```", text, re.DOTALL):
+        body = body.rstrip("\n")
+        if body.strip():
+            blocks.append((lang, body))
+    # 2) Indented code blocks (4+ spaces or a tab) — collect contiguous lines.
+    indented = []
+    for ln in text.split("\n"):
+        if re.match(r"^(?: {4,}|\t)\S", ln):
+            indented.append(ln.strip())
+        else:
+            if len(indented) >= 2:
+                blocks.append(("", "\n".join(indented)))
+            indented = []
+    if len(indented) >= 2:
+        blocks.append(("", "\n".join(indented)))
+    # 3) Fallback: if the reply itself is mostly code-looking, record it whole.
+    if not blocks and len(text.split("\n")) >= 2:
+        code_hits = len(_CODE_HINT_RE.findall(text))
+        if code_hits >= 2:
+            blocks.append(("", text.strip()))
+
+    count = 0
+    for i, (lang, body) in enumerate(blocks, 1):
+        if not body:
+            continue
+        ext = _ext_for_lang(lang)
+        path = "generated/code_{:02d}.{}".format(i, ext)
+        _record_edit("write_file", path, "", body, detail="auto-captured code ({})".format(lang or "code"))
+        count += 1
+    return count
 
 
 # ── LLM tool definitions (workspace folder access) ──
@@ -2678,16 +2740,28 @@ def setup_check_status():
 def agent_edits():
     """Return the recent agent file edits (for the live coding panel)."""
     since = request.args.get('since', type=float, default=0)
-    with AGENT_EDITS_LOCK:
-        items = [e for e in AGENT_EDITS if e.get("ts", 0) > since]
-        return jsonify({"edits": items, "count": len(items)})
+    limit = request.args.get('limit', type=int, default=200)
+    items = edits_store.list_since(since, limit=min(max(limit, 1), 500))
+    return jsonify({"edits": items, "count": len(items)})
 
 
 @app.route('/api/agent/edits/clear', methods=['POST'])
 def agent_edits_clear():
+    edits_store.clear()
     with AGENT_EDITS_LOCK:
         AGENT_EDITS.clear()
     return jsonify({"ok": True})
+
+
+@app.route('/api/livecode/capture', methods=['POST'])
+def livecode_capture():
+    """Frontend-side capture of code blocks the model printed. The backend
+    already tries to auto-capture on /chat and /chat_stream, but this lets the
+    UI report code blocks from ANY reply path so nothing is missed."""
+    data = request.get_json(silent=True) or {}
+    text = data.get('text') or ''
+    n = _record_code_blocks(text)
+    return jsonify({"ok": True, "captured": n})
 
 
 # ── RAG document chat ───────────────────────────────────────────
@@ -2714,6 +2788,8 @@ def rag_index():
     try:
         n = rag.index_document(name, raw)
         return jsonify({'ok': True, 'name': name, 'chunks': n})
+    except ValueError as ve:
+        return jsonify({'error': str(ve), 'chunks': 0}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -2757,6 +2833,7 @@ def workspace_write_file():
     try:
         with open(target, "w", encoding="utf-8") as f:
             f.write(data.get("content", ""))
+        _record_edit("write_file", data.get("path", ""), "", data.get("content", ""))
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2817,8 +2894,13 @@ def chat():
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
         if rag_context:
             final_prompt += (
-                "\n\n[Reference documents — use these to answer the user's question]\n"
+                "\n\n[The user's uploaded documents are provided below]\n"
                 + rag_context
+                + "\n\nThese are documents the user uploaded (RAG). Read them and use them to answer. "
+                  "When the user says 'read it', 'read my rag', 'the material', 'what's in the documents' "
+                  "or asks about the material, READ the content above and answer from it directly — do not "
+                  "search for the question's exact words. Give the answer from the provided content, and "
+                  "do not ask for confirmation or what the user wants."
             )
         # llama.cpp GGUF chat templates often require strictly alternating
         # user/assistant roles, so drop the separate "system" role there (the
@@ -2885,6 +2967,7 @@ def chat():
         reasoning = getattr(provider, "last_reasoning", "") or ""
         if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model, reasoning)):
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
+        _record_code_blocks(reply)
 
         return jsonify({'response': reply, 'usage': usage})
 
@@ -2999,13 +3082,31 @@ def chat_stream():
             system_prompt = _persona + "\n\n" + system_prompt
         final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
         if rag_context:
-            final_prompt += "\n\n[Reference documents — use these to answer the user's question]\n" + rag_context
+            final_prompt += (
+                "\n\n[The user's uploaded documents are provided below]\n"
+                + rag_context
+                + "\n\nThese are documents the user uploaded (RAG). Read them and use them to answer. "
+                  "When the user says 'read it', 'read my rag', 'the material', 'what's in the documents' "
+                  "or asks about the material, READ the content above and answer from it directly — do not "
+                  "search for the question's exact words. Give the answer from the provided content, and "
+                  "do not ask for confirmation or what the user wants."
+            )
         include_system = (provider_name != 'llamacpp')
         messages = _build_messages(conv_id, system_prompt, final_prompt, include_system=include_system)
 
         mem_settings = get_ollama_memory_settings()
         use_tools = (not images) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
             and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
+
+        # llama.cpp is auto-started (and kept running) whenever it's the provider,
+        # so the user never has to launch it manually. This MUST happen in the
+        # streaming path too — without it the model list shows, but every send
+        # fails with a connection refused.
+        if provider_name == 'llamacpp':
+            st = llamacpp_service.start(model=model)
+            if st.get('error') and not st.get('running'):
+                yield_error = f"data: {json_dumps({'error': 'llama.cpp failed to start: ' + st['error']})}\n\n"
+                return Response(yield_error, mimetype='text/event-stream')
 
         # Workspace tools are resolved non-streaming first, then we stream the
         # final answer so the client keeps its normal token-by-token UI.
@@ -3075,7 +3176,16 @@ def chat_stream():
                     yield f"data: {json_dumps({'error': 'Streaming not supported for ' + provider_name})}\n\n"
                 else:
                     url, headers = target
-                    payload = {"model": model, "messages": messages, "stream": True, "temperature": 0.7}
+                    # llama.cpp registers the model by its FULL path, not the bare
+                    # filename the dropdown sends. Resolve it the same way the
+                    # non-streaming path does, or llama-server returns 500.
+                    stream_model = model
+                    if provider_name == "llamacpp":
+                        try:
+                            stream_model = providers["llamacpp"]._resolve_model_path(model)
+                        except Exception:
+                            stream_model = model
+                    payload = {"model": stream_model, "messages": messages, "stream": True, "temperature": 0.7}
                     try:
                         for ev in _iter_openai_stream(url, headers, payload):
                             if "reasoning" in ev:
@@ -3091,6 +3201,7 @@ def chat_stream():
             add_message(conv_id, "user", user_message, images, files)
             add_message(conv_id, "bot", full_response or "(empty response)", [], [],
                         meta=_bot_meta(provider_name, model, thinking_acc))
+            _record_code_blocks(full_response)
             record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
 
         return Response(generate(), mimetype='text/event-stream')

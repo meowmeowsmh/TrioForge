@@ -527,6 +527,37 @@ body.light-mode .msg .avatar { background: rgba(0,0,0,0.06); border-color: rgba(
     border-radius: 4px;
     font-family: monospace;
 }
+/* Keep long content inside the bubble: wrap inline text, and let wide
+   tables/code scroll horizontally instead of stretching the message out. */
+.msg .body {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    min-width: 0;
+}
+.msg .body table {
+    max-width: 100%;
+    display: table;
+    table-layout: auto;
+}
+.msg .body pre {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #0a0a0f;
+    border: 1px solid #222;
+    border-radius: 8px;
+    padding: 10px;
+}
+.msg .body pre code {
+    background: transparent;
+    padding: 0;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+.msg .body code {
+    word-break: break-all;
+}
 body.light-mode .msg.bot th {
     background: rgba(0,0,0,0.05);
 }
@@ -1530,7 +1561,7 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
         <button class="clear-btn" id="compareBtn" onclick="toggleComparePanel()" title="A/B compare — run two models side-by-side" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">⚔️</button>
         <button class="clear-btn" id="multiBtn" onclick="toggleMultiPanel()" title="Multi-agent — run several models on one task" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🤝</button>
-        <button class="clear-btn" id="liveCodeBtn" onclick="toggleLiveCodePanel()" title="Live coding — watch the agent edit files in real time" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📝</button>
+        <button class="clear-btn" id="liveCodeBtn" onclick="toggleLiveCodePanel()" title="Live coding — watch the agent edit files in real time" style="border-color:rgba(163,113,247,0.4); color:#a371f7; position:relative;">📝<span id="liveCodeDot" style="display:none; position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:#3fb950; box-shadow:0 0 6px rgba(63,185,80,0.7);"></span></button>
         <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">🖼️</button>
         <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
         <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
@@ -1550,7 +1581,6 @@ body.light-mode .weather-country-select option {
       <div class="attachments" id="attachments"></div>
       <div class="input-bar">
         <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
-        <button class="search-toggle-btn" id="ragToggleBtn" title="Toggle document chat (RAG)" style="display:none;">📚</button>
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
@@ -1628,7 +1658,11 @@ body.light-mode .weather-country-select option {
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
         <span style="font-size:13px; font-weight:600; color:#a371f7;">📚 Document chat (RAG)</span>
         <button class="clear-btn" onclick="document.getElementById('ragFileInput').click()" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">⬆ Upload docs</button>
-        <span style="font-size:11px; color:#8b949e;">PDF, Word, Markdown, code, CSV… then toggle the 📚 button in the input bar to ask questions.</span>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#e1e4e8; cursor:pointer; user-select:none;">
+          <input type="checkbox" id="ragEnabledSwitch" checked style="cursor:pointer;"/>
+          Use this material when answering
+        </label>
+        <span style="font-size:11px; color:#8b949e;">Upload documents (PDF, Word, Markdown, code, CSV…). When enabled, the model reads your indexed docs with every answer.</span>
       </div>
       <div id="ragDocList" style="max-height:140px; overflow-y:auto;"></div>
     </div>
@@ -1674,16 +1708,35 @@ body.light-mode .weather-country-select option {
     </div>
 
     <!-- Live coding panel (right side) -->
-    <div id="liveCodePanel" style="display:none; position:fixed; top:60px; right:0; width:min(440px, 92vw); bottom:60px; z-index:5000; background:#0d0d13; border-left:1px solid #333; box-shadow:-4px 0 20px rgba(0,0,0,0.5); display:flex; flex-direction:column;">
+    <div id="liveCodePanel" style="display:none; position:fixed; top:60px; right:0; width:min(440px, 92vw); bottom:60px; z-index:5000; background:#0d0d13; border-left:1px solid #333; box-shadow:-4px 0 20px rgba(0,0,0,0.5); flex-direction:column;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222;">
         <strong style="font-size:14px; color:#a371f7;">📝 Live coding — agent edits</strong>
         <div style="display:flex; gap:6px;">
+          <button onclick="restoreLiveCode()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;" title="Pick saved edits to restore from the database">↺ Restore</button>
           <button onclick="clearLiveCode()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">Clear</button>
           <button onclick="toggleLiveCodePanel()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
         </div>
       </div>
       <div id="liveCodeBody" style="flex:1; overflow-y:auto; padding:12px 14px; font-size:12px;">
-        <div style="color:#8b949e;">No edits yet. When the agent writes/edits files (with a workspace configured), changes appear here live.</div>
+        <div style="color:#8b949e;">Session only — new edits appear here as the agent makes them. Use ↺ Restore to load saved edits from the database.</div>
+      </div>
+    </div>
+
+    <!-- Restore picker modal: select which saved edits to load -->
+    <div id="restorePicker" style="display:none; position:fixed; top:12vh; right:0; width:min(440px, 92vw); bottom:12vh; z-index:6000; background:#0d0d13; border-left:1px solid #1f6feb; box-shadow:-4px 0 20px rgba(0,0,0,0.6); flex-direction:column;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222;">
+        <strong style="font-size:14px; color:#1f6feb;">↺ Restore saved edits</strong>
+        <button onclick="closeRestore()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
+      </div>
+      <div id="restorePickerList" style="flex:1; overflow-y:auto; padding:12px 14px; font-size:12px;">
+        <div style="color:#8b949e;">Loading…</div>
+      </div>
+      <div style="border-top:1px solid #222; padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:11px; color:#8b949e;">Tick the outputs you want, then load them.</div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="closeRestore()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Cancel</button>
+          <button onclick="applyRestore()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Load selected ▸</button>
+        </div>
       </div>
     </div>
 
@@ -1724,7 +1777,10 @@ var pending     = [];
 var conversations = [];
 var searchQuery = '';
 var searchEnabled = true;
-var ragEnabled = false;
+// RAG (document chat) defaults ON so the model reads your indexed material.
+// It's harmless when no documents are indexed (build_context returns ""), and
+// the user can toggle it off with the 📚 button in the input bar.
+var ragEnabled = true;
 var unloadBtn = document.getElementById('unloadBtn');
 
 function smoothScrollToBottom() {
@@ -3459,6 +3515,28 @@ function renderThinkingBlock(container, reasoning) {
     else container.appendChild(thinkWrap);
 }
 
+// Render model/message text as sanitized Markdown. Pre-processes common model
+// output quirks so they display correctly instead of as raw text:
+//  - literal "<br>" / "<br/>" tags  -> real line breaks (DOMPurify would strip them)
+//  - literal backslash-n ("\n") text -> real newline, but only outside fenced code
+//  - keeps tables/code bounded so long content fits instead of overflowing
+function renderMarkdown(text) {
+    text = text || '';
+    // Turn <br> and <br/> into actual newlines before Markdown parsing, so
+    // models that emit HTML breaks produce real line breaks.
+    text = text.replace(/<br\s*\/?>/gi, '\n');
+    // Model output sometimes contains the literal two-char sequence "\n"
+    // (backslash + n). Convert those to real newlines — but NOT inside fenced
+    // code blocks, where they are usually intentional escapes. We only touch a
+    // "\n" that is not preceded by another backslash (avoids breaking \\n).
+    text = text.replace(/(^|[^\\])\\n/g, '$1\n');
+    // Make newlines render as breaks (marked option) so plain line breaks show.
+    try { if (marked) marked.setOptions({ breaks: true }); } catch (e) {}
+    var html = '';
+    try { html = marked.parse(text); } catch (e) { html = text; }
+    try { return DOMPurify.sanitize(html); } catch (e) { return html; }
+}
+
 function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
@@ -3512,7 +3590,7 @@ function renderMsg(role, entry, msgIndex) {
     var body = document.createElement('div');
     body.className = 'body';
     if (role === 'bot') {
-        body.innerHTML = DOMPurify.sanitize(marked.parse(entry.text || ''));
+        body.innerHTML = renderMarkdown(entry.text || '');
         renderMermaidDiagrams(body);
     } else {
         body.textContent = entry.text || '';
@@ -3666,12 +3744,9 @@ document.getElementById('searchToggleBtn').addEventListener('click', function() 
 });
 
 // ─── RAG (document chat) ─────────────────────────────────────────
-try { if (document.getElementById('ragToggleBtn')) document.getElementById('ragToggleBtn').addEventListener('click', function() {
-    ragEnabled = !ragEnabled;
-    this.classList.toggle('active', ragEnabled);
-    this.textContent = ragEnabled ? '📚' : '📚 off';
-    this.style.borderColor = ragEnabled ? '#a371f7' : '';
-    this.style.color = ragEnabled ? '#a371f7' : '';
+// On/off switch lives INSIDE the RAG panel (single 📚 button opens the panel).
+try { if (document.getElementById('ragEnabledSwitch')) document.getElementById('ragEnabledSwitch').addEventListener('change', function(e) {
+    ragEnabled = e.target.checked;
     status.textContent = ragEnabled ? '📚 Document chat ON — asking your indexed docs' : '📚 Document chat OFF';
     if (ragEnabled) refreshRagDocuments();
 }); } catch(e) {}
@@ -3978,18 +4053,69 @@ function runMultiAgent() {
 // ─── Live coding panel ──────────────────────────────────────
 var liveCodeTimer = null;
 var liveCodeLastTs = 0;
+var liveCodeCloseTimer = null;
+var liveCodeCloseCheckpoint = 0;
+var restoreEditsCache = [];
+function showLiveCodePanel() {
+    var m = document.getElementById('liveCodePanel');
+    if (!m) return;
+    m.style.display = 'flex';
+    clearLiveCodeNotify();
+    if (liveCodeTimer) clearInterval(liveCodeTimer);
+    liveCodeTimer = setInterval(pollLiveCode, 2000);
+}
+function hideLiveCodePanel() {
+    var m = document.getElementById('liveCodePanel');
+    if (!m) return;
+    m.style.display = 'none';
+    if (liveCodeTimer) { clearInterval(liveCodeTimer); liveCodeTimer = null; }
+    if (liveCodeCloseTimer) { clearTimeout(liveCodeCloseTimer); liveCodeCloseTimer = null; }
+}
 function toggleLiveCodePanel() {
     var m = document.getElementById('liveCodePanel');
-    var show = m.style.display !== 'flex';
-    m.style.display = show ? 'flex' : 'none';
-    if (show) {
-        pollLiveCode();
-        if (liveCodeTimer) clearInterval(liveCodeTimer);
-        liveCodeTimer = setInterval(pollLiveCode, 2000);
-    } else {
-        if (liveCodeTimer) clearInterval(liveCodeTimer);
-        liveCodeTimer = null;
-    }
+    if (!m) return;
+    // Opening the panel just wakes the live view for the current session. It does
+    // NOT dump the whole database history — that is only via the Restore picker,
+    // so nothing ever appears "out of nowhere".
+    if (m.style.display === 'flex') hideLiveCodePanel();
+    else showLiveCodePanel();
+}
+// Load up to `limit` persisted edits, rendered oldest → newest (most recent at
+// the bottom), and set the "since" cursor to the latest timestamp so new polls
+// only append new edits.
+function loadLiveCodeHistory(limit) {
+    limit = limit || 200;
+    fetch('/api/agent/edits?since=0&limit=' + limit)
+        .then(r => r.json())
+        .then(function(d) {
+            var body = document.getElementById('liveCodeBody');
+            if (!body) return;
+            body.innerHTML = '';
+            var items = (d.edits || []).slice();
+            if (!items.length) {
+                body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">No edits yet. When the agent writes/edits files (with a workspace configured), changes appear here live.</div>';
+                return;
+            }
+            // newest first from the API → reverse to oldest first and append.
+            for (var i = items.length - 1; i >= 0; i--) {
+                body.appendChild(renderLiveCodeEdit(items[i]));
+            }
+            liveCodeLastTs = items[0] && items[0].ts ? items[0].ts : 0;
+        })
+        .catch(function() {});
+}
+// Called once on page load: advance the "since" cursor to the newest saved
+// edit WITHOUT rendering it, so background polls only surface genuinely-new
+// edits and never dump the whole history back into the panel.
+function seedLiveCodeCursor() {
+    fetch('/api/agent/edits?since=0&limit=1')
+        .then(r => r.json())
+        .then(function(d) {
+            if (d.edits && d.edits.length && d.edits[0].ts) {
+                liveCodeLastTs = d.edits[0].ts;
+            }
+        })
+        .catch(function() {});
 }
 function pollLiveCode() {
     fetch('/api/agent/edits?since=' + liveCodeLastTs)
@@ -3998,15 +4124,81 @@ function pollLiveCode() {
             var body = document.getElementById('liveCodeBody');
             if (!body) return;
             if (d.edits && d.edits.length) {
-                if (body.querySelector('div[data-placeholder]')) body.innerHTML = '';
-                d.edits.forEach(function(e) {
-                    liveCodeLastTs = Math.max(liveCodeLastTs, e.ts);
-                    body.prepend(renderLiveCodeEdit(e));
-                });
-                while (body.children.length > 50) body.removeChild(body.lastChild);
+                // Whether the panel is open decides what we do with new edits.
+                // - Open: stream them into the body (newest at the top).
+                // - Closed: only advance the cursor + flash the dot; do NOT
+                //   render, so no history is ever pre-loaded into the panel.
+                var panel = document.getElementById('liveCodePanel');
+                var isOpen = panel && panel.style.display === 'flex';
+                if (isOpen) {
+                    if (body.querySelector('div[data-placeholder]')) body.innerHTML = '';
+                    d.edits.forEach(function(e) {
+                        liveCodeLastTs = Math.max(liveCodeLastTs, e.ts);
+                        body.prepend(renderLiveCodeEdit(e));
+                    });
+                    while (body.children.length > 50) body.removeChild(body.lastChild);
+                } else {
+                    d.edits.forEach(function(e) {
+                        liveCodeLastTs = Math.max(liveCodeLastTs, e.ts);
+                    });
+                }
+                maybeAutoOpenLiveCode(d.edits.length);
             }
         })
         .catch(function() {});
+}
+// Frontend capture: when the model prints code (any provider/route), report it
+// to the backend so it lands in the live-coding panel even if the server
+// didn't catch it on its own.
+function captureLiveCodeFromReply(text) {
+    if (!text) return;
+    // Only send if there's likely a code block (fast pre-filter).
+    if (text.indexOf('```') === -1) return;
+    fetch('/api/livecode/capture', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text: text })
+    }).catch(function() {});
+}
+function maybeAutoOpenLiveCode(count) {
+    // The panel NEVER auto-opens. If the panel is already open, keep polling;
+    // if closed, just flash the 📝 notification dot. This is what makes the
+    // panel stop appearing "out of nowhere".
+    if (!count) return;
+    var m = document.getElementById('liveCodePanel');
+    if (!m) return;
+    if (m.style.display === 'flex') {
+        // Panel already open — new edits were already prepended by pollLiveCode.
+        if (liveCodeCloseTimer) clearTimeout(liveCodeCloseTimer);
+        liveCodeCloseCheckpoint = liveCodeLastTs;
+        liveCodeCloseTimer = setTimeout(closeLiveCodeIfIdle, 25000);
+    } else {
+        notifyLiveCodeNew();
+    }
+}
+function closeLiveCodeIfIdle() {
+    // Compare the current "last seen edit" timestamp against what was recorded
+    // when we (re)armed the close timer. If it hasn't changed, the model is
+    // idle — close the panel.
+    if (liveCodeLastTs === liveCodeCloseCheckpoint) {
+        var m = document.getElementById('liveCodePanel');
+        if (m && m.style.display === 'flex') {
+            m.style.display = 'none';
+            if (liveCodeTimer) { clearInterval(liveCodeTimer); liveCodeTimer = null; }
+        }
+    }
+}
+function notifyLiveCodeNew() {
+    var dot = document.getElementById('liveCodeDot');
+    var btn = document.getElementById('liveCodeBtn');
+    if (dot) dot.style.display = 'block';
+    if (btn) btn.style.borderColor = '#3fb950';
+}
+function clearLiveCodeNotify() {
+    var dot = document.getElementById('liveCodeDot');
+    if (dot) dot.style.display = 'none';
+    var btn = document.getElementById('liveCodeBtn');
+    if (btn) { btn.style.borderColor = 'rgba(163,113,247,0.4)'; btn.style.color = '#a371f7'; }
 }
 function renderLiveCodeEdit(e) {
     var card = document.createElement('div');
@@ -4031,10 +4223,129 @@ function renderLiveCodeEdit(e) {
     return card;
 }
 function clearLiveCode() {
-    liveCodeLastTs = 0;
+    // Clear ONLY the on-screen panel display. The DB backup is left intact so
+    // ↺ Restore can still bring these edits back. Also forget which edits were
+    // "restored", so they don't re-appear on the next page reload.
     var body = document.getElementById('liveCodeBody');
-    if (body) body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">No edits yet.</div>';
-    fetch('/api/agent/edits/clear', { method: 'POST' }).catch(function() {});
+    if (body) body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">Cleared — session only. New edits appear here as the agent makes them. Use ↺ Restore to load saved edits from the database.</div>';
+    try { localStorage.removeItem('liveCodeRestoredIds'); } catch (e) {}
+    clearLiveCodeNotify();
+    // Advance the cursor to the newest saved edit (not 0), so the next poll
+    // does NOT re-dump the whole DB back into the panel after a clear.
+    if (typeof seedLiveCodeCursor === 'function') seedLiveCodeCursor();
+}
+// Reload the full saved history from the database (sqlite_data/edits.db), even
+// if it was cleared earlier or this session just started.
+function restoreLiveCode() {
+    // Open the Restore picker: a selectable list of every persisted file edit /
+    // code output, so the user chooses which ones to bring back. Nothing is
+    // loaded or opened until the user ticks an item and clicks Apply.
+    var picker = document.getElementById('restorePicker');
+    if (!picker) return;
+    fetch('/api/agent/edits?since=0&limit=500')
+        .then(r => r.json())
+        .then(function(d) {
+            var list = document.getElementById('restorePickerList');
+            if (!list) return;
+            restoreEditsCache = (d.edits || []).slice();
+            list.innerHTML = '';
+            if (!restoreEditsCache.length) {
+                list.innerHTML = '<div style="color:#8b949e;">No saved edits in the database.</div>';
+                return;
+            }
+            // newest first (the API returns newest-first); show timestamp + path
+            restoreEditsCache.forEach(function(e, i) {
+                var row = document.createElement('label');
+                row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid #26262e; border-radius:8px; margin-bottom:8px; cursor:pointer; background:#101018;';
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.idx = String(i);
+                cb.style.flexShrink = '0';
+                var info = document.createElement('div');
+                info.style.cssText = 'flex:1; min-width:0;';
+                var t = document.createElement('div');
+                t.style.cssText = 'font-size:12px; font-weight:700; color:' + (e.tool === 'edit_file' ? '#a371f7' : '#3fb950') + '; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+                t.textContent = (e.tool === 'edit_file' ? '✏️ ' : '📄 ') + (e.path || '(file)');
+                var meta = document.createElement('div');
+                meta.style.cssText = 'font-size:11px; color:#8b949e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+                meta.textContent = (e.detail || '') + (e.ts ? ' · ' + new Date(e.ts * 1000).toLocaleTimeString() : '');
+                info.appendChild(t); info.appendChild(meta);
+                row.appendChild(cb); row.appendChild(info);
+                list.appendChild(row);
+            });
+            picker.style.display = 'flex';
+        })
+        .catch(function() {});
+}
+
+function applyRestore() {
+    var list = document.getElementById('restorePickerList');
+    var body = document.getElementById('liveCodeBody');
+    if (!list || !body) return;
+    var chosen = list.querySelectorAll('input:checked');
+    if (!chosen.length) { alert('Select at least one saved edit to restore.'); return; }
+    var picked = [];
+    chosen.forEach(function(cb) {
+        var idx = parseInt(cb.dataset.idx, 10);
+        if (!isNaN(idx) && restoreEditsCache[idx]) picked.push(restoreEditsCache[idx]);
+    });
+    if (!picked.length) return;
+    body.innerHTML = '';
+    // `picked` is newest-first (as fetched). Appending keeps the newest
+    // edit at the top, matching the live feed's ordering.
+    picked.forEach(function(x) {
+        body.appendChild(renderLiveCodeEdit(x));
+    });
+    // Remember WHICH edits were restored so they stay "fixed in" the panel
+    // across a page reload. They are only removed by Clear (which leaves the
+    // DB backup intact).
+    var ids = picked.map(function(x) { return x.id; }).filter(function(x) { return x !== undefined && x !== null; });
+    setRestoredIds(ids);
+    // Advance the cursor to the actual newest saved edit (not just the newest
+    // picked one), so later polls don't drag in the ones the user skipped.
+    liveCodeLastTs = restoreEditsCache[0] && restoreEditsCache[0].ts ? restoreEditsCache[0].ts : (picked[0] && picked[0].ts ? picked[0].ts : 0);
+    document.getElementById('restorePicker').style.display = 'none';
+    showLiveCodePanel();
+}
+
+// ── Restore-selection persistence (localStorage) ─────────────────
+// The user's restored edits are remembered so they survive a page reload.
+function getRestoredIds() {
+    try { return JSON.parse(localStorage.getItem('liveCodeRestoredIds') || '[]'); }
+    catch (e) { return []; }
+}
+function setRestoredIds(ids) {
+    try { localStorage.setItem('liveCodeRestoredIds', JSON.stringify(ids || [])); }
+    catch (e) {}
+}
+// On page load, pull the remembered edits (by id) back into the panel without
+// auto-opening it. Nothing appears "out of nowhere"; they're simply there.
+function restoreSavedSelections() {
+    var ids = getRestoredIds();
+    if (!ids.length) return;
+    fetch('/api/agent/edits?since=0&limit=500')
+        .then(r => r.json())
+        .then(function(d) {
+            var body = document.getElementById('liveCodeBody');
+            if (!body) return;
+            var byId = {};
+            (d.edits || []).forEach(function(e) { if (e.id !== undefined) byId[e.id] = e; });
+            var items = [];
+            ids.forEach(function(id) { if (byId[id]) items.push(byId[id]); });
+            if (!items.length) return;
+            body.innerHTML = '';
+            // ids are stored newest-first, so append keeps newest at the top.
+            items.forEach(function(x) { body.appendChild(renderLiveCodeEdit(x)); });
+            // Keep the cursor at the newest saved edit so polling only adds
+            // genuinely new edits and never re-dumps the DB.
+            liveCodeLastTs = (d.edits && d.edits[0] && d.edits[0].ts) || 0;
+        })
+        .catch(function() {});
+}
+
+function closeRestore() {
+    var p = document.getElementById('restorePicker');
+    if (p) p.style.display = 'none';
 }
 
 function doSend() {
@@ -4226,10 +4537,11 @@ function actuallySend(text) {
                             rafId = null;
                         }
                         flushTokens();
-                        botBody.innerHTML = DOMPurify.sanitize(marked.parse(fullText || '(empty response)'));
+                        botBody.innerHTML = renderMarkdown(fullText || '(empty response)');
                         botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                         processCodeBlocks(botDiv);
                         renderMermaidDiagrams(botDiv);
+                        captureLiveCodeFromReply(fullText);
                         status.textContent = '✅ Done';
                         busy = false;
                         sendBtn.disabled = false;
@@ -4276,10 +4588,11 @@ function actuallySend(text) {
                 } else {
                     var text = data.response || '(no response)';
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
-                    botDiv.querySelector('.body').innerHTML = DOMPurify.sanitize(marked.parse(text));
+                    botDiv.querySelector('.body').innerHTML = renderMarkdown(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                     processCodeBlocks(botDiv);
                     renderMermaidDiagrams(botDiv);
+                    captureLiveCodeFromReply(text);
                     status.textContent = '✅ Done';
                     loadConversations();
                     speakText(text);
@@ -4423,12 +4736,42 @@ window.addEventListener('load', function() {
     safe(function() { msgInput.focus(); });
     setTimeout(function() { safe(updateResources); }, 500);
     safe(function() { checkSetup(false); });
+    // Background watch for the live-coding panel. On load, first advance the
+    // cursor to the newest saved edit WITHOUT rendering any of it, so the panel
+    // never gets pre-filled with old data. Then re-apply any edits the user
+    // previously restored (persisted in localStorage) — those stay "fixed in"
+    // the panel until Clear. The background poll only notices genuinely new
+    // edits (flashing the 📝 dot if the panel is closed).
+    safe(function() {
+        if (typeof seedLiveCodeCursor === 'function') seedLiveCodeCursor();
+        if (typeof restoreSavedSelections === 'function') restoreSavedSelections();
+        setInterval(function() {
+            if (typeof pollLiveCode === 'function') {
+                // Only poll in the background when the panel isn't already being
+                // polled by itself (avoid double intervals).
+                if (!liveCodeTimer) pollLiveCode();
+            }
+        }, 2500);
+    });
     if (provider === 'deepseek') safe(checkDeepSeekStatus);
     safe(function() {
         var searchBtn = document.getElementById('searchToggleBtn');
         searchBtn.classList.toggle('active', searchEnabled);
         searchBtn.textContent = searchEnabled ? '🔍' : '🔍 off';
         status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
+    });
+    // RAG document-chat: if the user has indexed documents, default RAG to ON
+    // so the model actually reads the material (they can turn it off with the
+    // switch inside the panel). Reflect the switch state to match.
+    safe(function() {
+        fetch('/api/rag/documents').then(r => r.json()).then(function(docs) {
+            if (docs && docs.length) {
+                ragEnabled = true;
+                if (typeof refreshRagDocuments === 'function') refreshRagDocuments();
+                var sw = document.getElementById('ragEnabledSwitch');
+                if (sw) sw.checked = true;
+            }
+        }).catch(function() {});
     });
     safe(initWeather);
 });

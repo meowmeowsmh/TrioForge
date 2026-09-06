@@ -1865,6 +1865,28 @@ body.light-mode .weather-controls select option {
         padding: 3px 24px 3px 10px;
     }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   PERFORMANCE PASS
+   backdrop-filter (frosted-glass blur) is very expensive: on every
+   scroll/drag frame the browser must re-rasterize the backdrop behind
+   each blurred element. This is the #1 cause of a laggy corkboard.
+   We disable the blur and compensate by making surfaces near-opaque.
+   ════════════════════════════════════════════════════════════════ */
+* { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.app { background: rgba(10,10,15,0.0); }
+.top-bar { background: rgba(22,27,34,0.94); }
+.board-wrap { background: rgba(10,10,15,0.92); }
+.center-tabs { background: rgba(255,255,255,0.08); }
+.clear-btn { background: rgba(33,38,45,0.9); }
+.sidebar { background: rgba(18,18,26,0.96); }
+.modal, .modal-overlay { background: rgba(0,0,0,0.88); }
+/* Pins shouldn't keep a permanent compositor layer — only the dragged one. */
+.pin { will-change: auto; }
+.pin.dragging { will-change: transform; }
+/* The board itself doesn't need a permanent layer either. */
+.board { will-change: auto; contain: layout; }
+.board-wrap { -webkit-overflow-scrolling: touch; }
 </style>
 </head>
 <body>
