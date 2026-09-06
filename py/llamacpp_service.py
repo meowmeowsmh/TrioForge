@@ -152,6 +152,11 @@ def _default_server_args():
         "--cache-type-v", "q8_0",
         "--image-min-tokens", "1024",  # Qwen-VL needs this for accurate image reading
         "--threads", str(threads),
+        # Use the GGUF's embedded chat template (Jinja). This is what makes
+        # Qwen3.5's separate reasoning/thinking role work: without --jinja the
+        # server uses its default formatting and the model's chain-of-thought
+        # is NOT surfaced as reasoning_content, so the 🧠 Thinking block is empty.
+        "--jinja",
     ]
 
 

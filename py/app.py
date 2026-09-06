@@ -2969,7 +2969,7 @@ def chat():
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
         _record_code_blocks(reply)
 
-        return jsonify({'response': reply, 'usage': usage})
+        return jsonify({'response': reply, 'usage': usage, 'reasoning': reasoning})
 
     except requests.exceptions.ConnectionError:
         return jsonify({'error': 'Cannot connect to Ollama. Make sure it is running.'}), 503
@@ -3111,12 +3111,17 @@ def chat_stream():
         # Workspace tools are resolved non-streaming first, then we stream the
         # final answer so the client keeps its normal token-by-token UI.
         tool_final_text = None
+        tool_reasoning = ""
         if use_tools:
             extra_kwargs = {"model": model or current_model}
             if api_key:
                 extra_kwargs['api_key'] = api_key
             try:
                 tool_final_text = _run_chat_with_tools(provider, messages, extra_kwargs)
+                # The tool loop calls provider.generate_raw(...), which populates
+                # provider.last_reasoning with the model's chain-of-thought. Capture
+                # it here so the thinking block is shown even on the tools path.
+                tool_reasoning = getattr(provider, "last_reasoning", "") or ""
             except Exception as e:
                 tool_final_text = f"[tool error] {e}"
 
@@ -3124,10 +3129,12 @@ def chat_stream():
             full_response = ""
             thinking_acc = ""
             if tool_final_text is not None:
+                if tool_reasoning:
+                    yield f"data: {json_dumps({'reasoning': tool_reasoning})}\n\n"
                 yield f"data: {json_dumps({'token': tool_final_text})}\n\n"
-                yield f"data: {json_dumps({'done': True, 'full_response': tool_final_text, 'usage': {}})}\n\n"
+                yield f"data: {json_dumps({'done': True, 'full_response': tool_final_text, 'usage': {}, 'reasoning': tool_reasoning})}\n\n"
                 add_message(conv_id, "user", user_message, images, files)
-                add_message(conv_id, "bot", tool_final_text, [], [], meta=_bot_meta(provider_name, model))
+                add_message(conv_id, "bot", tool_final_text, [], [], meta=_bot_meta(provider_name, model, tool_reasoning))
                 record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(tool_final_text))
                 return
 
