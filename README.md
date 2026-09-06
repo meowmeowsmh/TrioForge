@@ -144,6 +144,49 @@ You can download any GGUF model straight into the app without leaving the UI:
 
 The file(s) land in `models/` and appear in the **llama.cpp** dropdown — ready to run locally (including workspace tools). The download is non-blocking and you'll see the result in the status bar.
 
+### 🗂️ Organizing models + vision projectors (llama.cpp) — automatic pairing
+
+llama.cpp loads a text `.gguf` model, and vision models also need a **projector** (`mmproj-*.gguf`) so they can read images. TrioForge pairs the two **automatically** — you never hard-code or hand-edit anything. Add a new model and it just works. Two ways to lay out your files:
+
+#### Option A — One subfolder per model (recommended, zero conflicts)
+
+Put each model in its **own subfolder** with its projector right beside it:
+
+```
+models/
+├── gemma-4/
+│   ├── gemma-4-12B-it-qat-UD-Q4_K_XL.gguf
+│   └── mmproj-BF16.gguf              ← pairs with the model above (same folder)
+├── qwen3.5/
+│   ├── Qwen3.5-9B-...-Q4_K_M.gguf
+│   └── mmproj-...-BF16.gguf          ← pairs with the model above (same folder)
+└── ornith/
+    └── Ornith-1.5-9B-Q4_K_M.gguf     ← text-only: no mmproj needed
+```
+
+- The projector is matched by **folder**, so nothing needs a matching name — no conflicts, ever.
+- Text-only models simply have no mmproj in their folder.
+- This scales to any number of models: each new model goes in its own folder and pairs itself.
+
+#### Option B — All flat in `models/`
+
+Drop the `.gguf` (and `mmproj-*.gguf`) directly in `models/`. Pairing then uses the **shared base name**:
+
+```text
+mmproj-<model>-<quant>.gguf   pairs with   <model>-<quant>.gguf
+```
+
+> ⚠️ **Flat-folder rule that scales:** name the projector **after the model** (e.g. `mmproj-gemma-4-12B-it-qat-UD-BF16.gguf`). A generic name like `mmproj-BF16.gguf` (no model hint) can't be told apart if you later have several models, so the app only auto-uses it when there's exactly one. If your projector's name doesn't contain the model name, put it in a subfolder (Option A) instead.
+
+#### Automatic pairing rules (all built in, nothing to configure)
+
+1. **Same folder** as the model (Option A).
+2. **Shared base name** across `models/` (Option B).
+3. Optional override via `mmproj_pairs` in `voiceguide_llama.cpp_guide/config.json` — only if you ever need to force a pairing.
+4. A single generic quant-only projector (`mmproj-BF16.gguf`) for a known vision model, as a last resort. If there's more than one generic projector, it refuses to guess (never loads a wrong projector, which would crash the server).
+
+> 🔍 The **llama.cpp** dropdown lists every `.gguf` under `models/` (recursively, subfolders included). Vision models automatically get a matching projector; the server is launched with `--jinja` (for reasoning) and `--image-min-tokens 1024` only for Qwen-VL-style models (which need it) — so gemma-4, Qwen3.5, etc. load cleanly.
+
 ---
 
 ## ▶️ How to run — which file do I use?
