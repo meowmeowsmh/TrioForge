@@ -153,13 +153,27 @@ def _cosine(a: List[float], b: List[float]) -> float:
 
 
 def index_document(name: str, data: bytes) -> int:
-    """Index one document; returns the number of chunks stored."""
+    """Index one document; returns the number of chunks stored.
+
+    Raises a ValueError with a clear message when no text could be extracted
+    (e.g. a scanned/image-only PDF, an encrypted PDF, or an unsupported binary).
+    """
     text = _extract_text(name, data)
     if not text.strip():
-        return 0
+        ext = os.path.splitext(name or "")[1].lower()
+        if ext == ".pdf":
+            raise ValueError(
+                "Could not extract text from this PDF. It may be scanned/image-only "
+                "(no text layer) or encrypted. For scanned PDFs, OCR is required — "
+                "paste the text into a .txt/.md file instead."
+            )
+        raise ValueError(
+            f"Could not extract text from {name or 'file'}. It may be an unsupported "
+            "or binary format. Supported: PDF, DOCX, TXT, MD, code, CSV, HTML."
+        )
     chunks = _chunk_text(text)
     if not chunks:
-        return 0
+        raise ValueError("Document produced no usable text chunks.")
     c = _conn()
     with _rag_lock:
         # Replace any previous chunks for this doc so re-uploads don't duplicate.

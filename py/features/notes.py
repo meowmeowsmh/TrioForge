@@ -2111,6 +2111,20 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
     -webkit-text-security: disc;
     text-security: disc;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   PERFORMANCE PASS — same as Chat/Cork Board.
+   backdrop-filter forces re-rasterization on every scroll/drag frame.
+   ════════════════════════════════════════════════════════════════ */
+* { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.sidebar { background: rgba(18,18,26,0.96); }
+.top-bar { background: rgba(22,27,34,0.94); }
+.notes-panel, .note-editor { background: rgba(13,17,23,0.92); }
+.center-tabs { background: rgba(255,255,255,0.08); }
+.modal { background: rgba(0,0,0,0.88); }
+.note-item-sidebar { background: rgba(13,17,23,0.9); }
+.note-item, .note-editor { will-change: auto; }
+.notes-panel { -webkit-overflow-scrolling: touch; }
 </style>
 </head>
 <body>
@@ -2303,6 +2317,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                     <button id="exportNoteBtn" style="display:none;">⬇️ .md</button>
                     <span id="wordCount" style="font-size:12px; color:#8b949e; margin-left:6px;"></span>
                     <button id="cancelNoteBtn" style="display:none;">Cancel</button>
+                    <span id="autosaveStatus" style="font-size:11px; color:#3fb950; margin-left:8px;"></span>
                 </div>
                 <div id="aiResult" style="display:none; margin-top:12px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid rgba(255,255,255,0.1); color:#e1e4e8; font-size:14px; white-space:pre-wrap;"></div>
             </div>
@@ -2893,6 +2908,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 
     // ─── GRAPH VIEW ──────────────────────────────────────
     var graphPulseTimer = null;
+    function hashStr(s) {
+        var h = 0;
+        for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
+        return Math.abs(h);
+    }
     function openGraphView() {
         var modal = document.getElementById('graphModal');
         modal.style.display = 'block';
@@ -2923,7 +2943,10 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         ...n,
                         // Always show the note's name (label) so people can read it.
                         label: n.label || n.id,
-                        title: '<b>' + (n.label || n.id) + '</b>' + ((n.tags && n.tags.length) ? '<br><small>' + n.tags.map(t => '#' + t).join(' ') + '</small>' : ''),
+                        // Render the hover title as clean text (no raw HTML markup
+                        // visible). vis-network shows `title` as the tooltip; keep it
+                        // a plain readable string so tags never appear as <small> tags.
+                        title: (n.label || n.id) + ((n.tags && n.tags.length) ? '\n' + n.tags.map(t => '#' + t).join(' ') : ''),
                         shape: shape,
                         size: size,
                         color: {
@@ -2970,9 +2993,9 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                             damping: 0.12,
                             avoidOverlap: 0.6
                         },
-                        // A gentle constant breeze keeps the graph slowly drifting
-                        // (alive/moving) instead of freezing solid after layout.
-                        wind: { x: 0.6, y: 0.3 },
+                        // No wind: a one-directional breeze made the graph drift
+                        // right forever. With no wind, physics settles and nodes
+                        // stay put — visible, draggable, controllable.
                         stabilization: { enabled: true, iterations: 220, fit: true }
                     },
                     interaction: { hover: true, tooltipDelay: 100, dragNodes: true, dragView: true, zoomView: true },
@@ -2980,9 +3003,29 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                 };
                 var network = new vis.Network(container, { nodes, edges }, options);
 
-                // Pulsing glow on hub nodes — a slow "breathing" ring so the graph
-                // feels alive without being distracting.
-                if (graphPulseTimer) clearInterval(graphPulseTimer);
+                // ── DVD screensaver bounce (data-space) ────────────────────
+                // We drive every node ourselves with a constant velocity and
+                // bounce off a square. The square is derived from the visible
+                // container (converted to data space) on the FIRST tick, and we
+                // DON'T wait for `stabilizationIterationsDone` (which can fire
+                // late or not at all → nodes just sit there). Physics is disabled
+                // up front so our moveNode() calls always take effect.
+                var draggedNodeId = null;
+                var nodeVel = {};
+                var bounceBox = null;
+
+                function initVelocities() {
+                    nodes.forEach(function(n) {
+                        var sp = 0.9 + (hashStr(n.id) % 5) * 0.15;
+                        var ang = (hashStr(n.id) % 360) * Math.PI / 180;
+                        nodeVel[n.id] = { vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp };
+                    });
+                }
+
+                // Turn physics off immediately so moveNode() always works.
+                network.setOptions({ physics: { enabled: false } });
+                initVelocities();
+
                 graphPulseTimer = setInterval(function() {
                     if (!document.getElementById('graphModal') ||
                         document.getElementById('graphModal').style.display === 'none') {
@@ -2990,31 +3033,104 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
                         graphPulseTimer = null;
                         return;
                     }
+                    // Build the bounce square from the visible container each tick
+                    // (recomputing keeps it correct if the user zooms/pans).
+                    var w = container.clientWidth, h = container.clientHeight;
+                    if (!w || !h) return;
+                    var view = network.getViewPosition();
+                    var scale = network.getScale() || 1;
+                    var halfW = (w / 2) / scale, halfH = (h / 2) / scale;
+                    var pad = 20 / scale;
+                    var minX = view.x - halfW + pad, maxX = view.x + halfW - pad;
+                    var minY = view.y - halfH + pad, maxY = view.y + halfH - pad;
                     var t = Date.now() / 900;
-                    nodes.forEach(function(n) {
-                        var d = degree[n.id] || 0;
-                        if (d > 2) {
-                            var breathe = 22 + (d / maxDegree) * 16 + Math.sin(t) * 2.5;
-                            nodes.update({ id: n.id, size: breathe });
+
+                    // Per-node data-space radius.
+                    var ids = nodes.getIds();
+                    var radii = {};
+                    var posMap = {};
+                    ids.forEach(function(id) {
+                        var nn = nodes.get(id);
+                        var sz = nn && nn.size ? nn.size : 22;
+                        radii[id] = sz / 2;
+                        posMap[id] = network.getPosition(id);
+                    });
+
+                    // Advance each node, bouncing off the square's edges.
+                    ids.forEach(function(id) {
+                        var vel = nodeVel[id];
+                        var pos = posMap[id];
+                        if (!vel || !pos) return;
+                        var nx = pos.x + vel.vx;
+                        var ny = pos.y + vel.vy;
+                        if (nx < minX || nx > maxX) { vel.vx = -vel.vx; nx = pos.x + vel.vx; }
+                        if (ny < minY || ny > maxY) { vel.vy = -vel.vy; ny = pos.y + vel.vy; }
+                        nx = Math.max(minX, Math.min(maxX, nx));
+                        ny = Math.max(minY, Math.min(maxY, ny));
+                        posMap[id] = { x: nx, y: ny };
+                    });
+
+                    // Resolve node-to-node collisions (push apart + reflect velocity).
+                    for (var i = 0; i < ids.length; i++) {
+                        for (var j = i + 1; j < ids.length; j++) {
+                            var a = ids[i], b = ids[j];
+                            if (a === b) continue;
+                            var pa = posMap[a], pb = posMap[b];
+                            if (!pa || !pb) continue;
+                            var dx = pb.x - pa.x, dy = pb.y - pa.y;
+                            var dist = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+                            var minDist = radii[a] + radii[b];
+                            if (dist < minDist) {
+                                var nx_axis = dx / dist, ny_axis = dy / dist;
+                                var overlap = (minDist - dist) / 2;
+                                posMap[a] = { x: pa.x - nx_axis * overlap, y: pa.y - ny_axis * overlap };
+                                posMap[b] = { x: pb.x + nx_axis * overlap, y: pb.y + ny_axis * overlap };
+                                var va = nodeVel[a], vb = nodeVel[b];
+                                if (va) {
+                                    var vaN = va.vx * nx_axis + va.vy * ny_axis;
+                                    if (vaN > 0) { va.vx -= 2 * vaN * nx_axis; va.vy -= 2 * vaN * ny_axis; }
+                                }
+                                if (vb) {
+                                    var vbN = vb.vx * nx_axis + vb.vy * ny_axis;
+                                    if (vbN < 0) { vb.vx -= 2 * vbN * nx_axis; vb.vy -= 2 * vbN * ny_axis; }
+                                }
+                            }
+                        }
+                    }
+
+                    // Apply sizes + re-clamp positions inside the square.
+                    ids.forEach(function(id) {
+                        var d = degree[id] || 0;
+                        var breathe = 22 + (d > 0 ? (d / maxDegree) * 16 : 0) + Math.sin(t + (hashStr(id) % 100) / 30) * 1.5;
+                        nodes.update({ id: id, size: breathe });
+                        var p = posMap[id];
+                        if (!p) return;
+                        network.moveNode(id,
+                            Math.max(minX, Math.min(maxX, p.x)),
+                            Math.max(minY, Math.min(maxY, p.y)));
+                        var vel = nodeVel[id];
+                        if (vel) {
+                            var mag = Math.sqrt(vel.vx * vel.vx + vel.vy * vel.vy) || 1;
+                            if (mag < 0.6) { var k = 0.8 / mag; vel.vx *= k; vel.vy *= k; }
                         }
                     });
-                }, 120);
+                }, 50);
 
-                // Frame the whole graph nicely once physics settles, instead of
-                // leaving it wherever the initial layout happened to land.
+                // Still frame the graph once the layout settles (purely cosmetic).
                 network.once('stabilizationIterationsDone', function() {
                     network.fit({ animation: { duration: 400, easingFunction: 'easeOutQuad' } });
                 });
 
-                // Pause physics while dragging so the node follows the cursor
-                // instantly (no "fighting" the wind/breeze). Resume on release.
+                // While dragging a node, pause its drift so it follows the cursor.
+                // On release, resume its bounce (velocity re-seeded slightly).
                 network.on('dragStart', function(params) {
-                    if (params.nodes.length) {
-                        network.setOptions({ physics: { enabled: false } });
-                    }
+                    if (params.nodes.length) draggedNodeId = params.nodes[0];
                 });
                 network.on('dragEnd', function(params) {
-                    network.setOptions({ physics: { enabled: true } });
+                    draggedNodeId = null;
+                    if (params.nodes.length) {
+                        nodeVel[params.nodes[0]] = { vx: 0.9, vy: 0.6 };
+                    }
                 });
 
                 // Single click = drag the node (dragNodes handles it, so no action
@@ -3500,6 +3616,66 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
         editingNoteId = null;
         loadNotes();
     });
+
+    // ─── Auto-save while typing (debounced) ───────────────────
+    // Saves as you type so the AI/knowledge graph always sees the latest
+    // summary, instead of requiring a manual save. Existing notes are saved
+    // via PUT; a brand-new note is created (POST) on first meaningful input.
+    var autosaveTimer = null;
+    var autosaveInFlight = false;
+    var pendingAuto = false;
+    function scheduleAutoSave() {
+        if (autosaveInFlight) { pendingAuto = true; return; }
+        if (autosaveTimer) clearTimeout(autosaveTimer);
+        autosaveTimer = setTimeout(doAutoSave, 700);
+    }
+    function doAutoSave() {
+        autosaveTimer = null;
+        var title = document.getElementById('noteTitleInput').value.trim();
+        var content = document.getElementById('noteContentInput').value.trim();
+        var tags = document.getElementById('noteTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
+        // Nothing meaningful yet → don't create a blank note.
+        if (!content && !title) {
+            document.getElementById('autosaveStatus').textContent = '';
+            return;
+        }
+        var payload = { title: title || 'Untitled', content: content, tags: tags,
+                        color: currentColor, pinned: currentPinned };
+        var method = editingNoteId ? 'PUT' : 'POST';
+        var url = editingNoteId ? '/notes/api/' + editingNoteId : '/notes/api';
+        autosaveInFlight = true;
+        fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(r => r.json())
+        .then(data => {
+            autosaveInFlight = false;
+            if (!editingNoteId && (data.ok || data.id)) {
+                // First save created the note — adopt its id so later edits update it.
+                editingNoteId = data.id;
+                document.getElementById('dupNoteBtn').style.display = 'inline-block';
+                document.getElementById('exportNoteBtn').style.display = 'inline-block';
+                loadNotes();
+            }
+            var st = document.getElementById('autosaveStatus');
+            if (st) { st.textContent = '✅ Auto-saved ' + new Date().toLocaleTimeString(); }
+            if (pendingAuto) { pendingAuto = false; scheduleAutoSave(); }
+        })
+        .catch(function() {
+            autosaveInFlight = false;
+            var st = document.getElementById('autosaveStatus');
+            if (st) st.textContent = '⚠️ Autosave failed';
+            if (pendingAuto) { pendingAuto = false; scheduleAutoSave(); }
+        });
+    }
+    ['noteTitleInput', 'noteContentInput', 'noteTagsInput'].forEach(function(fieldId) {
+        var el = document.getElementById(fieldId);
+        if (el) el.addEventListener('input', scheduleAutoSave);
+    });
+    // Also auto-save when the editor closes, so nothing is lost.
+    document.getElementById('cancelNoteBtn').addEventListener('click', doAutoSave);
 
     // ─── Word count / Duplicate / Export .md ─────────────
     function updateWordCount() {
