@@ -1,0 +1,13 @@
+# ⚙️ TrioForge OPTIONAL ML stack — semantic RAG (embeddings)
+#
+# Install only if you want meaning-based document search. Without these, TrioForge
+# still works — document chat falls back to fast keyword matching.
+#
+# WARNING: sentence-transformers pulls in torch + the CUDA toolkit (~2 GB), so
+# this is a large install. Skip it unless you specifically want semantic search.
+#
+#     pip install -r requirements-ml.txt
+
+numpy>=1.24.0
+scikit-learn>=1.3.0
+sentence-transformers>=2.2.0

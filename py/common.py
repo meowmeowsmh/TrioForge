@@ -43,9 +43,27 @@ def get_conn(db_path: str) -> sqlite3.Connection:
     if conn is None:
         conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")       # readers don't block writers
-        conn.execute("PRAGMA synchronous=NORMAL")     # fast + safe enough with WAL
-        conn.execute("PRAGMA foreign_keys=ON")
+        # WAL / synchronous pragmas are unreliable on some filesystems (notably
+        # WSL's /mnt/<drive> mount, which throws "disk I/O error" for journal and
+        # synchronous tweaks). Apply each one defensively and fall back to the
+        # default when the filesystem rejects it, so the app still starts.
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            logger.warning(
+                "WAL journal mode unavailable for %s (filesystem does not support it); "
+                "using the default journal mode.", db_path
+            )
+        try:
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.OperationalError:
+            logger.warning(
+                "synchronous=NORMAL unavailable for %s; using the default.", db_path
+            )
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+        except sqlite3.OperationalError:
+            logger.warning("foreign_keys pragma unavailable for %s.", db_path)
         conns[db_path] = conn
     return conn
 

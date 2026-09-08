@@ -13,6 +13,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.venv-linux/
 venv/
 env/
 ENV/
@@ -79,10 +80,26 @@ mkcert.exe
 static/uploads/
 
 # ──────────────────────────────────────────────────────────────
-# Models (large local weights)
+# Models (large local weights) — NEVER commit any model files.
+# Each model root is ignored wholesale so no weights, projectors,
+# Modelfiles, or download caches leak into the repo.
 # ──────────────────────────────────────────────────────────────
 *.gguf
-/models/*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.ckpt
+
+# Model folders (llama.cpp / Ollama / ComfyUI local weights)
+/models/
+/video_model/
+/universal_models_to_text/
+
+# Hugging Face / Ollama download caches
+models/.cache/
+.cache/huggingface/
 
 # ──────────────────────────────────────────────────────────────
 # ComfyUI media generation (downloads + output, user-specific)

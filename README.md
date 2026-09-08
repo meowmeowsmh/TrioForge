@@ -97,27 +97,29 @@
 
 ## 🚀 Quick Start
 
+> 🐍 **No Python? No problem.** You don't need Python (or Docker) installed — the
+> launcher finds/installs the **latest Python** and shows a **Launch** prompt.
+> See **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for the full step-by-step.
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
 
-# 2. Install dependencies
-#    With uv (recommended) — the launcher uses this automatically:
-#        uv sync
-#    Or with pip:
-#        pip install -r requirements.txt
+# 2. Run it — the launcher finds the latest Python, installs it if missing,
+#    then shows "Press Launch (Enter)".
+#    Windows: double-click application.bat
+#    Linux/macOS: ./run.sh
 
-# 3. Pull a local model (or any model you prefer)
+# 3. (Optional) Pull a local model
 ollama pull vaultbox/qwen3.5-uncensored:9b
-# ...e.g. `ollama pull llama3.2` or `ollama pull qwen2.5` also work
-
-# 4. Run it — see "▶️ How to run" below (pick the file for your OS)
 ```
 
-Then open **https://localhost:5001/** in your browser.
+Then open **https://localhost:5003/** in your browser.
 
-> **Tip:** if the app starts in plain HTTP (no certificates), use **http://localhost:5001/** instead.
+> **Tip:** the native app runs on port **5003** by default (so it never collides with
+> a stale Docker container on 5001). Change it with `TRIOFORGE_PORT=xxxx ./run.sh`.
+> If the app starts in plain HTTP (no certificates), use **http://localhost:5003/** instead.
 
 ### 🚀 First-run setup checker
 
@@ -144,48 +146,70 @@ You can download any GGUF model straight into the app without leaving the UI:
 
 The file(s) land in `models/` and appear in the **llama.cpp** dropdown — ready to run locally (including workspace tools). The download is non-blocking and you'll see the result in the status bar.
 
-### 🗂️ Organizing models + vision projectors (llama.cpp) — automatic pairing
+### 🗂️ Organizing models + vision projectors (llama.cpp) — automatic pairing & capability folders
 
-llama.cpp loads a text `.gguf` model, and vision models also need a **projector** (`mmproj-*.gguf`) so they can read images. TrioForge pairs the two **automatically** — you never hard-code or hand-edit anything. Add a new model and it just works. Two ways to lay out your files:
+llama.cpp loads a text `.gguf` model, and vision models also need a **projector** (`mmproj` `.gguf`) so they can read images/video. TrioForge pairs the two **automatically** and reads the model's **folder name** to know what input it accepts. You never hand-edit any config — you just create the folder, drop the files in, and it works.
 
-#### Option A — One subfolder per model (recommended, zero conflicts)
+#### 📁 Step 1 — the three folders (exact names, copy these)
 
-Put each model in its **own subfolder** with its projector right beside it:
+Create these folders at the **top level of the project** (next to `py/` and `models/`):
 
-```
-models/
-├── gemma-4/
-│   ├── gemma-4-12B-it-qat-UD-Q4_K_XL.gguf
-│   └── mmproj-BF16.gguf              ← pairs with the model above (same folder)
-├── qwen3.5/
-│   ├── Qwen3.5-9B-...-Q4_K_M.gguf
-│   └── mmproj-...-BF16.gguf          ← pairs with the model above (same folder)
-└── ornith/
-    └── Ornith-1.5-9B-Q4_K_M.gguf     ← text-only: no mmproj needed
-```
+| Exact folder name | What it's for | What input the model accepts |
+|---|---|---|
+| `models` | normal chat + image models | text, image |
+| `video_model` | video models | video only |
+| `universal_models_to_text` | all-in-one models | text, image, video, audio |
 
-- The projector is matched by **folder**, so nothing needs a matching name — no conflicts, ever.
-- Text-only models simply have no mmproj in their folder.
-- This scales to any number of models: each new model goes in its own folder and pairs itself.
+> ⚠️ The names are **exact** — it's `video_model` (singular) and `universal_models_to_text` (underscores). If you name it `video_models` or `universal-model-to-text`, the app won't find it and the model won't show in the dropdown.
 
-#### Option B — All flat in `models/`
+#### 📁 Step 2 — what files go in each folder
 
-Drop the `.gguf` (and `mmproj-*.gguf`) directly in `models/`. Pairing then uses the **shared base name**:
+Each model needs **two files** if it's a vision/video model:
+
+1. **The model file** — the big `.gguf` (the "brain").
+2. **The projector file** — a smaller `.gguf` with `mmproj` in its name (the "eyes").
+
+A **text-only** model needs only the `.gguf` (no projector).
+
+Here is the **complete example** of all three folders, exactly as they should look on disk:
 
 ```text
-mmproj-<model>-<quant>.gguf   pairs with   <model>-<quant>.gguf
+TrioForge/
+├── models/                                  ← text + image models
+│   ├── gemma-4/
+│   │   ├── gemma-4-12B-it-qat-UD-Q4_K_XL.gguf        ← the model
+│   │   └── mmproj-BF16.gguf                          ← the projector
+│   ├── qwen3.5/
+│   │   ├── Qwen3.5-9B-...-Q4_K_M.gguf                ← the model
+│   │   └── mmproj-Qwen3.5-9B-...-BF16.gguf           ← the projector
+│   └── ornith/
+│       └── Ornith-1.5-9B-Q4_K_M.gguf                 ← text-only: no projector
+│
+├── video_model/                             ← video-only models
+│   └── VideoGuard/
+│       ├── VideoGuard-Qwen3.5-9B-...-Q4_K_M.gguf     ← the model
+│       └── VideoGuard-Qwen3.5-9B-....mmproj-bf16.gguf← the projector
+│
+└── universal_models_to_text/                ← all-to-all models (text/image/video/audio)
+    ├── gemma-4-E4B-it-ultra-uncensored-heretic-Q5_K_M.gguf   ← the model
+    └── gemma-4-E4B-it-mmproj-BF16.gguf                       ← the projector
 ```
 
-> ⚠️ **Flat-folder rule that scales:** name the projector **after the model** (e.g. `mmproj-gemma-4-12B-it-qat-UD-BF16.gguf`). A generic name like `mmproj-BF16.gguf` (no model hint) can't be told apart if you later have several models, so the app only auto-uses it when there's exactly one. If your projector's name doesn't contain the model name, put it in a subfolder (Option A) instead.
+#### 📁 Step 3 — rules that matter (don't skip)
+
+- **The projector sits NEXT TO the model** (same folder) — that's how the app pairs them automatically. No name-matching needed when they're in the same folder.
+- **Text-only models** just have no projector file in their folder.
+- **The folder = the restriction.** Post a video to a `models/` model → you get a clear *"this model can't read video"* message. Move that model into `video_model/` (video) or `universal_models_to_text/` (everything) and it works.
+- **Projector naming** is detected automatically whether it's `mmproj-...`, `....mmproj-...`, or `...-mmproj-...` — any `.gguf` filename containing `mmproj` is treated as a projector.
 
 #### Automatic pairing rules (all built in, nothing to configure)
 
-1. **Same folder** as the model (Option A).
-2. **Shared base name** across `models/` (Option B).
+1. **Same folder** as the model (recommended — zero conflicts).
+2. **Shared base name** across the model roots.
 3. Optional override via `mmproj_pairs` in `voiceguide_llama.cpp_guide/config.json` — only if you ever need to force a pairing.
 4. A single generic quant-only projector (`mmproj-BF16.gguf`) for a known vision model, as a last resort. If there's more than one generic projector, it refuses to guess (never loads a wrong projector, which would crash the server).
 
-> 🔍 The **llama.cpp** dropdown lists every `.gguf` under `models/` (recursively, subfolders included). Vision models automatically get a matching projector; the server is launched with `--jinja` (for reasoning) and `--image-min-tokens 1024` only for Qwen-VL-style models (which need it) — so gemma-4, Qwen3.5, etc. load cleanly.
+> 🔍 The **llama.cpp** dropdown lists every `.gguf` under `models/`, `video_model/`, and `universal_models_to_text/` (recursively, subfolders included), each tagged with its folder capability. Vision models automatically get a matching projector; the server is launched with `--jinja` (for reasoning) and `--image-min-tokens 1024` only for Qwen-VL-style models (which need it) — so gemma-4, Qwen3.5, VideoGuard, etc. load cleanly.
 
 ---
 
@@ -320,7 +344,9 @@ Upload documents and chat with them — the AI retrieves the relevant parts and 
 ### How retrieval works
 
 - **Out of the box** — fast keyword-overlap scoring (no extra dependencies needed).
-- **With `sentence-transformers` installed** (`pip install sentence-transformers scikit-learn numpy`) — semantic search using `all-MiniLM-L6-v2` embeddings, so it matches meaning, not just exact words.
+- **With the optional ML stack installed** (`pip install -r requirements-ml.txt`) — semantic search using `all-MiniLM-L6-v2` embeddings, so it matches meaning, not just exact words.
+
+> ⚠️ **`requirements-ml.txt` pulls in `torch` + the CUDA toolkit (~2 GB).** It is **not** installed by default so first-run stays light. Only install it if you want semantic RAG search.
 
 The top ~6 matching chunks are injected into the prompt with a `[Reference documents]` header, so the model answers grounded in your docs. Document indexing is stored per-file (re-uploading a file replaces its old chunks).
 
@@ -481,16 +507,26 @@ For *system control by voice*, use the voice chat's `/open` command (requires fu
 
 ---
 
+## 🎬 Video-to-text (describe/answer about a video)
+
+Upload a video and ask about it. TrioForge samples the clip into a few frames with **ffmpeg** (auto-detected on PATH — nothing hard-coded) and feeds them to your vision model (gemma-4 / Qwen-VL via llama.cpp, Ollama, …).
+
+- `POST /api/video/frames` with `{"b64": "…"}` returns the sampled JPEG frames.
+- The chat route does this automatically: when you attach a video, its frames are extracted and sent through the normal image-vision path, so a vision model can describe or answer about the clip.
+- If ffmpeg isn't installed, it degrades gracefully (a "no video support" note) instead of crashing.
+
+---
+
 ## 🌐 Remote access (phone / LAN / tunnel)
 
 TrioForge binds to **`0.0.0.0`** (all interfaces), so it's reachable from any device on your network out of the box.
 
-- **LAN (same Wi-Fi):** open `https://<your-computer-IP>:5001` on your phone (the app logs the exact URL at startup, e.g. `https://192.168.1.113:5001`).
-  - You may need to allow the port through Windows Firewall (`5001`).
+- **LAN (same Wi-Fi):** open `https://<your-computer-IP>:5003` on your phone (the app logs the exact URL at startup, e.g. `https://192.168.1.113:5003`).
+  - You may need to allow the port through Windows Firewall (`5003`).
   - Browsers warn about the self-signed cert on other devices — that's expected; proceed to `Advanced → Continue`.
 - **Internet (anywhere):** run a tunnel from another terminal, then open the tunnel URL:
-  - **cloudflared** (free): `cloudflared tunnel --url https://localhost:5001`
-  - **ngrok**: `ngrok http 5001`
+  - **cloudflared** (free): `cloudflared tunnel --url https://localhost:5003`
+  - **ngrok**: `ngrok http 5003`
 
 > ⚠️ Exposing the app to the internet lets *anyone* with the URL use it. TrioForge has no built-in auth — put a reverse proxy with a password (or a tunnel with auth) in front of it before exposing it publicly.
 
@@ -506,7 +542,7 @@ The default model is **`vaultbox/qwen3.5-uncensored:9b`** — an abliterated (re
 
 ### Windows / macOS — Waitress
 
-`python py/app.py` auto-generates SSL certificates (via **mkcert**) and serves HTTPS on port 5001. You can also run the dedicated Waitress entry point:
+`python py/app.py` auto-generates SSL certificates (via **mkcert**) and serves HTTPS on port **5003** (configurable via `TRIOFORGE_PORT`). You can also run the dedicated Waitress entry point:
 
 ```bash
 python py/https_guni_n_waitress.py
@@ -537,7 +573,7 @@ Then open **https://localhost:5001/** (or `http://localhost:5001/` if you skip c
 
 ### How it works
 
-1. **`Dockerfile`** — a slim `python:3.10-slim` image. It installs the system build tools, the Python deps from `requirements.txt`, copies the app, then starts gunicorn on port **5001**. The CMD runs `docker-entrypoint.sh` as the entrypoint *before* gunicorn.
+1. **`Dockerfile`** — a slim `python:3.10-slim` image. It installs the system build tools + **ffmpeg** (for video-to-text), the Python deps from `requirements.txt`, copies the app, then starts gunicorn on port **5001**. The CMD runs `docker-entrypoint.sh` as the entrypoint *before* gunicorn.
 2. **`docker-entrypoint.sh`** — a tiny script that generates a **self-signed TLS certificate** (`cert_store/localhost+1.pem` + `-key.pem`) if you haven't mounted one, then execs gunicorn. `gunicorn_conf.py` reads those certs and serves **HTTPS**. Your browser will warn the cert isn't trusted — mount your own `cert_store/` volume (e.g. mkcert-issued) if you want a trusted cert, or ignore it.
 3. **`docker-compose.yml`** — binds port **`5001:5001`**, mounts your data directories as volumes, and points the app at your host's Ollama via `OLLAMA_BASE_URL=http://host.docker.internal:11434`. `extra_hosts: host.docker.internal:host-gateway` makes that hostname resolve on Linux Docker Engine too (Docker Desktop on Mac/Windows/WSL2 already maps it).
 
@@ -555,11 +591,11 @@ The compose file mounts these as volumes so your data survives restarts:
 | Host path | Container path | Purpose |
 |-----------|----------------|---------|
 | `../json_configuration` | `/app/json_configuration` | Conversations, notes, model config |
-| `sqlite_volume` (named volume) | `/app/sqlite_data` | SQLite chat history (named volume avoids Windows FS I/O errors) |
+| `../sqlite_data` (bind mount) | `/app/sqlite_data` | SQLite chat history — shares the host's actual DBs |
 | `../static/uploads` | `/app/static/uploads` | Uploaded files & generated media |
 | `../cert_store` | `/app/cert_store` | TLS certificates |
 
-**Important:** the image deliberately excludes your local models. `models/` (~11 GB of GGUF weights) is in `.dockerignore`, and your `.venv/` is too — the container installs its own deps and runs its own model files locally on the host. Cloud providers (OpenRouter / Gemini / Groq / etc.) need no local weights.
+**Important:** the image deliberately excludes your local models. `models/`, `video_model/`, and `universal_models_to_text/` (all GGUF weights, ~30 GB) are in `.dockerignore`, and your `.venv/` is too — the container installs its own deps and uses cloud providers (OpenRouter / Gemini / Groq / …) which need no local weights. Local llama.cpp/Ollama models run on the host, not inside the container.
 
 > ⚠️ The app uses `fork()`/POSIX signals, so gunicorn only runs on **Linux / WSL2 / macOS**, not native Windows. On Windows use `application.bat` (Waitress) instead.
 
@@ -576,6 +612,19 @@ The compose file mounts these as volumes so your data survives restarts:
 
 All of the above are **git-ignored** — every user keeps their own data private.
 
+### 🚫 Model files are never committed
+
+Local model weights are large and user-specific, so `.gitignore` excludes them **entirely** — no GGUF, safetensors, projector, Modelfile, or download cache is tracked:
+
+```
+/models/
+/video_model/
+/universal_models_to_text/
+*.gguf  *.safetensors  *.bin  *.pt  *.pth  *.onnx  *.ckpt
+```
+
+Only the tiny human-written **docs/config** inside `models/` (e.g. `models/instruction.md` and the Ollama `Modelfile`/`Modelfile2` pointers) are kept — the actual `.gguf` weights are never committed.
+
 ---
 
 ## 🧱 Project structure
@@ -586,7 +635,8 @@ TrioForge/
 │   ├── app.py                   # Main Flask app + chat/conversation routes
 │   ├── common.py                # Shared JSON / SQLite / embedding helpers
 │   ├── paths.py                 # Project-root path helper
-│   ├── comfyui_service.py       # ComfyUI image + video generation (live workflow discovery)
+│   ├── comfyui_service.py       # ComfyUI image + video + audio generation (live workflow discovery)
+│   ├── video_to_text.py         # Video → sampled frames (ffmpeg) for vision models
 │   ├── providers/
 │   │   └── llm_providers.py     # LLM provider abstraction (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter)
 │   ├── features/
@@ -610,12 +660,14 @@ TrioForge/
 ├── templates/
 │   └── index.html               # Frontend (HTML/CSS/JS)
 ├── static/                      # Static vendor assets (highlight, mermaid, …) + generated media
-├── models/                      # Ollama Modelfile + instruction (GGUF weights git-ignored)
+├── models/                      # Image/text GGUF models + Ollama Modelfile (weights git-ignored)
+├── video_model/                 # Video-only GGUF models (git-ignored)
+├── universal_models_to_text/    # All-to-all models: text/image/video/audio → text (git-ignored)
 ├── voiceguide_llama.cpp_guide/  # Voice agent config + logs (logs git-ignored)
 ├── json_configuration/          # User data (git-ignored)
 ├── sqlite_data/                 # SQLite databases (git-ignored)
 ├── cert_store/                  # Auto-generated SSL certificates (git-ignored)
-├── requirements.txt / README.md / LICENSE / SECURITY.md / Disclaimer.md / CODE_REVIEW.md
+├── requirements.txt / requirements-ml.txt / README.md / LICENSE / SECURITY.md / Disclaimer.md / CODE_REVIEW.md
 └── .gitignore / .dockerignore
 ```
 

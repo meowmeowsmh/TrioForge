@@ -1539,6 +1539,7 @@ body.light-mode .weather-country-select option {
           <option value="voice">🗣 Voice-to-Voice</option>
           <option value="comfyui">🖼️ Image (OpenRouter / Gemini / ComfyUI)</option>
           <option value="comfyui-video">🎬 Video (OpenRouter / ComfyUI)</option>
+          <option value="comfyui-audio">🎵 Audio (ComfyUI text-to-audio / music / TTS)</option>
         </select>
         <select id="personaSelect" title="Assistant persona" class="provider-select" style="max-width:180px;"></select>
         <input type="text" id="personaCustomInput" placeholder="Describe your persona… (free text)"
@@ -1564,6 +1565,7 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" id="liveCodeBtn" onclick="toggleLiveCodePanel()" title="Live coding — watch the agent edit files in real time" style="border-color:rgba(163,113,247,0.4); color:#a371f7; position:relative;">📝<span id="liveCodeDot" style="display:none; position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:#3fb950; box-shadow:0 0 6px rgba(63,185,80,0.7);"></span></button>
         <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">🖼️</button>
         <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
+        <button class="clear-btn" id="audioGenBtn" onclick="selectAudioGen()" title="Generate audio (ComfyUI text-to-audio / music / TTS)" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">🎵</button>
         <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
 
         <!-- Weather toggle and country dropdown -->
@@ -1651,6 +1653,16 @@ body.light-mode .weather-country-select option {
       <label style="font-size:12px; color:#8b949e;">Steps</label>
       <input id="videoSteps" type="number" value="20" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <span style="font-size:11px; color:#8b949e;">Type your prompt below and press Enter.</span>
+    </div>
+
+    <!-- ComfyUI audio (text-to-audio / music / TTS) settings bar -->
+    <div id="audioGenPanel" style="display:none; padding:10px 40px; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.5);">
+      <span style="font-size:13px; font-weight:600; color:#f0883e;">🎵 Audio settings:</span>
+      <select id="audioWorkflowSelect" title="ComfyUI audio workflow (auto-detected)" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+        <option value="">🔄 Auto-detect audio workflow…</option>
+      </select>
+      <button id="audioRefreshBtn" title="Re-scan ComfyUI audio workflows" onclick="loadAudioWorkflows()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">↻</button>
+      <span id="audioStatus" style="font-size:11px; color:#8b949e;">Text-to-audio via ComfyUI (Stable Audio / ACE-Step / MiniMax Music…). Type your prompt below and press Enter.</span>
     </div>
 
     <!-- RAG document-chat panel -->
@@ -2653,13 +2665,15 @@ providerSelect.addEventListener('change', function() {
     var provider = this.value;
     // ComfyUI (image and video) are not chat providers — selecting one shows the
     // right media panel and keeps the dropdown there until a chat provider is picked.
-    if (provider === 'comfyui' || provider === 'comfyui-video') {
+    if (provider === 'comfyui' || provider === 'comfyui-video' || provider === 'comfyui-audio') {
         if (provider === 'comfyui-video') { gen_mode = 'video'; showVideoGenPanel(); }
+        else if (provider === 'comfyui-audio') { gen_mode = 'audio'; showAudioGenPanel(); }
         else { gen_mode = 'image'; showImageGenPanel(); }
         return;
     }
     hideImageGenPanel();
     document.getElementById('videoGenPanel').style.display = 'none';
+    document.getElementById('audioGenPanel').style.display = 'none';
     var prevProvider = this.dataset.prev || 'ollama';
     this.dataset.prev = provider;
     saveAiProvider(provider);
@@ -3105,12 +3119,19 @@ var gen_mode = 'image';
 function showImageGenPanel() {
     document.getElementById('imageGenPanel').style.display = 'flex';
     document.getElementById('videoGenPanel').style.display = 'none';
+    document.getElementById('audioGenPanel').style.display = 'none';
     if (typeof loadImageModels === 'function') loadImageModels();
 }
 function showVideoGenPanel() {
     document.getElementById('videoGenPanel').style.display = 'flex';
     document.getElementById('imageGenPanel').style.display = 'none';
     if (typeof loadVideoModels === 'function') loadVideoModels();
+}
+function showAudioGenPanel() {
+    document.getElementById('audioGenPanel').style.display = 'flex';
+    document.getElementById('imageGenPanel').style.display = 'none';
+    document.getElementById('videoGenPanel').style.display = 'none';
+    if (typeof loadAudioWorkflows === 'function') loadAudioWorkflows();
 }
 function hideImageGenPanel() {
     document.getElementById('imageGenPanel').style.display = 'none';
@@ -3200,6 +3221,85 @@ function generateVideoChat(text) {
             if (d.error) { bodyEl.textContent = '❌ ' + formatAiError(backend, d.error); smoothScrollToBottom(); return; }
             if (d.conversation_id) currentConv = d.conversation_id;
             bodyEl.innerHTML = '<video src="' + d.url + '" controls style="max-width:100%; border-radius:12px; border:1px solid #333;"></video>';
+            var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
+            smoothScrollToBottom();
+            if (typeof loadConversations === 'function') loadConversations();
+        })
+        .catch(function(e) { busy = false; bodyEl.textContent = '❌ ' + (e.message || 'Failed'); smoothScrollToBottom(); });
+    }
+    if (currentConv) { go(); return; }
+    fetch('/conversations', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { currentConv = d.id; if (typeof loadConversations === 'function') loadConversations(); go(); })
+        .catch(function() { go(); });
+}
+function selectAudioGen() {
+    gen_mode = 'audio';
+    var sel = document.getElementById('providerSelect');
+    if (sel) { sel.value = 'comfyui-audio'; sel.dispatchEvent(new Event('change')); }
+    var panel = document.getElementById('audioGenPanel');
+    if (panel) panel.style.display = 'flex';
+    loadAudioWorkflows();
+}
+function loadAudioWorkflows() {
+    var sel = document.getElementById('audioWorkflowSelect');
+    if (!sel) return;
+    fetch('/api/audio_workflows')
+        .then(function(r) { return r.json(); })
+        .then(function(list) {
+            sel.innerHTML = '';
+            var auto = document.createElement('option');
+            auto.value = ''; auto.textContent = '🔄 Auto-detect audio workflow…';
+            sel.appendChild(auto);
+            (list || []).forEach(function(o) {
+                var opt = document.createElement('option');
+                opt.value = o.value;
+                opt.textContent = (o.kind === 'user' ? '⭐ ' : '') + o.label;
+                sel.appendChild(opt);
+            });
+            var st = document.getElementById('audioStatus');
+            if (st) st.textContent = (list && list.length)
+                ? '🎵 Detected ' + list.length + ' audio workflow(s). Type your prompt below and press Enter.'
+                : '⚠️ No ComfyUI audio workflows found. Add one (Stable Audio / ACE-Step / MiniMax Music), then restart ComfyUI.';
+        })
+        .catch(function() {
+            sel.innerHTML = '';
+            var auto = document.createElement('option');
+            auto.value = ''; auto.textContent = '🔄 Auto-detect audio workflow…';
+            sel.appendChild(auto);
+            var st = document.getElementById('audioStatus');
+            if (st) st.textContent = '⚠️ Could not load audio workflows (is ComfyUI running?).';
+        });
+}
+function generateAudioChat(text) {
+    if (!text || !text.trim()) return;
+    if (busy) return;
+    function go() {
+        busy = true;
+        renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
+        msgInput.value = '';
+        msgInput.style.height = '46px';
+        pending = [];
+        attachments.innerHTML = '';
+        var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
+        var bodyEl = botDiv.querySelector('.body');
+        bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">⏳ Generating audio… this can take a minute. Please wait.</div>';
+        smoothScrollToBottom();
+        var req = {
+            prompt: text.trim(),
+            workflow: document.getElementById('audioWorkflowSelect').value,
+            conversation_id: currentConv || ''
+        };
+        fetch('/api/generate_audio', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            busy = false;
+            if (d.error) { bodyEl.textContent = '❌ ' + formatAiError('comfyui', d.error); smoothScrollToBottom(); return; }
+            if (d.conversation_id) currentConv = d.conversation_id;
+            bodyEl.innerHTML = '<audio controls style="max-width:100%; width:100%; border-radius:12px;">' +
+                '<source src="' + d.url + '" type="audio/mpeg">Your browser does not support audio.</audio>';
             var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
             smoothScrollToBottom();
             if (typeof loadConversations === 'function') loadConversations();
@@ -3569,6 +3669,33 @@ function renderMsg(role, entry, msgIndex) {
     }
     if (entry.files && entry.files.length) {
         entry.files.forEach(f => {
+            // A video file (from a video attachment) renders as a playable video,
+            // not a generic file chip — so it stays one file instead of being
+            // broken into frame thumbnails.
+            var mime = (f.mime || '').toLowerCase();
+            if (mime.indexOf('video') === 0) {
+                var vid = document.createElement('video');
+                vid.controls = true;
+                vid.style.maxWidth = '100%';
+                vid.style.borderRadius = '12px';
+                vid.style.border = '1px solid #333';
+                if (f.b64) { vid.src = 'data:' + (f.mime || 'video/mp4') + ';base64,' + f.b64; }
+                else if (f.file) { vid.src = '/json_configuration/attachments/' + f.file; }
+                div.appendChild(vid);
+                return;
+            }
+            if (mime.indexOf('audio') === 0) {
+                var aud = document.createElement('audio');
+                aud.controls = true;
+                aud.style.maxWidth = '100%';
+                aud.style.width = '100%';
+                aud.style.borderRadius = '12px';
+                aud.style.border = '1px solid #333';
+                if (f.b64) { aud.src = 'data:' + (f.mime || 'audio/mpeg') + ';base64,' + f.b64; }
+                else if (f.file) { aud.src = '/json_configuration/attachments/' + f.file; }
+                div.appendChild(aud);
+                return;
+            }
             var chip = document.createElement('div');
             chip.className = 'file-chip';
             chip.textContent = '📄 ' + (f.name || 'file');
@@ -3583,6 +3710,15 @@ function renderMsg(role, entry, msgIndex) {
         vid.style.borderRadius = '12px';
         vid.style.border = '1px solid #333';
         div.appendChild(vid);
+    }
+    if (entry.meta && entry.meta.audio) {
+        var aud = document.createElement('audio');
+        aud.src = entry.meta.audio;
+        aud.controls = true;
+        aud.style.maxWidth = '100%';
+        aud.style.width = '100%';
+        aud.style.borderRadius = '12px';
+        div.appendChild(aud);
     }
     if (entry.meta && entry.meta.reasoning) {
         renderThinkingBlock(div, entry.meta.reasoning);
@@ -4352,8 +4488,9 @@ function doSend() {
     var text = msgInput.value.trim();
     if ((!text && pending.length === 0) || busy) return;
     // ComfyUI image/video (Gemini or ComfyUI backend): route to the right generator.
-    if (providerSelect.value === 'comfyui' || providerSelect.value === 'comfyui-video') {
-        if (gen_mode === 'video') { generateVideoChat(text); }
+    if (providerSelect.value === 'comfyui' || providerSelect.value === 'comfyui-video' || providerSelect.value === 'comfyui-audio') {
+        if (gen_mode === 'audio') { generateAudioChat(text); }
+        else if (gen_mode === 'video') { generateVideoChat(text); }
         else { generateImageChat(text); }
         return;
     }
@@ -4408,7 +4545,7 @@ function actuallySend(text) {
         role: 'user',
         text: text,
         images: images.map(i => ({ b64: i.b64, name: i.name, mime: i.mime })),
-        files: files.concat(videos).map(f => ({ name: f.name, mime: f.mime })),
+        files: files.concat(videos).map(f => ({ name: f.name, mime: f.mime, b64: f.b64 })),
         ts: new Date().toLocaleTimeString()
     };
     var userDiv = renderMsg('user', userEntry, -1);
@@ -4537,16 +4674,20 @@ function actuallySend(text) {
                             rafId = null;
                         }
                         flushTokens();
-                        botBody.innerHTML = renderMarkdown(fullText || '(empty response)');
+                        // If the model produced no visible content but left reasoning,
+                        // show the reasoning as the answer (avoids a bare empty bubble).
+                        var displayText = fullText;
+                        if (!displayText && reasoningAcc) displayText = reasoningAcc;
+                        botBody.innerHTML = renderMarkdown(displayText || '(empty response)');
                         botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                         processCodeBlocks(botDiv);
                         renderMermaidDiagrams(botDiv);
-                        captureLiveCodeFromReply(fullText);
+                        captureLiveCodeFromReply(displayText);
                         status.textContent = '✅ Done';
                         busy = false;
                         sendBtn.disabled = false;
                         smoothScrollToBottom();
-                        speakText(fullText);
+                        speakText(displayText);
                         loadConversations();
                         return;
                     }

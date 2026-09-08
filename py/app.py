@@ -7,6 +7,7 @@ import base64
 import os
 import json as std_json
 import sys
+import shutil
 from datetime import datetime
 import uuid
 import psutil
@@ -91,6 +92,7 @@ import rag
 import plugin_loader
 import setup_check
 import edits_store
+import video_to_text
 
 try:
     import pynvml
@@ -179,8 +181,16 @@ _sqlite_lock = threading.Lock()
 
 def _init_sqlite():
     with _sqlite_lock:
-        _sqlite_conn.execute("PRAGMA journal_mode=WAL;")
-        _sqlite_conn.execute("PRAGMA synchronous=NORMAL;")
+        # WAL / synchronous are unreliable on WSL /mnt/<drive> mounts (they throw
+        # "disk I/O error"); apply each defensively and fall back to defaults.
+        try:
+            _sqlite_conn.execute("PRAGMA journal_mode=WAL;")
+        except sqlite3.OperationalError:
+            logger.warning("WAL journal mode unavailable; using default journal mode.")
+        try:
+            _sqlite_conn.execute("PRAGMA synchronous=NORMAL;")
+        except sqlite3.OperationalError:
+            logger.warning("synchronous=NORMAL unavailable; using default.")
         _sqlite_conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -271,6 +281,18 @@ if not os.path.exists(MODEL_CONFIG_FILE):
         std_json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
 
 # ── SSL ──
+def _mkcert_asset_name():
+    """Return the mkcert release asset name for this OS/architecture."""
+    system = platform.system()
+    machine = (platform.machine() or "").lower()
+    arch = "arm64" if machine in ("arm64", "aarch64") else "amd64"
+    if system == "Windows":
+        return "mkcert-v1.4.4-windows-amd64.exe"
+    if system == "Darwin":
+        return "mkcert-v1.4.4-darwin-" + arch
+    return "mkcert-v1.4.4-linux-" + arch
+
+
 def ensure_certificates():
     cert_dir = root_path('cert_store')
     cert_file = os.path.join(cert_dir, 'localhost+1.pem')
@@ -279,26 +301,38 @@ def ensure_certificates():
         return True
     logger.info("Certificates not found. Auto-generating...")
     os.makedirs(cert_dir, exist_ok=True)
-    if platform.system() != "Windows":
-        logger.warning("Auto-cert generation is only supported on Windows.")
-        return False
-    mkcert_exe = "mkcert.exe"
-    if not os.path.exists(mkcert_exe):
-        logger.info("Downloading mkcert...")
-        url = "https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-windows-amd64.exe"
-        try:
-            urllib.request.urlretrieve(url, mkcert_exe)
-        except Exception as e:
-            logger.error("Failed to download mkcert: %s", e)
-            return False
+
+    # 1) Reuse an existing mkcert on PATH (macOS brew / Linux apt / user-installed).
+    mkcert = shutil.which("mkcert")
+    if mkcert:
+        logger.info("Using mkcert found on PATH: %s", mkcert)
+    else:
+        # 2) Download the platform-specific release binary (Windows/macOS/Linux).
+        asset = _mkcert_asset_name()
+        mkcert = os.path.join(cert_dir, "mkcert" + (".exe" if platform.system() == "Windows" else ""))
+        if not os.path.exists(mkcert):
+            url = "https://github.com/FiloSottile/mkcert/releases/latest/download/" + asset
+            logger.info("Downloading mkcert (%s)...", asset)
+            try:
+                urllib.request.urlretrieve(url, mkcert)
+                if platform.system() != "Windows":
+                    os.chmod(mkcert, 0o755)
+            except Exception as e:
+                logger.error("Failed to download mkcert: %s", e)
+                return False
+    # Install the local CA (best-effort: on Linux it may need sudo; the cert is
+    # still generated and just shows a browser warning if install fails).
     try:
-        subprocess.run([mkcert_exe, "-install"], check=True, capture_output=True)
-        subprocess.run([mkcert_exe, "localhost", "127.0.0.1"], check=True)
-        if os.path.exists("localhost+1.pem"):
-            os.rename("localhost+1.pem", cert_file)
-        if os.path.exists("localhost+1-key.pem"):
-            os.rename("localhost+1-key.pem", key_file)
-        return True
+        subprocess.run([mkcert, "-install"], check=True, capture_output=True)
+    except Exception as e:
+        logger.warning("mkcert -install failed (browser may warn): %s", e)
+    try:
+        subprocess.run(
+            [mkcert, "-cert-file", cert_file, "-key-file", key_file,
+             "localhost", "127.0.0.1"],
+            check=True, capture_output=True,
+        )
+        return os.path.exists(cert_file) and os.path.exists(key_file)
     except Exception as e:
         logger.error("Certificate generation failed: %s", e)
         return False
@@ -1100,6 +1134,16 @@ def llamacpp_stop():
     return jsonify(llamacpp_service.stop())
 
 
+@app.route('/api/llamacpp/capabilities', methods=['GET'])
+def llamacpp_capabilities():
+    """Return each llama.cpp model with its input capabilities (folder-based)."""
+    try:
+        llcpp = providers.get("llamacpp")
+        return jsonify(llcpp.list_models_with_caps())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ── Services control panel (turn a specific service on/off) ──
 @app.route('/api/services', methods=['GET'])
 def services_status():
@@ -1413,6 +1457,75 @@ def generate_video():
         return jsonify({'ok': True, 'url': url})
     except Exception as e:
         return jsonify({'error': f'Video generation failed: {str(e)}'}), 500
+
+
+@app.route('/api/audio_workflows', methods=['GET'])
+def audio_workflows():
+    """List auto-discovered ComfyUI text-to-audio workflows (Stable Audio, ACE-Step, etc.)."""
+    options = []
+    try:
+        for wf in comfyui_service.discover_audio_workflows():
+            options.append({
+                "label": wf["name"],
+                "value": "comfyui::audio::" + wf["id"],
+                "kind": wf["kind"],
+            })
+    except Exception:
+        pass
+    return jsonify(options)
+
+
+@app.route('/api/generate_audio', methods=['POST'])
+def generate_audio():
+    """Generate audio (text-to-audio / music / TTS) via ComfyUI."""
+    data = request.get_json(silent=True) or {}
+    prompt = (data.get('prompt') or '').strip()
+    if not prompt:
+        return jsonify({'error': 'Prompt is required'}), 400
+
+    # Free VRAM first: unload the current Ollama model so the audio model fits.
+    try:
+        requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={"model": current_model, "prompt": "", "keep_alive": 0},
+            timeout=3,
+        )
+    except Exception:
+        pass
+
+    out_dir = root_path("static", "uploads", "generated_audio")
+    os.makedirs(out_dir, exist_ok=True)
+    base = os.path.join(out_dir, uuid.uuid4().hex)
+    tmp = base + ".bin"
+
+    try:
+        workflow = (data.get('workflow') or '').strip()
+        if workflow.startswith("comfyui::audio::"):
+            workflow = workflow[len("comfyui::audio::"):]
+        elif workflow.startswith("comfyui::"):
+            workflow = workflow[len("comfyui::"):]
+        _, media_name = comfyui_service.generate_audio(
+            prompt, tmp, workflow=workflow or None,
+            seed=data.get('seed') or None, timeout=1800,
+        )
+        ext = os.path.splitext(media_name)[1] or ".mp3"
+        final = base + ext
+        os.replace(tmp, final)
+        url = f'/static/uploads/generated_audio/{os.path.basename(final)}'
+
+        cid = (data.get('conversation_id') or '').strip()
+        if cid:
+            try:
+                add_message(cid, "user", prompt)
+                add_message(cid, "bot", "🎵 Audio generated via ComfyUI",
+                            meta={"kind": "local", "audio": url})
+                return jsonify({'ok': True, 'url': url, 'conversation_id': cid})
+            except Exception as e:
+                return jsonify({'ok': True, 'url': url, 'conversation_id': cid,
+                                'warning': f'Audio generated, but history not saved: {e}'})
+        return jsonify({'ok': True, 'url': url})
+    except Exception as e:
+        return jsonify({'error': f'Audio generation failed: {str(e)}'}), 500
 
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
@@ -2322,6 +2435,106 @@ def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include
     return messages
 
 
+def _build_vision_messages(messages, images):
+    """Rebuild a message list so the LAST user message carries images as an
+    OpenAI multimodal content array (image_url parts + the text).
+
+    Used by the streaming path so attached images / extracted video frames are
+    actually sent to the model — otherwise a "what do you see here" video question
+    reaches the model as text-only and it returns an empty response.
+    """
+    if not images:
+        return messages
+    msgs = [dict(m) for m in messages]
+    parts = []
+    for img in images:
+        b64 = img.get("b64") or ""
+        if "," in b64:
+            b64 = b64.split(",", 1)[1]
+        mime = img.get("mime") or "image/jpeg"
+        name = img.get("name") or "image"
+        parts.append({"type": "text", "text": f"[image: {name}]"})
+        parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+    # Append the user's text as the final text part.
+    last_text = ""
+    if msgs:
+        last_text = msgs[-1].get("content", "")
+    if isinstance(last_text, str):
+        parts.append({"type": "text", "text": last_text})
+    if msgs:
+        msgs[-1] = {"role": msgs[-1].get("role", "user"), "content": parts}
+    return msgs
+
+
+def _split_audio_files(files):
+    """Split attached files into (audio_files, other_files).
+
+    Audio clips are detected by MIME type (audio/*) or extension; only those are
+    fed to the model as actual audio (input_audio). Everything else stays on the
+    text path (describe_or_extract_file) and is NOT turned into audio.
+    """
+    audio, other = [], []
+    for f in files or []:
+        if video_to_text.is_audio_file(f.get("name", ""), f.get("mime", "")):
+            audio.append(f)
+        else:
+            other.append(f)
+    return audio, other
+
+
+def _model_has_audio(provider_name, model):
+    """True if the selected llama.cpp model's folder declares audio input."""
+    if provider_name != "llamacpp":
+        return False
+    try:
+        llcpp = providers.get("llamacpp")
+        path = llcpp._resolve_model_path(model)
+        return "audio" in llamacpp_service.model_capabilities(path)
+    except Exception:
+        return False
+
+
+def _check_input_capability(provider_name, model, has_image, has_video, has_audio):
+    """Return an error string if the model's folder does not declare support for
+    the given input, else None. Only llama.cpp has folder-based capability
+    restriction; other providers accept anything they natively support."""
+    if provider_name != "llamacpp":
+        return None
+    try:
+        llcpp = providers.get("llamacpp")
+        path = llcpp._resolve_model_path(model)
+    except Exception:
+        return None
+    caps = llamacpp_service.model_capabilities(path)
+    if has_video and "video" not in caps:
+        return ("This model is in a text/image folder and cannot read video. "
+                "Move it into video_model/ (video-only) or universal_models_to_text/ (all inputs).")
+    if has_audio and "audio" not in caps:
+        return ("This model's folder does not declare audio input. "
+                "Use a model in universal_models_to_text/ for audio-to-text.")
+    if has_image and "image" not in caps:
+        return ("This model's folder does not declare image input. "
+                "Use a model in models/ or universal_models_to_text/ for image-to-text.")
+    return None
+
+
+def _user_attachments(images, files, videos):
+    """Build the stored attachment lists for a user message.
+
+    Original images stay images; files stay files; and each attached VIDEO is kept
+    as a single file attachment (with its video mime) so it renders/playable as one
+    file instead of being broken into frame thumbnails.
+    """
+    stored_files = list(files or [])
+    for v in videos or []:
+        stored_files.append({
+            "name": v.get("name", "video.mp4"),
+            "b64": v.get("b64", ""),
+            "mime": v.get("mime", "video/mp4"),
+        })
+    return images or [], stored_files
+
+
 def _build_log_filters(conv_filter: str, date_from: str, date_to: str) -> tuple:
     """Return (where_clause, params) shared by the log list and CSV export routes."""
     clauses = []
@@ -2804,6 +3017,20 @@ def rag_delete():
     return jsonify({'ok': True})
 
 
+# ── Video-to-text (extract frames for a vision model) ───────────
+@app.route('/api/video/frames', methods=['POST'])
+def video_frames():
+    """Extract sample frames from {b64} video (via ffmpeg, auto-detected)."""
+    data = request.get_json(silent=True) or {}
+    b64 = data.get('b64') or ''
+    if not b64:
+        return jsonify({'error': 'b64 is required'}), 400
+    frames = video_to_text.extract_frames(b64)
+    if not frames:
+        return jsonify({'error': 'ffmpeg not available or video could not be decoded', 'frames': []}), 400
+    return jsonify({'ok': True, 'frames': frames})
+
+
 @app.route('/api/workspace/read', methods=['POST'])
 def workspace_read_file():
     data = request.get_json(silent=True) or {}
@@ -2854,6 +3081,12 @@ def chat():
         search_enabled = data.get('search', False)
         rag_enabled = data.get('rag', False)
         provider_name = data.get('provider', 'ollama')
+        # Only llama.cpp gets native audio input; every other provider still
+        # receives the audio file as a described text attachment (not dropped).
+        if provider_name == 'llamacpp':
+            audio_files, non_audio_files = _split_audio_files(files)
+        else:
+            audio_files, non_audio_files = [], list(files)
         model = data.get('model', None)
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
@@ -2861,6 +3094,15 @@ def chat():
 
         if not user_message and not images and not files and not videos:
             return jsonify({'error': 'Nothing to send'}), 400
+
+        # Folder-based capability restriction for llama.cpp: reject an input the
+        # selected model's folder doesn't declare (e.g. video to a text/image model).
+        cap_err = _check_input_capability(
+            provider_name, model,
+            has_image=bool(images), has_video=bool(videos), has_audio=bool(audio_files),
+        )
+        if cap_err:
+            return jsonify({'error': cap_err}), 400
 
         if not conv_id:
             conv_id = create_conversation()
@@ -2891,7 +3133,7 @@ def chat():
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
-        final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
+        final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context)
         if rag_context:
             final_prompt += (
                 "\n\n[The user's uploaded documents are provided below]\n"
@@ -2920,7 +3162,7 @@ def chat():
             extra_kwargs['num_gpu'] = mem_settings['num_gpu']
             extra_kwargs['low_vram'] = mem_settings['low_vram']
 
-        use_tools = (not images) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
+        use_tools = (not images and not videos and not audio_files) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
             and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
@@ -2931,11 +3173,30 @@ def chat():
                 return jsonify({'error': 'llama.cpp failed to start: ' + st['error']}), 500
 
         start_time = time.time()
-        if images or videos:
+        # Extract video frames for the MODEL request only. The original video stays
+        # a single playable file for storage/display (vision_images vs images/videos).
+        vision_images = list(images)
+        # Transcription sources for llama.cpp: explicit audio clips plus the audio
+        # track of any attached video (video-to-text reads the soundtrack). Only
+        # llama.cpp universal models (gemma-4 E2B/E4B/12B) declare audio input.
+        transcription_sources = []
+        if provider_name == 'llamacpp':
+            transcription_sources = list(audio_files)
+            if videos and _model_has_audio(provider_name, model):
+                transcription_sources.extend(videos)
+        if transcription_sources:
+            reply = provider.generate_with_audio(messages, transcription_sources, **extra_kwargs)
+        elif images or videos:
+            frame_images = []
+            if videos:
+                for v in videos:
+                    frame_images.extend(video_to_text.extract_frames(v.get("b64", "")))
+            if frame_images:
+                vision_images = images + frame_images
             if cached_vision_check(provider_name, model):
-                reply = provider.generate_multimodal(messages, images, videos, **extra_kwargs)
-            elif images:
-                future = _executor.submit(describe_image_with_llava, images[0]["b64"])
+                reply = provider.generate_multimodal(messages, vision_images, videos, **extra_kwargs)
+            elif vision_images:
+                future = _executor.submit(describe_image_with_llava, vision_images[0]["b64"])
                 description = future.result(timeout=60)
                 if description:
                     inject = f"[Image description]\n{description.strip()}\n\n[User question]\n"
@@ -2962,7 +3223,8 @@ def chat():
 
         original_message = data.get('message', '').strip()
 
-        if not add_message(conv_id, "user", original_message, images, files + videos):
+        store_images, store_files = _user_attachments(images, files, videos)
+        if not add_message(conv_id, "user", original_message, store_images, store_files):
             return jsonify({'error': f'Failed to save user message to {conv_id}'}), 500
         reasoning = getattr(provider, "last_reasoning", "") or ""
         if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model, reasoning)):
@@ -3041,6 +3303,7 @@ def chat_stream():
         user_message = data.get('message', '').strip()
         images = data.get('images', [])
         files = data.get('files', [])
+        videos = data.get('videos', [])
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
         rag_enabled = data.get('rag', False)
@@ -3050,9 +3313,23 @@ def chat_stream():
         persona_custom = data.get('persona_custom') or ''
 
         provider_name = data.get('provider', 'ollama')
+        # Only llama.cpp gets native audio input; other providers get the audio
+        # described as a text attachment (not silently dropped).
+        if provider_name == 'llamacpp':
+            audio_files, non_audio_files = _split_audio_files(files)
+        else:
+            audio_files, non_audio_files = [], list(files)
 
-        if not user_message and not images and not files:
+        if not user_message and not images and not files and not videos:
             return jsonify({'error': 'Nothing to send'}), 400
+
+        # Folder-based capability restriction for llama.cpp (same as /chat).
+        cap_err = _check_input_capability(
+            provider_name, model,
+            has_image=bool(images), has_video=bool(videos), has_audio=bool(audio_files),
+        )
+        if cap_err:
+            return jsonify({'error': cap_err}), 400
 
         if not conv_id:
             conv_id = create_conversation()
@@ -3061,9 +3338,23 @@ def chat_stream():
             if conv is None:
                 return jsonify({'error': 'Conversation not found'}), 404
 
+        # Video → frames: sample the clip into images so a vision model can
+        # "see" it (ffmpeg auto-detected). The frames are used ONLY for the model
+        # request (vision_images) — the ORIGINAL video stays a single playable
+        # file and is what gets stored/displayed, so the chat doesn't show a stack
+        # of broken-out frame thumbnails.
+        vision_images = list(images)
+        if videos:
+            frame_images = []
+            for v in videos:
+                frame_images.extend(video_to_text.extract_frames(v.get("b64", "")))
+            if frame_images:
+                vision_images = images + frame_images
+                videos = list(videos)  # keep original for storage (no longer frames-only)
+
         if is_ollama_command(user_message) and provider_name == 'ollama':
             return Response(
-                handle_ollama_command_stream(conv_id, user_message, images, files),
+                handle_ollama_command_stream(conv_id, user_message, vision_images, files),
                 mimetype='text/event-stream'
             )
 
@@ -3080,7 +3371,7 @@ def chat_stream():
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
-        final_prompt = _build_final_prompt(system_prompt, user_message, files, search_context)
+        final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context)
         if rag_context:
             final_prompt += (
                 "\n\n[The user's uploaded documents are provided below]\n"
@@ -3095,7 +3386,14 @@ def chat_stream():
         messages = _build_messages(conv_id, system_prompt, final_prompt, include_system=include_system)
 
         mem_settings = get_ollama_memory_settings()
-        use_tools = (not images) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
+        # Transcription sources (llama.cpp): explicit audio clips + the audio track
+        # of any attached video (video-to-text reads the soundtrack).
+        transcription_sources = []
+        if provider_name == "llamacpp":
+            transcription_sources = list(audio_files)
+            if videos and _model_has_audio(provider_name, model):
+                transcription_sources.extend(videos)
+        use_tools = (not vision_images and not audio_files and not transcription_sources) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
             and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
@@ -3125,6 +3423,22 @@ def chat_stream():
             except Exception as e:
                 tool_final_text = f"[tool error] {e}"
 
+        # Audio (llama.cpp universal models): full-length transcription runs
+        # non-streaming (chunked into 30 s segments, then stitched), and the result
+        # is streamed back as one message — same pattern as the tools path above.
+        # Sources are explicit audio clips plus the audio track of attached videos.
+        audio_final_text = None
+        audio_reasoning = ""
+        if transcription_sources:
+            extra_kwargs_audio = {"model": model or current_model}
+            if api_key:
+                extra_kwargs_audio['api_key'] = api_key
+            try:
+                audio_final_text = provider.generate_with_audio(messages, transcription_sources, **extra_kwargs_audio)
+                audio_reasoning = getattr(provider, "last_reasoning", "") or ""
+            except Exception as e:
+                audio_final_text = f"[audio error] {e}"
+
         def generate():
             full_response = ""
             thinking_acc = ""
@@ -3133,9 +3447,21 @@ def chat_stream():
                     yield f"data: {json_dumps({'reasoning': tool_reasoning})}\n\n"
                 yield f"data: {json_dumps({'token': tool_final_text})}\n\n"
                 yield f"data: {json_dumps({'done': True, 'full_response': tool_final_text, 'usage': {}, 'reasoning': tool_reasoning})}\n\n"
-                add_message(conv_id, "user", user_message, images, files)
+                store_images, store_files = _user_attachments(images, files, videos)
+                add_message(conv_id, "user", user_message, store_images, store_files)
                 add_message(conv_id, "bot", tool_final_text, [], [], meta=_bot_meta(provider_name, model, tool_reasoning))
                 record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(tool_final_text))
+                return
+
+            if audio_final_text is not None:
+                if audio_reasoning:
+                    yield f"data: {json_dumps({'reasoning': audio_reasoning})}\n\n"
+                yield f"data: {json_dumps({'token': audio_final_text})}\n\n"
+                yield f"data: {json_dumps({'done': True, 'full_response': audio_final_text, 'usage': {}, 'reasoning': audio_reasoning})}\n\n"
+                store_images, store_files = _user_attachments(images, files, videos)
+                add_message(conv_id, "user", user_message, store_images, store_files)
+                add_message(conv_id, "bot", audio_final_text, [], [], meta=_bot_meta(provider_name, model, audio_reasoning))
+                record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(audio_final_text))
                 return
 
             # ── Ollama: native NDJSON streaming with live `thinking` ──
@@ -3149,8 +3475,8 @@ def chat_stream():
                         "num_gpu": mem_settings['num_gpu'],
                     }
                 }
-                if images:
-                    b64_list = [i["b64"].split(",", 1)[1] if "," in i["b64"] else i["b64"] for i in images]
+                if vision_images:
+                    b64_list = [i["b64"].split(",", 1)[1] if "," in i["b64"] else i["b64"] for i in vision_images]
                     payload["messages"][-1] = {"role": "user", "content": messages[-1]["content"], "images": b64_list}
                 try:
                     r = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, stream=True, timeout=300)
@@ -3193,19 +3519,50 @@ def chat_stream():
                         except Exception:
                             stream_model = model
                     payload = {"model": stream_model, "messages": messages, "stream": True, "temperature": 0.7}
+                    # Give the model room to finish: a reasoning-heavy model (e.g.
+                    # VideoGuard / Qwen3.5) spends a lot of its budget on
+                    # reasoning_content, and if max_tokens is too small it runs out
+                    # before producing any content → an "(empty response)" to the user.
                     try:
+                        prov = providers.get(provider_name)
+                        max_out = getattr(prov, "DEFAULT_MAX_TOKENS", 4096)
+                    except Exception:
+                        max_out = 4096
+                    payload["max_tokens"] = int(max_out)
+                    # Vision: when images (or extracted video frames) are attached,
+                    # rebuild the last user message as an OpenAI multimodal content
+                    # array so the model actually "sees" them. Without this a video
+                    # question reaches the model as text-only and it returns empty.
+                    if vision_images:
+                        payload["messages"] = _build_vision_messages(messages, vision_images)
+                    try:
+                        got_content = False
                         for ev in _iter_openai_stream(url, headers, payload):
                             if "reasoning" in ev:
                                 thinking_acc += ev["reasoning"]
                                 yield f"data: {json_dumps({'reasoning': ev['reasoning']})}\n\n"
                             if "token" in ev:
+                                got_content = True
                                 full_response += ev["token"]
                                 yield f"data: {json_dumps({'token': ev['token']})}\n\n"
+                        # Some reasoning models (e.g. VideoGuard) put the whole answer
+                        # in reasoning_content and leave content empty. If we got no
+                        # content tokens, surface the reasoning as the answer so the
+                        # chat isn't blank.
+                        if not got_content and thinking_acc and not full_response:
+                            full_response = thinking_acc
+                            yield f"data: {json_dumps({'token': full_response})}\n\n"
                         yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {'tokens': _estimate_tokens(full_response), 'duration_sec': 0}, 'reasoning': thinking_acc})}\n\n"
                     except Exception as e:
                         yield f"data: {json_dumps({'error': str(e)})}\n\n"
 
-            add_message(conv_id, "user", user_message, images, files)
+            # If the model produced no content (e.g. it put everything in its
+            # reasoning chain), fall back to the reasoning so the user gets an
+            # answer instead of a bare "(empty response)".
+            if not full_response and thinking_acc:
+                full_response = thinking_acc
+            store_images, store_files = _user_attachments(images, files, videos)
+            add_message(conv_id, "user", user_message, store_images, store_files)
             add_message(conv_id, "bot", full_response or "(empty response)", [], [],
                         meta=_bot_meta(provider_name, model, thinking_acc))
             _record_code_blocks(full_response)
@@ -3462,18 +3819,22 @@ def _auto_open_browser(url: str) -> None:
 
 
 if __name__ == '__main__':
-    # Single-instance guard: if port 5001 is already bound, another TrioForge
+    # Port is configurable via TRIOFORGE_PORT (default 5003) so it never collides
+    # with a stale Docker container / wslrelay still holding 5001.
+    PORT = int(os.environ.get('TRIOFORGE_PORT', '5003') or 5003)
+
+    # Single-instance guard: if the chosen port is already bound, another TrioForge
     # instance is already running. Open the browser to it and exit cleanly so we
     # never spawn zombie duplicate processes that fight over the database.
     import socket as _socket
     _probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
     _probe.settimeout(1)
     try:
-        if _probe.connect_ex(('127.0.0.1', 5001)) == 0:
-            print("TrioForge is already running at https://localhost:5001 — opening it.")
+        if _probe.connect_ex(('127.0.0.1', PORT)) == 0:
+            print("TrioForge is already running at https://localhost:%d — opening it." % PORT)
             try:
                 import webbrowser
-                webbrowser.open("https://localhost:5001")  # synchronous: opens before we exit
+                webbrowser.open("https://localhost:%d" % PORT)  # synchronous: opens before we exit
             except Exception:
                 pass
             sys.exit(0)
@@ -3491,20 +3852,20 @@ if __name__ == '__main__':
     if os.path.exists(cert_file) and os.path.exists(key_file):
         ssl_context = (cert_file, key_file)
         logger.info("Running with HTTPS (SSL enabled)")
-        url = "https://localhost:5001"
+        url = "https://localhost:%d" % PORT
     else:
         if ensure_certificates():
             ssl_context = (cert_file, key_file)
             logger.info("Running with HTTPS (SSL enabled)")
-            url = "https://localhost:5001"
+            url = "https://localhost:%d" % PORT
         else:
             ssl_context = None
             logger.warning("Running with HTTP (SSL unavailable)")
-            url = "http://localhost:5001"
+            url = "http://localhost:%d" % PORT
 
     logger.info("Open your browser at: %s", url)
     _auto_open_browser(url)
 
     # For production, use gunicorn or waitress instead of app.run.
-    # Example: gunicorn -w 4 -b 0.0.0.0:5001 app:app
-    app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False, ssl_context=ssl_context, threaded=True)
+    # Example: gunicorn -w 4 -b 0.0.0.0:%d app:app  (PORT)
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False, ssl_context=ssl_context, threaded=True)

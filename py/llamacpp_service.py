@@ -38,45 +38,120 @@ _QUANT_SET = {q.replace("_", "") for q in _QUANT_TOKENS}
 
 
 def _base_gguf_name(filename: str):
-    """Return a model's base name: no .gguf, no mmproj- prefix, no trailing quant."""
+    """Return a model's base name: no .gguf, no mmproj marker, no trailing quant.
+
+    Handles both projector naming styles so the shared base is recoverable:
+      - mmproj-MODEL-<quant>.gguf   (prefix)
+      - MODEL.mmproj-bf16.gguf      (suffix, e.g. VideoGuard)
+    """
     name = os.path.splitext(filename)[0]
     if name.lower().startswith("mmproj-"):
         name = name[len("mmproj-"):]
+    # A ".mmproj-…" suffix marks a projector (VideoGuard style); strip it too.
+    lower = name.lower()
+    idx = lower.find(".mmproj")
+    if idx > 0:
+        name = name[:idx]
     parts = name.split("-")
     while parts and parts[-1].lower().replace("_", "") in _QUANT_SET:
         parts.pop()
     return "-".join(parts)
 
 
-def _list_gguf_files(subdir="models"):
-    """All .gguf files under <project>/<subdir>, recursively, as absolute paths."""
+def _is_mmproj(basename: str):
+    """True if a .gguf basename is a vision projector.
+
+    Supports many naming conventions so nothing is hard-coded:
+      - prefix:   mmproj-<model>-<quant>.gguf        (Qwen-VL style)
+      - suffix:   <model>.mmproj-bf16.gguf           (VideoGuard style)
+      - hyphen:   <model>-mmproj-BF16.gguf           (gemma-4 universal style)
+    Any basename containing "mmproj" (as a token) is a projector.
+    """
+    return "mmproj" in basename.lower()
+
+
+def _model_roots():
+    """The directories scanned for GGUF models (each scanned recursively).
+
+    Each root has a DIFFERENT capability restriction — the folder a model lives in
+    declares what input it accepts (see ``model_capabilities``):
+      - models/                     → text + image(vision) input
+      - video_model/                → video input only
+      - universal_models_to_text/   → all inputs (text, image, video, audio) to text
+    Keeping them as SEPARATE roots is what stops a video/universal model's projector
+    from overlapping with image-text models.
+    """
+    return [
+        os.path.abspath(root_path("models")),
+        os.path.abspath(root_path("video_model")),
+        os.path.abspath(root_path("universal_models_to_text")),
+    ]
+
+
+def model_capabilities(model_path):
+    """Return the set of input capabilities for a model based on its folder.
+
+    The folder is the restriction: it tells the app what the model is allowed to
+    read, so a video posted to a models/ model is rejected instead of silently fed
+    frames. Returns a set like {"text", "image"} / {"video"} / {"text","image","video","audio"}.
+    """
+    mp = os.path.abspath(model_path or "")
+    roots = {
+        os.path.abspath(root_path("models")): {"text", "image"},
+        os.path.abspath(root_path("video_model")): {"video"},
+        os.path.abspath(root_path("universal_models_to_text")): {"text", "image", "video", "audio"},
+    }
+    # Match the deepest root that is an ancestor of the model path.
+    best = None
+    for root, caps in roots.items():
+        if mp == root or mp.startswith(root + os.sep):
+            if best is None or len(root) > len(best[0]):
+                best = (root, caps)
+    return best[1] if best else {"text", "image"}  # default: treat unknown as text+image
+
+
+def _list_gguf_files(subdir=None):
+    """All .gguf files under the model roots, recursively, as absolute paths.
+
+    `subdir` (legacy) restricts to a single root; by default every root is scanned.
+    """
     import glob
-    pattern = os.path.abspath(root_path(subdir, "**", "*.gguf"))
-    return glob.glob(pattern, recursive=True)
+    roots = [os.path.abspath(root_path(subdir))] if subdir else _model_roots()
+    files = []
+    for r in roots:
+        if os.path.isdir(r):
+            files.extend(glob.glob(os.path.join(r, "**", "*.gguf"), recursive=True))
+    return files
 
 
 def _folder_mmproj(model_path: str):
-    """Find an mmproj-*.gguf in the SAME folder as the model.
+    """Find a projector (.gguf) in the SAME folder as the model.
 
-    This is the recommended, conflict-free layout: each model lives in its own
-    subfolder under models/ with its projector beside it, e.g.
-        models/gemma-4/gemma-4-...-Q4_K_XL.gguf
-        models/gemma-4/mmproj-BF16.gguf
-    Pairing by folder is automatic and unambiguous — no name heuristics, no
-    hard-coding. Returns the projector path or None.
+    Two layouts are supported (both automatic, no hard-coding):
+      - subfolder: models/<name>/<model>.gguf + <name>/<proj>.gguf
+      - dedicated root: universal_models_to_text/<model>.gguf + <proj>.gguf
+        (the root IS the model folder, so the projector next to it pairs directly)
+
+    Returns None if no projector sits beside the model, or if the folder is
+    ambiguous (multiple projectors and it isn't clearly the model's own folder).
     """
     model_dir = os.path.dirname(os.path.abspath(model_path))
-    # Only trust folder pairing when the model is inside a subfolder of models/,
-    # not in the root (where multiple models would otherwise collide).
-    models_root = os.path.abspath(root_path("models"))
-    if model_dir == models_root or not model_dir.startswith(models_root + os.sep):
+    roots = _model_roots()
+    # Collect projectors in the same directory as the model.
+    same_dir_mmproj = [
+        f for f in _list_gguf_files()
+        if os.path.dirname(os.path.abspath(f)) == model_dir
+        and _is_mmproj(os.path.basename(f))
+    ]
+    if not same_dir_mmproj:
         return None
-    for f in _list_gguf_files():
-        if os.path.dirname(os.path.abspath(f)) != model_dir:
-            continue
-        bn = os.path.basename(f)
-        if bn.lower().startswith("mmproj-"):
-            return f
+    # Subfolder of a root → unambiguous, return the projector there.
+    if any(model_dir != r and model_dir.startswith(r + os.sep) for r in roots):
+        return same_dir_mmproj[0]
+    # Model sits directly in a capability ROOT (e.g. universal_models_to_text/).
+    # Pair only when there's exactly one projector beside it (unambiguous).
+    if model_dir in roots and len(same_dir_mmproj) == 1:
+        return same_dir_mmproj[0]
     return None
 
 
@@ -102,7 +177,7 @@ def find_mmproj(model_path: str):
     # 2) Name-based match across all gguf files.
     for f in _list_gguf_files():
         bn = os.path.basename(f)
-        if bn.lower().startswith("mmproj-"):
+        if _is_mmproj(bn):
             mbase = _base_gguf_name(bn)
             mbase_l = mbase.lower() if mbase else ""
             if mbase_l and (mbase_l in model_base_l or model_base_l in mbase_l):
@@ -126,7 +201,7 @@ def find_mmproj(model_path: str):
                     "pixtral", "phi-3.5", "phi3", "qwen2.5-vl", "qwen2vl", "smolvlm", "internvl")
     if any(h in model_base_l for h in vision_hints):
         generic = [f for f in _list_gguf_files()
-                   if os.path.basename(f).lower().startswith("mmproj-")
+                   if _is_mmproj(os.path.basename(f))
                    and not _base_gguf_name(os.path.basename(f))]
         if len(generic) == 1:
             return generic[0]
@@ -142,20 +217,79 @@ def _config():
 
 
 def resolve_model(value):
-    """Resolve a model reference (absolute path, relative path, or bare .gguf name)
-    to an absolute path on disk. Bare names are looked up anywhere under models/
-    (so models can be organized into one subfolder per model)."""
+    """Resolve a reference to an absolute path on disk — portable across OSes.
+
+    Handles, in order:
+      1. an absolute path (normalising both / and \\ separators)
+      2. a command name on PATH (e.g. "llama-server" — for executables)
+      3. a bare/relative .gguf name, searched under models/, video_model/ and
+         universal_models_to_text/
+    """
     if not value:
         return None
     value = str(value).strip().strip('"')
-    p = os.path.abspath(value)
+    # Normalise separators so a Windows-style "models\\foo.gguf" written in
+    # config.json still resolves on Linux, and vice-versa.
+    norm = value.replace("\\", os.sep).replace("/", os.sep)
+    p = os.path.abspath(norm)
     if os.path.isfile(p):
         return p
-    # Bare filename → search models/ (and its subfolders) recursively.
-    base = os.path.basename(value)
+    # Command on PATH (for the llama-server executable).
+    import shutil
+    which = shutil.which(norm) or shutil.which(os.path.basename(norm))
+    if which and os.path.isfile(which):
+        return which
+    # Relative/bare .gguf filename → search the model roots recursively.
+    base = os.path.basename(norm)
     for f in _list_gguf_files():
         if os.path.basename(f).lower() == base.lower():
             return f
+    return p
+
+
+def _resolve_llama_server_exe(value):
+    """Resolve the llama-server executable portably (Windows, Linux, WSL, Docker).
+
+    The config may hold a Windows-only path (``C:\\...\\llama-server.exe``) that
+    does not exist on a Linux/Docker host. Instead of forcing users to hand-edit
+    that path, we fall back through, in order:
+
+      1. the configured path (normalised — ``\\``/``/`` both work)
+      2. a command name on PATH ("llama-server" / "llama-server.exe")
+      3. common install locations (winget/Program Files on Windows; /usr/local/bin,
+         /usr/bin, /opt on Linux/macOS/Docker)
+    """
+    import glob
+    import shutil
+
+    # 1) Explicit configured path (Windows or POSIX separators).
+    p = resolve_model(value)
+    if p and os.path.isfile(p):
+        return p
+
+    # 2) Command name on PATH (covers a bare "llama-server" in config).
+    for name in ("llama-server", "llama-server.exe"):
+        w = shutil.which(name)
+        if w and os.path.isfile(w):
+            return w
+
+    # 3) Common install locations — cross-platform, so Windows globs are harmless
+    #    no-ops on Linux and vice-versa.
+    cands = []
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        cands.extend(glob.glob(os.path.join(local, "Microsoft", "WinGet", "Packages", "*", "llama-server.exe")))
+    prog = os.environ.get("ProgramFiles", "")
+    if prog:
+        cands.extend(glob.glob(os.path.join(prog, "*", "llama-server.exe")))
+    for d in ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/build/bin"):
+        cands.extend(glob.glob(os.path.join(d, "llama-server")))
+        cands.extend(glob.glob(os.path.join(d, "llama-server.exe")))
+    for c in cands:
+        if os.path.isfile(c):
+            return c
+
+    # Last resort: the original path, so the caller reports a clear, specific error.
     return p
 
 
@@ -168,6 +302,57 @@ def _port_in_use(host, port):
         return False
     finally:
         s.close()
+
+
+def _server_model(host, port):
+    """Return the absolute model path the running llama-server is serving, or None.
+
+    Queries ``/v1/models`` (OpenAI-compatible) and returns the model id/path, so we
+    can tell whether a stale server on the port is serving the WRONG model.
+    """
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+            f"http://{host}:{port}/v1/models", timeout=3
+        ) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        for m in (data.get("data") or []) + ([data] if isinstance(data, dict) else []):
+            mid = m.get("id") or m.get("model") or m.get("name")
+            if mid:
+                # Normalise separators for a stable comparison on Windows.
+                return os.path.abspath(str(mid).replace("/", os.sep))
+    except Exception:
+        pass
+    return None
+
+
+def _kill_stale_llama_server(host, port):
+    """Terminate a stale llama-server process listening on (host, port).
+
+    The stale process is the same llama-server.exe we normally manage (just left
+    over from an earlier app instance), so we can safely kill it by matching its
+    executable name and the --port it was launched with. Returns True if the port
+    is freed, False otherwise.
+    """
+    try:
+        import psutil
+        for conn in psutil.net_connections(kind="inet"):
+            try:
+                if conn.laddr and conn.laddr.port == port and conn.status == "LISTEN":
+                    proc = psutil.Process(conn.pid)
+                    cmdline = " ".join(proc.cmdline() or [])
+                    if "llama-server" in cmdline and "--port" in cmdline and str(port) in cmdline:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except Exception:
+                            proc.kill()
+                        return not _port_in_use(host, port)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
 
 
 def server_ready(host, port, timeout=180):
@@ -282,7 +467,7 @@ def start(model=None):
         if not model_path or not os.path.isfile(model_path):
             return {"running": False, "error": "model not found: {}".format(model_ref)}
 
-        exe = resolve_model(cfg.get("llama_server", ""))
+        exe = _resolve_llama_server_exe(cfg.get("llama_server", ""))
         if not exe or not os.path.isfile(exe):
             return {"running": False, "error": "llama-server executable not found: {}".format(cfg.get("llama_server"))}
 
@@ -301,22 +486,28 @@ def start(model=None):
                 pass
             _process = None
 
-        # If the port is taken by an external process and the selected model needs
-        # vision, stop the TEXT-ONLY voice agent so only ONE (vision-capable) server
-        # runs. Otherwise reuse whatever is already listening.
+        # If the port is taken by an external process, figure out whether it is
+        # actually serving the requested model. A stale server (e.g. one started
+        # earlier with a different model) must be restarted — otherwise the user
+        # selects model X but keeps getting answers from a stale model Y.
         if _port_in_use(host, port):
-            if mmproj and _voice_agent_running():
-                _send_voice_bye()
-                for _ in range(30):
-                    if not _port_in_use(host, port):
-                        break
-                    time.sleep(1)
-                if _port_in_use(host, port):
-                    return {"running": False,
-                            "error": "port {} is still busy; stop the other llama-server manually".format(port)}
-            else:
+            running_model = _server_model(host, port)
+            if running_model and os.path.normcase(running_model) == os.path.normcase(model_path):
                 return {"running": True, "model": os.path.basename(model_path),
-                        "message": "llama-server already running on port {}".format(port)}
+                        "message": "llama-server already running with the requested model"}
+            # Wrong model on the port → stop the stale llama-server so we can start
+            # the requested one. The stale process is a llama-server.exe (same
+            # executable we manage), so we can terminate it directly by name.
+            _kill_stale_llama_server(host, port)
+            # Give the port a moment to free up.
+            for _ in range(15):
+                if not _port_in_use(host, port):
+                    break
+                time.sleep(1)
+            if _port_in_use(host, port):
+                return {"running": False,
+                        "error": "port {} is busy with a different model ({}); stop the other llama-server manually".format(
+                            port, os.path.basename(running_model) if running_model else "unknown")}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
         if mmproj:

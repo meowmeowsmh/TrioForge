@@ -3,8 +3,9 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install system build tools (needed for psutil, sentence-transformers, etc.)
+# ffmpeg is required by video-to-text (py/video_to_text.py extracts video frames).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ openssl && \
+    gcc g++ openssl ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
