@@ -35,7 +35,12 @@ def _voice_config():
 
 
 def _llama_server_candidates():
-    """Return candidate llama-server executable paths, most likely first."""
+    """Return candidate llama-server executable paths, most likely first.
+
+    Cross-platform: the configured path may be Windows-only (or a bare command
+    name), so we also search PATH and common install locations on both Windows
+    and Linux/macOS/Docker. Windows-only globs are harmless no-ops elsewhere.
+    """
     cfg = _voice_config()
     cands = []
     exe = cfg.get("llama_server", "")
@@ -43,16 +48,20 @@ def _llama_server_candidates():
         cands.append(exe)
     # Common install locations on Windows.
     local = os.environ.get("LOCALAPPDATA", "")
-    for pat in [
-        os.path.join(local, "Microsoft", "WinGet", "Packages", "*", "llama-server.exe"),
-        os.path.join(os.environ.get("ProgramFiles", ""), "*", "llama-server.exe"),
-    ]:
-        if pat and "*" in pat:
-            cands.extend(glob.glob(pat))
-    # On PATH?
-    which = shutil.which("llama-server")
-    if which:
-        cands.append(which)
+    if local:
+        cands.extend(glob.glob(os.path.join(local, "Microsoft", "WinGet", "Packages", "*", "llama-server.exe")))
+    prog = os.environ.get("ProgramFiles", "")
+    if prog:
+        cands.extend(glob.glob(os.path.join(prog, "*", "llama-server.exe")))
+    # Common install locations on Linux / macOS / Docker.
+    for d in ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/build/bin"):
+        cands.extend(glob.glob(os.path.join(d, "llama-server")))
+        cands.extend(glob.glob(os.path.join(d, "llama-server.exe")))
+    # On PATH (both "llama-server" and "llama-server.exe").
+    for name in ("llama-server", "llama-server.exe"):
+        which = shutil.which(name)
+        if which:
+            cands.append(which)
     return cands
 
 
@@ -99,10 +108,10 @@ def check_all():
         "id": "llamacpp",
         "name": "llama.cpp (llama-server)",
         "status": "ok" if found else "missing",
-        "detail": found or "llama-server.exe not found",
+        "detail": found or "llama-server not found",
         "url": "https://github.com/ggml-org/llama.cpp/releases",
         "required": True,
-        "hint": "Download the llama.cpp release, or `winget install ggml.llamacpp`. The app auto-starts it when you pick llama.cpp.",
+        "hint": "Install llama.cpp — `brew install llama.cpp` (macOS), `apt install llama.cpp` (Linux), or `winget install ggml.llamacpp` (Windows). The app auto-starts it when you pick llama.cpp.",
     })
 
     # 3. GGUF model files

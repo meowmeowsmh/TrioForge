@@ -18,6 +18,7 @@ Press Ctrl+C to stop both services cleanly.
 """
 
 import argparse
+import glob
 import json
 import os
 import shutil
@@ -33,17 +34,18 @@ HERE = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG = HERE / "voiceguide_llama.cpp_guide" / "config.json"
 
 DEFAULT_CONFIG_DATA = {
-    "llama_server": r"C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\ggml.llamacpp_Microsoft.Winget.Source_8wekyb3d8bbwe\llama-server.exe",
-    "model": "models/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+    "llama_server": "llama-server",
+    "model": "models/qwen-uncensored/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
     "llama_host": "127.0.0.1",
     "llama_port": 8080,
+    "voice_llama_port": 8082,
     "llama_args": [],
     "speech_to_speech": "speech-to-speech",
     "speech_args": [
         "--mode", "local", "--no_smart_turn",
         "--llm_backend", "chat-completions",
         "--model_name", "Qwen3.5-9B",
-        "--responses_api_base_url", "http://127.0.0.1:8080/v1",
+        "--responses_api_base_url", "http://127.0.0.1:8082/v1",
         "--responses_api_api_key", "",
         "--stt_device", "cpu",
         "--parakeet_tdt_device", "cpu",
@@ -60,17 +62,44 @@ def _resolve(value):
 
 
 def _find_executable(value):
-    """Resolve a path OR a bare command name (found on PATH) to an executable."""
+    """Resolve a path OR a bare command name to an executable.
+
+    A bare name (e.g. "llama-server") is looked up on PATH, then in common install
+    locations (Windows winget/Program Files, Linux/macOS/Docker standard bin dirs),
+    matching llamacpp_service's resolver so Docker/Linux and winget users don't have
+    to hand-edit a full path into config.json.
+    """
     value = str(value)
     p = Path(value)
     # A real path: absolute, has a directory part, or already exists relative to cwd.
     if p.is_absolute() or os.path.dirname(value) or os.path.exists(value):
         return _resolve(value)
     found = shutil.which(value)
-    if not found:
-        print("ERROR: executable '{}' not found on PATH or as a file.".format(value))
-        sys.exit(1)
-    return found
+    if found:
+        return found
+    # Common install locations (cross-platform; Windows-only globs are no-ops
+    # elsewhere and vice-versa).
+    base = os.path.basename(value)
+    names = [base]
+    if os.name == "nt" and not base.lower().endswith(".exe"):
+        names.append(base + ".exe")
+    cands = []
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        for n in names:
+            cands += glob.glob(os.path.join(local, "Microsoft", "WinGet", "Packages", "*", n))
+    prog = os.environ.get("ProgramFiles", "")
+    if prog:
+        for n in names:
+            cands += glob.glob(os.path.join(prog, "*", n))
+    for d in ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/build/bin"):
+        for n in names:
+            cands += glob.glob(os.path.join(d, n))
+    for c in cands:
+        if os.path.isfile(c):
+            return c
+    print("ERROR: executable '{}' not found on PATH, in common install locations, or as a file.".format(value))
+    sys.exit(1)
 
 
 def _now():
@@ -157,7 +186,9 @@ def main():
     conversations = (log_dir / "conversations.log").open("a", encoding="utf-8")
 
     host = config.get("llama_host", "127.0.0.1")
-    port = int(config.get("llama_port", 8080))
+    # The voice agent runs its OWN llama-server on a dedicated port so it never
+    # collides with the chat llama.cpp server (which uses `llama_port` 8080).
+    port = int(config.get("voice_llama_port", 8082))
     base_url = "http://{}:{}".format(host, port)
 
     # ---- 1. llama.cpp server ----

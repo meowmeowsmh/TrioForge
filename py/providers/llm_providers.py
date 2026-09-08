@@ -576,18 +576,23 @@ class LlamaCppProvider(LLMProvider):
             os.makedirs(self.models_dir, exist_ok=True)
 
     def _discover_models(self) -> List[str]:
-        # Text GGUF models only. mmproj-*.gguf files are vision projectors — they
-        # must be paired with their text model via --mmproj (see llamacpp_service),
-        # so they are NOT listed as standalone selectable models here. Scan models/
-        # recursively so models can be organized one subfolder per model.
-        gguf_files = glob.glob(os.path.join(self.models_dir, "**", "*.gguf"), recursive=True)
+        # Text GGUF models only. mmproj/*.mmproj .gguf files are vision projectors —
+        # they must be paired with their text model via --mmproj (see llamacpp_service),
+        # so they are NOT listed as standalone selectable models here. Scan models/,
+        # video_model/ AND universal_models_to_text/ recursively (one subfolder per
+        # model) so each root's capability restriction applies without overlap.
+        roots = [self.models_dir, root_path("video_model"), root_path("universal_models_to_text")]
         local_models = []
-        for f in gguf_files:
-            bn = os.path.basename(f)
-            if bn.lower().startswith("mmproj-"):
+        for root in roots:
+            if not os.path.isdir(root):
                 continue
-            rel = os.path.relpath(f, self.models_dir)  # e.g. "gemma-4/gemma-4-...gguf"
-            local_models.append(rel)
+            for f in glob.glob(os.path.join(root, "**", "*.gguf"), recursive=True):
+                bn = os.path.basename(f)
+                if "mmproj" in bn.lower():
+                    continue  # projector, not a standalone model
+                # Prefix with the root name so folders are distinguishable in the UI.
+                rel = os.path.relpath(f, os.path.dirname(root))
+                local_models.append(rel)
 
         server_models = []
         try:
@@ -614,12 +619,30 @@ class LlamaCppProvider(LLMProvider):
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         return self.available_models
 
+    def list_models_with_caps(self):
+        """Return [{value, label, caps}] with each model's input capabilities.
+
+        Caps come from the folder the model lives in (models/ = text+image,
+        video_model/ = video, universal_models_to_text/ = all). Used by the UI to
+        show what each model can read.
+        """
+        import llamacpp_service as lcs
+        out = []
+        for m in self.available_models:
+            try:
+                path = self._resolve_model_path(m)
+            except Exception:
+                path = m
+            caps = lcs.model_capabilities(path)
+            out.append({"value": m, "label": m, "caps": sorted(caps)})
+        return out
+
     def _resolve_model_path(self, model: Optional[str]) -> str:
         if not model:
             if self.available_models:
                 model = self.available_models[0]
             else:
-                raise ProviderError("No models found in ./models folder and no model specified.")
+                raise ProviderError("No models found in ./models or ./video_model folder.")
         # Direct path on disk.
         if os.path.isfile(model):
             return model
@@ -627,12 +650,21 @@ class LlamaCppProvider(LLMProvider):
         cand = os.path.join(self.models_dir, model)
         if os.path.isfile(cand):
             return cand
-        # Bare filename → search models/ (and subfolders) recursively.
+        # Relative to a root like "video_model/VideoGuard/...gguf" or
+        # "universal_models_to_text/...gguf".
+        roots = [self.models_dir, root_path("video_model"), root_path("universal_models_to_text")]
+        for root in roots:
+            cand2 = os.path.join(root, model)
+            if os.path.isfile(cand2):
+                return cand2
+        # Bare filename → search models/, video_model/ AND universal_models_to_text/.
         base = os.path.basename(str(model))
-        mdir = os.path.abspath(self.models_dir)
-        for f in glob.glob(os.path.join(mdir, "**", "*.gguf"), recursive=True):
-            if os.path.basename(f).lower() == base.lower():
-                return f
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            for f in glob.glob(os.path.join(root, "**", "*.gguf"), recursive=True):
+                if os.path.basename(f).lower() == base.lower():
+                    return f
         return str(model)
 
     def _check_server(self, wait_ready: bool = True):
@@ -765,6 +797,105 @@ class LlamaCppProvider(LLMProvider):
             raise ProviderError(f"llama.cpp vision error: {e}" + (f" {detail}" if detail else ""))
         except Exception as e:
             raise ProviderError(f"llama.cpp vision error: {e}")
+
+    def generate_with_audio(self, messages: List[Dict[str, str]],
+                            audio_files: List[Dict], **kwargs) -> str:
+        """Text + audio — gemma-4 E2B/E4B/12B audio-to-text (ASR), full length.
+
+        Accepts audio clips AND video files: a video's audio track is extracted
+        (ffmpeg ``-vn``) and transcribed, so "video-to-text" works by reading the
+        soundtrack. Each source is converted to 16 kHz mono WAV and SPLIT into
+        <= 30 s segments (the model's per-clip limit), each segment is transcribed
+        in its own call, and the segments are stitched back together so a full
+        song/recording/video is covered end-to-end. Raises ProviderError on failure.
+        """
+        import video_to_text
+        self._check_server()
+        model_path = self._resolve_model_path(kwargs.get("model"))
+        n_ctx = kwargs.get("n_ctx", self.context_length)
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
+                         max(256, n_ctx - 256))
+
+        last_text = messages[-1].get("content", "") if messages else ""
+
+        results = []  # (name, transcript) in order
+        for af in audio_files or []:
+            name = af.get("name", "audio")
+            mime = (af.get("mime") or "").lower()
+            if mime.startswith("video/"):
+                chunks = video_to_text.extract_audio_chunks(af.get("b64", ""), name)
+            else:
+                chunks = video_to_text.audio_to_wav_chunks(af.get("b64", ""), name)
+            if not chunks:
+                # Fall back to a single whole-clip conversion (short clip, or
+                # segmenting unsupported) so one-off uploads still work.
+                if mime.startswith("video/"):
+                    continue  # a video with no audio track → skip, not an error
+                wav_b64 = video_to_text.audio_to_wav_b64(af.get("b64", ""), name)
+                chunks = [wav_b64] if wav_b64 else []
+
+            segs = []
+            for i, ch in enumerate(chunks, 1):
+                prompt = last_text
+                if len(chunks) > 1:
+                    prompt = (prompt or "Transcribe this audio.") + \
+                        f"\n[Audio part {i} of {len(chunks)}]"
+                segs.append(self._transcribe_audio_chunk(
+                    prompt, ch, model_path, temperature, max_tokens))
+            transcript = "\n".join(s for s in segs if s)
+            if transcript:
+                results.append((name, transcript))
+
+        if not results:
+            raise ProviderError("Audio could not be converted to WAV (is ffmpeg installed?)")
+
+        if len(results) == 1:
+            return results[0][1]
+        return "\n\n".join(f"[{name}]\n{text}" for name, text in results)
+
+    def _transcribe_audio_chunk(self, text, wav_b64, model_path,
+                                temperature, max_tokens) -> str:
+        """Send ONE audio segment (text + input_audio) and return the transcript."""
+        parts = []
+        if text:
+            parts.append({"type": "text", "text": text})
+        parts.append({"type": "input_audio",
+                      "input_audio": {"data": wav_b64, "format": "wav"}})
+        payload = {
+            "model": model_path,
+            "messages": [{"role": "user", "content": parts}],
+            "stream": False,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        try:
+            resp = requests.post(
+                f"{self.server_url}/chat/completions",
+                json=payload,
+                timeout=180
+            )
+            resp.raise_for_status()
+            msg = resp.json()["choices"][0]["message"]
+            content = msg.get("content") or ""
+            reasoning = msg.get("reasoning_content") or ""
+            if reasoning:
+                self.last_reasoning = reasoning
+            return content or reasoning
+        except requests.exceptions.Timeout:
+            raise ProviderError("llama.cpp server timed out during audio transcription.")
+        except requests.exceptions.ConnectionError:
+            raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                if e.response is not None:
+                    detail = (e.response.text or "").strip()[:400]
+            except Exception:
+                detail = ""
+            raise ProviderError(f"llama.cpp audio error: {e}" + (f" {detail}" if detail else ""))
+        except Exception as e:
+            raise ProviderError(f"llama.cpp audio error: {e}")
 
     def generate_raw(self, messages: List[Dict[str, str]],
                      model: Optional[str] = None, **kwargs) -> dict:

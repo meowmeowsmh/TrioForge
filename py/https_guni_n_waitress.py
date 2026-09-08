@@ -34,7 +34,7 @@ KEY_FILE = os.path.join(CERT_DIR, "localhost+1-key.pem")
 
 def main():
     if not (os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)):
-        logger.info("Certificates not found, generating (Windows + mkcert only)...")
+        logger.info("Certificates not found, generating via mkcert...")
         if not ensure_certificates():
             logger.error("Could not obtain certificates. Falling back to plain HTTP.")
             logger.info("http://%s:%s", HOST, PORT)

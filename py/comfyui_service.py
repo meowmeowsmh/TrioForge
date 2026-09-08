@@ -88,43 +88,72 @@ def get_object_info(force=False):
 # --------------------------------------------------------------------------- #
 
 def find_comfyui_install():
-    """Return the path to the ComfyUI root (the folder containing ``blueprints/``)."""
+    """Return the path to the ComfyUI root (the folder containing ``blueprints/``).
+
+    Cross-platform: Comfy Desktop's installations.json (Windows/macOS/Linux),
+    standard install roots (Windows LOCALAPPDATA, macOS ~/Library & ~/Documents,
+    Linux ~/ComfyUI & /opt/ComfyUI), and Windows drive roots. No path is hardcoded
+    per-user — each is auto-located so macOS/Linux users don't hand-edit anything.
+    """
     if COMFYUI_INSTALL and os.path.isdir(COMFYUI_INSTALL):
         return COMFYUI_INSTALL
 
+    home = os.path.expanduser("~")
     candidates = []
 
     # 1) Comfy Desktop writes each install's path into installations.json.
-    for base in (_APP_DATA, _LOCAL_APP_DATA):
-        if not base:
-            continue
+    #    Windows: %APPDATA% / %LOCALAPPDATA% \ Comfy Desktop
+    #    macOS:   ~/Library/Application Support/ComfyUI  (and ~/Documents/ComfyUI)
+    #    Linux:   ~/.config/ComfyUI
+    json_bases = []
+    if _APP_DATA:
+        json_bases.append(os.path.join(_APP_DATA, "Comfy Desktop"))
+    if _LOCAL_APP_DATA:
+        json_bases.append(os.path.join(_LOCAL_APP_DATA, "Comfy Desktop"))
+    json_bases += [
+        os.path.join(home, "Library", "Application Support", "ComfyUI"),
+        os.path.join(home, ".config", "ComfyUI"),
+        os.path.join(home, "Documents", "ComfyUI"),
+    ]
+    for base in json_bases:
         try:
-            with open(os.path.join(base, "Comfy Desktop", "installations.json"),
-                      encoding="utf-8") as f:
+            with open(os.path.join(base, "installations.json"), encoding="utf-8") as f:
                 installs = json.load(f)
             for inst in installs:
                 p = inst.get("installPath")
                 if p:
+                    candidates.append(p)
                     candidates.append(os.path.join(p, "ComfyUI"))
         except Exception:
             pass
 
-    # 2) Standard Comfy Desktop install layout.
+    # 2) Standard install roots (the folder that CONTAINS blueprints/).
+    roots = []
     if _LOCAL_APP_DATA:
-        for root in (os.path.join(_LOCAL_APP_DATA, "Comfy-Desktop", "ComfyUI-Installs"),
-                     os.path.join(_LOCAL_APP_DATA, "ComfyUI")):
-            candidates.append(root)
-            if os.path.isdir(root):
-                for entry in sorted(os.listdir(root)):
-                    candidates.append(os.path.join(root, entry))
-                    candidates.append(os.path.join(root, entry, "ComfyUI"))
-
-    # 3) Common standalone install locations.
-    for base in (_LOCAL_APP_DATA, _APP_DATA, os.path.expanduser("~")):
-        if base:
-            candidates.append(os.path.join(base, "ComfyUI"))
-    for drive in ("C:\\", "D:\\"):
-        candidates.append(os.path.join(drive, "ComfyUI"))
+        roots += [
+            os.path.join(_LOCAL_APP_DATA, "Comfy-Desktop", "ComfyUI-Installs"),
+            os.path.join(_LOCAL_APP_DATA, "ComfyUI"),
+        ]
+    roots += [
+        os.path.join(home, "ComfyUI"),
+        os.path.join(home, "comfyui"),
+        os.path.join(home, "Documents", "ComfyUI"),
+        os.path.join(home, "Documents", "ComfyUI-Installs"),
+        os.path.join(home, "Library", "Application Support", "ComfyUI"),
+        os.path.join(home, ".config", "ComfyUI"),
+        "/opt/ComfyUI",
+        "/opt/comfyui",
+    ]
+    for root in roots:
+        candidates.append(root)
+        if os.path.isdir(root):
+            for entry in sorted(os.listdir(root)):
+                candidates.append(os.path.join(root, entry))
+                candidates.append(os.path.join(root, entry, "ComfyUI"))
+    # 3) Windows drive roots (no-op on Linux/macOS/Docker).
+    if os.name == "nt":
+        for drive in ("C:\\", "D:\\"):
+            candidates.append(os.path.join(drive, "ComfyUI"))
 
     seen = set()
     for cand in candidates:
@@ -181,6 +210,58 @@ def is_video_workflow(entry):
     return "to video" in entry["name"].lower() or "to-video" in entry["name"].lower()
 
 
+def is_audio_workflow(entry):
+    """True for text-to-audio / text-to-music / TTS workflows.
+
+    Auto-detects by name so no workflow is hard-coded. Looks for:
+      - "audio" (any audio generation workflow)
+      - "music" (text-to-music)
+      - "text to speech" / "tts"
+      - "speech"/"voice" (voice generation / voice clone)
+    It deliberately prefers *generation* workflows (which produce an audio file
+    to download) and is used only to populate the ComfyUI-audio panel.
+    """
+    name = entry["name"].lower()
+    return any(k in name for k in ("audio", "music", "text to speech", "tts",
+                                   "speech", "voice", "song", "sound effect"))
+
+
+def discover_audio_workflows(install_root=None):
+    """Return the audio-generation workflows (Text-to-Audio / Music / TTS)."""
+    return [wf for wf in discover_workflows(install_root) if is_audio_workflow(wf)]
+
+
+def select_audio_workflow(workflows, requested=None):
+    """Pick an audio workflow from the discovered list.
+
+    ``requested`` may be a workflow id/name (matched case-insensitively), or None
+    (prefer a Text-to-Audio / Stable Audio workflow, then the first audio entry).
+    """
+    if not workflows:
+        return None
+    if requested:
+        needle = requested.lower()
+        for wf in workflows:
+            if needle in wf["name"].lower() or needle in wf["id"].lower():
+                return wf
+        return None
+    # Auto-detect a good default: prefer explicit "text to audio"/"music", then
+    # "audio generation", then the first discovered audio workflow.
+    for wf in workflows:
+        n = wf["name"].lower()
+        if "text to audio" in n:
+            return wf
+    for wf in workflows:
+        n = wf["name"].lower()
+        if "music" in n:
+            return wf
+    for wf in workflows:
+        n = wf["name"].lower()
+        if "audio" in n:
+            return wf
+    return workflows[0]
+
+
 def discover_video_workflows(install_root=None):
     """Return the prompt-driven video workflows (Text/Image-to-Video blueprints)."""
     return [wf for wf in discover_workflows(install_root) if is_video_workflow(wf)]
@@ -209,6 +290,8 @@ def _parse_links(links):
 
     Legacy workflows store links as ``[id, origin, origin_slot, target,
     target_slot, type]``; the newer blueprint format stores them as objects.
+    ``type`` is preserved so the boundary-output logic can tell IMAGE / VIDEO /
+    AUDIO apart.
     """
     by_id = {}
     for link in links or []:
@@ -218,6 +301,7 @@ def _parse_links(links):
                 "origin_slot": link.get("origin_slot"),
                 "target_id": link.get("target_id"),
                 "target_slot": link.get("target_slot"),
+                "type": link.get("type"),
             }
         else:
             by_id[link[0]] = {
@@ -225,6 +309,7 @@ def _parse_links(links):
                 "origin_slot": link[2],
                 "target_id": link[3],
                 "target_slot": link[4],
+                "type": link[5] if len(link) > 5 else None,
             }
     return by_id
 
@@ -325,6 +410,58 @@ def _video_save_node(object_info):
     return None, None
 
 
+def _audio_save_node(object_info):
+    """Return the class_type of a node that can persist audio, or None.
+
+    Common audio save nodes: SaveAudio, SaveAudioFile, AudioSave, SaveAudioWav.
+    """
+    for ct in ("SaveAudio", "SaveAudioFile", "AudioSave", "SaveAudioWav"):
+        if ct in object_info:
+            return ct
+    return None
+
+
+def _boundary_type(sub, origin_id):
+    """Infer the output type of a boundary (=-20) link from its origin node.
+
+    Falls back to 'IMAGE' if the origin node type is unknown. Used when a link
+    omits its ``type`` (older blueprint format) so audio/video still get the right
+    save node instead of being mis-saved as an image.
+    """
+    nodes = {n.get("id"): n.get("type") or "" for n in (sub.get("nodes") or [])}
+    nt = nodes.get(origin_id, "").lower()
+    if "audio" in nt:
+        return "AUDIO"
+    if "video" in nt or "vae" in nt and "decode" in nt:
+        return "VIDEO"
+    # Output type is not derivable from the node name; treat as image.
+    return "IMAGE"
+
+
+def _make_audio_save_node(class_type, object_info, origin_id, origin_slot):
+    """Build an audio save node, wiring the audio input and filling required inputs
+    from their spec defaults."""
+    spec = (object_info.get(class_type) or {}).get("input", {}).get("required") or {}
+    inputs = {}
+    for name, val in spec.items():
+        if name in ("audio", "vae", "audio_input"):
+            inputs[name] = [str(origin_id), origin_slot]
+            continue
+        default = None
+        if isinstance(val, list) and val:
+            if isinstance(val[0], list):
+                default = val[0][0]          # combo -> first option
+            else:
+                t = val[0]
+                opts = val[1] if len(val) > 1 and isinstance(val[1], dict) else {}
+                default = opts.get("default")
+                if default is None:
+                    default = {"INT": 0, "FLOAT": 0.0, "BOOLEAN": False, "STRING": ""}.get(t)
+        inputs[name] = default
+    inputs["filename_prefix"] = "TrioForge"
+    return {"class_type": class_type, "inputs": inputs}
+
+
 def _make_save_node(class_type, object_info, video_input_name, origin_id, origin_slot):
     """Build a save node for a video, wiring the video input and filling the rest
     of the required inputs from their spec defaults."""
@@ -387,11 +524,12 @@ def _blueprint_to_prompt(graph, object_info):
         prompt[str(node["id"])] = _build_node(node, object_info, links, exposed_defaults)
 
     # The blueprint routes its final output to the boundary (-20); attach a save
-    # node (image or video, depending on the output type) so there's a file to download.
+    # node (image, video, or audio, depending on the output type) so there's a
+    # file to download.
     outputs = [l for l in links.values() if l.get("target_id") == -20]
     if outputs:
         origin_id, origin_slot = outputs[0]["origin_id"], outputs[0]["origin_slot"]
-        out_type = (outputs[0].get("type") or "IMAGE").upper()
+        out_type = (outputs[0].get("type") or "").upper() or _boundary_type(sub, origin_id)
         sid = str(max([int(i) for i in prompt.keys() if i.lstrip("-").isdigit()] or [0]) + 1)
         if out_type == "VIDEO":
             ct, vin = _video_save_node(object_info)
@@ -400,6 +538,13 @@ def _blueprint_to_prompt(graph, object_info):
                     "ComfyUI has no video-save node (SaveVideo / SaveAnimatedWEBP). "
                     "Install VideoHelperSuite or a video save node, then retry.")
             prompt[sid] = _make_save_node(ct, object_info, vin, origin_id, origin_slot)
+        elif out_type == "AUDIO":
+            ct = _audio_save_node(object_info)
+            if not ct:
+                raise ProviderError(
+                    "ComfyUI has no audio-save node (SaveAudio / SaveAudioFile). "
+                    "Install an audio node pack, then retry.")
+            prompt[sid] = _make_audio_save_node(ct, object_info, origin_id, origin_slot)
         else:
             prompt[sid] = {
                 "class_type": "SaveImage",
@@ -508,14 +653,20 @@ def run_prompt(prompt, output_path, timeout=900):
                 raise RuntimeError(err)
             outputs = entry.get("outputs") or {}
             for node_out in outputs.values():
-                for key in ("images", "videos", "gifs"):
+                for key in ("images", "videos", "gifs", "audio"):
                     media = node_out.get(key) or []
                     if not media:
                         continue
                     item = media[0]
-                    filename = item["filename"]
-                    subfolder = item.get("subfolder", "")
-                    ftype = item.get("type", "output")
+                    # Audio outputs may be plain strings (filename) or dicts.
+                    if isinstance(item, dict):
+                        filename = item["filename"]
+                        subfolder = item.get("subfolder", "")
+                        ftype = item.get("type", "output")
+                    else:
+                        filename = str(item)
+                        subfolder = ""
+                        ftype = "output"
                     url = (f"{COMFYUI_URL}/view?filename={quote(filename)}"
                            f"&subfolder={quote(subfolder)}&type={quote(ftype)}")
                     media_resp = requests.get(url, timeout=120)
@@ -636,6 +787,89 @@ def generate_video(prompt, output_path, workflow=None, width=None, height=None,
             length=length, steps=steps, seed=seed)
     media_name = run_prompt(prompt_graph, output_path, timeout=timeout)
     return wf, media_name
+
+
+def generate_audio(prompt, output_path, workflow=None, seed=None, timeout=1800):
+    """Detect ComfyUI, discover + convert an audio workflow, run it, save the audio.
+
+    Returns (workflow_entry, media_filename). Auto-detects which audio workflow is
+    available (Stable Audio, ACE-Step, MiniMax Music, TTS, ...); nothing hard-coded.
+    """
+    if not is_comfyui_running():
+        raise RuntimeError("ComfyUI is not running. Start Comfy Desktop first.")
+
+    workflows = discover_audio_workflows()
+    if not workflows:
+        raise RuntimeError("No ComfyUI audio workflows found. "
+                           "Install an audio workflow (e.g. Stable Audio / ACE-Step / MiniMax Music).")
+
+    wf = select_audio_workflow(workflows, workflow)
+    if wf is None:
+        raise RuntimeError(f"ComfyUI audio workflow not found: {workflow!r}")
+
+    with open(wf["path"], encoding="utf-8") as f:
+        graph = json.load(f)
+
+    prompt_graph = workflow_to_prompt(graph)
+    # Inject the text prompt into the first text-encoding node (audio blueprints
+    # use CLIPTextEncode / MiniMax Music's text encode). Uses the same text-node
+    # logic as image, but audio has no width/height — only prompt + seed.
+    _inject_audio(prompt_graph, prompt_text=prompt, seed=seed)
+    media_name = run_prompt(prompt_graph, output_path, timeout=timeout)
+    return wf, media_name
+
+
+def _inject_audio(prompt, prompt_text=None, seed=None, duration=None):
+    """Fill the user-controllable fields for an audio prompt graph.
+
+    Sets the text on the (first) text-encoding node, the seed on any sampler, and
+    an optional duration on audio-latent/seconds nodes.
+    """
+    # 1) Text: find a text-encoding or text-input node and set its text.
+    text_keys = ("text", "prompt", "positive")
+    text_nodes = [n for n, d in prompt.items()
+                  if d.get("class_type") in ("CLIPTextEncode", "CLIPTextEncodeSDXL",
+                                             "MiniMaxMusic3TextEncode", "TextGenerate")
+                  and any(k in d.get("inputs", {}) for k in text_keys)]
+    if prompt_text is not None:
+        # Prefer a node whose text slot is fed by the prompt (a positive encode),
+        # else the first text node.
+        samplers = [n for n, d in prompt.items() if d.get("class_type", "").startswith("KSampler")]
+        target = None
+        for n in samplers:
+            pos = prompt[n].get("inputs", {}).get("positive")
+            if isinstance(pos, list) and pos and str(pos[0]) in text_nodes:
+                target = str(pos[0])
+                break
+        if target is None and text_nodes:
+            target = text_nodes[0]
+        if target:
+            for k in text_keys:
+                if k in prompt[target].get("inputs", {}):
+                    prompt[target]["inputs"][k] = prompt_text
+                    break
+
+    # 2) Seed on any sampler.
+    for n, d in prompt.items():
+        ct = d.get("class_type")
+        if ct.startswith("KSampler"):
+            if "seed" in d.get("inputs", {}):
+                d["inputs"]["seed"] = int(seed) if seed is not None else random.randint(0, 2**32 - 1)
+            if "noise_seed" in d.get("inputs", {}) and seed is not None:
+                d["inputs"]["noise_seed"] = int(seed)
+
+    # 3) Optional duration (seconds) on audio latent / seconds nodes.
+    if duration:
+        for n, d in prompt.items():
+            ins = d.get("inputs", {})
+            ct = d.get("class_type")
+            if ct in ("EmptyLatentAudio", "EmptyAceStep1.5LatentAudio",
+                      "EmptyMiniMaxMusic3LatentAudio"):
+                if "seconds" in ins:
+                    ins["seconds"] = float(duration)
+            if "value" in ins and isinstance(ins.get("value"), (int, float)):
+                # PrimitiveFloat "Song Duration" style node.
+                ins["value"] = float(duration)
 
 
 # --------------------------------------------------------------------------- #

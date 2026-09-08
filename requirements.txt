@@ -1,5 +1,8 @@
-# ⚙️ TrioForge dependencies
-# All are optional-ish where noted; the core chat works with just Flask + requests.
+# ⚙️ TrioForge dependencies — lightweight core
+#
+# This is everything needed to RUN TrioForge. The heavy ML stack
+# (sentence-transformers + torch + CUDA, ~2 GB) is OPTIONAL and lives in
+# requirements-ml.txt — see the bottom of this file.
 
 # ── Core web app ────────────────────────────────────────────────
 flask>=3.0.0
@@ -21,19 +24,18 @@ pypdf>=3.0.0             # PDF text extraction (uploaded PDFs)
 # ── Notes (Obsidian-style frontmatter) ──────────────────────────
 frontmatter>=3.0.0,<4.0.0
 
-# ── Semantic search / embeddings (optional; app runs without) ───
-numpy>=1.24.0
-scikit-learn>=1.3.0
-sentence-transformers>=2.2.0
-
 # ── Performance / utilities ─────────────────────────────────────
 orjson>=3.9.0            # faster JSON (falls back to std json)
 psutil>=5.9.0            # RAM / VRAM live monitor
 pynvml>=11.525.0         # NVIDIA GPU monitoring
 duckduckgo-search>=6.0.0 # optional web search
 
-# ── Image generation (OPTIONAL — only needed for the 🖼️ Create tool) ──
-# Install PyTorch separately for your GPU, e.g.:
-#   pip install torch --index-url https://download.pytorch.org/whl/cu121
-# Then:
-#   pip install diffusers accelerate transformers sentencepiece safetensors pillow
+# ── Semantic search / embeddings (OPTIONAL — app runs without) ──
+# These pull in torch + the CUDA toolkit (~2 GB), so they are NOT installed by
+# default. If you want semantic RAG (meaning-based search instead of keywords),
+# install them explicitly:
+#
+#     pip install -r requirements-ml.txt
+#
+# The app auto-detects them; without them, document chat uses a fast keyword
+# fallback. See also requirements-ml.txt.

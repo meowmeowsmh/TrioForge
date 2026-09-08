@@ -1,8 +1,9 @@
 {
-  "llama_server": "C:\\Users\\user\\AppData\\Local\\Microsoft\\WinGet\\Packages\\ggml.llamacpp_Microsoft.Winget.Source_8wekyb3d8bbwe\\llama-server.exe",
-  "model": "models\\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+  "llama_server": "llama-server",
+  "model": "models/qwen-uncensored/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
   "llama_host": "127.0.0.1",
   "llama_port": 8080,
+  "voice_llama_port": 8082,
   "llama_args": [],
   "speech_to_speech": "speech-to-speech",
   "speech_args": [
@@ -10,7 +11,7 @@
     "--no_smart_turn",
     "--llm_backend", "chat-completions",
     "--model_name", "Qwen3.5-9B",
-    "--responses_api_base_url", "http://127.0.0.1:8080/v1",
+    "--responses_api_base_url", "http://127.0.0.1:8082/v1",
     "--responses_api_api_key", "",
     "--stt_device", "cpu",
     "--parakeet_tdt_device", "cpu",
