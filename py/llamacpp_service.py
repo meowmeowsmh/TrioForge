@@ -250,17 +250,28 @@ def resolve_model(value):
 def _resolve_llama_server_exe(value):
     """Resolve the llama-server executable portably (Windows, Linux, WSL, Docker).
 
-    The config may hold a Windows-only path (``C:\\...\\llama-server.exe``) that
-    does not exist on a Linux/Docker host. Instead of forcing users to hand-edit
-    that path, we fall back through, in order:
+    The config may hold a Windows-only path or a bare command name. Instead of
+    forcing users to hand-edit that path, we fall back through, in order:
 
+      0. the ``LLAMA_SERVER`` env var (e.g. `LLAMA_SERVER=/usr/bin/llama-server`)
       1. the configured path (normalised — ``\\``/``/`` both work)
       2. a command name on PATH ("llama-server" / "llama-server.exe")
       3. common install locations (winget/Program Files on Windows; /usr/local/bin,
-         /usr/bin, /opt on Linux/macOS/Docker)
+         /usr/bin, /opt, ~/.local/bin, ~/llama.cpp, release-tarball dirs on Linux)
     """
     import glob
     import shutil
+
+    # 0) Explicit env override (useful for Docker / non-standard installs).
+    env_exe = os.environ.get("LLAMA_SERVER", "").strip()
+    if env_exe:
+        p = resolve_model(env_exe)
+        if p and os.path.isfile(p):
+            return p
+        for name in ("llama-server", "llama-server.exe"):
+            w = shutil.which(name)
+            if w and os.path.isfile(w):
+                return w
 
     # 1) Explicit configured path (Windows or POSIX separators).
     p = resolve_model(value)
@@ -275,6 +286,7 @@ def _resolve_llama_server_exe(value):
 
     # 3) Common install locations — cross-platform, so Windows globs are harmless
     #    no-ops on Linux and vice-versa.
+    home = os.path.expanduser("~")
     cands = []
     local = os.environ.get("LOCALAPPDATA", "")
     if local:
@@ -282,9 +294,24 @@ def _resolve_llama_server_exe(value):
     prog = os.environ.get("ProgramFiles", "")
     if prog:
         cands.extend(glob.glob(os.path.join(prog, "*", "llama-server.exe")))
-    for d in ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/build/bin"):
+    dirs = (
+        "/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/bin",
+        "/opt/llama.cpp/build/bin", "/usr/local/lib/llama.cpp/bin",
+        os.path.join(home, ".local", "bin"),
+        os.path.join(home, "llama.cpp"), os.path.join(home, "llama.cpp", "bin"),
+        os.path.join(home, "llama.cpp", "build", "bin"),
+        os.path.join(home, "llama-bin"), os.path.join(home, "llama-bin", "bin"),
+    )
+    for d in dirs:
         cands.extend(glob.glob(os.path.join(d, "llama-server")))
         cands.extend(glob.glob(os.path.join(d, "llama-server.exe")))
+    # Release-tarball layouts like ~/llama-b4790-bin-ubuntu-x64/bin/llama-server.
+    cands.extend(glob.glob(os.path.join(home, "llama-b*-bin-*", "bin", "llama-server")))
+    cands.extend(glob.glob(os.path.join(home, "llama-b*-bin-*", "bin", "llama-server.exe")))
+    # Where the in-app auto-installer (llama_installer.py) extracts builds.
+    tools_root = root_path("tools", "llama.cpp")
+    cands.extend(glob.glob(os.path.join(tools_root, "**", "llama-server"), recursive=True))
+    cands.extend(glob.glob(os.path.join(tools_root, "**", "llama-server.exe"), recursive=True))
     for c in cands:
         if os.path.isfile(c):
             return c
@@ -458,8 +485,11 @@ def start(model=None):
         cfg = _config()
         if not cfg:
             return {"running": False, "error": "voiceguide_llama.cpp_guide/config.json not found"}
-        host = cfg.get("llama_host", "127.0.0.1")
-        port = int(cfg.get("llama_port", 8080))
+        host = os.environ.get("LLAMA_HOST") or cfg.get("llama_host", "127.0.0.1")
+        try:
+            port = int(os.environ.get("LLAMA_PORT") or cfg.get("llama_port", 8080))
+        except (TypeError, ValueError):
+            port = 8080
 
         # Use the UI-selected model if provided, else fall back to config.
         model_ref = model or cfg.get("model")
@@ -467,9 +497,17 @@ def start(model=None):
         if not model_path or not os.path.isfile(model_path):
             return {"running": False, "error": "model not found: {}".format(model_ref)}
 
-        exe = _resolve_llama_server_exe(cfg.get("llama_server", ""))
-        if not exe or not os.path.isfile(exe):
-            return {"running": False, "error": "llama-server executable not found: {}".format(cfg.get("llama_server"))}
+        # Remote mode (Docker → host llama-server): when LLAMA_HOST is set, the
+        # container just connects to the server running ON THE HOST. It never needs
+        # a local llama-server executable, and it doesn't try to start one.
+        remote_mode = bool(os.environ.get("LLAMA_HOST"))
+        if remote_mode:
+            if _port_in_use(host, port):
+                return {"running": True, "model": os.path.basename(model_path),
+                        "message": "llama.cpp (remote {}:{}) is running".format(host, port)}
+            return {"running": False,
+                    "error": "llama.cpp server not reachable at {}:{} — start llama-server on the host "
+                             "(e.g. LLAMA_HOST=host.docker.internal LLAMA_PORT=8080)".format(host, port)}
 
         # Pair a vision-projector (mmproj) so the model can read images too.
         mmproj = find_mmproj(model_path)
@@ -508,6 +546,13 @@ def start(model=None):
                 return {"running": False,
                         "error": "port {} is busy with a different model ({}); stop the other llama-server manually".format(
                             port, os.path.basename(running_model) if running_model else "unknown")}
+
+        # Only need the local executable if we actually have to START a server
+        # (an already-running one, e.g. on the host for Docker via host.docker.internal,
+        # is reused above without requiring the exe on THIS machine).
+        exe = _resolve_llama_server_exe(cfg.get("llama_server", ""))
+        if not exe or not os.path.isfile(exe):
+            return {"running": False, "error": "llama-server executable not found: {}".format(cfg.get("llama_server"))}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
         if mmproj:

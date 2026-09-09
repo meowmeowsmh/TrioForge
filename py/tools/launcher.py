@@ -193,8 +193,14 @@ def run_app(project: Path, start_voice: bool = True) -> None:
     print("Starting TrioForge... open https://localhost:{} in your browser.".format(port))
     print()
     os.chdir(str(project))
+    # If we are ALREADY running inside a venv (e.g. run.sh launched us with
+    # .venv-linux/bin/python), use it directly — don't let `uv run` spin up its
+    # OWN .venv and bypass the one that was just set up.
+    in_venv = hasattr(sys, "base_prefix") and sys.prefix != sys.base_prefix
     uv = shutil.which("uv")
-    if uv:
+    if in_venv:
+        os.execv(sys.executable, [sys.executable, str(app_path)])
+    elif uv:
         os.execv(uv, [uv, "run", "python", str(app_path)])
     else:
         os.execv(sys.executable, [sys.executable, str(app_path)])

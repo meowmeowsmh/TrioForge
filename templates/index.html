@@ -7099,6 +7099,13 @@ function checkSetup(forceOpen) {
                 hint.textContent = it.hint || '';
                 col.appendChild(name); col.appendChild(det); col.appendChild(hint);
                 row.appendChild(col);
+                if (it.id === 'llamacpp' && it.status !== 'ok') {
+                    var ib = document.createElement('button');
+                    ib.textContent = '⚡ Auto-install';
+                    ib.style.cssText = 'padding:6px 12px; background:#238636; color:#fff; border:none; border-radius:6px; font-size:12px; white-space:nowrap; cursor:pointer; margin-right:6px;';
+                    ib.onclick = function() { autoInstallLlamaCpp(ib); };
+                    row.appendChild(ib);
+                }
                 if (it.status !== 'ok' && it.url) {
                     var a = document.createElement('a');
                     a.href = it.url; a.target = '_blank'; a.rel = 'noopener';
@@ -7114,6 +7121,33 @@ function checkSetup(forceOpen) {
             }
         })
         .catch(function() {});
+}
+
+// Auto-download + install llama.cpp for the detected GPU backend.
+function autoInstallLlamaCpp(btn) {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Installing…';
+    fetch('/api/llamacpp/install', { method: 'POST' })
+        .then(function(r) { return r.json().then(function(d){ return {status:r.status, d:d}; }); })
+        .then(function(res) {
+            var d = res.d || {};
+            if (res.status === 200 && d.ok) {
+                btn.textContent = '✅ Installed: ' + (d.path || '');
+                alert('llama.cpp installed successfully! The app will now auto-start it.\n\nPath: ' + (d.path || ''));
+            } else {
+                btn.textContent = '❌ ' + (d.error || 'Install failed');
+                alert('Could not auto-install llama.cpp:\n' + (d.error || 'unknown error'));
+            }
+            // Refresh the setup panel and the model list so the change shows up.
+            checkSetup(true);
+            if (typeof loadModels === 'function') loadModels();
+        })
+        .catch(function(e) {
+            btn.textContent = '❌ Install failed';
+            alert('Install request failed: ' + e);
+        })
+        .finally(function() { btn.disabled = false; });
 }
 
 // ── Settings dialog ──

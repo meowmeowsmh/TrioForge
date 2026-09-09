@@ -64,16 +64,20 @@ def _resolve(value):
 def _find_executable(value):
     """Resolve a path OR a bare command name to an executable.
 
-    A bare name (e.g. "llama-server") is looked up on PATH, then in common install
-    locations (Windows winget/Program Files, Linux/macOS/Docker standard bin dirs),
-    matching llamacpp_service's resolver so Docker/Linux and winget users don't have
-    to hand-edit a full path into config.json.
+    A bare name (e.g. "llama-server") is looked up via the ``LLAMA_SERVER`` env
+    var, on PATH, then in common install locations (Windows winget/Program Files,
+    Linux/macOS/Docker standard bin dirs + home/tarball layouts), matching
+    llamacpp_service's resolver so Docker/Linux and winget users don't have to
+    hand-edit a full path into config.json.
     """
     value = str(value)
     p = Path(value)
     # A real path: absolute, has a directory part, or already exists relative to cwd.
     if p.is_absolute() or os.path.dirname(value) or os.path.exists(value):
         return _resolve(value)
+    env_exe = os.environ.get("LLAMA_SERVER", "").strip()
+    if env_exe and (os.path.isfile(env_exe) or shutil.which(env_exe)):
+        return env_exe if os.path.isfile(env_exe) else _resolve(shutil.which(env_exe))
     found = shutil.which(value)
     if found:
         return found
@@ -83,6 +87,7 @@ def _find_executable(value):
     names = [base]
     if os.name == "nt" and not base.lower().endswith(".exe"):
         names.append(base + ".exe")
+    home = os.path.expanduser("~")
     cands = []
     local = os.environ.get("LOCALAPPDATA", "")
     if local:
@@ -92,9 +97,20 @@ def _find_executable(value):
     if prog:
         for n in names:
             cands += glob.glob(os.path.join(prog, "*", n))
-    for d in ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/build/bin"):
+    dirs = ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/bin",
+            "/opt/llama.cpp/build/bin", "/usr/local/lib/llama.cpp/bin",
+            os.path.join(home, ".local", "bin"),
+            os.path.join(home, "llama.cpp"), os.path.join(home, "llama.cpp", "bin"),
+            os.path.join(home, "llama.cpp", "build", "bin"),
+            os.path.join(home, "llama-bin"), os.path.join(home, "llama-bin", "bin"))
+    for d in dirs:
         for n in names:
             cands += glob.glob(os.path.join(d, n))
+    for n in names:
+        cands += glob.glob(os.path.join(home, "llama-b*-bin-*", "bin", n))
+    # In-app auto-installer target (tools/llama.cpp).
+    for n in names:
+        cands += glob.glob(str(HERE / "tools" / "llama.cpp" / "**" / n), recursive=True)
     for c in cands:
         if os.path.isfile(c):
             return c
