@@ -2350,6 +2350,11 @@ function formatAiError(provider, msg) {
     } else if (/(500|502|503|504|server error|overloaded|internal server)/.test(lower)) {
         category = 'server';
         friendly = 'Service returned a server error — try again later.';
+        // Keep the actual error detail so you can see WHY (e.g. the model failed
+        // to load, out of memory, missing shared libs, etc.).
+        if (msg.indexOf('HTTP') !== -1 || /log/.test(lower)) {
+            friendly = 'Service error: ' + msg.slice(0, 240);
+        }
     } else if (/(timeout|timed out)/.test(lower)) {
         category = 'timeout';
         friendly = 'Request timed out — try again or shorten the message.';
@@ -7106,6 +7111,13 @@ function checkSetup(forceOpen) {
                     ib.onclick = function() { autoInstallLlamaCpp(ib); };
                     row.appendChild(ib);
                 }
+                if (it.id === 'voice' && it.status !== 'ok') {
+                    var vb = document.createElement('button');
+                    vb.textContent = '⚡ Install';
+                    vb.style.cssText = 'padding:6px 12px; background:#238636; color:#fff; border:none; border-radius:6px; font-size:12px; white-space:nowrap; cursor:pointer; margin-right:6px;';
+                    vb.onclick = function() { autoInstallVoice(vb); };
+                    row.appendChild(vb);
+                }
                 if (it.status !== 'ok' && it.url) {
                     var a = document.createElement('a');
                     a.href = it.url; a.target = '_blank'; a.rel = 'noopener';
@@ -7142,6 +7154,30 @@ function autoInstallLlamaCpp(btn) {
             // Refresh the setup panel and the model list so the change shows up.
             checkSetup(true);
             if (typeof loadModels === 'function') loadModels();
+        })
+        .catch(function(e) {
+            btn.textContent = '❌ Install failed';
+            alert('Install request failed: ' + e);
+        })
+        .finally(function() { btn.disabled = false; });
+}
+
+// Install the speech-to-speech package (voice-to-voice agent, required).
+function autoInstallVoice(btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Installing speech-to-speech… (this can take a while)';
+    fetch('/api/voice/install', { method: 'POST' })
+        .then(function(r) { return r.json().then(function(d){ return {status:r.status, d:d}; }); })
+        .then(function(res) {
+            var d = res.d || {};
+            if (res.status === 200 && d.ok) {
+                btn.textContent = '✅ Voice installed';
+                alert('Voice-to-voice installed! Run it with: python py\\tools\\voice_agent.py');
+            } else {
+                btn.textContent = '❌ ' + (d.error || 'Install failed');
+                alert('Could not install voice-to-voice:\n' + (d.error || 'unknown error'));
+            }
+            checkSetup(true);
         })
         .catch(function(e) {
             btn.textContent = '❌ Install failed';

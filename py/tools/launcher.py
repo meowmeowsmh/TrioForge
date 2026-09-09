@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import platform
 from pathlib import Path
 from typing import Iterator, List, Optional
 
@@ -191,7 +192,12 @@ def run_app(project: Path, start_voice: bool = True) -> None:
         print("Run py\\tools\\voice_agent.py separately for voice-to-voice.")
     port = os.environ.get("TRIOFORGE_PORT", "5003")
     _ssl = os.environ.get("TRIOFORGE_SSL", "").strip().lower()
-    _scheme = "https" if _ssl in ("1", "true", "on") else "http"
+    if _ssl in ("1", "true", "on"):
+        _scheme = "https"
+    elif _ssl in ("0", "false", "off"):
+        _scheme = "http"
+    else:
+        _scheme = "https" if platform.system() == "Windows" else "http"
     print("Starting TrioForge... open {}://localhost:{} in your browser.".format(_scheme, port))
     print()
     os.chdir(str(project))

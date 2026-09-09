@@ -560,12 +560,32 @@ def start(model=None):
         # Peak GPU/performance defaults (config llama_args may override).
         cmd += _default_server_args(model_path)
         cmd += [str(a) for a in cfg.get("llama_args", [])]
+        # Run the prebuilt llama-server from ITS OWN directory and point
+        # LD_LIBRARY_PATH there: the llama.cpp release tarballs ship libggml.so /
+        # libllama.so next to the binaries, and if they aren't on the library path
+        # the server dies instantly with "cannot open shared object file". This is
+        # a very common Linux failure; setting cwd + LD_LIBRARY_PATH fixes it.
+        exe_dir = os.path.dirname(os.path.abspath(exe))
+        env = dict(os.environ)
+        if os.name != "nt":
+            _libp = env.get("LD_LIBRARY_PATH", "")
+            env["LD_LIBRARY_PATH"] = exe_dir + (os.pathsep + _libp if _libp else "")
+        # Log the server's stdout/stderr so a crash is diagnosable (instead of
+        # being swallowed by DEVNULL). Read logs/llamacpp.log to see WHY it failed.
+        log_path = root_path("logs", "llamacpp.log")
+        try:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            _out = open(log_path, "ab")
+        except Exception:
+            _out = subprocess.DEVNULL
         try:
             _process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=_out,
+                stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
+                cwd=exe_dir,
+                env=env,
             )
         except Exception as e:
             return {"running": False, "error": str(e)}
