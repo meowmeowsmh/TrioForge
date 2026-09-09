@@ -97,6 +97,9 @@ static/uploads/
 /video_model/
 /universal_models_to_text/
 
+# Auto-installed llama.cpp binaries (downloaded by llama_installer / ⚡ Auto-install)
+tools/llama.cpp/
+
 # Hugging Face / Ollama download caches
 models/.cache/
 .cache/huggingface/

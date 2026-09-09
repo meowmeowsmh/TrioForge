@@ -175,6 +175,12 @@ os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 os.makedirs(SQLITE_DIR, exist_ok=True)
 
+# ── Model folders ──
+# Always exist so a fresh `git clone` + run gives users a place to drop (or the
+# ⬇ button to download) GGUFs — no manual mkdir.
+for _capability_dir in ("models", "video_model", "universal_models_to_text"):
+    os.makedirs(root_path(_capability_dir), exist_ok=True)
+
 # ── SQLite ──
 _sqlite_conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
 _sqlite_lock = threading.Lock()
