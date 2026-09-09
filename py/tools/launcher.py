@@ -190,7 +190,9 @@ def run_app(project: Path, start_voice: bool = True) -> None:
         print("Voice agent is NOT auto-started (it runs on its own port 8082).")
         print("Run py\\tools\\voice_agent.py separately for voice-to-voice.")
     port = os.environ.get("TRIOFORGE_PORT", "5003")
-    print("Starting TrioForge... open https://localhost:{} in your browser.".format(port))
+    _ssl = os.environ.get("TRIOFORGE_SSL", "").strip().lower()
+    _scheme = "https" if _ssl in ("1", "true", "on") else "http"
+    print("Starting TrioForge... open {}://localhost:{} in your browser.".format(_scheme, port))
     print()
     os.chdir(str(project))
     # If we are ALREADY running inside a venv (e.g. run.sh launched us with

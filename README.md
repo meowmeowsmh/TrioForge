@@ -117,9 +117,11 @@ ollama pull vaultbox/qwen3.5-uncensored:9b
 
 Then open **https://localhost:5003/** in your browser.
 
-> **Tip:** the native app runs on port **5003** by default (so it never collides with
-> a stale Docker container on 5001). Change it with `TRIOFORGE_PORT=xxxx ./run.sh`.
-> If the app starts in plain HTTP (no certificates), use **http://localhost:5003/** instead.
+> **Tip:** the native app runs on **http://localhost:5003** by default — plain HTTP
+> on localhost is a "secure context", so there's **no scary certificate warning**
+> in any browser (including Firefox). Change the port with `TRIOFORGE_PORT=xxxx ./run.sh`.
+> To use HTTPS instead (e.g. for LAN access), set `TRIOFORGE_SSL=1 ./run.sh` and install
+> the mkcert CA so your browser trusts it.
 
 ### 🚀 First-run setup checker
 

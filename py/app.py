@@ -3883,7 +3883,11 @@ if __name__ == '__main__':
     elif ssl_env in ('0', 'false', 'off'):
         want_https = False
     else:
-        want_https = _mkcert_ca_trusted()
+        # localhost is a "secure context": mic, clipboard and crypto all work over
+        # plain HTTP. Default to HTTP so NO browser shows a scary cert warning —
+        # including Firefox, which uses its OWN trust store and does NOT trust an
+        # mkcert CA even when the OS does. HTTPS is opt-in via TRIOFORGE_SSL=1.
+        want_https = False
 
     cert_file = root_path('cert_store', 'localhost+1.pem')
     key_file  = root_path('cert_store', 'localhost+1-key.pem')
