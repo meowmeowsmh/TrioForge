@@ -337,6 +337,23 @@ def ensure_certificates():
         logger.error("Certificate generation failed: %s", e)
         return False
 
+
+def _mkcert_ca_trusted():
+    """True if the mkcert local CA was installed (so browsers accept the cert).
+
+    mkcert -install writes its root CA to ~/.local/share/mkcert (Linux/macOS) or
+    %LOCALAPPDATA%\\mkcert (Windows) and registers it with the system/NSS trust
+    store. If the CA is NOT present, the generated cert is untrusted and browsers
+    show a scary "not secure" page — so we serve plain HTTP on localhost instead.
+    """
+    home_ca = os.path.join(os.path.expanduser("~"), ".local", "share", "mkcert", "rootCA.pem")
+    if os.path.isfile(home_ca):
+        return True
+    local_ca = os.path.join(os.environ.get("LOCALAPPDATA", ""), "mkcert", "rootCA.pem")
+    if local_ca and os.path.isfile(local_ca):
+        return True
+    return False
+
 # ── Model persistence ──
 def load_model_config():
     if os.path.exists(MODEL_CONFIG_FILE):
@@ -1151,6 +1168,31 @@ def services_status():
         "llamacpp": llamacpp_service.status(),
         "voice": voice_service.status(),
     })
+
+
+@app.route('/api/llamacpp/install', methods=['POST'])
+def llamacpp_install():
+    """Auto-download + install llama.cpp for the detected GPU backend.
+
+    Lets macOS/Linux/Windows users avoid a manual llama.cpp install: the app
+    detects the backend, downloads the right prebuilt build, and returns the
+    llama-server path. This is explicitly user-triggered (never runs on startup).
+    """
+    import llama_installer
+    try:
+        result = llama_installer.install_llamacpp()
+    except Exception as e:
+        return jsonify({'ok': False, 'path': '', 'error': str(e)}), 500
+    status_code = 200 if result.get("ok") else 400
+    return jsonify(result), status_code
+
+
+@app.route('/api/llamacpp/install_status', methods=['GET'])
+def llamacpp_install_status():
+    """Report whether a llama-server is already available (path or '') for the UI."""
+    import llama_installer
+    installed = llama_installer.find_installed()
+    return jsonify({"installed": bool(installed), "path": installed or ""})
 
 
 @app.route('/api/services/voice/start', methods=['POST'])
@@ -3823,6 +3865,42 @@ if __name__ == '__main__':
     # with a stale Docker container / wslrelay still holding 5001.
     PORT = int(os.environ.get('TRIOFORGE_PORT', '5003') or 5003)
 
+    # ── Decide HTTP vs HTTPS ────────────────────────────────────────────────
+    # localhost is a "secure context", so plain HTTP has no scary browser warning
+    # and mic/clipboard/crypto still work. HTTPS is only used when the mkcert local
+    # CA is trusted (so browsers DON'T show a "not secure" page) or when
+    # TRIOFORGE_SSL=1 is explicitly set. Default to HTTP to avoid the
+    # "Your connection is not private" scare on a fresh Linux/macOS machine.
+    ssl_env = os.environ.get('TRIOFORGE_SSL', '').strip().lower()
+    if ssl_env in ('1', 'true', 'on'):
+        want_https = True
+    elif ssl_env in ('0', 'false', 'off'):
+        want_https = False
+    else:
+        want_https = _mkcert_ca_trusted()
+
+    cert_file = root_path('cert_store', 'localhost+1.pem')
+    key_file  = root_path('cert_store', 'localhost+1-key.pem')
+
+    if want_https:
+        # Ensure certs exist; if generation fails, fall back to HTTP gracefully.
+        if not (os.path.exists(cert_file) and os.path.exists(key_file)):
+            ensure_certificates()
+        if os.path.exists(cert_file) and os.path.exists(key_file):
+            ssl_context = (cert_file, key_file)
+            scheme = 'https'
+            logger.info("Running with HTTPS (SSL enabled)")
+        else:
+            ssl_context = None
+            scheme = 'http'
+            logger.warning("HTTPS requested but certs unavailable — falling back to HTTP.")
+    else:
+        ssl_context = None
+        scheme = 'http'
+        logger.info("Running with HTTP — localhost is a secure context, no cert warning.")
+
+    url = "%s://localhost:%d" % (scheme, PORT)
+
     # Single-instance guard: if the chosen port is already bound, another TrioForge
     # instance is already running. Open the browser to it and exit cleanly so we
     # never spawn zombie duplicate processes that fight over the database.
@@ -3831,10 +3909,10 @@ if __name__ == '__main__':
     _probe.settimeout(1)
     try:
         if _probe.connect_ex(('127.0.0.1', PORT)) == 0:
-            print("TrioForge is already running at https://localhost:%d — opening it." % PORT)
+            print("TrioForge is already running at %s — opening it." % url)
             try:
                 import webbrowser
-                webbrowser.open("https://localhost:%d" % PORT)  # synchronous: opens before we exit
+                webbrowser.open(url)  # synchronous: opens before we exit
             except Exception:
                 pass
             sys.exit(0)
@@ -3845,23 +3923,6 @@ if __name__ == '__main__':
     logger.info("Default model : %s", DEFAULT_MODEL)
     logger.info("Current model : %s", current_model)
     logger.info("Storage       : %s (metadata only), SQLite for messages", CONVERSATIONS_FILE)
-
-    cert_file = root_path('cert_store', 'localhost+1.pem')
-    key_file  = root_path('cert_store', 'localhost+1-key.pem')
-
-    if os.path.exists(cert_file) and os.path.exists(key_file):
-        ssl_context = (cert_file, key_file)
-        logger.info("Running with HTTPS (SSL enabled)")
-        url = "https://localhost:%d" % PORT
-    else:
-        if ensure_certificates():
-            ssl_context = (cert_file, key_file)
-            logger.info("Running with HTTPS (SSL enabled)")
-            url = "https://localhost:%d" % PORT
-        else:
-            ssl_context = None
-            logger.warning("Running with HTTP (SSL unavailable)")
-            url = "http://localhost:%d" % PORT
 
     logger.info("Open your browser at: %s", url)
     _auto_open_browser(url)

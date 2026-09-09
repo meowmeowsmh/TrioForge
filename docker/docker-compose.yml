@@ -25,14 +25,44 @@ services:
       - ../static/uploads:/app/static/uploads
       # (optional) keep certs if you ever generate them
       - ../cert_store:/app/cert_store
+      # Mount the model folders so the app can see your GGUF models, and any
+      # ComfyUI workflows you keep inside the project. Remove these lines if you
+      # load models only through the host llama-server (remote mode below).
+      - ../models:/app/models
+      - ../video_model:/app/video_model
+      - ../universal_models_to_text:/app/universal_models_to_text
     environment:
       # Point to Ollama – if you run Ollama on the host, use "host.docker.internal" (mac/win)
       # or the IP of your host (Linux: use --add-host or set to your host IP)
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # Suppress Python warnings (like the pynvml deprecation notice)
       - PYTHONWARNINGS=ignore
-      # Alternatively, if you run Ollama in a separate container:
-      # - OLLAMA_BASE_URL=http://ollama:11434
+      # Serve plain HTTP on localhost (no scary "not secure" browser warning;
+      # localhost is a secure context). Set TRIOFORGE_SSL=1 and mount a trusted
+      # cert_store/ if you want HTTPS instead.
+      - TRIOFORGE_SSL=0
+      # ── llama.cpp ─────────────────────────────────────────────────────────
+      # Run llama-server ON THE HOST (it needs your GPU), then point the
+      # container at it. Setting LLAMA_HOST puts the app in "remote mode": it
+      # connects to host.docker.internal:8080 instead of trying to launch a
+      # local llama-server (which the image does NOT include).
+      - LLAMA_HOST=host.docker.internal
+      - LLAMA_PORT=8080
+      # Optional: absolute path to llama-server on the host (only used in
+      # setup checks / when running llama.cpp INSIDE the container with GPU).
+      #- LLAMA_SERVER=/usr/bin/llama-server
+      # ── ComfyUI (optional, if you run it on the host) ────────────────────
+      #- COMFYUI_URL=http://host.docker.internal:8188
+    # GPU passthrough if you want llama.cpp to run INSIDE the container (requires
+    # the image to include llama-server and NVIDIA Container Toolkit). Uncomment
+    # for in-container GPU inference instead of the host-server approach above.
+    #deploy:
+    #  resources:
+    #    reservations:
+    #      devices:
+    #        - driver: nvidia
+    #          count: all
+    #          capabilities: [gpu]
     restart: unless-stopped
 
   # Optional: run Ollama alongside the app (uncomment if you want)

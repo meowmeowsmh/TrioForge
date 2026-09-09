@@ -34,11 +34,17 @@ CERT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 _certfile = os.path.join(CERT_DIR, "localhost+1.pem")
 _keyfile = os.path.join(CERT_DIR, "localhost+1-key.pem")
 
-if os.path.exists(_certfile) and os.path.exists(_keyfile):
+# Default to plain HTTP on localhost (a "secure context" with no scary browser
+# warning). HTTPS only when TRIOFORGE_SSL=1 AND certs exist (e.g. you mount your
+# own trusted cert_store/), since a generated self-signed cert scares users.
+_ssl_env = os.environ.get("TRIOFORGE_SSL", "").strip().lower()
+_want_https = _ssl_env in ("1", "true", "on")
+
+if _want_https and os.path.exists(_certfile) and os.path.exists(_keyfile):
     certfile = _certfile
     keyfile = _keyfile
     logger.info("gunicorn: HTTPS enabled using %s", _certfile)
+elif _want_https:
+    logger.warning("gunicorn: TRIOFORGE_SSL=1 but no certs at %s — serving plain HTTP.", _certfile)
 else:
-    logger.warning("gunicorn: certs not found at %s / %s - serving plain HTTP.", _certfile, _keyfile)
-    logger.info("Run app.py directly once (python app.py) to auto-generate certs via mkcert,")
-    logger.info("or supply your own cert_store/localhost+1.pem and localhost+1-key.pem.")
+    logger.info("gunicorn: serving plain HTTP (set TRIOFORGE_SSL=1 for HTTPS).")

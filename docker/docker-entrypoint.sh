@@ -9,6 +9,14 @@
 
 set -e
 
+# Serve plain HTTP by default (no scary "not secure" warning). Only generate a
+# self-signed cert (or reuse a mounted one) when TRIOFORGE_SSL=1.
+SSL_ENV="${TRIOFORGE_SSL:-0}"
+if [ "$SSL_ENV" = "0" ]; then
+    echo "🔓 Serving plain HTTP (set TRIOFORGE_SSL=1 for HTTPS)."
+    exec "$@"
+fi
+
 CERT_DIR="cert_store"
 CERT_FILE="$CERT_DIR/localhost+1.pem"
 KEY_FILE="$CERT_DIR/localhost+1-key.pem"
