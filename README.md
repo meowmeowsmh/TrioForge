@@ -128,7 +128,7 @@ On first launch, TrioForge shows a **Setup panel** that detects which local serv
 | Item | Required? | Auto? |
 |------|-----------|-------|
 | **Ollama** | ✅ | Manual install — [ollama.com/download](https://ollama.com/download) |
-| **llama.cpp** (`llama-server`) | ✅ | Installed via release or `winget install ggml.llamacpp`; the app **auto-starts** it |
+| **llama.cpp** (`llama-server`) | ✅ | **⚡ Auto-install** (the app detects your GPU backend and downloads the right build) or `winget install ggml.llamacpp` / `brew install llama.cpp`; the app **auto-starts** it |
 | **GGUF models** | ✅ | Via the ⬇ button or Hugging Face; app auto-loads from `models/` |
 | **ComfyUI** (image/video) | ❌ optional | Manual — [comfy.org/download](https://www.comfy.org/download); cloud image/video works without it |
 | **Voice-to-voice** | ❌ optional | Manual — speech-to-speech + `voiceguide_llama.cpp_guide/config.json` |
