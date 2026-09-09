@@ -82,6 +82,7 @@ from providers.llm_providers import (
     VISION_MODELS,
     describe_or_extract_file,
     sanitize_api_key,
+    ProviderError,
 )
 from features.notes import notes_bp, upsert_note
 from features.cork_board import corkboard_bp, upsert_pin, add_link
@@ -1174,6 +1175,25 @@ def services_status():
         "llamacpp": llamacpp_service.status(),
         "voice": voice_service.status(),
     })
+
+
+@app.route('/api/voice/install', methods=['POST'])
+def voice_install():
+    """Install the speech-to-speech package for voice-to-voice (required, bundled
+    with llama.cpp). Explicitly user-triggered; may pull torch + TTS models (~GB)."""
+    import subprocess as _sp
+    import shutil as _sh
+    if _sh.which("speech-to-speech"):
+        return jsonify({"ok": True, "path": _sh.which("speech-to-speech"), "message": "already installed"})
+    try:
+        r = _sp.run([sys.executable, "-m", "pip", "install", "speech-to-speech"],
+                    capture_output=True, text=True, timeout=1800)
+        if r.returncode == 0:
+            return jsonify({"ok": True, "message": "speech-to-speech installed",
+                            "path": _sh.which("speech-to-speech") or ""})
+        return jsonify({"ok": False, "error": (r.stderr or r.stdout or "")[-500:]}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route('/api/llamacpp/install', methods=['POST'])
@@ -3320,7 +3340,15 @@ def _openai_stream_target(provider_name, api_key):
 def _iter_openai_stream(url, headers, payload):
     """Yield {'reasoning': …} / {'token': …} dicts from an OpenAI-compatible SSE stream."""
     resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=300)
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        body = ""
+        try:
+            body = (e.response.text or "").strip()[:600]
+        except Exception:
+            body = ""
+        raise ProviderError("HTTP {} — {}".format(e.response.status_code, body or e)) from e
     for raw in resp.iter_lines():
         if not raw:
             continue
@@ -3602,7 +3630,10 @@ def chat_stream():
                             yield f"data: {json_dumps({'token': full_response})}\n\n"
                         yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {'tokens': _estimate_tokens(full_response), 'duration_sec': 0}, 'reasoning': thinking_acc})}\n\n"
                     except Exception as e:
-                        yield f"data: {json_dumps({'error': str(e)})}\n\n"
+                        detail = str(e)
+                        if provider_name == "llamacpp":
+                            detail += " — see logs/llamacpp.log for the server's full output."
+                        yield f"data: {json_dumps({'error': detail})}\n\n"
 
             # If the model produced no content (e.g. it put everything in its
             # reasoning chain), fall back to the reasoning so the user gets an
@@ -3883,11 +3914,11 @@ if __name__ == '__main__':
     elif ssl_env in ('0', 'false', 'off'):
         want_https = False
     else:
-        # localhost is a "secure context": mic, clipboard and crypto all work over
-        # plain HTTP. Default to HTTP so NO browser shows a scary cert warning —
-        # including Firefox, which uses its OWN trust store and does NOT trust an
-        # mkcert CA even when the OS does. HTTPS is opt-in via TRIOFORGE_SSL=1.
-        want_https = False
+        # Linux/macOS default to plain HTTP (no scary cert warning — those
+        # platforms have flaky mkcert-CA trust, especially Firefox's own store).
+        # Windows keeps HTTPS by default (the CA is usually trust-installed with
+        # admin there). Override anytime with TRIOFORGE_SSL=0/1.
+        want_https = (platform.system() == 'Windows')
 
     cert_file = root_path('cert_store', 'localhost+1.pem')
     key_file  = root_path('cert_store', 'localhost+1-key.pem')

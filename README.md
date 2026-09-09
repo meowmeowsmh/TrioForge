@@ -117,11 +117,11 @@ ollama pull vaultbox/qwen3.5-uncensored:9b
 
 Then open **https://localhost:5003/** in your browser.
 
-> **Tip:** the native app runs on **http://localhost:5003** by default — plain HTTP
-> on localhost is a "secure context", so there's **no scary certificate warning**
-> in any browser (including Firefox). Change the port with `TRIOFORGE_PORT=xxxx ./run.sh`.
-> To use HTTPS instead (e.g. for LAN access), set `TRIOFORGE_SSL=1 ./run.sh` and install
-> the mkcert CA so your browser trusts it.
+> **Tip:** the app opens as **http://localhost:5003** on Linux/macOS (plain HTTP on
+> localhost is a "secure context", so there's **no scary certificate warning** — even
+> in Firefox), and **https://localhost:5003** on Windows. Change the port with
+> `TRIOFORGE_PORT=xxxx ./run.sh`. To force HTTPS anywhere, set `TRIOFORGE_SSL=1 ./run.sh`
+> and install the mkcert CA so your browser trusts it; use `TRIOFORGE_SSL=0` for HTTP.
 
 ### 🚀 First-run setup checker
 
@@ -130,10 +130,10 @@ On first launch, TrioForge shows a **Setup panel** that detects which local serv
 | Item | Required? | Auto? |
 |------|-----------|-------|
 | **Ollama** | ✅ | Manual install — [ollama.com/download](https://ollama.com/download) |
-| **llama.cpp** (`llama-server`) | ✅ | **⚡ Auto-install** (the app detects your GPU backend and downloads the right build) or `winget install ggml.llamacpp` / `brew install llama.cpp`; the app **auto-starts** it |
+| **llama.cpp** (`llama-server`) | ✅ | **⚡ Auto-install** (auto-detects your GPU backend) — the app auto-starts it |
+| **Voice-to-voice** (speech-to-speech) | ✅ | **⚡ Install** in the Setup panel (runs with llama.cpp on port 8082) |
 | **GGUF models** | ✅ | Via the ⬇ button or Hugging Face; app auto-loads from `models/` |
-| **ComfyUI** (image/video) | ❌ optional | Manual — [comfy.org/download](https://www.comfy.org/download); cloud image/video works without it |
-| **Voice-to-voice** | ❌ optional | Manual — speech-to-speech + `voiceguide_llama.cpp_guide/config.json` |
+| **ComfyUI** (image/video) | ❌ optional | **User chooses** — [comfy.org/download](https://www.comfy.org/download); cloud image/video works without it |
 
 You can reopen the panel anytime with the **🚀** button in the top bar.
 

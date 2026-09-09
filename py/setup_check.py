@@ -222,6 +222,14 @@ def _comfyui_install_hint(gpu):
             "backend. Or use the built-in cloud image/video models instead.")
 
 
+def _voice_agent_ready():
+    """True if the speech-to-speech package is installed (voice-to-voice works)."""
+    try:
+        return bool(shutil.which("speech-to-speech"))
+    except Exception:
+        return False
+
+
 def check_all():
     """Return the full setup status list."""
     items = []
@@ -282,17 +290,17 @@ def check_all():
         "hint": _comfyui_install_hint(gpu),
     })
 
-    # 5. Voice-to-voice (optional)
-    cfg = _voice_config()
-    has_cfg = bool(cfg.get("llama_server"))
+    # 5. Voice-to-voice (REQUIRED — always installed alongside llama.cpp)
+    voice_ok = _voice_agent_ready()
     items.append({
         "id": "voice",
         "name": "Voice-to-voice agent",
-        "status": "ok" if has_cfg else "missing",
-        "detail": "Configured" if has_cfg else "Optional — needs speech-to-speech setup",
+        "status": "ok" if voice_ok else "missing",
+        "detail": "Ready" if voice_ok else "Needs the speech-to-speech package",
         "url": "https://huggingface.co/spaces/huggingface/speech-to-speech",
-        "required": False,
-        "hint": "Optional. Set up voiceguide_llama.cpp_guide/config.json + the speech-to-speech package.",
+        "required": True,
+        "hint": ("Voice-to-voice ships with llama.cpp. Install the speech-to-speech package "
+                 "(⚡ Install) to talk to the app by voice. It runs on its own port 8082."),
     })
 
     return items
