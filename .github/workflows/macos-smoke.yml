@@ -1,0 +1,126 @@
+name: macOS smoke test
+
+# Actually runs the app on macOS (Apple Silicon) so you don't need a Mac to verify
+# it works. macos-14 / macos-latest runners are arm64 (M-series).
+#
+# Run it from GitHub → Actions → "macOS smoke test" → Run workflow.
+# It is free for public repos.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14          # Apple Silicon (arm64) — the real Apple case
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show platform (expect Darwin / arm64)
+        run: |
+          uname -a
+          python3 -VV
+          python3 -c "import platform; print('system =', platform.system(), '| machine =', platform.machine())"
+
+      # ── 1. Exactly what run.sh does: venv + core deps ──
+      - name: Create venv and install core deps
+        run: |
+          set -e
+          python3 -m venv .venv-linux
+          .venv-linux/bin/python -m pip install --upgrade pip
+          .venv-linux/bin/python -m pip install -r requirements.txt
+
+      - name: Verify the run.sh critical-import contract
+        run: |
+          set -e
+          for m in flask flask_compress requests psutil frontmatter; do
+            .venv-linux/bin/python -c "import $m" && echo "ok: $m"
+          done
+
+      # ── 2. macOS-specific logic (Metal, brew paths, no CUDA, http scheme) ──
+      - name: macOS platform-logic checks
+        run: |
+          set -e
+          PYTHONPATH=py .venv-linux/bin/python - <<'PY'
+          import platform
+          assert platform.system() == "Darwin", platform.system()
+
+          import setup_check as sc
+          sc._gpu_cache = None
+          gpu = sc._gpu_backend()
+          print("detected gpu:", gpu)
+          assert gpu["backend"] == "metal", gpu          # Apple Silicon -> Metal
+          assert "Metal" in sc._llamacpp_install_hint(gpu)
+          assert "brew" in sc._llamacpp_install_hint(gpu)
+          assert "macOS" in sc._comfyui_install_hint(gpu)
+
+          import app
+          asset = app._mkcert_asset_name()
+          print("mkcert asset:", asset)
+          assert "darwin" in asset and asset.endswith("-arm64"), asset
+
+          import llama_installer as li
+          names = ["llama-b10874-bin-macos-arm64.tar.gz",
+                   "llama-b10874-bin-ubuntu-x64.tar.gz",
+                   "llama-b10874-bin-win-cpu-x64.zip"]
+          picked = li._pick_asset(names, "metal")
+          print("llama.cpp asset:", picked)
+          assert picked == "llama-b10874-bin-macos-arm64.tar.gz", picked
+
+          import inspect, llamacpp_service as lcs
+          assert "/opt/homebrew/bin" in inspect.getsource(lcs._resolve_llama_server_exe)
+          print("platform logic OK")
+          PY
+
+      # ── 3. Launch the app and hit real endpoints ──
+      - name: Start the app and smoke-test endpoints
+        run: |
+          set -e
+          export TRIOFORGE_PORT=5003
+          export PYTHONWARNINGS=ignore
+          .venv-linux/bin/python py/app.py > app.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS "http://127.0.0.1:5003/" >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+          echo "===== app.log (tail) ====="
+          tail -25 app.log
+
+          echo "===== must be HTTP (no cert warning on macOS) ====="
+          grep -q "Running with HTTP" app.log && echo "PASS: serving plain HTTP" \
+            || { echo "FAIL: expected plain HTTP on macOS"; exit 1; }
+
+          echo "===== GET / ====="
+          curl -fsS "http://127.0.0.1:5003/" -o page.html
+          echo "page bytes: $(wc -c < page.html | tr -d ' ')"
+
+          echo "===== persona dropdown must be populated ====="
+          grep -q "Friendly Tutor" page.html && echo "PASS: persona options baked in" \
+            || { echo "FAIL: persona dropdown empty"; exit 1; }
+
+          echo "===== icon toolbar must be its own centered row ====="
+          grep -q "top-bar-icons" page.html && echo "PASS: icon toolbar present" \
+            || { echo "FAIL: icon toolbar missing"; exit 1; }
+
+          echo "===== GET /api/personas ====="
+          curl -fsS "http://127.0.0.1:5003/api/personas"
+          echo
+
+          echo "===== GET /api/setup/check ====="
+          curl -fsS "http://127.0.0.1:5003/api/setup/check" | head -c 600
+          echo
+
+          echo "ALL MACOS CHECKS PASSED"
+
+      - name: Upload app log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app-log
+          path: app.log
+          if-no-files-found: ignore
