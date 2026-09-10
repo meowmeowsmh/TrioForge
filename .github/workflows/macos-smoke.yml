@@ -76,6 +76,74 @@ jobs:
           print("platform logic OK")
           PY
 
+      # ── 2b. ComfyUI on macOS: install auto-detection + the full generation
+      #        flow (queue -> poll -> download) against a mock ComfyUI server ──
+      - name: ComfyUI detection + generation flow
+        run: |
+          set -e
+          PYTHONPATH=py .venv-linux/bin/python - <<'PY'
+          import base64, json, os, shutil, tempfile, threading
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          import comfyui_service as cs
+
+          # 1) Auto-detect a real macOS-style install (~/Library/Application Support)
+          inst = os.path.join(os.path.expanduser("~"), "Library",
+                              "Application Support", "ComfyUI")
+          os.makedirs(os.path.join(inst, "blueprints"), exist_ok=True)
+          with open(os.path.join(inst, "blueprints", "Text to Image (test).json"),
+                    "w", encoding="utf-8") as f:
+              f.write('{"nodes": [], "links": []}')
+          cs.COMFYUI_INSTALL = ""
+          found = cs.find_comfyui_install()
+          print("auto-detected ComfyUI at:", found)
+          assert found == inst, (found, inst)
+
+          # 2) Drive the whole generation flow against a mock ComfyUI server
+          PNG = base64.b64decode(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+          PID = "ci-prompt-1"
+
+          class Mock(BaseHTTPRequestHandler):
+              def _j(self, o):
+                  b = json.dumps(o).encode()
+                  self.send_response(200)
+                  self.send_header("Content-Type", "application/json")
+                  self.send_header("Content-Length", str(len(b)))
+                  self.end_headers(); self.wfile.write(b)
+              def do_GET(self):
+                  if self.path.startswith("/system_stats"):
+                      return self._j({"system": {"comfyui_version": "mock", "os": "posix"}})
+                  if self.path.startswith("/history/"):
+                      return self._j({PID: {"outputs": {"9": {"images": [
+                          {"filename": "ci.png", "subfolder": "", "type": "output"}]}}}})
+                  if self.path.startswith("/view"):
+                      self.send_response(200)
+                      self.send_header("Content-Type", "image/png")
+                      self.send_header("Content-Length", str(len(PNG)))
+                      self.end_headers(); self.wfile.write(PNG); return
+                  self.send_response(404); self.end_headers()
+              def do_POST(self):
+                  n = int(self.headers.get("Content-Length", 0) or 0)
+                  self.rfile.read(n)
+                  if self.path.startswith("/prompt"):
+                      return self._j({"prompt_id": PID})
+                  self.send_response(404); self.end_headers()
+              def log_message(self, *a):
+                  pass
+
+          srv = HTTPServer(("127.0.0.1", 18188), Mock)
+          threading.Thread(target=srv.serve_forever, daemon=True).start()
+          cs.COMFYUI_URL = "http://127.0.0.1:18188"
+
+          assert cs.detect_comfyui()["running"] is True, "mock server not detected"
+          out = os.path.join(tempfile.mkdtemp(), "result.png")
+          cs.run_prompt({"9": {"class_type": "SaveImage", "inputs": {}}}, out)
+          assert os.path.getsize(out) == len(PNG), "downloaded file mismatch"
+          srv.shutdown()
+          shutil.rmtree(inst, ignore_errors=True)
+          print("ComfyUI checks OK (detection + queue/poll/download)")
+          PY
+
       # ── 3. Launch the app and hit real endpoints ──
       - name: Start the app and smoke-test endpoints
         run: |
