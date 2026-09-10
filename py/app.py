@@ -60,13 +60,58 @@ import voice_service
 # without needing a terminal / VS Code open.
 _SERVER_LOG_PATH = root_path("logs", "server.log")
 os.makedirs(os.path.dirname(_SERVER_LOG_PATH), exist_ok=True)
+
+
+class _RedactSecretsFilter(logging.Filter):
+    """Mask API keys before anything is written to a log.
+
+    The UI sends some keys as query parameters (e.g. `/deepseek/status?api_key=sk-…`),
+    and werkzeug logs the full request line — so keys used to land in
+    `logs/server.log` in plaintext. Logs get shared for debugging, so redact them.
+    """
+
+    _PAT = re.compile(
+        r'((?:api[_-]?key|apikey|token|access[_-]?token|auth|password|secret)["\']?\s*[=:]\s*["\']?)'
+        r'([A-Za-z0-9_\-\.]{8,})',
+        re.IGNORECASE,
+    )
+    _BEARER = re.compile(r'(Bearer\s+)([A-Za-z0-9_\-\.]{8,})', re.IGNORECASE)
+
+    @classmethod
+    def _clean(cls, text):
+        text = cls._PAT.sub(r'\1***REDACTED***', text)
+        return cls._BEARER.sub(r'\1***REDACTED***', text)
+
+    def filter(self, record):
+        try:
+            if isinstance(record.msg, str) and ('=' in record.msg or ':' in record.msg):
+                record.msg = self._clean(record.msg)
+            if record.args:
+                if isinstance(record.args, dict):
+                    record.args = {k: (self._clean(v) if isinstance(v, str) else v)
+                                   for k, v in record.args.items()}
+                elif isinstance(record.args, tuple):
+                    record.args = tuple(
+                        self._clean(a) if isinstance(a, str) else a for a in record.args
+                    )
+        except Exception:
+            pass  # never let redaction break logging
+        return True
+
+
+_redactor = _RedactSecretsFilter()
 _server_log_handler = RotatingFileHandler(
     _SERVER_LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8"
 )
+_server_log_handler.addFilter(_redactor)
 _server_log_handler.setFormatter(logging.Formatter(
     "%(asctime)s %(levelname)-8s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
 ))
 logging.getLogger().addHandler(_server_log_handler)
+# Also redact what werkzeug prints straight to stderr (the terminal), and any
+# message logged through the werkzeug logger.
+logging.getLogger("werkzeug").addFilter(_redactor)
+logging.getLogger().addFilter(_redactor)
 
 # ── Imports ──
 from providers.llm_providers import (
