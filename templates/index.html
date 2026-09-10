@@ -262,7 +262,10 @@ body.light-mode .center-tabs .tab-btn.active {
     flex-wrap: wrap;
     min-width: 0;
     justify-self: end;
-    justify-content: flex-end;
+    /* Flow the icons LEFT → RIGHT (flex-start) so wrapped rows fill from the left
+       in a tidy row instead of being right-aligned into a ragged grid. */
+    justify-content: flex-start;
+    direction: ltr;
 }
 /* Compact top bar on smaller screens (Linux VMs, laptops) so the many buttons
    wrap into fewer, tighter rows instead of a giant grid. */
@@ -6878,6 +6881,13 @@ function initWeather() {
     detectLocation();
 }
 
+// Run initWeather HERE — BEFORE detectLocation is wrapped just below to force the
+// toast container visible. This way the country auto-detects on load WITHOUT
+// popping the weather widget open (that only happens when you click 🌤️).
+// Previously this was called from the first <script> block, where initWeather
+// wasn't defined yet, so it silently never ran and the country stayed blank.
+try { initWeather(); } catch (e) { console.error('initWeather failed:', e); }
+
 const originalDetect = detectLocation;
 detectLocation = async function() {
     container.style.display = 'flex';
@@ -6885,6 +6895,14 @@ detectLocation = async function() {
 };
 
 console.log('🌍 Weather widget integrated with TrioForge');
+
+// Safety net: Esc always closes the weather toast, so it can never get stuck open
+// even if its ✕ button is hard to hit on a small screen.
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && activeToast) {
+        try { activeToast.close(); } catch (err) {}
+    }
+});
 
 // ── Backup / Restore ──
 function openRestoreModal() {
@@ -7251,15 +7269,6 @@ document.addEventListener('input', function(e) {
         localStorage.setItem('pin_default_color', e.target.value);
     }
 });
-
-// ── Weather init ──
-// Runs HERE (after this block defines initWeather / countryList / countrySelect),
-// so the country auto-detects on load instead of only after clicking the 🌤️ icon.
-try {
-    initWeather();
-} catch (e) {
-    console.error('initWeather failed:', e);
-}
 </script>
 
 <!-- Workspace / API key settings modal -->
