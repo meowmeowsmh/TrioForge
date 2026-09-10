@@ -4958,7 +4958,11 @@ window.addEventListener('load', function() {
             }
         }).catch(function() {});
     });
-    safe(initWeather);
+    // NOTE: initWeather() is defined in the SECOND <script> block below, so it
+    // must NOT be called here — at this point it's still undefined, and
+    // safe(undefined) just throws "fn is not a function" and is swallowed, which
+    // is why the weather country never auto-detected on load. It's called at the
+    // end of that second block instead.
 });
 
 // Immediate fallback: load the conversation list right away, independent of the
@@ -7247,6 +7251,15 @@ document.addEventListener('input', function(e) {
         localStorage.setItem('pin_default_color', e.target.value);
     }
 });
+
+// ── Weather init ──
+// Runs HERE (after this block defines initWeather / countryList / countrySelect),
+// so the country auto-detects on load instead of only after clicking the 🌤️ icon.
+try {
+    initWeather();
+} catch (e) {
+    console.error('initWeather failed:', e);
+}
 </script>
 
 <!-- Workspace / API key settings modal -->
