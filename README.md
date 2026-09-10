@@ -81,6 +81,12 @@
   - **Auto port selection**: if 5003 is held by another app, the app moves to the next free port instead of wrongly claiming "already running".
   - **Model folders are created on startup** (`models/`, `video_model/`, `universal_models_to_text/`), so a fresh `git clone` always has somewhere to drop GGUFs.
   - **macOS smoke test in CI** (`.github/workflows/macos-smoke.yml`) runs the app on a real Apple Silicon runner.
+- 🧩 **ComfyUI verified cross-platform** — install auto-detection now covers **macOS**
+  (`~/Library/Application Support/ComfyUI`, `~/Documents/ComfyUI`), **Linux** (`~/ComfyUI`,
+  `/opt/ComfyUI`) and **Windows** (`Comfy-Desktop\ComfyUI-Installs`), and the whole
+  generate flow (queue → poll → download) was tested against a mock ComfyUI on every layout.
+  The macOS CI now tests it too. Full per-OS guide:
+  [🧩 ComfyUI setup](#-comfyui-setup-optional--for-free-local-generation).
 - 🎙️ **Voice-to-voice is now required + installable** — the Setup panel installs the `speech-to-speech` package (**⚡ Install**), and the agent runs on its own port **8082** so it never collides with the chat llama-server. Only **ComfyUI** is optional (your choice).
 - 🔄 **UI updates now apply on a normal refresh** — the HTML was cached in memory keyed only on the model, so edits/`git pull`s appeared to "do nothing" until a restart. The cache is now keyed on the file's mtime + size.
 - 🐳 **Docker can use a host llama-server** — `LLAMA_HOST=host.docker.internal` puts the app in "remote mode": it connects to llama.cpp running on your host (where the GPU is) instead of trying to launch one inside the container.
@@ -155,7 +161,7 @@ On first launch, TrioForge shows a **Setup panel** that detects which local serv
 | **llama.cpp** (`llama-server`) | ✅ | **⚡ Auto-install** (auto-detects your GPU backend) — the app auto-starts it |
 | **Voice-to-voice** (speech-to-speech) | ✅ | **⚡ Install** in the Setup panel (runs with llama.cpp on port 8082) |
 | **GGUF models** | ✅ | Via the ⬇ button or Hugging Face; app auto-loads from `models/` |
-| **ComfyUI** (image/video) | ❌ optional | **User chooses** — [comfy.org/download](https://www.comfy.org/download); cloud image/video works without it |
+| **ComfyUI** (image/video/audio) | ❌ optional | **User chooses** — [comfy.org/download](https://www.comfy.org/download); cloud image/video works without it. See [🧩 ComfyUI setup](#-comfyui-setup-optional--for-free-local-generation) |
 
 You can reopen the panel anytime with the **🚀** button in the top bar.
 
@@ -179,8 +185,13 @@ Everything is auto-located, so nobody hand-edits a path:
 - **Model folders created on startup**, so a fresh `git clone` always has somewhere to drop GGUFs.
 - **ffmpeg** found via `PATH` (and installed in the Docker image) for video/audio-to-text.
 - **Port auto-selection** — if 5003 is busy, the next free port is used automatically.
+- **ComfyUI auto-detected** on Windows (`Comfy-Desktop\ComfyUI-Installs`), macOS
+  (`~/Library/Application Support/ComfyUI`, `~/Documents/ComfyUI`) and Linux
+  (`~/ComfyUI`, `/opt/ComfyUI`). ComfyUI talks to the app over plain HTTP, so it's
+  fully OS-agnostic — see [🧩 ComfyUI setup](#-comfyui-setup-optional--for-free-local-generation).
 
-macOS support is verified in CI on a real Apple Silicon runner —
+macOS support is verified in CI on a real Apple Silicon runner (platform logic, llama.cpp
+release selection, **ComfyUI detection + the full generate flow**) —
 see [`.github/workflows/macos-smoke.yml`](.github/workflows/macos-smoke.yml).
 
 ### ⬇ Downloading a GGUF model from Hugging Face
@@ -318,6 +329,78 @@ ComfyUI is auto-detected and its workflows are discovered from `blueprints/` and
 > ⚠️ ComfyUI video models (Wan 2.2 / LTX) are large and VRAM-hungry — start with a short length and small resolution. ComfyUI must be running on `COMFYUI_URL` (default `http://127.0.0.1:8188`).
 
 Generated images/videos are saved under `static/uploads/generated/` and `static/uploads/generated_video/`.
+
+### 🧩 ComfyUI setup (optional — for free local generation)
+
+**You don't need ComfyUI.** The cloud backends (OpenRouter / Gemini) do image + video with nothing
+installed. Install ComfyUI only if you want **free, offline, unlimited** local generation.
+
+#### 1. Install it
+
+**Easiest — ComfyUI Desktop** (one-click, auto-configures your GPU backend):
+[comfy.org/download](https://www.comfy.org/download)
+
+**Or manually (Linux / macOS):**
+```bash
+git clone https://github.com/comfyanonymous/ComfyUI && cd ComfyUI
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt     # PyPI torch picks the right GPU backend by OS
+python main.py                      # serves on http://127.0.0.1:8188
+```
+
+| Platform | GPU acceleration | What to do |
+|---|---|---|
+| 🍎 **macOS (Apple Silicon)** | **Metal / MPS** | Nothing — `pip install torch` uses MPS automatically |
+| 🐧 **Linux + NVIDIA** | **CUDA** | The default PyPI `torch` already includes CUDA |
+| 🐧 **Linux + AMD** | **ROCm** | Install the ROCm PyTorch build, then `python main.py` |
+| 🪟 **Windows** | CUDA / CPU | ComfyUI Desktop handles it |
+| Any (no GPU) | **CPU** | Works, just slow — use small models/steps |
+
+> First run downloads model weights (several GB) into `ComfyUI/models/`.
+
+#### 2. The app finds it automatically
+
+You normally don't configure anything — TrioForge locates the install by looking for the folder
+that contains `blueprints/`, in these places:
+
+- **Windows:** `%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\*\ComfyUI`, `%LOCALAPPDATA%\ComfyUI`, and the Comfy Desktop `installations.json`
+- **macOS:** `~/Library/Application Support/ComfyUI`, `~/Documents/ComfyUI`, `~/Documents/ComfyUI-Installs`
+- **Linux:** `~/ComfyUI`, `~/comfyui`, `/opt/ComfyUI`, `/opt/comfyui`, `~/.config/ComfyUI`
+
+Workflows are then discovered from `<ComfyUI>/blueprints/*.json` (bundled templates) and
+`<ComfyUI>/user/<id>/workflows/*.json` (your saved ones).
+
+Running ComfyUI on another machine or port? Point the app at it:
+
+```bash
+COMFYUI_URL=http://192.168.1.50:8188 ./run.sh    # remote ComfyUI
+COMFYUI_INSTALL=/path/to/ComfyUI ./run.sh        # explicit install path (workflow discovery)
+```
+
+#### 3. ⚠️ Custom nodes (the one real gotcha)
+
+A workflow needs **whatever custom nodes it was built with** installed in your ComfyUI. If one is
+missing, ComfyUI returns an execution error and TrioForge shows it verbatim
+(e.g. *"Cannot execute because node X does not exist"*). This is the same on every OS.
+
+Fix — install **ComfyUI Manager** once, then let it fill the gaps:
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/ltdrdata/ComfyUI-Manager
+# restart ComfyUI, then: Manager → "Install Missing Custom Nodes"
+```
+Same applies to **audio workflows** (🎵 — Stable Audio / ACE-Step / MiniMax Music) and
+**video workflows** (🎬 — Wan 2.2 / LTX).
+
+#### 4. Verify it's connected
+
+1. ComfyUI should be open at `http://127.0.0.1:8188`.
+2. Open TrioForge → **🚀 Setup panel** → the **ComfyUI** row should read **Running**.
+3. Click **🖼️** / **🎬** / **🎵** → the workflow dropdown auto-fills with what was discovered.
+4. Type a prompt and generate.
+
+> If the row says *offline*: the app is up but ComfyUI isn't answering on `COMFYUI_URL` — start it,
+> or set `COMFYUI_URL` to wherever it's running.
 
 ---
 
@@ -732,6 +815,31 @@ The model folders are bind-mounted, so GGUFs you drop on the host appear in the
 container's dropdown. If you'd rather run llama.cpp *inside* the container, uncomment the
 `deploy:` GPU block in the compose file (needs the image to include llama-server plus the
 NVIDIA Container Toolkit).
+
+### ComfyUI in Docker
+
+Same idea as llama.cpp — **run ComfyUI on the HOST** (it needs the GPU and multi-GB model
+weights) and let the container connect to it. Uncomment this line in the compose file:
+
+```yaml
+- COMFYUI_URL=http://host.docker.internal:8188
+```
+
+Then `cd docker && docker compose up -d`. Workflow discovery runs in the container, so if
+you want the app to *list* your workflows, also mount your ComfyUI folder and set
+`COMFYUI_INSTALL`:
+
+```yaml
+volumes:
+  - /path/to/ComfyUI:/opt/ComfyUI:ro
+environment:
+  - COMFYUI_INSTALL=/opt/ComfyUI
+```
+
+(Generation still works without that — the app just won't auto-list workflow names, and
+you can pick one explicitly in the 🖼️/🎬/🎵 panel.) See
+[🧩 ComfyUI setup](#-comfyui-setup-optional--for-free-local-generation) for installing it
+on the host.
 
 ### Connecting Ollama
 
