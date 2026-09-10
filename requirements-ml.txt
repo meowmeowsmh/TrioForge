@@ -3,8 +3,12 @@
 # Install only if you want meaning-based document search. Without these, TrioForge
 # still works — document chat falls back to fast keyword matching.
 #
-# WARNING: sentence-transformers pulls in torch + the CUDA toolkit (~2 GB), so
-# this is a large install. Skip it unless you specifically want semantic search.
+# WARNING: sentence-transformers pulls in torch (~2 GB), so this is a large
+# install. Skip it unless you specifically want semantic search.
+#
+# torch picks the right accelerator per OS automatically — CUDA on NVIDIA,
+# Metal/MPS on Apple Silicon, CPU otherwise — and no CUDA-specific index URL is
+# pinned here, so this same `pip install` works on Windows, macOS and Linux.
 #
 #     pip install -r requirements-ml.txt
 

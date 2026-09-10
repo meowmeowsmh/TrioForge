@@ -2,9 +2,11 @@ json_configuration/
 sqlite_data/
 static/uploads/
 cert_store/
+logs/
 __pycache__/
 *.pyc
 .git/
+.github/
 .vscode/
 .idea/
 .venv/
@@ -14,6 +16,9 @@ env/
 models/
 video_model/
 universal_models_to_text/
+# Auto-installed llama.cpp binaries (llama_installer / ⚡ Auto-install) — can be
+# hundreds of MB; never bake them into the image.
+tools/llama.cpp/
 *.gguf
 *.safetensors
 *.bin

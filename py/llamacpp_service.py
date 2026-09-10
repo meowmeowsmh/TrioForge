@@ -295,7 +295,11 @@ def _resolve_llama_server_exe(value):
     if prog:
         cands.extend(glob.glob(os.path.join(prog, "*", "llama-server.exe")))
     dirs = (
-        "/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/bin",
+        # Linux / macOS-Intel Homebrew / Docker
+        "/usr/local/bin", "/usr/bin",
+        # macOS Apple Silicon: Homebrew installs here, NOT in /usr/local
+        "/opt/homebrew/bin", "/opt/homebrew/opt/llama.cpp/bin",
+        "/opt/llama.cpp", "/opt/llama.cpp/bin",
         "/opt/llama.cpp/build/bin", "/usr/local/lib/llama.cpp/bin",
         os.path.join(home, ".local", "bin"),
         os.path.join(home, "llama.cpp"), os.path.join(home, "llama.cpp", "bin"),

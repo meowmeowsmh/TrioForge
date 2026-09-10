@@ -101,13 +101,20 @@ if [ "$MISSING" -eq 1 ]; then
     echo "[TrioForge] Core dependencies installed."
 fi
 
-# Optional heavy ML/embedding stack (torch + CUDA ~2 GB). Only if requested.
+# Optional heavy ML/embedding stack (torch ~2 GB). Only if requested.
+# NOTE: CUDA does not exist on macOS — Apple Silicon uses Metal (MPS), and PyPI's
+# `torch` wheel for macOS ships MPS support automatically. So the wording and the
+# accelerator differ per OS; the install command is the same either way.
 if [ "$INSTALL_ML" = "1" ]; then
     if [ -f requirements-ml.txt ]; then
         if "$VENV/bin/python" -c "import sentence_transformers" >/dev/null 2>&1; then
             echo "[TrioForge] ML/embedding stack already installed."
         else
-            echo "[TrioForge] Installing ML/embedding stack (~2 GB, torch + CUDA)... this can take a while."
+            if [ "$(uname -s)" = "Darwin" ]; then
+                echo "[TrioForge] Installing ML/embedding stack (~2 GB, torch + Apple Metal/MPS)... this can take a while."
+            else
+                echo "[TrioForge] Installing ML/embedding stack (~2 GB, torch; CUDA on NVIDIA, CPU otherwise)... this can take a while."
+            fi
             "$VENV/bin/python" -m pip install -r requirements-ml.txt || {
                 echo "[TrioForge] ML install failed (optional). Semantic RAG will use keyword search."
             }

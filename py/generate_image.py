@@ -55,7 +55,17 @@ def build_pipeline(model):
     try:
         pipe.enable_model_cpu_offload()
     except Exception:
-        pipe.to("cuda")
+        # Pick the accelerator this machine actually has — CUDA (NVIDIA),
+        # MPS (Apple Silicon) or plain CPU. Hardcoding "cuda" broke macOS.
+        try:
+            if torch.cuda.is_available():
+                pipe.to("cuda")
+            elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+                pipe.to("mps")
+            else:
+                pipe.to("cpu")
+        except Exception:
+            pipe.to("cpu")
     return pipe
 
 

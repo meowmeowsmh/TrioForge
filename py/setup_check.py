@@ -75,7 +75,10 @@ def _llama_server_candidates():
         cands.extend(glob.glob(os.path.join(prog, "*", "llama-server.exe")))
     # Common install locations on Linux / macOS / Docker.
     home = os.path.expanduser("~")
-    for d in ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/bin",
+    for d in ("/usr/local/bin", "/usr/bin",
+              # macOS Apple Silicon: Homebrew prefix (NOT /usr/local)
+              "/opt/homebrew/bin", "/opt/homebrew/opt/llama.cpp/bin",
+              "/opt/llama.cpp", "/opt/llama.cpp/bin",
               "/opt/llama.cpp/build/bin", "/usr/local/lib/llama.cpp/bin",
               os.path.join(home, ".local", "bin"),
               os.path.join(home, "llama.cpp"), os.path.join(home, "llama.cpp", "bin"),

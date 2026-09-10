@@ -97,7 +97,10 @@ def _find_executable(value):
     if prog:
         for n in names:
             cands += glob.glob(os.path.join(prog, "*", n))
-    dirs = ("/usr/local/bin", "/usr/bin", "/opt/llama.cpp", "/opt/llama.cpp/bin",
+    dirs = ("/usr/local/bin", "/usr/bin",
+            # macOS Apple Silicon: Homebrew prefix (NOT /usr/local)
+            "/opt/homebrew/bin", "/opt/homebrew/opt/llama.cpp/bin",
+            "/opt/llama.cpp", "/opt/llama.cpp/bin",
             "/opt/llama.cpp/build/bin", "/usr/local/lib/llama.cpp/bin",
             os.path.join(home, ".local", "bin"),
             os.path.join(home, "llama.cpp"), os.path.join(home, "llama.cpp", "bin"),
