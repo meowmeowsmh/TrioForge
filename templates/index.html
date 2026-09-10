@@ -177,6 +177,8 @@ body.light-mode::before { opacity: 0; }
        viewport on narrow windows and clips the persona / country dropdowns
        off-screen (very visible on small Linux/VM screens). */
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    /* Row 1 = title | tabs | dropdowns.  Row 2 = the centered icon toolbar. */
+    grid-template-rows: auto auto;
     align-items: center;
     background: rgba(22, 27, 34, 0.7);
     backdrop-filter: blur(20px);
@@ -192,6 +194,8 @@ body.light-mode::before { opacity: 0; }
     align-items: center;
     gap: 12px;
     min-width: 0;
+    grid-column: 1;
+    grid-row: 1;
     justify-self: start;
 }
 .top-bar .left h1 {
@@ -214,6 +218,8 @@ body.light-mode::before { opacity: 0; }
     border-radius: 30px;
     backdrop-filter: blur(5px);
     border: 1px solid rgba(255,255,255,0.06);
+    grid-column: 2;
+    grid-row: 1;
     justify-self: center;
 }
 .center-tabs .tab-btn {
@@ -261,11 +267,28 @@ body.light-mode .center-tabs .tab-btn.active {
     gap: 10px;
     flex-wrap: wrap;
     min-width: 0;
+    grid-column: 3;
+    grid-row: 1;
     justify-self: end;
-    /* Flow the icons LEFT → RIGHT (flex-start) so wrapped rows fill from the left
-       in a tidy row instead of being right-aligned into a ragged grid. */
-    justify-content: flex-start;
+    justify-content: flex-end;
     direction: ltr;
+}
+/* ── Icon toolbar (all the buttons; NOT the dropdowns) ──
+   Its OWN grid row, spanning the full bar width and CENTERED across the middle,
+   so the top background shows no empty "limited space" gap on one side. */
+.top-bar-icons {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: flex;
+    align-items: center;
+    /* Same gap as the dropdown row (.top-bar .right) and applied uniformly — a
+       stray inline margin-left on the empty #deepseekStatus span used to add an
+       extra gap between the 🧹 clear-chat and ⚙️ workspace buttons. */
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    min-width: 0;
+    width: 100%;
 }
 /* Compact top bar on smaller screens (Linux VMs, laptops) so the many buttons
    wrap into fewer, tighter rows instead of a giant grid. */
@@ -1580,11 +1603,17 @@ body.light-mode .weather-country-select option {
                style="display:none; max-width:240px; padding:5px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.1); background:rgba(13,17,23,0.7); color:#e6edf3;"
                autocomplete="off" autocorrect="off" spellcheck="false">
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
+        <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country"></select>
+      </div>
+
+      <!-- Icon toolbar: its OWN row, centered across the MIDDLE of the bar (all
+           icons live here). Only the dropdowns stay in the row above. -->
+      <div class="top-bar-icons" id="topBarIcons">
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑</button>
         <button class="clear-btn" id="hfDownloadBtn" onclick="openHfDownload()" title="Download a model from Hugging Face (GGUF)">⬇</button>
         <span id="visionBadge" class="vision-badge" title="Vision capable">👁</span>
         <button class="clear-btn" onclick="clearAllChats()" title="Clear this chat's messages">🧹</button>
-        <span id="deepseekStatus" style="font-size:12px; margin-left:10px;"></span>
+        <span id="deepseekStatus" style="font-size:12px;"></span>
         <span id="modelInfo" style="display:none;"></span>
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">⚙️</button>
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
@@ -1602,10 +1631,9 @@ body.light-mode .weather-country-select option {
         <button class="clear-btn" id="audioGenBtn" onclick="selectAudioGen()" title="Generate audio (ComfyUI text-to-audio / music / TTS)" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">🎵</button>
         <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
 
-        <!-- Weather toggle and country dropdown -->
+        <!-- Weather toggle is an ICON, so it lives in this centered icon row. -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
-        <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country"></select>
-      </div>
+        </div>
     </div>
 
     <!-- CHAT PANEL -->

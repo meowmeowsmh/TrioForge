@@ -31,6 +31,9 @@ services:
       - ../models:/app/models
       - ../video_model:/app/video_model
       - ../universal_models_to_text:/app/universal_models_to_text
+      # Server logs (logs/server.log, logs/llamacpp.log) — handy for diagnosing
+      # a llama.cpp/model failure without exec-ing into the container.
+      - ../logs:/app/logs
     environment:
       # Point to Ollama – if you run Ollama on the host, use "host.docker.internal" (mac/win)
       # or the IP of your host (Linux: use --add-host or set to your host IP)
@@ -41,21 +44,30 @@ services:
       # localhost is a secure context). Set TRIOFORGE_SSL=1 and mount a trusted
       # cert_store/ if you want HTTPS instead.
       - TRIOFORGE_SSL=0
+      # Internal gunicorn port — keep in sync with the `ports:` mapping above.
+      # Change both to e.g. 5003 to match the native app.
+      - TRIOFORGE_PORT=5001
+      # Gunicorn worker count. Keep it low: SQLite writes are only guarded
+      # per-process, so many workers can cause "database is locked".
+      - TRIOFORGE_WORKERS=2
       # ── llama.cpp ─────────────────────────────────────────────────────────
-      # Run llama-server ON THE HOST (it needs your GPU), then point the
-      # container at it. Setting LLAMA_HOST puts the app in "remote mode": it
-      # connects to host.docker.internal:8080 instead of trying to launch a
-      # local llama-server (which the image does NOT include).
+      # The image does NOT ship llama-server (it's a GPU service). Run it ON THE
+      # HOST and point the container at it. Setting LLAMA_HOST puts the app in
+      # "remote mode": it connects to host.docker.internal:8080 instead of trying
+      # to launch a local llama-server.
+      #
+      #   host:  llama-server -m models/your-model.gguf --port 8080
+      #   then:  docker compose up
       - LLAMA_HOST=host.docker.internal
       - LLAMA_PORT=8080
-      # Optional: absolute path to llama-server on the host (only used in
-      # setup checks / when running llama.cpp INSIDE the container with GPU).
+      # Optional: absolute path to llama-server (only used by setup checks, or
+      # when running llama.cpp INSIDE the container with GPU passthrough below).
       #- LLAMA_SERVER=/usr/bin/llama-server
-      # ── ComfyUI (optional, if you run it on the host) ────────────────────
+      # ── ComfyUI (optional — run it on the host, or skip and use cloud models) ──
       #- COMFYUI_URL=http://host.docker.internal:8188
-    # GPU passthrough if you want llama.cpp to run INSIDE the container (requires
-    # the image to include llama-server and NVIDIA Container Toolkit). Uncomment
-    # for in-container GPU inference instead of the host-server approach above.
+    # GPU passthrough IF you want llama.cpp inside the container (requires the
+    # image to include llama-server + NVIDIA Container Toolkit). Otherwise stick
+    # with the host llama-server approach above — it's the simplest and fastest.
     #deploy:
     #  resources:
     #    reservations:

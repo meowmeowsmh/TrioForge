@@ -25,10 +25,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-bind = "0.0.0.0:5001"
-workers = 4
-threads = 2
+# Bind host/port. Default 5001 matches the compose mapping ("5002:5001"); set
+# TRIOFORGE_PORT (and update the mapping, e.g. "5003:5003") to change it.
+bind = "0.0.0.0:%s" % os.environ.get("TRIOFORGE_PORT", "5001")
+
+# Keep the worker count LOW. TrioForge keeps per-process state (an SQLite
+# connection, the selected model, in-memory caches, the llama.cpp handle), and
+# SQLite writes are only guarded by a per-process lock — so several workers can
+# hit "database is locked". Two workers is plenty for a personal local app.
+# Override with TRIOFORGE_WORKERS if you know what you're doing.
+try:
+    workers = max(1, int(os.environ.get("TRIOFORGE_WORKERS", "2") or 2))
+except (TypeError, ValueError):
+    workers = 2
+threads = 4
 worker_class = "sync"
+timeout = 300
 
 CERT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cert_store")
 _certfile = os.path.join(CERT_DIR, "localhost+1.pem")

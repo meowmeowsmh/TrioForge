@@ -198,7 +198,9 @@ def run_app(project: Path, start_voice: bool = True) -> None:
         _scheme = "http"
     else:
         _scheme = "https" if platform.system() == "Windows" else "http"
-    print("Starting TrioForge... open {}://localhost:{} in your browser.".format(_scheme, port))
+    print("Starting TrioForge... it will open your browser automatically.")
+    print("  requested: {}://localhost:{}  (if that port is busy, the app picks the "
+          "next free one and prints the real URL below)".format(_scheme, port))
     print()
     os.chdir(str(project))
     # If we are ALREADY running inside a venv (e.g. run.sh launched us with

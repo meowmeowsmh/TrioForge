@@ -970,6 +970,17 @@ def record_usage(provider, model, session_id, prompt_tokens, completion_tokens):
     except Exception as e:
         logger.warning("Failed to record usage: %s", e)
 
+@app.route('/api/ping', methods=['GET'])
+def api_ping():
+    """Lightweight identity marker.
+
+    The launcher calls this to tell TrioForge apart from some OTHER app that
+    happens to be holding the port — so it only says "already running" when it
+    really is TrioForge, and otherwise picks a free port instead.
+    """
+    return jsonify({"app": "trioforge", "ok": True})
+
+
 @app.route('/')
 def index():
     html = get_cached_html()
@@ -3910,10 +3921,70 @@ def _auto_open_browser(url: str) -> None:
     threading.Thread(target=_open, daemon=True).start()
 
 
+# ── Port selection ───────────────────────────────────────────────────────────
+# If the preferred port is held by ANOTHER app, move to the next free one instead
+# of wrongly reporting "TrioForge is already running" and exiting. Cross-platform:
+# this is what bit users behind Docker relays / other local servers on any OS.
+def _port_is_free(port, host='127.0.0.1', timeout=0.6):
+    import socket as _s
+    s = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        return s.connect_ex((host, port)) != 0
+    except Exception:
+        return True
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def _is_trioforge_on(port, host='127.0.0.1', timeout=1.5):
+    """True only if TrioForge itself answers on this port (via /api/ping)."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen('http://%s:%d/api/ping' % (host, port), timeout=timeout) as r:
+            data = std_json.loads(r.read(400).decode('utf-8', 'replace'))
+        return data.get('app') == 'trioforge'
+    except Exception:
+        return False
+
+
+def choose_port(preferred, host='127.0.0.1', tries=20):
+    """Return (port, reason).
+
+    reason: 'free'    → nothing listening; use it
+            'running' → TrioForge is already there (open the browser, then exit)
+            'moved'   → another app owns it; moved to the next free port
+            'busy'    → no free port found in range
+    """
+    if _port_is_free(preferred, host):
+        return preferred, 'free'
+    if _is_trioforge_on(preferred, host):
+        return preferred, 'running'
+    for p in range(preferred + 1, preferred + 1 + tries):
+        if _port_is_free(p, host):
+            return p, 'moved'
+    return preferred, 'busy'
+
+
 if __name__ == '__main__':
-    # Port is configurable via TRIOFORGE_PORT (default 5003) so it never collides
-    # with a stale Docker container / wslrelay still holding 5001.
-    PORT = int(os.environ.get('TRIOFORGE_PORT', '5003') or 5003)
+    # Port is configurable via TRIOFORGE_PORT (default 5003).
+    # If that port is held by ANOTHER app (a stale Docker/wslrelay relay, some
+    # other local server, …) we move to the next free port instead of wrongly
+    # saying "already running". Only a real TrioForge on the port triggers the
+    # "already running" path.
+    PORT_PREF = int(os.environ.get('TRIOFORGE_PORT', '5003') or 5003)
+    PORT, port_reason = choose_port(PORT_PREF)
+    if port_reason == 'moved':
+        logger.warning("Port %d is in use by another app — using %d instead.", PORT_PREF, PORT)
+        print("[TrioForge] Port %d is busy (another app) — using %d instead." % (PORT_PREF, PORT))
+    elif port_reason == 'busy':
+        logger.error("Ports %d-%d are all in use.", PORT_PREF, PORT_PREF + 20)
+        print("[TrioForge] Ports %d-%d are all busy. Set TRIOFORGE_PORT=<free port> and re-run."
+              % (PORT_PREF, PORT_PREF + 20))
+        sys.exit(1)
 
     # ── Decide HTTP vs HTTPS ────────────────────────────────────────────────
     # localhost is a "secure context", so plain HTTP has no scary browser warning
@@ -3955,23 +4026,18 @@ if __name__ == '__main__':
 
     url = "%s://localhost:%d" % (scheme, PORT)
 
-    # Single-instance guard: if the chosen port is already bound, another TrioForge
-    # instance is already running. Open the browser to it and exit cleanly so we
-    # never spawn zombie duplicate processes that fight over the database.
-    import socket as _socket
-    _probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-    _probe.settimeout(1)
-    try:
-        if _probe.connect_ex(('127.0.0.1', PORT)) == 0:
-            print("TrioForge is already running at %s — opening it." % url)
-            try:
-                import webbrowser
-                webbrowser.open(url)  # synchronous: opens before we exit
-            except Exception:
-                pass
-            sys.exit(0)
-    finally:
-        _probe.close()
+    # Already-running guard: exit only when it really IS TrioForge on the port
+    # (confirmed via /api/ping in choose_port), so we never spawn a duplicate
+    # process fighting over the database — and never refuse to start just because
+    # some unrelated app happens to own the port.
+    if port_reason == 'running':
+        print("TrioForge is already running at %s — opening it." % url)
+        try:
+            import webbrowser
+            webbrowser.open(url)  # synchronous: opens before we exit
+        except Exception:
+            pass
+        sys.exit(0)
 
     logger.info("AI CHAT Interfacing Loading... - Multi-Conversation")
     logger.info("Default model : %s", DEFAULT_MODEL)

@@ -74,6 +74,16 @@
 
 ## 🆕 Recently added
 
+- 🍎🐧🪟 **True cross-platform support (Windows · macOS · Linux · WSL)** — the app now auto-locates its tools on every OS:
+  - **⚡ Auto-install llama.cpp** from the Setup panel: it detects your GPU backend (**Metal** on Apple Silicon, **CUDA** on NVIDIA, **ROCm** on AMD, **Vulkan**, or **CPU**) and downloads the matching prebuilt build.
+  - **Homebrew on Apple Silicon is searched** (`/opt/homebrew/bin`) — the previous reason `brew install llama.cpp` was silently not found on M-series Macs.
+  - **No HTTPS certificate scare**: Linux/macOS serve plain **`http://localhost:5003`** (localhost is a secure context — mic/clipboard still work, and no "not secure" warning even in Firefox). Windows keeps HTTPS. Force either with `TRIOFORGE_SSL=0` / `=1`.
+  - **Auto port selection**: if 5003 is held by another app, the app moves to the next free port instead of wrongly claiming "already running".
+  - **Model folders are created on startup** (`models/`, `video_model/`, `universal_models_to_text/`), so a fresh `git clone` always has somewhere to drop GGUFs.
+  - **macOS smoke test in CI** (`.github/workflows/macos-smoke.yml`) runs the app on a real Apple Silicon runner.
+- 🎙️ **Voice-to-voice is now required + installable** — the Setup panel installs the `speech-to-speech` package (**⚡ Install**), and the agent runs on its own port **8082** so it never collides with the chat llama-server. Only **ComfyUI** is optional (your choice).
+- 🔄 **UI updates now apply on a normal refresh** — the HTML was cached in memory keyed only on the model, so edits/`git pull`s appeared to "do nothing" until a restart. The cache is now keyed on the file's mtime + size.
+- 🐳 **Docker can use a host llama-server** — `LLAMA_HOST=host.docker.internal` puts the app in "remote mode": it connects to llama.cpp running on your host (where the GPU is) instead of trying to launch one inside the container.
 - 📝 **Live coding panel (fixed & upgraded)** — now captures **any code the model prints** (fenced, indented, or code-heavy replies) from **any provider** — not just agent tool calls. A **frontend path** reports rendered code even if the server misses it, and everything is **persisted to `sqlite_data/edits.db`** so it survives restarts. Auto-opens on a coding burst, shows a green-dot notification, and the 📝 button no longer pops open on page load.
 - 🐛 **llama.cpp streaming fix** — streaming mode now auto-starts the llama-server (and resolves the bare GGUF filename to its full path), so local models connect and stream instead of returning 500.
 - 📚 **RAG error clarity** — unreadable/scanned PDFs and unsupported files now return a clear message ("scanned/image-only, requires OCR") instead of silently storing 0 chunks.
@@ -106,22 +116,34 @@
 git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
 
-# 2. Run it — the launcher finds the latest Python, installs it if missing,
-#    then shows "Press Launch (Enter)".
+# 2. Run it — ONE command does the whole first-run setup:
+#    - finds / installs Python (latest)
+#    - creates the project venv and installs ALL core deps into it
+#      (flask, flask-compress, psutil, frontmatter, providers…) — no manual pip
+#    - creates the model folders
 #    Windows: double-click application.bat
-#    Linux/macOS: ./run.sh
+#    Linux / macOS / WSL: ./run.sh
 
-# 3. (Optional) Pull a local model
-ollama pull vaultbox/qwen3.5-uncensored:9b
+# 3. In the app → 🚀 Setup panel → click "⚡ Auto-install"  (llama.cpp for your GPU)
+# 4. Get a model → click "⬇" to download from Hugging Face, or drop a .gguf
+#    into models/ (or video_model/ or universal_models_to_text/)
+# 5. Pick it in the dropdown, type, Enter — done.
 ```
 
-Then open **https://localhost:5003/** in your browser.
+The app opens by itself at **http://localhost:5003** (Linux / macOS) or
+**https://localhost:5003** (Windows).
 
-> **Tip:** the app opens as **http://localhost:5003** on Linux/macOS (plain HTTP on
-> localhost is a "secure context", so there's **no scary certificate warning** — even
-> in Firefox), and **https://localhost:5003** on Windows. Change the port with
-> `TRIOFORGE_PORT=xxxx ./run.sh`. To force HTTPS anywhere, set `TRIOFORGE_SSL=1 ./run.sh`
-> and install the mkcert CA so your browser trusts it; use `TRIOFORGE_SSL=0` for HTTP.
+> **Ports:** if 5003 is already held by another program, TrioForge **picks the next
+> free port** and prints it — it only reports "already running" when it really *is*
+> TrioForge on that port. Override with `TRIOFORGE_PORT=xxxx ./run.sh`.
+>
+> **HTTPS:** Linux/macOS serve **plain HTTP** on purpose — `localhost` is a "secure
+> context", so there's **no scary certificate warning** (even in Firefox) and the
+> mic/clipboard still work. Force HTTPS with `TRIOFORGE_SSL=1 ./run.sh` (and install
+> the mkcert CA so your browser trusts it); `TRIOFORGE_SSL=0` forces HTTP on Windows.
+>
+> **Models are files, not packages** — nothing installs them for you except the
+> built-in ⬇ downloader. Just put a `.gguf` in the right folder and it appears.
 
 ### 🚀 First-run setup checker
 
@@ -136,6 +158,30 @@ On first launch, TrioForge shows a **Setup panel** that detects which local serv
 | **ComfyUI** (image/video) | ❌ optional | **User chooses** — [comfy.org/download](https://www.comfy.org/download); cloud image/video works without it |
 
 You can reopen the panel anytime with the **🚀** button in the top bar.
+
+### 🌍 Platform support
+
+| Platform | Launcher | Local llama.cpp | Default URL |
+|---|---|---|---|
+| 🪟 **Windows** | `application.bat` | winget build, or **⚡ Auto-install** | `https://localhost:5003` |
+| 🐧 **Linux** | `./run.sh` | `apt`/build, or **⚡ Auto-install** | `http://localhost:5003` |
+| 🍎 **macOS (Apple Silicon)** | `./run.sh` | `brew install llama.cpp`, or **⚡ Auto-install** | `http://localhost:5003` |
+| 🐧🪟 **WSL2** | `./run.sh` | same as Linux | `http://localhost:5003` |
+| 🐳 **Docker** | `./docker/application.sh` | host llama-server via `LLAMA_HOST` | `http://localhost:5002` |
+
+Everything is auto-located, so nobody hand-edits a path:
+
+- **GPU backend detected** — Metal (Apple Silicon) / CUDA (NVIDIA) / ROCm (AMD) / Vulkan / CPU.
+- **llama-server found** on `PATH`, in `winget`, `/opt/homebrew/bin`, `/usr/local/bin`,
+  `/usr/bin`, `/opt/llama.cpp`, `~/.local/bin`, `~/llama.cpp{,/build/bin}`, release-tarball
+  dirs, or `tools/llama.cpp` (where **⚡ Auto-install** extracts it). `LLAMA_SERVER`
+  overrides it outright.
+- **Model folders created on startup**, so a fresh `git clone` always has somewhere to drop GGUFs.
+- **ffmpeg** found via `PATH` (and installed in the Docker image) for video/audio-to-text.
+- **Port auto-selection** — if 5003 is busy, the next free port is used automatically.
+
+macOS support is verified in CI on a real Apple Silicon runner —
+see [`.github/workflows/macos-smoke.yml`](.github/workflows/macos-smoke.yml).
 
 ### ⬇ Downloading a GGUF model from Hugging Face
 
@@ -222,16 +268,22 @@ There are three launch files, but you only ever need **one**. Pick by your opera
 | Your OS | Use this file | How |
 |---------|---------------|-----|
 | 🪟 **Windows** | `application.bat` | Double-click it |
-| 🐧 **Linux / macOS / WSL** | `run.sh` | Run `./run.sh` in a terminal (first time: `chmod +x run.sh`) |
+| 🐧 **Linux / WSL** | `run.sh` | `./run.sh` in a terminal (first time: `chmod +x run.sh`) |
+| 🍎 **macOS (Intel or Apple Silicon)** | `run.sh` | Same: `./run.sh` — it uses Homebrew's Python and finds `/opt/homebrew/bin` tools |
 | 🛠️ Any OS (advanced) | `launcher.py` | `python launcher.py` |
 
 > **They all do the exact same thing.** `application.bat` and `run.sh` are just thin wrappers that call `launcher.py`, which auto-detects your OS, installs dependencies if needed, and starts the app.
 >
 > So the simple rule:
 > - **Windows users → double-click `application.bat`**
-> - **Everyone else → run `./run.sh`**
+> - **Everyone else (Linux, WSL, macOS) → run `./run.sh`**
 >
 > You can ignore the other two files.
+
+`run.sh` is a proper first-run installer: it finds/installs Python, creates the venv
+(`.venv-linux`), installs **all** core dependencies (not just flask — it also checks
+`flask_compress`, `psutil` and `frontmatter`), and creates the model folders. Add `--ml`
+(or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack.
 
 The launcher also shows a small menu (Run on Windows / Run on Linux-macOS-WSL / Auto-detect / Quit) so you can pick how to start it.
 
@@ -275,6 +327,13 @@ Configuration is done through environment variables — all optional, the app wo
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
+| `TRIOFORGE_PORT` | Port the app listens on (auto-picks the next free port if busy) | `5003` (`5001` under gunicorn/Docker) |
+| `TRIOFORGE_SSL` | `1` = force HTTPS, `0` = force plain HTTP, unset = auto (HTTP on Linux/macOS, HTTPS on Windows) | *(auto)* |
+| `TRIOFORGE_WORKERS` | Gunicorn worker count (Docker) | `2` |
+| `TRIOFORGE_ML` | `1` = also install the optional torch/semantic-search stack | *(unset)* |
+| `LLAMA_SERVER` | Explicit path to the `llama-server` executable (skips auto-detection) | *(auto-detected)* |
+| `LLAMA_HOST` | llama-server host. Set it (e.g. `host.docker.internal`) to enable **remote mode** — connect instead of launching a local server | `127.0.0.1` |
+| `LLAMA_PORT` | llama-server port | `8080` |
 | `OLLAMA_BASE_URL` | Ollama server URL | `http://127.0.0.1:11434` |
 | `GROQ_API_KEY` | Groq provider key | *(unset)* |
 | `DEEPSEEK_API_KEY` | DeepSeek provider key | *(unset)* |
@@ -523,11 +582,15 @@ Upload a video and ask about it. TrioForge samples the clip into a few frames wi
 
 TrioForge binds to **`0.0.0.0`** (all interfaces), so it's reachable from any device on your network out of the box.
 
-- **LAN (same Wi-Fi):** open `https://<your-computer-IP>:5003` on your phone (the app logs the exact URL at startup, e.g. `https://192.168.1.113:5003`).
-  - You may need to allow the port through Windows Firewall (`5003`).
-  - Browsers warn about the self-signed cert on other devices — that's expected; proceed to `Advanced → Continue`.
-- **Internet (anywhere):** run a tunnel from another terminal, then open the tunnel URL:
-  - **cloudflared** (free): `cloudflared tunnel --url https://localhost:5003`
+- **LAN (same Wi-Fi):** open `http://<your-computer-IP>:5003` on your phone (the app logs
+  the exact URL at startup — **http** on Linux/macOS, **https** on Windows).
+  - You may need to allow the port through your firewall (`5003`).
+  - On **https**, other devices will warn about the self-signed cert — that's expected; use
+    `Advanced → Continue`. Using **http** on the LAN avoids the warning entirely (but note
+    the mic/clipboard "secure context" benefits only apply to `localhost`, not a LAN IP).
+- **Internet (anywhere):** run a tunnel from another terminal, then open the tunnel URL.
+  Match the scheme your instance uses (`http` unless you set `TRIOFORGE_SSL=1`):
+  - **cloudflared** (free): `cloudflared tunnel --url http://localhost:5003`
   - **ngrok**: `ngrok http 5003`
 
 > ⚠️ Exposing the app to the internet lets *anyone* with the URL use it. TrioForge has no built-in auth — put a reverse proxy with a password (or a tunnel with auth) in front of it before exposing it publicly.
@@ -540,17 +603,41 @@ The default model is **`vaultbox/qwen3.5-uncensored:9b`** — an abliterated (re
 
 ---
 
-## 🔒 Running with HTTPS
+## 🔒 HTTP vs HTTPS
 
-### Windows / macOS — Waitress
+**By default the app serves plain HTTP on Linux/macOS and HTTPS on Windows.**
 
-`python py/app.py` auto-generates SSL certificates (via **mkcert**) and serves HTTPS on port **5003** (configurable via `TRIOFORGE_PORT`). You can also run the dedicated Waitress entry point:
+Why the difference? A self-signed certificate makes browsers show a scary
+*"Your connection is not private"* page — and **Firefox uses its own trust store**, so it
+warns even when the OS trusts the mkcert CA. Plain `http://localhost` avoids that
+**without giving anything up**: `localhost` is a **secure context**, so the microphone,
+clipboard and crypto APIs all keep working.
+
+| OS | Default URL | Cert warning? |
+|----|-------------|---------------|
+| Linux / macOS | `http://localhost:5003` | ✅ none |
+| Windows | `https://localhost:5003` | none (mkcert CA trust-installed) |
+| Docker | `http://localhost:5002` | ✅ none |
+
+Force either mode at any time:
+
+```bash
+TRIOFORGE_SSL=1 ./run.sh    # force HTTPS (only warning-free if your browser trusts the cert)
+TRIOFORGE_SSL=0 ./run.sh    # force plain HTTP
+```
+
+Certificates are generated automatically with **mkcert** — the correct binary is
+downloaded for your OS/arch (`darwin-arm64`, `linux-x64`, `windows-amd64`, …), or an
+existing `mkcert` on your `PATH` is used. The CA lives in `~/.local/share/mkcert`
+(Linux/macOS) or `%LOCALAPPDATA%\mkcert` (Windows).
+
+### Waitress entry point (Windows / macOS)
 
 ```bash
 python py/https_guni_n_waitress.py
 ```
 
-### Linux / Docker — Gunicorn
+### Gunicorn entry point (Linux / WSL2 / Docker)
 
 ```bash
 gunicorn -c py/gunicorn_conf.py py.app:app
@@ -562,7 +649,43 @@ gunicorn -c py/gunicorn_conf.py py.app:app
 
 ## 🐳 Docker
 
-Docker runs the app with **gunicorn** (a Linux production WSGI server — the native Windows path uses Waitress instead). This is the recommended way to run TrioForge on a **Linux server, WSL2, or a NAS**.
+Docker runs the app with **gunicorn** (a Linux production WSGI server — the native
+Windows path uses Waitress instead). This is the recommended way to run TrioForge on a
+**Linux server, WSL2, or a NAS**.
+
+### 🚀 One command (recommended)
+
+```bash
+chmod +x docker/application.sh     # first time only
+./docker/application.sh
+```
+
+`docker/application.sh` is the Docker equivalent of `run.sh` — it does the whole first-run
+setup for you:
+
+1. Checks **Docker + Compose** are installed **and the daemon is running** — with
+   copy-paste per-OS install instructions if either is missing (macOS Homebrew / Linux
+   `apt` + `usermod -aG docker`).
+2. Creates the **host folders that get bind-mounted** (`json_configuration/`,
+   `sqlite_data/`, `static/uploads/`, `cert_store/`, `logs/`, and the three model folders)
+   as *your* user — so Docker never creates root-owned directories in your project.
+3. Checks for a **host `llama-server`** (on `PATH`, `/opt/homebrew/bin`, `/usr/local/bin`,
+   `/usr/bin`, `~/llama.cpp/build/bin`, …) and tells you whether it's actually reachable on
+   `:8080` — so you know before you chat whether local models will work.
+4. **Builds** the image (only when needed) and **starts** the stack.
+5. Prints the exact **URL**, plus how to view logs, check status, and stop it.
+
+```bash
+./docker/application.sh --build        # force a rebuild
+./docker/application.sh --no-build     # start without building
+./docker/application.sh --foreground   # run attached (Ctrl+C stops it)
+./docker/application.sh --logs         # follow logs
+./docker/application.sh --status       # container status
+./docker/application.sh --stop         # stop + remove
+./docker/application.sh --help
+```
+
+### Or do it by hand
 
 ```bash
 cd docker
@@ -571,13 +694,44 @@ docker compose up -d     # start in detached mode
 docker compose logs -f   # follow the logs
 ```
 
-Then open **https://localhost:5001/** (or `http://localhost:5001/` if you skip certs — see below).
+Then open **http://localhost:5002/** — the compose maps host `5002` → container `5001`
+to dodge a stale WSL port-relay. Set `TRIOFORGE_PORT` **and** the `ports:` mapping
+together if you want a different one (e.g. `"5003:5003"` + `TRIOFORGE_PORT=5003`).
 
 ### How it works
 
-1. **`Dockerfile`** — a slim `python:3.10-slim` image. It installs the system build tools + **ffmpeg** (for video-to-text), the Python deps from `requirements.txt`, copies the app, then starts gunicorn on port **5001**. The CMD runs `docker-entrypoint.sh` as the entrypoint *before* gunicorn.
-2. **`docker-entrypoint.sh`** — a tiny script that generates a **self-signed TLS certificate** (`cert_store/localhost+1.pem` + `-key.pem`) if you haven't mounted one, then execs gunicorn. `gunicorn_conf.py` reads those certs and serves **HTTPS**. Your browser will warn the cert isn't trusted — mount your own `cert_store/` volume (e.g. mkcert-issued) if you want a trusted cert, or ignore it.
-3. **`docker-compose.yml`** — binds port **`5001:5001`**, mounts your data directories as volumes, and points the app at your host's Ollama via `OLLAMA_BASE_URL=http://host.docker.internal:11434`. `extra_hosts: host.docker.internal:host-gateway` makes that hostname resolve on Linux Docker Engine too (Docker Desktop on Mac/Windows/WSL2 already maps it).
+0. **`docker/application.sh`** — the one-command helper described above. It only *drives*
+   Docker (checks, folders, build, up) and adds nothing to the image itself.
+1. **`Dockerfile`** — slim `python:3.10-slim` plus build tools, **openssl** and **ffmpeg**
+   (video/audio-to-text). Installs `requirements.txt`, copies the app, pre-creates the
+   data + model folders, and exposes **5001**. The optional ML stack
+   (`requirements-ml.txt`, torch ~2 GB) is commented out so the image stays small —
+   uncomment to bake it in.
+2. **`docker-entrypoint.sh`** — serves **plain HTTP by default** (no cert scare). Only when
+   `TRIOFORGE_SSL=1` does it generate a self-signed cert and let gunicorn serve HTTPS.
+3. **`gunicorn_conf.py`** — binds `TRIOFORGE_PORT` (default `5001`), honours
+   `TRIOFORGE_SSL`, and keeps the worker count **low (2)**: TrioForge keeps per-process
+   state and SQLite writes are only guarded per-process, so many workers cause
+   *"database is locked"*. Override with `TRIOFORGE_WORKERS`.
+
+### llama.cpp in Docker (the important bit)
+
+**The image does not ship `llama-server`** — it's a GPU service, and you want it on the
+host anyway. The compose sets `LLAMA_HOST=host.docker.internal`, which puts the app into
+**remote mode**: it simply *connects* to a llama-server running on your host instead of
+trying to launch one inside the container (and it needs no local executable for that).
+
+```bash
+# on the HOST (where your GPU is):
+llama-server -m models/your-model.gguf --port 8080
+# then:
+cd docker && docker compose up -d
+```
+
+The model folders are bind-mounted, so GGUFs you drop on the host appear in the
+container's dropdown. If you'd rather run llama.cpp *inside* the container, uncomment the
+`deploy:` GPU block in the compose file (needs the image to include llama-server plus the
+NVIDIA Container Toolkit).
 
 ### Connecting Ollama
 
@@ -595,11 +749,17 @@ The compose file mounts these as volumes so your data survives restarts:
 | `../json_configuration` | `/app/json_configuration` | Conversations, notes, model config |
 | `../sqlite_data` (bind mount) | `/app/sqlite_data` | SQLite chat history — shares the host's actual DBs |
 | `../static/uploads` | `/app/static/uploads` | Uploaded files & generated media |
-| `../cert_store` | `/app/cert_store` | TLS certificates |
+| `../cert_store` | `/app/cert_store` | TLS certificates (only used when `TRIOFORGE_SSL=1`) |
+| `../models`, `../video_model`, `../universal_models_to_text` | `/app/...` | Your GGUF models — drop them on the host, they appear in the container |
+| `../logs` | `/app/logs` | `server.log` + `llamacpp.log` — read these to diagnose a model failure |
 
-**Important:** the image deliberately excludes your local models. `models/`, `video_model/`, and `universal_models_to_text/` (all GGUF weights, ~30 GB) are in `.dockerignore`, and your `.venv/` is too — the container installs its own deps and uses cloud providers (OpenRouter / Gemini / Groq / …) which need no local weights. Local llama.cpp/Ollama models run on the host, not inside the container.
+**Important:** the image deliberately excludes your local models **and** the auto-installed
+llama.cpp binaries. `models/`, `video_model/`, `universal_models_to_text/`, `tools/llama.cpp/`
+(hundreds of MB) and `.venv*` are all in `.dockerignore`. The container installs its own deps,
+and local inference runs on the **host** (llama.cpp remote mode / Ollama), not inside the image.
 
-> ⚠️ The app uses `fork()`/POSIX signals, so gunicorn only runs on **Linux / WSL2 / macOS**, not native Windows. On Windows use `application.bat` (Waitress) instead.
+> ⚠️ gunicorn relies on `fork()`/POSIX signals, so it only runs on **Linux / WSL2 / macOS**,
+> not native Windows. On Windows use `application.bat` (Waitress) instead.
 
 ---
 
@@ -609,10 +769,13 @@ The compose file mounts these as volumes so your data survives restarts:
 |------|---------------|
 | `json_configuration/` | Conversations, notes, model config, attachments |
 | `sqlite_data/` | SQLite databases (chat history, notes, corkboard) |
-| `cert_store/` | Auto-generated SSL certificates |
+| `cert_store/` | Auto-generated SSL certificates (only used with `TRIOFORGE_SSL=1`) |
 | `static/uploads/` | Uploaded images/files |
+| `logs/` | `server.log` + `llamacpp.log` (llama-server output — read this if a model fails) |
+| `tools/llama.cpp/` | Auto-installed llama.cpp builds from **⚡ Auto-install** |
 
-All of the above are **git-ignored** — every user keeps their own data private.
+All of the above are **git-ignored** — every user keeps their own data private. (Same for
+auto-installed llama.cpp binaries: they're excluded, so a clone stays small.)
 
 ### 🚫 Model files are never committed
 
@@ -637,8 +800,11 @@ TrioForge/
 │   ├── app.py                   # Main Flask app + chat/conversation routes
 │   ├── common.py                # Shared JSON / SQLite / embedding helpers
 │   ├── paths.py                 # Project-root path helper
+│   ├── llamacpp_service.py      # llama-server lifecycle + cross-platform exe/model resolution
+│   ├── llama_installer.py       # ⚡ Auto-install llama.cpp for the detected GPU backend
+│   ├── setup_check.py           # First-run checker + GPU-backend detection (Metal/CUDA/ROCm/Vulkan/CPU)
 │   ├── comfyui_service.py       # ComfyUI image + video + audio generation (live workflow discovery)
-│   ├── video_to_text.py         # Video → sampled frames (ffmpeg) for vision models
+│   ├── video_to_text.py         # Video → frames / audio → WAV chunks (ffmpeg) for vision & audio models
 │   ├── providers/
 │   │   └── llm_providers.py     # LLM provider abstraction (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter)
 │   ├── features/
@@ -649,19 +815,24 @@ TrioForge/
 │   │   ├── launcher.py          # Cross-platform launcher
 │   │   └── voice_agent.py       # Local voice-to-voice agent launcher
 │   ├── https_guni_n_waitress.py # Waitress + HTTPS server (Windows)
-│   └── gunicorn_conf.py         # Gunicorn server config (Linux)
+│   └── gunicorn_conf.py         # Gunicorn server config (Linux/Docker)
 ├── docker/                      # ← Docker files
+│   ├── application.sh           # One-command Docker setup/launch (Linux/macOS)
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   └── docker-entrypoint.sh
+├── .github/workflows/
+│   └── macos-smoke.yml          # CI: runs + tests the app on real Apple Silicon
 ├── pyproject.toml               # uv project (deps + optional groups)
 ├── uv.lock                      # uv lockfile (reproducible env)
 ├── application.bat              # Windows launcher (double-click)
-├── run.sh                       # Linux / macOS / WSL launcher
+├── run.sh                       # Linux / macOS / WSL launcher (auto-setup)
 ├── voice_agent.bat              # Voice agent launcher (double-click)
 ├── templates/
 │   └── index.html               # Frontend (HTML/CSS/JS)
 ├── static/                      # Static vendor assets (highlight, mermaid, …) + generated media
+├── tools/llama.cpp/             # ⚡ Auto-installed llama.cpp builds (git-ignored)
+├── logs/                        # server.log + llamacpp.log (git-ignored)
 ├── models/                      # Image/text GGUF models + Ollama Modelfile (weights git-ignored)
 ├── video_model/                 # Video-only GGUF models (git-ignored)
 ├── universal_models_to_text/    # All-to-all models: text/image/video/audio → text (git-ignored)
