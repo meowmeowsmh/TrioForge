@@ -866,13 +866,26 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
 
 # ── HTML caching ──
 _cached_html = None
-_cached_html_model = None
+_cached_html_key = None
 
 def get_cached_html():
-    global _cached_html, _cached_html_model
-    if _cached_html is None or _cached_html_model != current_model:
+    """Return the index.html contents, re-reading when the FILE changes.
+
+    The cache key is (mtime, size, model) — NOT just the model. Previously the
+    model was the only key, so the server kept serving a stale HTML page forever:
+    editing templates/index.html or `git pull`-ing an update appeared to "do
+    nothing" until a full server restart. Now a changed file is picked up on the
+    next page load.
+    """
+    global _cached_html, _cached_html_key
+    try:
+        st = os.stat(CHAT_HTML_PATH)
+        key = (st.st_mtime_ns, st.st_size, current_model)
+    except Exception:
+        key = (None, None, current_model)
+    if _cached_html is None or _cached_html_key != key:
         _cached_html = build_html(current_model)
-        _cached_html_model = current_model
+        _cached_html_key = key
     return _cached_html
 
 # ── Build HTML (served from templates/index.html) ──
