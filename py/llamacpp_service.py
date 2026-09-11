@@ -417,6 +417,24 @@ def status():
     return {"running": running, "host": host, "port": port, "model": model}
 
 
+def server_url():
+    """Base URL (…/v1) of the llama.cpp server the app should TALK to.
+
+    Same resolution `start()` uses: LLAMA_HOST / LLAMA_PORT win, then
+    voiceguide_llama.cpp_guide/config.json, then 127.0.0.1:8080. This matters in
+    remote mode (Docker → the host's llama-server): the provider has to send its
+    chat requests to the server the service manager actually connected to,
+    instead of posting to 127.0.0.1 inside the container.
+    """
+    cfg = _config() or {}
+    host = os.environ.get("LLAMA_HOST") or cfg.get("llama_host", "127.0.0.1")
+    try:
+        port = int(os.environ.get("LLAMA_PORT") or cfg.get("llama_port", 8080))
+    except (TypeError, ValueError):
+        port = 8080
+    return "http://{}:{}/v1".format(host, port)
+
+
 def _default_server_args(model_path=None):
     """Stable llama-server defaults for an 8 GB GPU.
 
