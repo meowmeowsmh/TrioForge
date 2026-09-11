@@ -540,16 +540,36 @@ class OllamaProvider(LLMProvider):
             return []
 
 
+def _default_llamacpp_url() -> str:
+    """Base URL (…/v1) of the llama.cpp server to talk to.
+
+    Delegates to llamacpp_service so the provider and the service manager can
+    never disagree: LLAMA_HOST / LLAMA_PORT win, then
+    voiceguide_llama.cpp_guide/config.json, then 127.0.0.1:8080.
+    """
+    try:
+        import llamacpp_service
+        return llamacpp_service.server_url()
+    except Exception:
+        host = os.environ.get("LLAMA_HOST") or "127.0.0.1"
+        port = os.environ.get("LLAMA_PORT") or "8080"
+        return "http://{}:{}/v1".format(host, port)
+
+
 class LlamaCppProvider(LLMProvider):
     # Keep llama.cpp max_tokens conservative: sending a huge value (e.g. the
     # 65536 base default) makes some small/GGUF models return 400 Bad Request.
     DEFAULT_MAX_TOKENS = 4096
 
     def __init__(self, models_dir: Optional[str] = None,
-                 server_url: str = "http://127.0.0.1:8080/v1",
+                 server_url: Optional[str] = None,
                  context_length: int = 16384):  # matches the auto-configured server ctx
         self.models_dir = os.path.abspath(models_dir) if models_dir else root_path("models")
-        self.server_url = server_url.rstrip("/")
+        # Resolve the server the same way the llama.cpp service manager does, so
+        # remote mode (Docker → the host's llama-server) works for every route —
+        # not just /chat. Hard-coding 127.0.0.1:8080 here silently sent
+        # corkboard/notes AI calls to a container-local port that nothing serves.
+        self.server_url = (server_url or _default_llamacpp_url()).rstrip("/")
         self.context_length = context_length
         self._ensure_models_dir()
         self.available_models = self._discover_models()
