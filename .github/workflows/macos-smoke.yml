@@ -47,16 +47,16 @@ jobs:
           set -e
           PYTHONPATH=py .venv-linux/bin/python - <<'PY'
           import platform
-          assert platform.system() == "Darwin", platform.system()
+          assert platform.system() == "Darwin", "not running on macOS: %s" % platform.system()
 
           import setup_check as sc
           sc._gpu_cache = None
           gpu = sc._gpu_backend()
           print("detected gpu:", gpu)
           assert gpu["backend"] == "metal", gpu          # Apple Silicon -> Metal
-          assert "Metal" in sc._llamacpp_install_hint(gpu)
-          assert "brew" in sc._llamacpp_install_hint(gpu)
-          assert "macOS" in sc._comfyui_install_hint(gpu)
+          assert "Metal" in sc._llamacpp_install_hint(gpu), "llama.cpp hint lacks Metal"
+          assert "brew" in sc._llamacpp_install_hint(gpu), "llama.cpp hint lacks brew"
+          assert "macOS" in sc._comfyui_install_hint(gpu), "ComfyUI hint lacks macOS"
 
           import app
           asset = app._mkcert_asset_name()
@@ -71,8 +71,15 @@ jobs:
           print("llama.cpp asset:", picked)
           assert picked == "llama-b10874-bin-macos-arm64.tar.gz", picked
 
+          # Apple-Silicon Homebrew lives in /opt/homebrew (NOT /usr/local), so the
+          # resolver MUST search it or `brew install llama.cpp` is never found.
+          # Print what it actually searches, so a failure here is self-explaining.
           import inspect, llamacpp_service as lcs
-          assert "/opt/homebrew/bin" in inspect.getsource(lcs._resolve_llama_server_exe)
+          src = inspect.getsource(lcs._resolve_llama_server_exe)
+          searched = [ln.strip() for ln in src.splitlines() if ln.strip().startswith('"')]
+          print("resolver searches:", searched[:6])
+          assert "/opt/homebrew/bin" in src, (
+              "resolver does not search /opt/homebrew/bin (Apple-Silicon Homebrew)")
           print("platform logic OK")
           PY
 
