@@ -2,9 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 <title>TrioForge chat interface</title>
+<!-- PWA: makes the app installable ("Add to Home Screen") on phone + desktop -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/pwa/apple-touch-icon.png">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TrioForge">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" defer></script>
@@ -1471,6 +1479,95 @@ body.light-mode .weather-country-select option {
     border-top: 1px solid rgba(255,255,255,0.06);
     line-height: 1.5;
 }
+
+/* ===== full-text search: message hits ===== */
+.msg-hits { margin-top: 6px; }
+.msg-hit {
+    padding: 7px 10px;
+    margin: 4px 2px;
+    border-radius: 8px;
+    border: 1px solid rgba(88,166,255,0.18);
+    background: rgba(88,166,255,0.06);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.msg-hit:hover { background: rgba(88,166,255,0.14); border-color: rgba(88,166,255,0.45); }
+.msg-hit-meta {
+    font-size: 10.5px; color: #8b949e; margin-bottom: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.msg-hit-snip { font-size: 12px; color: #c9d1d9; line-height: 1.45; word-break: break-word; }
+.msg-hit-snip mark, mark {
+    background: rgba(240,196,25,0.30); color: #ffe58f;
+    border-radius: 3px; padding: 0 2px;
+}
+body.light-mode .msg-hit-snip mark, body.light-mode mark {
+    background: rgba(255,213,0,0.55); color: #1f2328;
+}
+/* flash a message jumped to from a search hit */
+.msg.msg-flash { animation: msgflash 2.2s ease-out; }
+@keyframes msgflash {
+    0%, 45% { box-shadow: 0 0 0 2px rgba(88,166,255,0.85); background: rgba(88,166,255,0.12); }
+    100%    { box-shadow: 0 0 0 0 rgba(88,166,255,0); }
+}
+
+/* ===== export / import row ===== */
+.sidebar-io {
+    display: flex; gap: 6px; padding: 6px 10px 2px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+.sidebar-io button {
+    flex: 1; padding: 6px 8px; font-size: 11px; cursor: pointer;
+    background: rgba(33,38,45,0.8); color: #c9d1d9;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+}
+.sidebar-io button:hover { background: rgba(88,166,255,0.16); border-color: #58a6ff; color: #fff; }
+
+/* ===== mobile / small screens ===== */
+@media (max-width: 900px) {
+    .top-bar { padding: 8px 10px; gap: 8px; grid-template-columns: auto 1fr; }
+    .top-bar .left h1 { font-size: 15px; }
+    .top-bar .center-tabs { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
+    .top-bar .right { grid-column: 1 / -1; grid-row: 3; justify-self: stretch; justify-content: flex-start; }
+    .top-bar-icons { justify-content: flex-start; gap: 6px; }
+    .top-bar-icons .clear-btn, .top-bar-icons .unload-btn { padding: 5px 8px; font-size: 12px; }
+    .provider-select, .model-select { font-size: 12px; padding: 5px 8px; }
+
+    /* sidebar becomes an overlay drawer */
+    .sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0; z-index: 9000;
+        width: 82vw; max-width: 320px;
+        transform: translateX(-102%); transition: transform 0.25s ease;
+        box-shadow: 8px 0 30px rgba(0,0,0,0.6);
+    }
+    body.sidebar-open .sidebar { transform: translateX(0); }
+    body.sidebar-open::after {
+        content: ''; position: fixed; inset: 0; z-index: 8999;
+        background: rgba(0,0,0,0.5);
+    }
+    .sidebar-toggle { display: flex !important; }
+
+    /* input bar: model picker + send on their own row */
+    .input-bar { flex-wrap: wrap; gap: 6px; padding: 8px; }
+    #msgInput { flex: 1 1 100%; min-height: 46px; }
+    #modelSearchInput { flex: 1 1 90px; }
+    .model-select { flex: 1 1 130px; }
+    #sendBtn { flex: 0 0 auto; padding: 10px 18px; }
+
+    /* modals fill the screen comfortably */
+    .modal > div, #setupModal > div, #logsModal > div {
+        width: 94vw !important; max-width: 94vw !important;
+        max-height: 88vh; overflow: auto;
+    }
+    .chat-area { padding: 10px; }
+    .msg { max-width: 94% !important; }
+}
+
+@media (max-width: 520px) {
+    .top-bar .left h1 { display: none; }
+    .msg-hit-meta { font-size: 10px; }
+    #searchInput { font-size: 13px; }
+}
 </style>
 </head>
 <body>
@@ -1482,9 +1579,15 @@ body.light-mode .weather-country-select option {
       <button class="new-chat-btn" onclick="openRestoreModal()" style="background:#2d2d3d; box-shadow:none;" title="Restore deleted chats, notes and pins">🗄️</button>
     </div>
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="🔍 Search chats... (title & messages)" oninput="searchChats()">
+      <input type="text" id="searchInput" placeholder="🔍 Search messages... (full text)" oninput="searchChats()">
     </div>
     <div class="conv-list" id="convList"></div>
+    <div class="sidebar-io">
+      <button onclick="exportAllChats('md')" title="Download every chat as Markdown">⬇ All (MD)</button>
+      <button onclick="exportAllChats('json')" title="Download every chat as JSON (re-importable)">⬇ All (JSON)</button>
+      <button onclick="document.getElementById('importFileInput').click()" title="Import a TrioForge JSON export">⬆ Import</button>
+    </div>
+    <input type="file" id="importFileInput" accept=".json,application/json" style="display:none" onchange="importChats(this)">
     <div class="sidebar-footer">Drag to reorder · ✏️ to rename</div>
   </div>
 
@@ -2240,6 +2343,12 @@ makeThemeStars();
 var sidebar = document.getElementById('sidebar');
 var sidebarVisible = localStorage.getItem('sidebarVisible') !== 'false';
 function toggleSidebar() {
+    // Phones/tablets: the sidebar is an overlay drawer (see the @media <=900px
+    // rules), so we toggle a class on <body>. Desktop keeps the normal collapse.
+    if (window.matchMedia('(max-width: 900px)').matches) {
+        document.body.classList.toggle('sidebar-open');
+        return;
+    }
     sidebarVisible = !sidebarVisible;
     localStorage.setItem('sidebarVisible', sidebarVisible);
     sidebar.classList.toggle('hidden', !sidebarVisible);
@@ -2900,19 +3009,114 @@ function searchChats() {
             renderConvList(conversations);
             return;
         }
-        fetch('/conversations/search?q=' + encodeURIComponent(query))
-            .then(r => r.json())
-            .then(data => {
-                if (data.error) {
-                    status.textContent = '⚠️ ' + data.error;
-                    return;
-                }
-                renderConvList(data);
-            })
-            .catch(err => {
-                status.textContent = '⚠️ Search error: ' + err;
-            });
-    }, 300);
+        var q = encodeURIComponent(query);
+        // Title matches (as before) + ranked FULL-TEXT message hits (FTS5).
+        Promise.all([
+            fetch('/conversations/search?q=' + q).then(r => r.json()).catch(() => []),
+            fetch('/messages/search?q=' + q + '&limit=30').then(r => r.json()).catch(() => ({ results: [] }))
+        ]).then(function(res) {
+            var convs = Array.isArray(res[0]) ? res[0] : [];
+            var hits = (res[1] && res[1].results) || [];
+            renderConvList(convs);
+            renderMessageHits(hits, query);
+        }).catch(function(err) {
+            status.textContent = '⚠️ Search error: ' + err;
+        });
+    }, 250);
+}
+
+// Escape HTML, then turn the server's private-use markers into <mark>. Because
+// everything is escaped FIRST, the result is XSS-safe even for pasted HTML.
+function _snipHtml(s) {
+    var esc = String(s || '').replace(/\ue000/g, '\u0001').replace(/\ue001/g, '\u0002');
+    esc = esc.replace(/[&<>"']/g, function(c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+    return esc.replace(/\u0001/g, '<mark>').replace(/\u0002/g, '</mark>');
+}
+
+function renderMessageHits(hits, query) {
+    if (!hits || !hits.length) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'msg-hits';
+    var head = document.createElement('div');
+    head.className = 'group-heading';
+    head.textContent = '💬 In messages (' + hits.length + ')';
+    wrap.appendChild(head);
+    hits.forEach(function(h) {
+        var row = document.createElement('div');
+        row.className = 'msg-hit';
+        row.title = 'Open this message';
+        var meta = document.createElement('div');
+        meta.className = 'msg-hit-meta';
+        meta.textContent = (h.role === 'user' ? '🧑 ' : '🤖 ') + (h.conversation_title || 'Untitled');
+        var snip = document.createElement('div');
+        snip.className = 'msg-hit-snip';
+        snip.innerHTML = _snipHtml(h.snippet);
+        row.appendChild(meta);
+        row.appendChild(snip);
+        row.onclick = function() { jumpToMessage(h.conversation_id, h.id); };
+        wrap.appendChild(row);
+    });
+    convList.appendChild(wrap);
+}
+
+function jumpToMessage(cid, mid) {
+    function go() {
+        var el = document.querySelector('.msg[data-msg-id="' + mid + '"]');
+        if (!el) {
+            status.textContent = '⚠️ That message is older than the loaded history.';
+            return;
+        }
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('msg-flash');
+        setTimeout(function() { el.classList.remove('msg-flash'); }, 2200);
+    }
+    if (cid === currentConv) { go(); return; }
+    selectConversation(cid);
+    setTimeout(go, 700);   // wait for the conversation's messages to render
+}
+
+// ── Export / import ─────────────────────────────────────────────────────────
+// Downloads go through the browser (the server sets Content-Disposition), so
+// these are plain navigations — no fetch/blob juggling needed.
+function exportAllChats(format) {
+    status.textContent = '⬇ Preparing export…';
+    window.location.href = '/conversations/export?format=' + encodeURIComponent(format || 'md');
+    setTimeout(function() { status.textContent = '✅ Export started'; }, 800);
+}
+
+function exportChat(cid, format) {
+    status.textContent = '⬇ Preparing export…';
+    window.location.href = '/conversations/' + encodeURIComponent(cid) +
+        '/export?format=' + encodeURIComponent(format || 'md');
+    setTimeout(function() { status.textContent = '✅ Export started'; }, 800);
+}
+
+function importChats(inputEl) {
+    var f = inputEl && inputEl.files && inputEl.files[0];
+    if (!f) return;
+    var fd = new FormData();
+    fd.append('file', f);
+    status.textContent = '⬆ Importing ' + f.name + '…';
+    fetch('/conversations/import', { method: 'POST', body: fd })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+        .then(function(res) {
+            if (res.ok && res.d.ok) {
+                var n = res.d.imported || 0;
+                status.textContent = '✅ Imported ' + n + ' conversation' + (n === 1 ? '' : 's');
+                loadConversations();
+            } else {
+                var err = (res.d && res.d.error) || 'import failed';
+                status.textContent = '❌ ' + err;
+                alert('Import failed:\n' + err);
+            }
+        })
+        .catch(function(e) {
+            status.textContent = '❌ Import error: ' + e;
+            alert('Import error: ' + e);
+        })
+        .finally(function() { inputEl.value = ''; });
 }
 
 var loadConvsReq = 0;
@@ -2968,6 +3172,15 @@ function renderConvList(convs) {
                 titleSpan.className = 'title';
                 titleSpan.textContent = conv.title || 'Untitled';
                 div.appendChild(titleSpan);
+                var exportBtn = document.createElement('button');
+                exportBtn.className = 'rename-btn';
+                exportBtn.textContent = '⬇';
+                exportBtn.title = 'Export this chat (Markdown) — hold Alt for JSON';
+                exportBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    exportChat(conv.id, e.altKey ? 'json' : 'md');
+                };
+                div.appendChild(exportBtn);
                 var renameBtn = document.createElement('button');
                 renameBtn.className = 'rename-btn';
                 renameBtn.textContent = '✏️';
@@ -2997,6 +3210,7 @@ function renderConvList(convs) {
                 div.addEventListener('drop', handleDrop);
                 div.addEventListener('click', function() {
                     selectConversation(conv.id);
+                    document.body.classList.remove('sidebar-open');   // close mobile drawer
                 });
                 convList.appendChild(div);
             });
@@ -3714,6 +3928,7 @@ function renderMarkdown(text) {
 function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+    if (entry && entry.id != null) div.dataset.msgId = String(entry.id);   // search jump target
     var prof = getProfile(role);
     if (prof && prof.name) {
         var nameEl = document.createElement('div');
@@ -7297,6 +7512,17 @@ document.addEventListener('input', function(e) {
         localStorage.setItem('pin_default_color', e.target.value);
     }
 });
+
+// ── PWA: register the service worker (enables "Add to Home Screen") ──
+// The worker intentionally does NOT cache "/" or the API — only /static/ assets —
+// so it can never serve a stale UI (the bug we fixed earlier).
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js').catch(function(e) {
+            console.warn('service worker registration skipped:', e);
+        });
+    });
+}
 </script>
 
 <!-- Workspace / API key settings modal -->

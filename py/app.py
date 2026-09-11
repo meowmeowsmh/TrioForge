@@ -230,8 +230,11 @@ for _capability_dir in ("models", "video_model", "universal_models_to_text"):
 # ── SQLite ──
 _sqlite_conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
 _sqlite_lock = threading.Lock()
+# Set True when the FTS5 full-text index is available (falls back to LIKE otherwise).
+_FTS_OK = False
 
 def _init_sqlite():
+    global _FTS_OK
     with _sqlite_lock:
         # WAL / synchronous are unreliable on WSL /mnt/<drive> mounts (they throw
         # "disk I/O error"); apply each defensively and fall back to defaults.
@@ -272,6 +275,54 @@ def _init_sqlite():
             _sqlite_conn.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);")
+
+        # ── Full-text search (FTS5) over message content ──
+        # External-content FTS table: space-efficient, and kept in sync by the
+        # triggers below. If this SQLite build lacks FTS5 we degrade to LIKE.
+        try:
+            _sqlite_conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5("
+                "content, conversation_id UNINDEXED, role UNINDEXED, "
+                "content='messages', content_rowid='id');"
+            )
+            _sqlite_conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN "
+                "INSERT INTO messages_fts(rowid, content, conversation_id, role) "
+                "VALUES (new.id, new.content, new.conversation_id, new.role); END;"
+            )
+            _sqlite_conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN "
+                "INSERT INTO messages_fts(messages_fts, rowid, content, conversation_id, role) "
+                "VALUES ('delete', old.id, old.content, old.conversation_id, old.role); END;"
+            )
+            _sqlite_conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN "
+                "INSERT INTO messages_fts(messages_fts, rowid, content, conversation_id, role) "
+                "VALUES ('delete', old.id, old.content, old.conversation_id, old.role); "
+                "INSERT INTO messages_fts(rowid, content, conversation_id, role) "
+                "VALUES (new.id, new.content, new.conversation_id, new.role); END;"
+            )
+            # Is the INDEX actually populated? For an external-content FTS table
+            # `SELECT count(*) FROM messages_fts` reads through to `messages`, so
+            # it can't tell us. The shadow table `messages_fts_docsize` holds one
+            # row per INDEXED document, so it's the honest signal. If the index is
+            # empty while messages exist (fresh install, or an interrupted
+            # rebuild), backfill it once.
+            try:
+                cur.execute("SELECT count(*) FROM messages_fts_docsize")
+                indexed = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                indexed = 0
+            cur.execute("SELECT count(*) FROM messages")
+            n_msg = cur.fetchone()[0]
+            if indexed == 0 and n_msg > 0:
+                _sqlite_conn.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild');")
+                logger.info("Built full-text search index over %d existing message(s).", n_msg)
+            _FTS_OK = True
+        except sqlite3.OperationalError as e:
+            _FTS_OK = False
+            logger.warning("FTS5 unavailable (%s) — message search falls back to LIKE.", e)
+
         _sqlite_conn.commit()
 _init_sqlite()
 
@@ -563,13 +614,14 @@ def get_messages(cid: str) -> List[dict]:
     with _sqlite_lock:
         cur = _sqlite_conn.cursor()
         cur.execute(
-            "SELECT role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at",
+            "SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at",
             (cid,)
         )
         rows = cur.fetchall()
     msgs = []
-    for role, content, attachments_json, created_at in rows:
-        msg = {"role": role, "text": content or "", "ts": created_at}
+    for mid, role, content, attachments_json, created_at in rows:
+        # `id` lets the UI jump to a specific message from a search hit.
+        msg = {"id": mid, "role": role, "text": content or "", "ts": created_at}
         if attachments_json:
             try:
                 att = std_json.loads(attachments_json)
@@ -634,7 +686,10 @@ def add_message(cid: str, role: str, text: str, images: Optional[List[dict]] = N
         if cid in _conversations_cache:
             conv = _conversations_cache[cid]
             if role == "user" and len(get_messages(cid)) == 1:
-                conv["title"] = text[:40] + ("..." if len(text) > 40 else "")
+                # A readable first title (filler stripped) instead of a raw
+                # character truncation. May be refined by _auto_title().
+                conv["title"] = (_heuristic_title(text)
+                                 or (text[:40] + ("..." if len(text) > 40 else "")))
             conv["last_activity"] = datetime.now().isoformat()
             _conversations_dirty = True
     save_conversations_async(_conversations_cache)
@@ -1024,6 +1079,71 @@ def api_ping():
     really is TrioForge, and otherwise picks a free port instead.
     """
     return jsonify({"app": "trioforge", "ok": True})
+
+
+_PWA_MANIFEST = {
+    "name": "TrioForge — AI Workspace",
+    "short_name": "TrioForge",
+    "description": "Your own private AI workspace — chat, notes and corkboard with local + cloud models.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#0d1117",
+    "theme_color": "#0d1117",
+    "icons": [
+        {"src": "/static/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "/static/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "/static/pwa/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    ],
+}
+
+# Minimal service worker. Its job is to make the app INSTALLABLE ("Add to Home
+# Screen"); it deliberately does NOT cache "/" or the API — this app is local and
+# dynamic, and caching the shell is exactly what caused the stale-UI bug.
+_SERVICE_WORKER = """\
+const CACHE = 'trioforge-static-v1';
+self.addEventListener('install', (e) => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  let url;
+  try { url = new URL(req.url); } catch (e) { return; }
+  if (url.origin !== self.location.origin) return;      // never touch CDNs / APIs
+  // App shell + API: always network (no stale UI, no stale data).
+  if (url.pathname === '/' || url.pathname.startsWith('/api/') ||
+      url.pathname.startsWith('/conversations') || url.pathname.startsWith('/notes') ||
+      url.pathname.startsWith('/corkboard') || url.pathname.startsWith('/messages')) return;
+  // Static assets: cache-first, refreshed in the background.
+  if (url.pathname.startsWith('/static/')) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const hit = await cache.match(req);
+      if (hit) return hit;
+      const res = await fetch(req);
+      try { if (res && res.ok) cache.put(req, res.clone()); } catch (e) {}
+      return res;
+    })());
+  }
+});
+"""
+
+
+@app.route('/manifest.webmanifest', methods=['GET'])
+def pwa_manifest():
+    resp = Response(json_dumps_pretty(_PWA_MANIFEST), content_type='application/manifest+json')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@app.route('/sw.js', methods=['GET'])
+def pwa_service_worker():
+    """Served from the ROOT (not /static/) so its scope covers the whole app."""
+    resp = Response(_SERVICE_WORKER, content_type='application/javascript')
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
 
 
 @app.route('/')
@@ -1771,6 +1891,348 @@ def reorder_conversations():
         _conversations_dirty = True
     save_conversations_async(_conversations_cache)
     return jsonify({'ok': True})
+
+_SNIP_OPEN = "\ue000"   # private-use markers: never occur in real text, survive HTML escaping
+_SNIP_CLOSE = "\ue001"
+
+
+def _fts_query(raw: str) -> str:
+    """Turn free user text into a SAFE FTS5 MATCH expression.
+
+    Every token is quoted (so FTS operators in the input can't raise a syntax
+    error) and gets a trailing ``*`` for prefix matching — so "hel wor" already
+    finds "hello world" as you type. Tokens are ANDed.
+    """
+    toks = re.findall(r"[0-9A-Za-z_\u00c0-\uffff]{1,}", raw or "")[:12]
+    if not toks:
+        return ""
+    return " ".join('"%s"*' % t.replace('"', '""') for t in toks)
+
+
+@app.route('/messages/search', methods=['GET'])
+def search_messages():
+    """Ranked full-text search across ALL messages, with highlighted snippets.
+
+    Returns the matching message (+ its conversation) so the UI can jump straight
+    to the hit. Uses FTS5 when available and falls back to a LIKE scan otherwise.
+    """
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({"results": [], "fts": _FTS_OK, "query": q})
+    try:
+        limit = max(1, min(int(request.args.get('limit', 40)), 200))
+    except (TypeError, ValueError):
+        limit = 40
+
+    convs = load_conversations()
+    results = []
+
+    if _FTS_OK:
+        match = _fts_query(q)
+        if match:
+            try:
+                with _sqlite_lock:
+                    cur = _sqlite_conn.cursor()
+                    cur.execute(
+                        "SELECT m.id, m.conversation_id, m.role, m.created_at, "
+                        "snippet(messages_fts, 0, ?, ?, '…', 14) AS snip, "
+                        "bm25(messages_fts) AS rank "
+                        "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
+                        "WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?",
+                        (_SNIP_OPEN, _SNIP_CLOSE, match, limit),
+                    )
+                    rows = cur.fetchall()
+                for mid, cid, role, created, snip, rank in rows:
+                    c = convs.get(cid) or {}
+                    results.append({
+                        "id": mid,
+                        "conversation_id": cid,
+                        "conversation_title": c.get("title", "Untitled"),
+                        "role": role,
+                        "created_at": created,
+                        "snippet": snip,
+                        "rank": rank,
+                    })
+                return jsonify({"results": results, "fts": True, "query": q})
+            except sqlite3.OperationalError as e:
+                logger.warning("FTS query failed (%s) — falling back to LIKE.", e)
+
+    # ── Fallback: plain LIKE scan (no ranking, simple snippet) ──
+    with _sqlite_lock:
+        cur = _sqlite_conn.cursor()
+        cur.execute(
+            "SELECT id, conversation_id, role, created_at, content FROM messages "
+            "WHERE LOWER(content) LIKE ? ORDER BY created_at DESC LIMIT ?",
+            ('%' + q.lower() + '%', limit),
+        )
+        rows = cur.fetchall()
+    for mid, cid, role, created, content in rows:
+        c = convs.get(cid) or {}
+        text = content or ""
+        i = text.lower().find(q.lower())
+        start = max(0, i - 60) if i >= 0 else 0
+        snip = ("…" if start else "") + text[start:start + 180]
+        if i >= 0:
+            rel = i - start
+            snip = (snip[:rel] + _SNIP_OPEN + snip[rel:rel + len(q)] + _SNIP_CLOSE + snip[rel + len(q):])
+        results.append({
+            "id": mid,
+            "conversation_id": cid,
+            "conversation_title": c.get("title", "Untitled"),
+            "role": role,
+            "created_at": created,
+            "snippet": snip,
+            "rank": 0,
+        })
+    return jsonify({"results": results, "fts": False, "query": q})
+
+
+# ── Titles ───────────────────────────────────────────────────────────────────
+# Filler words stripped when turning a first message into a readable title.
+_TITLE_FILLER = re.compile(
+    r'^(?:hi|hey|hello|please|pls|can you|could you|would you|can u|help me|i need|i want|'
+    r'i would like|write me|write a|make a|create a|give me|show me|tell me|explain|'
+    r'what is|whats|what are|how do i|how to|how can i|why is|why does|is it|are there)\b[\s,:]*',
+    re.IGNORECASE,
+)
+
+
+def _heuristic_title(text: str, max_words: int = 7) -> str:
+    """Turn a first message into a short, readable title (no model call).
+
+    Beats the old raw ``text[:40]`` truncation, which produced titles like
+    "can you help me with my python code th...".
+    """
+    t = re.sub(r'\s+', ' ', (text or '').strip())
+    if not t:
+        return ""
+    # drop a leading filler phrase (may be chained: "hey, can you ...")
+    for _ in range(3):
+        new = _TITLE_FILLER.sub('', t).strip()
+        if new == t or not new:
+            break
+        t = new
+    # strip code fences / urls / markdown noise for a cleaner title
+    t = re.sub(r'```.*?```', ' ', t, flags=re.DOTALL)
+    t = re.sub(r'https?://\S+', ' ', t)
+    t = re.sub(r'[*_`#>\[\]()]', ' ', t)
+    t = re.sub(r'\s+', ' ', t).strip(' .,:;!?-')
+    if not t:
+        return ""
+    words = t.split(' ')
+    title = ' '.join(words[:max_words])
+    if len(words) > max_words:
+        title += '…'
+    return title[0].upper() + title[1:] if title else ""
+
+
+def _set_conversation_title(cid: str, title: str) -> bool:
+    """Set a conversation title (only if it still looks auto/default)."""
+    global _conversations_dirty
+    if not cid or not title:
+        return False
+    _ensure_cache()
+    with _cache_lock:
+        conv = _conversations_cache.get(cid)
+        if not conv:
+            return False
+        conv["title"] = title[:80]
+        _conversations_dirty = True
+    save_conversations_async(_conversations_cache)
+    return True
+
+
+def _llm_title(provider, model, api_key, user_text, bot_text) -> Optional[str]:
+    """Ask the current model for a 3–6 word title. Best-effort; returns None on any issue."""
+    prompt = (
+        "Write a short title (3-6 words, no quotes, no trailing period) for a "
+        "conversation that starts like this.\n\n"
+        "USER: " + (user_text or "")[:600] + "\n"
+        "ASSISTANT: " + (bot_text or "")[:600] + "\n\n"
+        "Title:"
+    )
+    kwargs = {"model": model}
+    if api_key:
+        kwargs["api_key"] = api_key
+    kwargs["max_tokens"] = 24
+    out = provider.generate([{"role": "user", "content": prompt}], **kwargs)
+    title = re.sub(r'^[\s"\'`*#-]+|[\s"\'`*.]+$', '', (out or '').strip().splitlines()[0] if out else '')
+    title = re.sub(r'^(title|conversation)\s*[:\-]\s*', '', title, flags=re.IGNORECASE)
+    if 2 <= len(title) <= 90 and len(title.split()) <= 10:
+        return title
+    return None
+
+
+def _auto_title(cid, user_text, bot_text, provider_name=None, model=None, api_key=None):
+    """Name the conversation on its first exchange.
+
+    Always applies a fast heuristic title. With TRIOFORGE_AUTO_TITLE=llm it ALSO
+    asks the model to refine it in a background thread (so the reply is never
+    delayed, and a local single-slot server is never blocked).
+    """
+    base = _heuristic_title(user_text)
+    if base:
+        _set_conversation_title(cid, base)
+
+    # Only name on the FIRST exchange (2 messages: the user's + the reply).
+    try:
+        if len(get_messages(cid)) > 2:
+            return
+    except Exception:
+        pass
+
+    mode = (os.environ.get("TRIOFORGE_AUTO_TITLE", "heuristic") or "heuristic").strip().lower()
+    if mode != "llm" or not provider_name:
+        return
+    try:
+        provider = providers.get(provider_name)
+    except Exception:
+        return
+    if provider is None:
+        return
+
+    def run():
+        try:
+            better = _llm_title(provider, model or current_model, api_key, user_text, bot_text)
+            if better:
+                _set_conversation_title(cid, better)
+        except Exception as e:
+            logger.debug("Auto-title (llm) failed: %s", e)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+# ── Export / import ──────────────────────────────────────────────────────────
+def _conversation_payload(cid: str) -> dict:
+    """Full exportable conversation (metadata + all messages)."""
+    conv = load_conversations().get(cid) or {}
+    msgs = []
+    for m in get_messages(cid):
+        entry = {"role": m.get("role"), "text": m.get("text", ""), "ts": m.get("ts", "")}
+        if m.get("images"):
+            entry["images"] = [{"name": i.get("name"), "mime": i.get("mime")} for i in m["images"]]
+        if m.get("files"):
+            entry["files"] = [{"name": f.get("name"), "mime": f.get("mime")} for f in m["files"]]
+        if m.get("meta"):
+            entry["meta"] = m["meta"]
+        msgs.append(entry)
+    return {
+        "trioforge_export": 1,
+        "id": cid,
+        "title": conv.get("title", "Untitled"),
+        "created": conv.get("created", ""),
+        "exported_at": datetime.now().isoformat(),
+        "message_count": len(msgs),
+        "messages": msgs,
+    }
+
+
+def _conversation_markdown(cid: str) -> str:
+    """Human-readable Markdown transcript of one conversation."""
+    p = _conversation_payload(cid)
+    out = ["# " + (p.get("title") or "Untitled"), ""]
+    out.append("_Exported from TrioForge · %s · %d messages_" % (p.get("created", ""), p["message_count"]))
+    out.append("")
+    for m in p["messages"]:
+        role = (m.get("role") or "").lower()
+        who = "🧑 **You**" if role == "user" else "🤖 **Assistant**"
+        out.append("## " + who + (("  ·  " + m["ts"]) if m.get("ts") else ""))
+        out.append("")
+        out.append(m.get("text") or "")
+        out.append("")
+        if m.get("images") or m.get("files"):
+            names = [x.get("name", "?") for x in (m.get("images") or []) + (m.get("files") or [])]
+            out.append("_Attachments: " + ", ".join(names) + "_")
+            out.append("")
+    return "\n".join(out)
+
+
+def _download(text: str, filename: str, mimetype: str):
+    # content_type= (not mimetype=) so Flask doesn't append a SECOND charset.
+    resp = Response(text, content_type=mimetype)
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % filename
+    return resp
+
+
+@app.route('/conversations/<cid>/export', methods=['GET'])
+def export_conversation(cid):
+    """Download ONE conversation as Markdown (default) or JSON."""
+    if cid not in load_conversations():
+        return jsonify({"error": "Conversation not found"}), 404
+    fmt = (request.args.get('format') or 'md').lower()
+    safe = re.sub(r'[^A-Za-z0-9._-]+', '-', (load_conversations()[cid].get('title') or 'chat'))[:60].strip('-') or 'chat'
+    if fmt == 'json':
+        return _download(json_dumps_pretty(_conversation_payload(cid)),
+                         safe + '.json', 'application/json')
+    return _download(_conversation_markdown(cid), safe + '.md', 'text/markdown; charset=utf-8')
+
+
+@app.route('/conversations/export', methods=['GET'])
+def export_all_conversations():
+    """Download EVERY conversation as one Markdown or JSON file."""
+    convs = get_sorted_conversations()
+    fmt = (request.args.get('format') or 'md').lower()
+    stamp = datetime.now().strftime('%Y%m%d-%H%M')
+    if fmt == 'json':
+        payload = {
+            "trioforge_export": 1,
+            "exported_at": datetime.now().isoformat(),
+            "conversation_count": len(convs),
+            "conversations": [_conversation_payload(c["id"]) for c in convs],
+        }
+        return _download(json_dumps_pretty(payload),
+                         'trioforge-chats-%s.json' % stamp, 'application/json')
+    parts = ["# TrioForge — all conversations", "",
+             "_Exported %s · %d conversation(s)_" % (datetime.now().isoformat(timespec='seconds'), len(convs)), "", "---", ""]
+    for c in convs:
+        parts.append(_conversation_markdown(c["id"]))
+        parts.append("\n---\n")
+    return _download("\n".join(parts), 'trioforge-chats-%s.md' % stamp, 'text/markdown; charset=utf-8')
+
+
+@app.route('/conversations/import', methods=['POST'])
+def import_conversations():
+    """Import conversations from an export (JSON body or an uploaded .json file).
+
+    Accepts either a single conversation object or a bundle with "conversations".
+    Always creates NEW ids, so importing can never overwrite existing chats.
+    """
+    data = request.get_json(silent=True)
+    if data is None:
+        f = request.files.get('file')
+        if f is None:
+            return jsonify({"ok": False, "error": "Send JSON (body) or a .json file"}), 400
+        try:
+            data = json_loads(f.read().decode('utf-8', 'replace'))
+        except Exception as e:
+            return jsonify({"ok": False, "error": "Invalid JSON: %s" % e}), 400
+
+    items = data.get("conversations") if isinstance(data, dict) and "conversations" in data else [data]
+    if not isinstance(items, list):
+        return jsonify({"ok": False, "error": "Expected a conversation object or list"}), 400
+
+    imported = []
+    for item in items[:500]:
+        if not isinstance(item, dict):
+            continue
+        msgs = item.get("messages") or []
+        if not msgs:
+            continue
+        title = (item.get("title") or "Imported chat")[:80]
+        new_id = create_conversation(title=title + (" (imported)" if "imported" not in title.lower() else ""))
+        for m in msgs:
+            role = m.get("role") or "user"
+            text = m.get("text")
+            if text is None:
+                text = m.get("content", "")
+            add_message(new_id, role, text or "")
+        imported.append({"id": new_id, "title": title, "messages": len(msgs)})
+
+    if not imported:
+        return jsonify({"ok": False, "error": "No messages found in the import"}), 400
+    logger.info("Imported %d conversation(s).", len(imported))
+    return jsonify({"ok": True, "imported": len(imported), "conversations": imported})
+
 
 @app.route('/conversations/search', methods=['GET'])
 def search_conversations():
@@ -3367,6 +3829,7 @@ def chat():
         if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model, reasoning)):
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
         _record_code_blocks(reply)
+        _auto_title(conv_id, original_message, reply, provider_name, model, api_key)
 
         return jsonify({'response': reply, 'usage': usage, 'reasoning': reasoning})
 
@@ -3715,6 +4178,7 @@ def chat_stream():
                         meta=_bot_meta(provider_name, model, thinking_acc))
             _record_code_blocks(full_response)
             record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
+            _auto_title(conv_id, user_message, full_response, provider_name, model, api_key)
 
         return Response(generate(), mimetype='text/event-stream')
 
