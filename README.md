@@ -1,14 +1,47 @@
 # ⚙️ TrioForge
 
-> **Your own private, free AI workspace.** Chat with any local model, organize notes, and plan ideas on a corkboard — all on **your machine**, all **offline-first**, all **free with Ollama**.
+> **A private AI workspace you host yourself.** Chat with any local model, keep notes, and plan ideas on a corkboard — one app, on **your** machine, offline-first, free with Ollama.
+
+![TrioForge in action: asking a local model a question, searching every message, browsing notes and the corkboard](demo.gif)
+
+*Chat with a local model · full-text search across every message · notes · corkboard — one machine, no account, no cloud. (The reply streams live; this clip is sped up.)*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![GitHub last commit](https://img.shields.io/github/last-commit/meowmeowsmh/TrioForge)](https://github.com/meowmeowsmh/TrioForge)
 
-**Jump to:** [Why TrioForge?](#-why-trioforge-instead-of-chatgpt) · [Quick start](#-quick-start) · [Model folders](#️-model-folders-automatic-projector-pairing) · [Features](#-features) · [Configuration](#️-configuration) · [Top-bar panels](#️-the-top-bar-panels) · [Workspaces](#️-workspaces--folder-access) · [Search, export & titles](#-search-export--titles) · [Generation](#-image-video--audio-generation) · [ComfyUI](#-comfyui-setup-optional--for-free-local-generation) · [HTTP vs HTTPS](#-http-vs-https) · [Remote access](#-remote-access-phone--lan--tunnel) · [Docker](#-docker) · [Your data](#️-where-your-data-lives) · [Project structure](#-project-structure) · [License](#-license)
+**Why it exists:** most tools make you pick one — a chat UI, *or* a notes app, *or* a whiteboard. TrioForge puts all three in one window, so an idea on the corkboard can point straight at the notes and the chat that produced it. Everything stays on your disk: no account, no telemetry, no per-token bill.
+
+**Jump to:** [60-second start](#-60-second-start-docker) · [Quick start](#-quick-start) · [Model folders](#️-model-folders-automatic-projector-pairing) · [Features](#-features) · [Configuration](#️-configuration) · [Top-bar panels](#️-the-top-bar-panels) · [Workspaces](#️-workspaces--folder-access) · [Search, export & titles](#-search-export--titles) · [Generation](#-image-video--audio-generation) · [ComfyUI](#-comfyui-setup-optional--for-free-local-generation) · [HTTP vs HTTPS](#-http-vs-https) · [Remote access](#-remote-access-phone--lan--tunnel) · [Docker](#-docker) · [Your data](#️-where-your-data-lives) · [Project structure](#-project-structure) · [License](#-license)
 
 ---
+
+## ⚡ 60-second start (Docker)
+
+If you already run Ollama (or a llama-server on your host), this is the entire install:
+
+```bash
+docker run -d --name trioforge -p 5002:5001 \
+  --add-host host.docker.internal:host-gateway \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  -v trioforge-data:/app/sqlite_data \
+  -v trioforge-config:/app/json_configuration \
+  ghcr.io/meowmeowsmh/trioforge:latest
+```
+
+Open **http://localhost:5002**, pick a model, type. Chats, notes and pins live in those two volumes on your machine — not in the container, not in the cloud.
+
+No Ollama yet? Two commands and you have one:
+
+```bash
+docker run -d --name ollama -p 11434:11434 ollama/ollama
+docker exec ollama ollama pull llama3.2:3b      # ~2 GB, runs on CPU
+```
+
+> Prefer no Docker, or want the fastest local inference (llama.cpp auto-installed for **your** GPU backend)? Use the from-source path below.
+
+---
+
 
 ## 💡 Why TrioForge? (instead of ChatGPT)
 
@@ -164,7 +197,7 @@ TrioForge/
 
 **Find & keep** — **FTS5 full-text search** over every message with ranked, highlighted snippets and click-to-jump, **export/import** chats as Markdown or JSON, and **auto-generated titles**.
 
-**Run it anywhere** — Windows / macOS / Linux / WSL2 / Docker, an **installable PWA** with a mobile-responsive layout, LAN + tunnel remote access, drop-in **plugins**, a 💾 live RAM/VRAM monitor, and auto-SSL.
+**Run it anywhere** — Windows / macOS / Linux / WSL2 / Docker, an **installable PWA** that works from your phone on the LAN, LAN + tunnel remote access, drop-in **plugins**, a 💾 live RAM/VRAM monitor, and auto-SSL.
 
 ---
 
@@ -413,7 +446,7 @@ TrioForge is a **Progressive Web App** — installable like a native app, no sto
 - **iPhone / iPad (Safari):** **Share** → **Add to Home Screen**.
 - **Desktop (Chrome/Edge):** the **install** icon in the address bar.
 
-It then launches **full-screen** with its own icon, and the layout adapts to phones: the sidebar becomes a **swipe-in drawer**, the top bar reflows into rows, and the input bar stacks.
+It then launches **full-screen** with its own icon. The sidebar becomes a **swipe-in drawer** on small screens and the top bar reflows into rows — usable on a phone over your LAN, though the mobile layout is still the roughest part of the UI (desktop is the focus).
 
 **How it works:** a generated web manifest (`/manifest.webmanifest`), self-made icons (`static/pwa/*.png`, regenerable with `python py/make_pwa_icons.py`) and a tiny service worker (`/sw.js`, served from the root so its scope covers the app).
 
@@ -435,7 +468,25 @@ The default model is **`vaultbox/qwen3.5-uncensored:9b`** — an abliterated (re
 
 Docker runs the app with **gunicorn** (the native Windows path uses Waitress instead). This is the recommended way to run TrioForge on a **Linux server, WSL2, or a NAS**.
 
-### 🚀 One command (recommended)
+**Fastest path — the prebuilt image** (built by CI from `main`, no clone needed):
+
+```bash
+docker run -d --name trioforge -p 5002:5001 \
+  --add-host host.docker.internal:host-gateway \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  -v trioforge-data:/app/sqlite_data \
+  -v trioforge-config:/app/json_configuration \
+  ghcr.io/meowmeowsmh/trioforge:latest
+```
+
+Then open **http://localhost:5002**. To point it at a llama-server on your host instead, add
+`-e LLAMA_HOST=host.docker.internal -e LLAMA_PORT=8080`. To use your own GGUF files and keep
+logs on the host, add `-v "$PWD/models:/app/models" -v "$PWD/logs:/app/logs"`.
+
+> If the pull fails with *denied*, the GHCR package is still private — make it public in the
+> repo's **Packages** settings, or use the from-source route below.
+
+### 🚀 One command from a clone (recommended if you want to tweak things)
 
 ```bash
 chmod +x docker/application.sh     # first time only
