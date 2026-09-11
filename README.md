@@ -1,16 +1,20 @@
 # ⚙️ TrioForge
 
-> **A private AI workspace you host yourself.** Chat with any local model, keep notes, and plan ideas on a corkboard — one app, on **your** machine, offline-first, free with Ollama.
+> ### Chat is the input. The board is the output.
+>
+> TrioForge is a **self-hosted AI workspace where a conversation becomes something you keep**: send any answer to the corkboard, let the model rewrite it there, link it to what you already know. Chat, notes and pins live in one app, on your machine — offline-first, free with Ollama, no account, no telemetry.
 
-![TrioForge in action: asking a local model a question, searching every message, browsing notes and the corkboard](demo.gif)
+![A chat answer imported onto the corkboard as a pin, rewritten by the local model, then linked to another pin](demo.gif)
 
-*Chat with a local model · full-text search across every message · notes · corkboard — one machine, no account, no cloud. (The reply streams live; this clip is sped up.)*
+*Real session with a local model: ask → **Import Conversation** turns the answer into a pin → **✨ AI Assist → Improve Writing** rewrites it on the board → link it to a related pin. (The model's ~20s rewrite is sped up here.)*
+
+**Everything else it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), a file-editing agent with a live diff panel, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation, Windows/macOS/Linux/WSL + Docker, installable on your phone. → [full feature list](#-features) · [screenshots](#-see-it-in-action)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![GitHub last commit](https://img.shields.io/github/last-commit/meowmeowsmh/TrioForge)](https://github.com/meowmeowsmh/TrioForge)
 
-**Why it exists:** most tools make you pick one — a chat UI, *or* a notes app, *or* a whiteboard. TrioForge puts all three in one window, so an idea on the corkboard can point straight at the notes and the chat that produced it. Everything stays on your disk: no account, no telemetry, no per-token bill.
+**Why it exists:** most tools make you pick one — a chat UI, *or* a notes app, *or* a whiteboard. Chat is where you think; a board is where you keep what you thought. TrioForge is the only one that connects them, and everything stays on your disk.
 
 **Jump to:** [60-second start](#-60-second-start-docker) · [Quick start](#-quick-start) · [Model folders](#️-model-folders-automatic-projector-pairing) · [Features](#-features) · [Configuration](#️-configuration) · [Top-bar panels](#️-the-top-bar-panels) · [Workspaces](#️-workspaces--folder-access) · [Search, export & titles](#-search-export--titles) · [Generation](#-image-video--audio-generation) · [ComfyUI](#-comfyui-setup-optional--for-free-local-generation) · [HTTP vs HTTPS](#-http-vs-https) · [Remote access](#-remote-access-phone--lan--tunnel) · [Docker](#-docker) · [Your data](#️-where-your-data-lives) · [Project structure](#-project-structure) · [License](#-license)
 
