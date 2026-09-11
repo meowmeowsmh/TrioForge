@@ -483,8 +483,9 @@ Then open **http://localhost:5002**. To point it at a llama-server on your host 
 `-e LLAMA_HOST=host.docker.internal -e LLAMA_PORT=8080`. To use your own GGUF files and keep
 logs on the host, add `-v "$PWD/models:/app/models" -v "$PWD/logs:/app/logs"`.
 
-> If the pull fails with *denied*, the GHCR package is still private — make it public in the
-> repo's **Packages** settings, or use the from-source route below.
+> The image is built and smoke-tested by CI on every push to `main`
+> ([`.github/workflows/publish-image.yml`](.github/workflows/publish-image.yml)) — if `docker run`
+> ever fails to pull it, fall back to the from-source route below.
 
 ### 🚀 One command from a clone (recommended if you want to tweak things)
 
