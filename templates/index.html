@@ -1754,7 +1754,19 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
         <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup — install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🚀</button>
-        <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Full screen">⛶</button>
+        <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()"
+                title="Full screen — stays on as you switch Chat, Notes and Cork Board"
+                aria-label="Toggle full screen" style="display:flex; align-items:center; justify-content:center;">
+          <!-- A drawn icon, not the ⛶ emoji: on Windows that codepoint falls back
+               to a monochrome glyph that is nearly invisible in this toolbar. -->
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+            <path d="M16 3h3a2 2 0 0 1 2 2v3"></path>
+            <path d="M8 21H5a2 2 0 0 1-2-2v-3"></path>
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+          </svg>
+        </button>
         <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Note & pin colours">🎨</button>
         <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">⌨️</button>
         <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
@@ -1774,7 +1786,7 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     <!-- EMBEDDED VIEW HOST — Notes and Cork Board load here instead of navigating,
          so the chat document (and any fullscreen state) is never torn down. -->
     <div id="viewHost" style="display:none; flex:1; min-height:0; background:#0a0a0f;">
-      <iframe id="viewFrame" title="TrioForge view" src="about:blank"
+      <iframe id="viewFrame" title="TrioForge view" src="about:blank" allowfullscreen
               style="width:100%; height:100%; border:0; display:block;"></iframe>
     </div>
 
