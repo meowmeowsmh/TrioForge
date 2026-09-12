@@ -590,11 +590,19 @@ def prepare_and_run(project: Path, args) -> int:
         if os.name == "nt":
             flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                      | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        # The app opens a browser tab on start-up unless TRIOFORGE_NO_BROWSER is set
+        # in its environment. --window means "TrioForge opens in its own window", so
+        # the browser must NOT also appear; --no-browser says the same explicitly.
+        child_env = dict(os.environ)
+        if getattr(args, "no_browser", False) or getattr(args, "window", False):
+            child_env["TRIOFORGE_NO_BROWSER"] = "1"
         subprocess.Popen([str(c) for c in cmd], cwd=str(project), creationflags=flags,
+                         env=child_env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          stdin=subprocess.DEVNULL)
-        print("[detach] server starting in the background on port {}.".format(
-            os.environ.get("TRIOFORGE_PORT", "5003")))
+        print("[detach] server starting in the background on port {}{}.".format(
+            os.environ.get("TRIOFORGE_PORT", "5003"),
+            " with no browser tab" if child_env.get("TRIOFORGE_NO_BROWSER") else ""))
         return 0
 
     watch = getattr(args, "watch_updates", -1)

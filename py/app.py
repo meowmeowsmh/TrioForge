@@ -4581,9 +4581,12 @@ def _auto_open_browser(url: str) -> None:
     """Open the app in the default browser shortly after startup (unless disabled).
 
     This makes the launcher a true "press the app and it opens itself" experience —
-    no need to manually open a browser tab. Set TRIOFORGE_NO_BROWSER=1 to disable.
+    no need to manually open a browser tab. Set TRIOFORGE_NO_BROWSER=1 to disable,
+    which is what `start.vbs` does: there TrioForge opens in its own window, so a
+    browser tab as well would be one window too many.
     """
     if os.environ.get("TRIOFORGE_NO_BROWSER") == "1":
+        logger.info("Not opening a browser (TRIOFORGE_NO_BROWSER is set).")
         return
 
     def _open():
@@ -4592,8 +4595,9 @@ def _auto_open_browser(url: str) -> None:
         time.sleep(2.0)
         try:
             webbrowser.open(url)
-        except Exception:
-            pass
+            logger.info("Opened your browser at %s", url)
+        except Exception as exc:
+            logger.warning("Could not open a browser: %s", exc)
 
     threading.Thread(target=_open, daemon=True).start()
 
