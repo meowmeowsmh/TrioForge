@@ -31,6 +31,13 @@ app — then opens the Setup panel, where **⚡ Auto-install** gets llama.cpp fo
 
 > Windows SmartScreen warns once because the exe is not code-signed: **More info → Run anyway**.
 > Signing needs a certificate; until then that is the expected first-run dialog.
+>
+> **Prefer to avoid that dialog entirely?** One command downloads it without a browser (so
+> Windows never marks the file as "from the internet"):
+>
+> ```powershell
+> irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/install.ps1 | iex
+> ```
 
 **Docker / Linux / macOS / NAS** — if you already run Ollama (or a llama-server on your host),
 this is the entire install:
