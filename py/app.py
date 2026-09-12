@@ -194,7 +194,11 @@ def rate_limited(max_per_minute=20):
 @app.after_request
 def _add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
+    # SAMEORIGIN, not DENY: the chat shell embeds /notes and /corkboard in a frame
+    # so that switching tabs does not reload the document (which is what used to
+    # drop fullscreen). Other sites still cannot frame the app, so the
+    # clickjacking protection is intact.
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['Referrer-Policy'] = 'no-referrer'
     return response
 
@@ -1088,6 +1092,12 @@ _PWA_MANIFEST = {
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
+    # Installed, this runs the whole app WITHOUT browser chrome — so Chat → Notes
+    # → Corkboard stay full-screen with no taps. One tap of ⛶ can't do that in a
+    # normal tab: the Fullscreen API belongs to the current document, and switching
+    # tabs is a real page load, which exits fullscreen. Chrome/Edge honour
+    # display_override; iOS/Safari ignore it and fall back to `display`.
+    "display_override": ["fullscreen", "standalone"],
     "orientation": "any",
     "background_color": "#0d1117",
     "theme_color": "#0d1117",

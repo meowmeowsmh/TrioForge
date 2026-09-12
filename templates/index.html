@@ -1606,9 +1606,11 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
 
       <!-- CENTER TABS – only Chat, Notes, Cork Board -->
       <div class="center-tabs">
-        <button class="tab-btn active">💬 Chat</button>
-        <a href="/notes" class="tab-btn" style="text-decoration:none;">📝 Notes</a>
-        <a href="/corkboard" class="tab-btn" style="text-decoration:none;">📌 Cork Board</a>
+        <button class="tab-btn active" id="tabChat" onclick="showChatView()">💬 Chat</button>
+        <a href="/notes" class="tab-btn" id="tabNotes" style="text-decoration:none;"
+           onclick="return openEmbeddedView('/notes','notes')">📝 Notes</a>
+        <a href="/corkboard" class="tab-btn" id="tabCork" style="text-decoration:none;"
+           onclick="return openEmbeddedView('/corkboard','corkboard')">📌 Cork Board</a>
       </div>
 
       <div class="right">
@@ -1737,6 +1739,13 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
         <!-- Weather toggle is an ICON, so it lives in this centered icon row. -->
         <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
         </div>
+    </div>
+
+    <!-- EMBEDDED VIEW HOST — Notes and Cork Board load here instead of navigating,
+         so the chat document (and any fullscreen state) is never torn down. -->
+    <div id="viewHost" style="display:none; flex:1; min-height:0; background:#0a0a0f;">
+      <iframe id="viewFrame" title="TrioForge view" src="about:blank"
+              style="width:100%; height:100%; border:0; display:block;"></iframe>
     </div>
 
     <!-- CHAT PANEL -->
@@ -7314,6 +7323,59 @@ function toggleFullscreen() {
         }
     }
 }
+
+// ── Notes / Cork Board inside this document ─────────────────────────────────
+// The Fullscreen API belongs to the CURRENT document, so a real page load
+// (which is what clicking the Notes/Cork Board tabs used to do) always drops
+// out of fullscreen — one tap could never cover all three screens. Loading them
+// in a frame keeps this document (and fullscreen) alive, so ⛶ is tapped once.
+// Ctrl/Cmd/middle-click still open the standalone page in a new tab.
+function openEmbeddedView(url, view) {
+    var e = window.event;
+    if (e && (e.ctrlKey || e.metaKey || e.shiftKey || (e.button !== undefined && e.button !== 0))) {
+        return true;                       // let the browser handle new-tab clicks
+    }
+    var host = document.getElementById('viewHost');
+    var frame = document.getElementById('viewFrame');
+    var chat = document.getElementById('chatPanel');
+    if (!host || !frame || !chat) return true;
+
+    var src = url + (url.indexOf('?') === -1 ? '?' : '&') + 'embed=1';
+    if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
+    host.style.display = 'block';
+    chat.style.display = 'none';
+    setActiveTab(view);
+    try { localStorage.setItem('trio_last_view', view); } catch (err) {}
+    return false;                          // stay in this document
+}
+
+function showChatView() {
+    var host = document.getElementById('viewHost');
+    var chat = document.getElementById('chatPanel');
+    if (host) host.style.display = 'none';
+    if (chat) chat.style.display = 'flex';
+    setActiveTab('chat');
+    try { localStorage.setItem('trio_last_view', 'chat'); } catch (err) {}
+    if (typeof scrollToBottom === 'function') { try { scrollToBottom(); } catch (err) {} }
+}
+
+function setActiveTab(view) {
+    var map = { chat: 'tabChat', notes: 'tabNotes', corkboard: 'tabCork' };
+    Object.keys(map).forEach(function (k) {
+        var el = document.getElementById(map[k]);
+        if (!el) return;
+        if (k === view) el.classList.add('active'); else el.classList.remove('active');
+    });
+}
+
+// If the app is opened with ?view=notes|corkboard (e.g. a bookmark), start there.
+(function () {
+    var m = /[?&]view=(notes|corkboard)\b/.exec(location.search);
+    if (!m) return;
+    document.addEventListener('DOMContentLoaded', function () {
+        openEmbeddedView('/' + m[1], m[1]);
+    });
+})();
 
 // ── Services control panel ──
 function openServicesModal() {
