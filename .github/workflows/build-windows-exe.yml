@@ -33,36 +33,51 @@ jobs:
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
 
-      - name: Build application.exe
-        run: >
-          pyinstaller --onefile --name application --console
-          --paths py/tools
-          py/tools/application_exe.py
+      - name: Build application.exe (windowed, no console) and application-cli.exe
+        run: |
+          pyinstaller --onefile --name application --noconsole --paths py/tools py/tools/application_exe.py
+          pyinstaller --onefile --name application-cli --console --paths py/tools py/tools/application_exe.py
 
-      - name: Smoke-test the exe (--status against a fresh clone)
+      - name: Smoke-test both exes
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force "$env:TEMP\tf-exe-test" | Out-Null
           git clone --depth 1 https://github.com/meowmeowsmh/TrioForge.git "$env:TEMP\tf-exe-test\TrioForge"
-          & .\dist\application.exe --dir "$env:TEMP\tf-exe-test\TrioForge" --status
-          if ($LASTEXITCODE -ne 0) { Write-Error "exe --status failed"; exit 1 }
-          Write-Host "exe ran and reported status"
+          & .\dist\application-cli.exe --dir "$env:TEMP\tf-exe-test\TrioForge" --status
+          if ($LASTEXITCODE -ne 0) { Write-Error "application-cli.exe --status failed"; exit 1 }
+          # the windowed build must report status without needing a console
+          & .\dist\application.exe --dir "$env:TEMP\tf-exe-test\TrioForge" --status --no-pause
+          if ($LASTEXITCODE -ne 0) { Write-Error "application.exe --status failed"; exit 1 }
+          # and its PE subsystem must be GUI (2), not console (3)
+          $bytes = [System.IO.File]::ReadAllBytes("$PWD\dist\application.exe")
+          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+          $subsystem = [BitConverter]::ToUInt16($bytes, $pe + 0x5C)
+          Write-Host "application.exe PE subsystem = $subsystem (2 = windowed, 3 = console)"
+          if ($subsystem -ne 2) { Write-Error "application.exe is a console app - it must be windowed"; exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
           name: application-exe
-          path: dist/application.exe
+          path: |
+            dist/application.exe
+            dist/application-cli.exe
           if-no-files-found: error
 
-      - name: Attach the exe to the release (tags only)
+      - name: Attach the exes to the release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/application.exe
+          files: |
+            dist/application.exe
+            dist/application-cli.exe
           body: |
-            **Windows:** download `application.exe` and double-click it — it fetches
-            TrioForge, keeps it updated, starts it, and opens the Setup panel.
-            No Python, no terminal, no git needed. Unsigned, so SmartScreen warns
-            once ("More info → Run anyway").
+            **Windows:** download `application.exe` and double-click it — a small window
+            appears and hosts TrioForge in the background (no console, no terminal).
+            Press **Open TrioForge** to use the web interface, or leave it and point any
+            browser at the address it shows. Unsigned, so SmartScreen warns once
+            ("More info → Run anyway").
+            `application-cli.exe` is the same thing for the command line:
+            `--status`, `--update`, `--install-autostart`, `--host`.
             **Docker / NAS / Linux / macOS:** `docker run … ghcr.io/meowmeowsmh/trioforge:latest`
             or `git clone && ./run.sh`.
+

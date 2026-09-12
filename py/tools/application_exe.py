@@ -59,12 +59,28 @@ def find_existing() -> Path:
 
 
 def run(cmd, cwd=None) -> int:
+    """Run a command and return its exit code.
+
+    Output is CAPTURED, never inherited: in the windowed build (application.exe)
+    this process has no valid stdout/stderr handles, and a child that inherits
+    those dead handles fails - `git clone` exits non-zero, so nothing was ever
+    downloaded. Capturing also means the last lines can be shown on failure.
+    """
     print("> {}".format(" ".join(str(c) for c in cmd)))
     try:
-        return subprocess.call([str(c) for c in cmd], cwd=str(cwd) if cwd else None)
+        proc = subprocess.Popen([str(c) for c in cmd], cwd=str(cwd) if cwd else None,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, text=True,
+                                encoding="utf-8", errors="replace", bufsize=1)
     except FileNotFoundError:
         print("Not found: {}".format(cmd[0]))
         return 127
+    try:
+        for line in proc.stdout:                # live in the console build, a
+            print("  " + line.rstrip())         # no-op in the windowed one
+    except Exception:
+        pass
+    return proc.wait()
 
 
 def clone(target: Path) -> bool:
@@ -117,6 +133,46 @@ def try_install_python() -> bool:
     return False
 
 
+def has_console() -> bool:
+    """False in the windowed build (and when output is detached/redirected).
+
+    sys.stdout is None in a windowed build, so it must never be touched blindly:
+    `sys.stdout.isatty()` there is an AttributeError that kills the bootstrap
+    before it does anything - which is exactly how the windowed exe used to die
+    instantly, silently, with exit code 1.
+    """
+    try:
+        if sys.stdout is None:
+            return False
+        sys.stdout.fileno()
+        return True
+    except Exception:
+        return False
+
+
+def stdout_is_tty() -> bool:
+    """Whether stdout is an interactive console (False when stdout is None)."""
+    try:
+        return bool(sys.stdout is not None and sys.stdout.isatty())
+    except Exception:
+        return False
+
+
+def alert(title: str, text: str) -> None:
+    """A message box, for the windowed build where there is no console to print to.
+
+    Blocking on purpose: it is only used for failures the user must know about, and
+    the console build (application-cli.exe, which CI uses) never calls it.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, title, 0x00000010 | 0x00040000)
+    except Exception:
+        pass
+
+
 def _tail(path: Path, lines: int = 12) -> list:
     """The last few lines of a log file (never raises)."""
     try:
@@ -134,6 +190,22 @@ def log_path(project: Path) -> Path:
         return logs / "bootstrap.log"
     except Exception:
         return Path(tempfile.gettempdir()) / "trioforge-bootstrap.log"
+
+
+# The windowed build has no stdout and no stderr, so anything printed there is
+# lost - including the traceback of a crash, which is how a windowed app can die
+# with nothing at all to look at. Everything therefore goes to a file as well.
+_BOOT_LOG = Path(tempfile.gettempdir()) / "trioforge-bootstrap.log"
+
+
+def emit(text: str = "") -> None:
+    """Print (console build) and always append to the bootstrap log."""
+    print(text)
+    try:
+        with _BOOT_LOG.open("a", encoding="utf-8", errors="replace") as fh:
+            fh.write(str(text) + "\n")
+    except Exception:
+        pass
 
 
 def run_launcher(cmd: list, cwd: Path, logfile: Path) -> int:
@@ -224,34 +296,41 @@ def main() -> int:
     # --no-pause only silences the keypress - it must NOT change which mode runs.
     non_interactive = bool(args.update or args.status or args.install_autostart
                            or args.remove_autostart or args.no_pause
-                           or (not sys.stdout.isatty()))
+                           or (not stdout_is_tty()))
     maintenance = bool(args.update or args.status or args.install_autostart
                        or args.remove_autostart)
     project = Path(args.dir).expanduser().resolve() if args.dir else find_existing()
-    print("TrioForge bootstrap")
-    print("  app folder: {}".format(project))
+    emit("TrioForge bootstrap")
+    emit("  app folder: {}".format(project))
 
     if not is_project(project):
-        print("  no checkout there yet - cloning {} (shallow)".format(GITHUB_URL))
+        emit("  no checkout there yet - cloning {} (shallow)".format(GITHUB_URL))
         if not clone(project):
-            if not non_interactive:
+            if not has_console() and not maintenance:
+                alert("TrioForge", "Could not download TrioForge into:\n{}\n\n"
+                                   "Check your internet connection and try again.".format(project))
+            elif not non_interactive:
                 wait_for_key()
             return 1
 
     launcher = project / "py" / "tools" / "launcher.py"
     interpreter = python_command(project)
     if not interpreter:
-        print("  python    : not found")
+        emit("  python    : not found")
         if try_install_python():
             interpreter = python_command(project)
         if not interpreter:
             print()
             print("Python is required. Install it (https://www.python.org/downloads/) or")
             print("run application.bat, which installs it for you. Then run application.exe again.")
-            if not non_interactive:
+            if not has_console() and not maintenance:
+                alert("TrioForge needs Python",
+                      "TrioForge could not find (or install) Python.\n\n"
+                      "Install it from python.org/downloads, then start TrioForge again.")
+            elif not non_interactive:
                 wait_for_key()
             return 1
-    print("  python    : {}".format(" ".join(interpreter)))
+    emit("  python    : {}".format(" ".join(interpreter)))
 
     passthrough = []
     if args.update:
@@ -267,8 +346,8 @@ def main() -> int:
     # With no flags this is a double-click: pop up the control panel (the small
     # window that hosts the app), the way Ollama's desktop app does. Maintenance
     # flags stay plain console commands so scripts and CI keep working.
-    maintenance = bool(args.update or args.status or args.install_autostart
-                       or args.remove_autostart or args.no_pause)
+    # (maintenance / non_interactive are computed once, above, so that --no-pause
+    #  only silences the keypress and never changes which mode runs.)
     if not maintenance and not passthrough:
         gui = project / "py" / "tools" / "launcher_gui.py"
         if gui.is_file():
@@ -282,7 +361,7 @@ def main() -> int:
                                          creationflags=flags,
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                          stdin=subprocess.DEVNULL)
-                print("  control   : TrioForge is starting - the control panel window opens")
+                emit("  control   : TrioForge is starting - the control panel window opens")
                 print("              in a moment. It hosts the app and shows what it is doing.")
                 print("              Log: {}".format(log_path(project)))
 
@@ -298,7 +377,14 @@ def main() -> int:
                         print("    " + line)
                     print("  Also kept in: {}".format(
                         project / "logs" / "control-panel.log"))
-                    if not non_interactive:
+                    if not has_console():
+                        # Windowed build: there is no console, so say it out loud.
+                        alert("TrioForge could not start",
+                              "The TrioForge window failed to open (exit {}).\n\n"
+                              "Details are in:\n{}\n\n{}".format(
+                                  panel.returncode, project / "logs" / "control-panel.log",
+                                  "\n".join(_tail(log_path(project), 6))))
+                    elif not non_interactive:
                         wait_for_key()
                     return 1
                 return 0
@@ -322,4 +408,22 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # A windowed build has nowhere to print a traceback, so a crash there is
+    # invisible. Catch everything, write it to the bootstrap log, and say it in a
+    # message box instead of dying in silence.
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        detail = traceback.format_exc()
+        emit()
+        emit("TrioForge bootstrap crashed:")
+        for line in detail.splitlines():
+            emit("  " + line)
+        alert("TrioForge could not start",
+              "Something went wrong while starting TrioForge.\n\n{}\n\nLog: {}".format(
+                  detail.strip().splitlines()[-1] if detail.strip() else "unknown error",
+                  _BOOT_LOG))
+        sys.exit(1)
