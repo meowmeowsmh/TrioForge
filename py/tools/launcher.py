@@ -321,6 +321,29 @@ def _app_command(project: Path) -> List[str]:
     return [uv, "run", "python", str(app_path)]
 
 
+def panel_pid_file(project: Path) -> Path:
+    """Where the control panel records its own pid (one panel per folder)."""
+    return project / "logs" / "control-panel.pid"
+
+
+def _no_window_flags() -> int:
+    """CREATE_NO_WINDOW when we have no console of our own.
+
+    The control panel runs under pythonw (no console). Spawning the app from there
+    without this flag makes Windows create a NEW console window for every child -
+    which is the cmd window that keeps appearing and never closes when the app is
+    started from the desktop app.
+    """
+    if os.name != "nt":
+        return 0
+    try:
+        if sys.stdout is None or not sys.stdout.isatty():
+            return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    except Exception:
+        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return 0
+
+
 class AppSupervisor:
     """Runs the app as a child process so an update can restart it.
 
@@ -423,10 +446,12 @@ class AppSupervisor:
                 self.child = subprocess.Popen(cmd, cwd=str(self.project), env=self._environment(),
                                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                               stdin=subprocess.DEVNULL, text=True,
-                                              encoding="utf-8", errors="replace", bufsize=1)
+                                              encoding="utf-8", errors="replace", bufsize=1,
+                                              creationflags=_no_window_flags())
                 threading.Thread(target=self._pump, args=(self.child,), daemon=True).start()
             else:
-                self.child = subprocess.Popen(cmd, cwd=str(self.project), env=self._environment())
+                self.child = subprocess.Popen(cmd, cwd=str(self.project), env=self._environment(),
+                                              creationflags=_no_window_flags())
             try:
                 code = self.child.wait()
             except KeyboardInterrupt:

@@ -4615,14 +4615,28 @@ def _port_is_free(port, host='127.0.0.1', timeout=0.6):
 
 
 def _is_trioforge_on(port, host='127.0.0.1', timeout=1.5):
-    """True only if TrioForge itself answers on this port (via /api/ping)."""
-    try:
-        import urllib.request
-        with urllib.request.urlopen('http://%s:%d/api/ping' % (host, port), timeout=timeout) as r:
-            data = std_json.loads(r.read(400).decode('utf-8', 'replace'))
-        return data.get('app') == 'trioforge'
-    except Exception:
-        return False
+    """True only if TrioForge itself answers on this port (via /api/ping).
+
+    Tries BOTH schemes. On Windows TrioForge serves HTTPS by default, and while
+    this only spoke http the check never matched a running instance - so a second
+    launch decided the port was "busy with another app", picked 5004, then 5005,
+    and every launch piled up another server, another console window and another
+    firewall prompt.
+    """
+    import json as _json
+    import urllib.request
+    import ssl as _ssl
+    ctx = _ssl._create_unverified_context()
+    for scheme in ('http', 'https'):
+        try:
+            with urllib.request.urlopen('%s://%s:%d/api/ping' % (scheme, host, port),
+                                        timeout=timeout, context=ctx) as r:
+                data = _json.loads(r.read(400).decode('utf-8', 'replace'))
+            if data.get('app') == 'trioforge':
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def choose_port(preferred, host='127.0.0.1', tries=20):
@@ -4707,8 +4721,11 @@ if __name__ == '__main__':
     if port_reason == 'running':
         print("TrioForge is already running at %s — opening it." % url)
         try:
-            import webbrowser
-            webbrowser.open(url)  # synchronous: opens before we exit
+            if os.environ.get('TRIOFORGE_NO_BROWSER', '').strip() in ('1', 'true', 'on'):
+                print("[TrioForge] (not opening a browser: TRIOFORGE_NO_BROWSER is set)")
+            else:
+                import webbrowser
+                webbrowser.open(url)  # synchronous: opens before we exit
         except Exception:
             pass
         sys.exit(0)
@@ -4721,6 +4738,18 @@ if __name__ == '__main__':
     logger.info("Open your browser at: %s", url)
     _auto_open_browser(url)
 
+    # ── Which interface to listen on ─────────────────────────────────────────
+    # Default is localhost only, exactly like Ollama's default. Listening on
+    # 0.0.0.0 on every launch is what made Windows Defender Firewall ask "allow
+    # this app to communicate on public networks?" every single time - and it also
+    # put the whole workspace on the local network without asking.
+    # Reachable-by-others is opt-in: TRIOFORGE_HOST=0.0.0.0, or host mode
+    # (TRIOFORGE_PASSWORD set), which also puts a password in front of it.
+    HOST = os.environ.get('TRIOFORGE_HOST', '').strip()
+    if not HOST:
+        HOST = '0.0.0.0' if os.environ.get('TRIOFORGE_PASSWORD', '').strip() else '127.0.0.1'
+    logger.info("Listening on %s:%d", HOST, PORT)
+
     # For production, use gunicorn or waitress instead of app.run.
     # Example: gunicorn -w 4 -b 0.0.0.0:%d app:app  (PORT)
-    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False, ssl_context=ssl_context, threaded=True)
+    app.run(host=HOST, port=PORT, debug=False, use_reloader=False, ssl_context=ssl_context, threaded=True)
