@@ -1,0 +1,127 @@
+"""TrioForge.exe — the double-clickable entry point for Windows.
+
+This is deliberately a *bootstrap*, not a bundle: it does not contain Flask, the
+providers or the app. It only
+
+1. finds (or clones) a TrioForge checkout,
+2. updates it,
+3. hands over to ``py/tools/launcher.py``, which sets up Python/deps as usual.
+
+That keeps the executable a couple of megabytes instead of gigabytes, and means
+the app itself keeps auto-updating exactly like a plain ``git clone`` does — the
+maintainer pushes, everybody's next launch is the new version.
+
+Built by .github/workflows/build-windows-exe.yml (PyInstaller, one file).
+
+Usage:
+    TrioForge.exe                 # update and run
+    TrioForge.exe --update        # update only
+    TrioForge.exe --install-autostart
+    TrioForge.exe --dir D:\\TrioForge
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+GITHUB_URL = "https://github.com/meowmeowsmh/TrioForge.git"
+REQUIRED_FILES = ("py/app.py", "py/tools/launcher.py", "templates/index.html")
+
+
+def default_dir() -> Path:
+    """Where to keep the app: %LOCALAPPDATA%\\TrioForge on Windows, else ~/.trioforge."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        if base:
+            return Path(base) / "TrioForge"
+    return Path.home() / ".trioforge"
+
+
+def is_project(path: Path) -> bool:
+    return all((path / name).is_file() for name in REQUIRED_FILES)
+
+
+def find_existing() -> Path:
+    """Reuse a checkout the user already has (cwd, then the usual spot)."""
+    for candidate in (Path.cwd(), default_dir()):
+        if is_project(candidate):
+            return candidate
+    return default_dir()
+
+
+def run(cmd, cwd=None) -> int:
+    print("> {}".format(" ".join(str(c) for c in cmd)))
+    try:
+        return subprocess.call([str(c) for c in cmd], cwd=str(cwd) if cwd else None)
+    except FileNotFoundError:
+        print("Not found: {}".format(cmd[0]))
+        return 127
+
+
+def clone(target: Path) -> bool:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if run(["git", "clone", "--depth", "1", GITHUB_URL, str(target)]) != 0:
+        print()
+        print("Could not clone TrioForge. Install git (https://git-scm.com/downloads)")
+        print("or download the ZIP from https://github.com/meowmeowsmh/TrioForge")
+        print("and unzip it to: {}".format(target))
+        return False
+    return True
+
+
+def python_for(project: Path) -> str:
+    """Prefer the project venv (what the launcher creates), else this interpreter."""
+    for rel in ("Scripts/python.exe", "bin/python3", "bin/python"):
+        candidate = project / ".venv" / rel
+        if candidate.is_file():
+            return str(candidate)
+    # A frozen exe has no usable interpreter for the project: ask the system one.
+    return sys.executable
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="TrioForge bootstrap launcher")
+    parser.add_argument("--dir", default=None, help="Where TrioForge lives / should live.")
+    parser.add_argument("--update", action="store_true", help="Update and exit.")
+    parser.add_argument("--install-autostart", action="store_true",
+                        help="Start TrioForge automatically when you log in.")
+    parser.add_argument("--remove-autostart", action="store_true",
+                        help="Stop starting TrioForge at login.")
+    parser.add_argument("--status", action="store_true", help="Show version/git/deps state.")
+    parser.add_argument("rest", nargs=argparse.REMAINDER,
+                        help="Anything else is passed straight to launcher.py.")
+    args = parser.parse_args()
+
+    project = Path(args.dir).expanduser().resolve() if args.dir else find_existing()
+    print("TrioForge bootstrap")
+    print("  app folder: {}".format(project))
+
+    if not is_project(project):
+        print("  no checkout there yet - cloning {} (shallow)".format(GITHUB_URL))
+        if not clone(project):
+            return 1
+
+    launcher = project / "py" / "tools" / "launcher.py"
+    interpreter = python_for(project)
+    print("  python    : {}".format(interpreter))
+
+    passthrough = []
+    if args.update:
+        passthrough.append("--update")
+    if args.install_autostart:
+        passthrough.append("--install-autostart")
+    if args.remove_autostart:
+        passthrough.append("--remove-autostart")
+    if args.status:
+        passthrough.append("--status")
+    passthrough += [a for a in args.rest if a]
+
+    # The launcher owns updates, dependency install, auto-start and running the
+    # app, so the exe stays a thin, always-current shim.
+    return run([interpreter, str(launcher), str(project), "--no-banner"] + passthrough, cwd=project)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

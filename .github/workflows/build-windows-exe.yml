@@ -1,0 +1,64 @@
+name: Build Windows launcher (.exe)
+
+# Produces a small TrioForge.exe bootstrap (not a bundle: it clones/updates the
+# app and hands over to py/tools/launcher.py). Attached to a Release on tags.
+#
+# NOTE: the exe is unsigned, so Windows SmartScreen will say "Windows protected
+# your PC" the first time. Signing needs a code-signing certificate; until then
+# users click "More info -> Run anyway", or install from a git clone / Docker.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'py/tools/trioforge_exe.py'
+      - '.github/workflows/build-windows-exe.yml'
+  tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Build TrioForge.exe
+        run: >
+          pyinstaller --onefile --name TrioForge --console
+          --paths py/tools
+          py/tools/trioforge_exe.py
+
+      - name: Smoke-test the exe (--status against a fresh clone)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:TEMP\tf-exe-test" | Out-Null
+          git clone --depth 1 https://github.com/meowmeowsmh/TrioForge.git "$env:TEMP\tf-exe-test\TrioForge"
+          & .\dist\TrioForge.exe --dir "$env:TEMP\tf-exe-test\TrioForge" --status
+          if ($LASTEXITCODE -ne 0) { Write-Error "exe --status failed"; exit 1 }
+          Write-Host "exe ran and reported status"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TrioForge-exe
+          path: dist/TrioForge.exe
+          if-no-files-found: error
+
+      - name: Attach the exe to the release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/TrioForge.exe
+          body: |
+            **Windows:** run `TrioForge.exe` — it clones/updates TrioForge and starts it.
+            Unsigned, so SmartScreen warns once ("More info → Run anyway").
+            **Docker/NAS/Linux/macOS:** `docker run … ghcr.io/meowmeowsmh/trioforge:latest`
+            or `git clone && ./run.sh`.

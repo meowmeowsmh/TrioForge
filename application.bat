@@ -93,10 +93,23 @@ exit /b 1
 echo.
 echo [TrioForge] Using latest Python: %PY_CMD%
 echo.
+
+rem Maintenance flags shouldn't ask the user to "press Launch".
+set "MAINT="
+for %%A in (%*) do (
+    if "%%A"=="--update" set "MAINT=1"
+    if "%%A"=="--status" set "MAINT=1"
+    if "%%A"=="--install-autostart" set "MAINT=1"
+    if "%%A"=="--remove-autostart" set "MAINT=1"
+)
+if not "%MAINT%"=="" goto :run
+
 echo ============================================================
 echo   TrioForge is ready. Press Launch (Enter) to start it.
 echo ============================================================
 pause
+
+:run
 %PY_CMD% py\tools\launcher.py %*
 if errorlevel 1 (
     echo.
