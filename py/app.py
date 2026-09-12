@@ -1,5 +1,6 @@
 # app.py – chat + notes + cork board + integrated weather toast (performance-optimized)
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, redirect, session
+import secrets
 from flask_compress import Compress
 import requests
 import hashlib
@@ -201,6 +202,131 @@ def _add_security_headers(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['Referrer-Policy'] = 'no-referrer'
     return response
+
+
+# ── Host mode: a password gate for instances other people can reach ──────────
+# TrioForge has no accounts by design, which is fine while it is only listening on
+# your own machine. The moment it is on the LAN, behind a tunnel, or in a
+# container that others can open, it needs a door. Set TRIOFORGE_PASSWORD (or run
+# the launcher with --host, which generates one for you and prints the link) and
+# every page and API call asks for it first.
+HOST_PASSWORD = os.environ.get("TRIOFORGE_PASSWORD", "").strip()
+HOST_SESSION_KEY = "trio_host_ok"
+
+# Reachable without the password: the gate itself, the launcher's health check,
+# the PWA plumbing, and static assets (needed to draw the login page).
+_HOST_OPEN_PATHS = ("/login", "/logout", "/api/ping", "/manifest.webmanifest",
+                    "/sw.js", "/favicon.ico")
+
+# Routes that return data rather than a page: answer them with 401 + JSON instead
+# of handing back the login HTML, so a client never tries to parse it as data.
+_HOST_JSON_PREFIXES = ("/api/", "/conversations", "/messages", "/providers",
+                       "/resources", "/deepseek", "/check_vision")
+
+
+def _host_gate_on() -> bool:
+    return bool(HOST_PASSWORD)
+
+
+def _host_secret() -> str:
+    """A stable signing key, kept beside the other local data."""
+    path = root_path("json_configuration", ".host_secret")
+    try:
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                value = fh.read().strip()
+            if len(value) >= 32:
+                return value
+        value = secrets.token_hex(32)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(value)
+        return value
+    except Exception:
+        return secrets.token_hex(32)
+
+
+app.secret_key = _host_secret()
+
+
+def _host_login_page(error: str = "", next_url: str = "/") -> str:
+    """On-brand, dependency-free login page."""
+    err = ('<p style="color:#f85149;margin:0 0 14px">{}</p>'.format(error)) if error else ""
+    return """<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrioForge — sign in</title>
+<link rel="icon" href="/static/logo/favicon.png">
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:#0b0d12;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .card{background:#12151d;border:1px solid rgba(255,255,255,.09);border-radius:14px;
+        padding:30px 32px;width:min(380px,92vw)}
+  img{height:30px;display:block;margin:0 auto 18px}
+  h1{font-size:16px;font-weight:600;margin:0 0 6px;text-align:center}
+  p.sub{color:#9aa4b2;font-size:13.5px;margin:0 0 18px;text-align:center}
+  input{width:100%%;box-sizing:border-box;padding:12px 14px;border-radius:9px;border:1px solid #2b3240;
+        background:#0a0c11;color:#e6edf3;font-size:15px;margin-bottom:12px}
+  button{width:100%%;padding:12px;border:0;border-radius:9px;font-weight:650;font-size:15px;cursor:pointer;
+         background:linear-gradient(135deg,#ff7a2f,#ff9a4d);color:#1a0e05}
+  .hint{color:#6e7784;font-size:12px;margin-top:14px;text-align:center}
+</style></head>
+<body>
+  <form class="card" method="post" action="/login">
+    <img src="/static/logo/wordmark.png" alt="TrioForge">
+    <h1>This TrioForge is hosted</h1>
+    <p class="sub">Enter the password the host gave you.</p>
+    %s
+    <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">
+    <input type="hidden" name="next" value="%s">
+    <button type="submit">Sign in</button>
+    <p class="hint">TrioForge stays on this machine — signing in only unlocks the workspace.</p>
+  </form>
+</body></html>""" % (err, next_url)
+
+
+@app.before_request
+def _host_password_gate():
+    """Ask for the password on every page and API call while host mode is on."""
+    if not _host_gate_on():
+        return None
+    path = request.path or "/"
+    if path.startswith("/static/") or path.startswith("/viewer/static/"):
+        return None
+    if path in _HOST_OPEN_PATHS:
+        return None
+    if session.get(HOST_SESSION_KEY) is True:
+        return None
+    if request.path.startswith("/api/") or request.method != "GET":
+        return jsonify({"error": "password required", "login": "/login"}), 401
+    if path.startswith(_HOST_JSON_PREFIXES):
+        return jsonify({"error": "password required", "login": "/login"}), 401
+    return Response(_host_login_page(next_url=path), mimetype="text/html"), 200
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def host_login():
+    """Password gate for hosted instances (only active with TRIOFORGE_PASSWORD)."""
+    if not _host_gate_on():
+        return redirect("/")
+    nxt = (request.form.get("next") or request.args.get("next") or "/").strip()
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = "/"
+    if request.method == "POST":
+        supplied = (request.form.get("password") or "").strip()
+        if supplied and secrets.compare_digest(supplied, HOST_PASSWORD):
+            session[HOST_SESSION_KEY] = True
+            session.permanent = True
+            return redirect(nxt)
+        return Response(_host_login_page("Wrong password.", nxt), mimetype="text/html"), 401
+    return Response(_host_login_page(next_url=nxt), mimetype="text/html")
+
+
+@app.route('/logout')
+def host_logout():
+    session.pop(HOST_SESSION_KEY, None)
+    return redirect("/login")
+
 
 DEFAULT_MODEL = "vaultbox/qwen3.5-uncensored:9b"
 OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')

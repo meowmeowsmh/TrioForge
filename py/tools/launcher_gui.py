@@ -136,6 +136,18 @@ class ControlPanel:
                        highlightthickness=0, borderwidth=0).pack(side="left")
         tk.Label(opts, text="port " + self.port, bg=BG, fg=DIM, font=(ui, 10)).pack(side="right")
 
+        # Hosting: let other people use this instance (LAN / tunnel / a server).
+        host_row = tk.Frame(self.root, bg=BG)
+        host_row.pack(fill="x", padx=18, pady=(0, 8))
+        self.host_var = tk.BooleanVar(value=self._host_enabled())
+        tk.Checkbutton(host_row, text="Let other people use this (ask them for a password)",
+                       variable=self.host_var, command=self.toggle_host, bg=BG, fg=MUTED,
+                       selectcolor=PANEL_2, activebackground=BG, activeforeground=TEXT,
+                       font=(ui, 10), highlightthickness=0, borderwidth=0).pack(side="left")
+        self.host_lbl = tk.Label(host_row, text="", bg=BG, fg=DIM, font=(ui, 9))
+        self.host_lbl.pack(side="right")
+        self._show_host_password()
+
         # log
         wrap = tk.Frame(self.root, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
         wrap.pack(fill="both", expand=True, padx=18, pady=(4, 8))
@@ -254,6 +266,49 @@ class ControlPanel:
         self.log_line(("Auto-start: " if ok else "Auto-start failed: ") + detail)
         # reflect the real state rather than what was clicked
         self.autostart_var.set(autostart.state()[0])
+
+    # ── hosting for other people ─────────────────────────────────────────────
+    def _host_store(self):
+        return self.project / "json_configuration" / "host_password"
+
+    def _host_enabled(self) -> bool:
+        store = self._host_store()
+        try:
+            return store.is_file() and bool(store.read_text(encoding="utf-8").strip())
+        except Exception:
+            return False
+
+    def _show_host_password(self) -> None:
+        """Show the password next to the checkbox so it can be passed on."""
+        if not self._host_enabled():
+            self.host_lbl.configure(text="local only")
+            return
+        try:
+            pw = self._host_store().read_text(encoding="utf-8").strip()
+        except Exception:
+            pw = "(see json_configuration/host_password)"
+        self.host_lbl.configure(text="password: {}".format(pw))
+
+    def toggle_host(self) -> None:
+        """Turn host mode on/off and restart the app so it takes effect."""
+        store = self._host_store()
+        if self.host_var.get():
+            # host_setup() creates the password (and keeps it across restarts)
+            launcher.host_setup(self.project)
+            self.log_line("Hosting enabled - share the link and the password below.")
+            for url in launcher._lan_urls():
+                self.log_line("   on your network: " + url)
+            self.log_line("   internet: cloudflared tunnel --url http://localhost:{}".format(self.port))
+            self.log_line("   Everyone you share it with can see this workspace and its data.")
+        else:
+            os.environ.pop("TRIOFORGE_PASSWORD", None)
+            try:
+                store.unlink()
+            except Exception:
+                pass
+            self.log_line("Hosting disabled - back to local only.")
+        self._show_host_password()
+        self.restart_app()
 
     def check_updates(self) -> None:
         self.set_state("working", "Checking for a new version...")

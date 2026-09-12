@@ -236,6 +236,7 @@ Configuration is done through environment variables — all optional, the app wo
 | `TRIOFORGE_WORKERS` | Gunicorn worker count (Docker) | `2` |
 | `TRIOFORGE_ML` | `1` = also install the optional torch/semantic-search stack | *(unset)* |
 | `TRIOFORGE_AUTO_TITLE` | Chat-title generation: `heuristic` (instant, no model call) or `llm` (refine via the model in the background) | `heuristic` |
+| `TRIOFORGE_PASSWORD` | **Host mode**: when set, every page and API call asks for this password first (for instances other people can reach). Unset = local use, no gate | *(unset)* |
 | `LLAMA_SERVER` | Explicit path to the `llama-server` executable (skips auto-detection) | *(auto-detected)* |
 | `LLAMA_HOST` | llama-server host. Set it (e.g. `host.docker.internal`) to enable **remote mode** — connect instead of launching a local server | `127.0.0.1` |
 | `LLAMA_PORT` | llama-server port | `8080` |
@@ -460,7 +461,29 @@ cloudflared tunnel --url http://localhost:5003   # free
 ngrok http 5003
 ```
 
-> ⚠️ Exposing the app to the internet lets *anyone* with the URL use it. TrioForge has **no built-in auth** — put a reverse proxy with a password (or a tunnel with auth) in front of it before exposing it publicly.
+### 🔑 Host it for other people (host mode)
+
+**You are allowed to host this for anyone** — MIT licence, no restrictions, no permission needed. Two ways to hand it over:
+
+| Give them | They get | You need |
+|---|---|---|
+| **`application.exe`** | their own copy, their own chats, fully local | nothing — just send the file |
+| **A link to your instance** | the workspace *you* are hosting: your notes, pins and chats | host mode on (below) |
+
+Turn host mode on with the checkbox in the control panel, or:
+
+```bash
+./run.sh --host                      # generates a password, prints the links to share
+./run.sh --host-password my-secret   # or choose your own
+```
+
+Every page and API call then asks for that password first (`TRIOFORGE_PASSWORD` is what the app actually reads; the password is kept in `json_configuration/host_password` so the same link keeps working). It prints the LAN URL, the tunnel command and the Docker one-liner for whatever kind of host you are.
+
+What stays reachable without the password: the login page, `/api/ping` (so the control panel can health-check it), and static assets. Everything else — chats, notes, pins, settings, every API route — is refused with **401**.
+
+> ⚠️ **Hosting shares your workspace, not just an app.** Everyone you give the link to sees the conversations, notes and pins on that machine. Use a password, hand out the link only to people you trust, and remember you can turn host mode off again (the checkbox, or `TRIOFORGE_PASSWORD=` unset) — the app goes straight back to local-only.
+>
+> Prefer to keep *their* data separate from yours? Send them `application.exe` instead; that is a copy on their machine with its own storage.
 
 ### 📱 Install it as an app (PWA)
 
