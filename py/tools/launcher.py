@@ -577,6 +577,26 @@ def prepare_and_run(project: Path, args) -> int:
         if not args.no_install:
             install_deps(project)
 
+    # --window: open TrioForge in its own WebView2 window (no browser, no console).
+    # Spawned before the app so it can wait for the server to come up on its own.
+    if getattr(args, "window", False):
+        _open_app_window(project)
+
+    # --detach: start the server in the background with no console and return. The
+    # window (above) waits for it; the .bat that calls this returns immediately.
+    if getattr(args, "detach", False):
+        cmd = [venv_pythonw(project), str(project / "py" / "app.py")]
+        flags = 0
+        if os.name == "nt":
+            flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                     | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.Popen([str(c) for c in cmd], cwd=str(project), creationflags=flags,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL)
+        print("[detach] server starting in the background on port {}.".format(
+            os.environ.get("TRIOFORGE_PORT", "5003")))
+        return 0
+
     watch = getattr(args, "watch_updates", -1)
     if watch is None or watch < 0:
         # Unset: a background/autostart instance keeps itself current, an
@@ -589,6 +609,49 @@ def prepare_and_run(project: Path, args) -> int:
         auto_restart=not getattr(args, "no_auto_restart", False),
         no_browser=bool(getattr(args, "no_browser", False) or autostart_mode),
     )
+
+
+def venv_pythonw(project: Path) -> str:
+    """The project venv's WINDOWED interpreter.
+
+    The venv pythonw shim execs the real pythonw (a GUI process - no console) AND
+    keeps the venv's site-packages. The base interpreter via sys._base_executable
+    has no console but ALSO no venv packages, so app.py would die on `import
+    flask`. This is the one that has both.
+    """
+    if os.name == "nt":
+        p = project / ".venv" / "Scripts" / "pythonw.exe"
+        if p.is_file():
+            return str(p)
+    base = project_venv_python(project) or sys.executable
+    candidate = Path(base).with_name("pythonw.exe")
+    return str(candidate if candidate.is_file() else base)
+
+
+def _open_app_window(project: Path) -> None:
+    """Open TrioForge in its own WebView2 window (no browser, no console).
+
+    The window is a separate process; it probes for the server itself and waits,
+    so firing it before the app is ready is fine.
+    """
+    try:
+        script = project / "py" / "tools" / "app_window.py"
+        if not script.is_file():
+            print("[window] app_window.py not found; skipping.")
+            return
+        pythonw = venv_pythonw(project)
+        port = os.environ.get("TRIOFORGE_PORT", "5003")
+        flags = 0
+        if os.name == "nt":
+            flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                     | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.Popen([pythonw, str(script), "--port", str(port), "--title", "TrioForge"],
+                         cwd=str(project), creationflags=flags,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL)
+        print("[window] opening TrioForge in its own window on port {}.".format(port))
+    except Exception as exc:
+        print("[window] could not open the window: {}: {}".format(type(exc).__name__, exc))
 
 
 def _startup_update(project: Path, force: bool = False) -> None:
@@ -778,6 +841,10 @@ def main() -> int:
                              "and print the links to share (LAN / tunnel / Docker).")
     parser.add_argument("--host-password", default="",
                         help="Use this password for host mode instead of a generated one.")
+    parser.add_argument("--window", action="store_true",
+                        help="Open TrioForge in its own WebView2 window instead of a browser.")
+    parser.add_argument("--detach", action="store_true",
+                        help="Start the server (and window) in the background and return immediately.")
     args = parser.parse_args()
 
     try:
