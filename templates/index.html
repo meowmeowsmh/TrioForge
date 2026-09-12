@@ -246,14 +246,24 @@ body.light-mode::before { opacity: 0; }
     .brand-logo { height: 20px; }
 }
 /* Looking at Notes or the Cork Board inside the shell: the chat-only chrome (the
-   icon row, the status bar, the generation panels) is not what you are working
-   with there, so it gets out of the way and the embedded view gets the space.
-   The provider/persona pickers go too - Notes and Cork Board keep using whichever
-   one you last chose in Chat (it is shared through localStorage), and the pages
-   have their own AI controls.
-   Fullscreen is NOT affected: this document holds it, so it simply stays on -
-   press Esc (or come back to Chat) to leave it. */
-html.view-embed #topBarIcons,
+   status bar, the generation panels, the provider/persona pickers) is not what you
+   are working with there, so it gets out of the way and the embedded view gets the
+   space. Notes and Cork Board keep using whichever provider and persona you last
+   chose in Chat (shared through localStorage), and both pages have their own AI
+   controls.
+
+   The fullscreen button is the ONE exception: it is the only fullscreen control
+   that keeps this tab bar visible, so it stays (alone, right-aligned) instead of
+   disappearing with the rest of the row. Fullscreen itself is held by this
+   document, so it stays on while you switch views - press Esc to leave it. */
+html.view-embed #topBarIcons {
+    display: flex !important;
+    justify-content: flex-end;
+    padding: 0 16px 6px;
+}
+html.view-embed #topBarIcons > *:not(#fullscreenBtn) {
+    display: none !important;
+}
 html.view-embed #statusBar,
 html.view-embed #providerSelect,
 html.view-embed #personaSelect,
@@ -1810,7 +1820,11 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     <!-- EMBEDDED VIEW HOST — Notes and Cork Board load here instead of navigating,
          so the chat document (and any fullscreen state) is never torn down. -->
     <div id="viewHost" style="display:none; flex:1; min-height:0; background:#0a0a0f;">
-      <iframe id="viewFrame" title="TrioForge view" src="about:blank" allowfullscreen
+      <!-- Deliberately NO allowfullscreen: the embedded page has its own fullscreen
+           button, and letting the FRAME go fullscreen hides this shell's tab bar -
+           leaving no way to switch between Chat, Notes and Cork Board. Fullscreen
+           belongs to this document. -->
+      <iframe id="viewFrame" title="TrioForge view" src="about:blank"
               style="width:100%; height:100%; border:0; display:block;"></iframe>
     </div>
 
@@ -7379,13 +7393,22 @@ function loadVoiceLogs() {
 
 // ── Fullscreen toggle ──
 function toggleFullscreen() {
-    if (!document.fullscreenElement) {
+    var frame = document.getElementById('viewFrame');
+    var current = document.fullscreenElement;
+    // If a framed page somehow holds fullscreen, drop that first - it is not OUR
+    // fullscreen, and treating it as "already on" would make this button exit
+    // instead of enter.
+    if (current && frame && current === frame) {
+        document.exitFullscreen().catch(function () {});
+        current = null;
+    }
+    if (!current) {
         if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen().catch(function(){});
+            document.documentElement.requestFullscreen().catch(function () {});
         }
     } else {
         if (document.exitFullscreen) {
-            document.exitFullscreen().catch(function(){});
+            document.exitFullscreen().catch(function () {});
         }
     }
 }
@@ -7435,6 +7458,26 @@ function setActiveTab(view) {
         if (k === view) el.classList.add('active'); else el.classList.remove('active');
     });
 }
+
+// The embedded pages ask the shell to toggle fullscreen (their own button is
+// hidden when framed), so fullscreen always belongs to this document and the tab
+// bar never disappears.
+window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin) return;
+    if (ev.data && ev.data.trioFullscreen === 'toggle') {
+        if (typeof toggleFullscreen === 'function') toggleFullscreen();
+    }
+});
+
+// Safety net: Chrome lets a SAME-ORIGIN frame go fullscreen even without
+// allowfullscreen, and that would cover the tab bar with no way back to Chat.
+// If a framed page ever grabs fullscreen, drop straight back out of it.
+document.addEventListener('fullscreenchange', function () {
+    var frame = document.getElementById('viewFrame');
+    if (frame && document.fullscreenElement === frame) {
+        document.exitFullscreen().catch(function () {});
+    }
+});
 
 // If the app is opened with ?view=notes|corkboard (e.g. a bookmark), start there.
 (function () {
