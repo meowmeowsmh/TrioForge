@@ -218,7 +218,7 @@ body.light-mode::before { opacity: 0; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* ── Brand: the logo wordmark + the page name, on all three pages ──
+/* ── Brand: the logo wordmark alone, on all three pages ──
    min-width:0 on the flex row is what stops the wordmark from pushing the top
    bar wider than the viewport (the same trap the dropdowns hit before). */
 .top-bar .left h1.brand {
@@ -230,30 +230,20 @@ body.light-mode::before { opacity: 0; }
     -webkit-text-fill-color: currentColor;
 }
 .brand-logo {
-    height: 26px;
+    height: 28px;
     width: auto;
-    max-width: 46vw;
+    max-width: 50vw;
     object-fit: contain;
     display: block;
     flex: 0 1 auto;
     min-width: 0;
     filter: drop-shadow(0 0 6px rgba(255,120,40,0.25));
 }
-.brand-page {
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.2px;
-    color: #8b949e;
-    white-space: nowrap;
-}
-body.light-mode .brand-page { color: #57606a; }
 @media (max-width: 900px) {
-    .brand-logo { height: 22px; }
-    .brand-page { font-size: 13px; }
+    .brand-logo { height: 24px; }
 }
 @media (max-width: 520px) {
-    .brand-logo { height: 19px; }
-    .brand-page { display: none; }
+    .brand-logo { height: 20px; }
 }
 /* ── Centered tab buttons (pill style) ── only Chat, Notes, Cork Board ── */
 .top-bar .center-tabs {
@@ -1641,7 +1631,6 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
         </button>
         <h1 class="brand">
           <img src="/static/logo/wordmark.png" alt="TrioForge" class="brand-logo">
-          <span class="brand-page">Chat</span>
         </h1>
       </div>
 
