@@ -127,7 +127,13 @@ def log_path(project: Path) -> Path:
 
 
 def run_launcher(cmd: list, cwd: Path, logfile: Path) -> int:
-    """Run the launcher, teeing its output to a log file so failures survive."""
+    """Run the launcher, teeing its output to a log file so failures survive.
+
+    Printing must never be able to kill the run: a frozen console on Windows is
+    cp1252, and the launcher's output contains arrows and box-drawing characters,
+    so an unguarded print() raises UnicodeEncodeError and takes the bootstrap with
+    it (which is exactly what happened the first time this was tried).
+    """
     try:
         with logfile.open("a", encoding="utf-8", errors="replace") as fh:
             fh.write("\n=== {} ===\n".format(datetime.now().isoformat(timespec="seconds")))
@@ -138,8 +144,17 @@ def run_launcher(cmd: list, cwd: Path, logfile: Path) -> int:
                                     stdin=subprocess.DEVNULL, text=True,
                                     encoding="utf-8", errors="replace", bufsize=1)
             for line in proc.stdout:
-                print(line, end="", flush=True)
                 fh.write(line)
+                try:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                except Exception:
+                    safe = line.encode("ascii", "replace").decode("ascii")
+                    try:
+                        sys.stdout.write(safe)
+                        sys.stdout.flush()
+                    except Exception:
+                        pass
             return proc.wait()
     except Exception as exc:
         print("Could not run the launcher: {}: {}".format(type(exc).__name__, exc))
@@ -161,6 +176,15 @@ def wait_for_key() -> None:
 
 
 def main() -> int:
+    # A frozen Windows console is cp1252; the launcher prints arrows/box-drawing
+    # characters, so switch our own streams to UTF-8 up front and never let a
+    # print() failure abort the bootstrap.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="TrioForge bootstrap launcher")
     parser.add_argument("--dir", default=None, help="Where TrioForge lives / should live.")
     parser.add_argument("--update", action="store_true", help="Update and exit.")

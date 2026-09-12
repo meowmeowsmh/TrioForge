@@ -23,7 +23,10 @@ dependencies = [
     "pypdf>=3.0.0",                          # PDF text extraction (uploaded PDFs)
 
     # ── Notes (Obsidian-style frontmatter) ──
-    "frontmatter>=3.0.0,<4.0.0",
+    # python-frontmatter (its import name is still `frontmatter`): the older
+    # `frontmatter` package hard-pins PyYAML==5.1, which has no wheels for
+    # Python 3.12+ and must be compiled, breaking every fresh install.
+    "python-frontmatter>=1.0.0",
 
     # ── Performance / utilities ──
     "orjson>=3.9.0",                         # faster JSON (falls back to std json)

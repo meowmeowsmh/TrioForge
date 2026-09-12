@@ -22,7 +22,11 @@ google-genai>=2.0.0      # Gemini provider (chat + image + video)
 pypdf>=3.0.0             # PDF text extraction (uploaded PDFs)
 
 # ── Notes (Obsidian-style frontmatter) ──────────────────────────
-frontmatter>=3.0.0,<4.0.0
+# python-frontmatter, NOT the older `frontmatter` package: that one hard-pins
+# PyYAML==5.1, a 2019 release with no wheels for Python 3.12+, so a fresh install
+# has to COMPILE it and fails on any machine without the Visual C++ build tools.
+# Same import name (`import frontmatter`) and same API - loads / Post / dumps.
+python-frontmatter>=1.0.0
 
 # ── Performance / utilities ─────────────────────────────────────
 orjson>=3.9.0            # faster JSON (falls back to std json)
