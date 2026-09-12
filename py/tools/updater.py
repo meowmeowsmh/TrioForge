@@ -253,13 +253,21 @@ def write_deps_marker(project: Path) -> None:
 
 
 def deps_changed(project: Path) -> bool:
-    """True when requirements/lock files changed since the last install."""
+    """True when requirements/lock files changed since the last install.
+
+    An EMPTY or missing marker both mean "we cannot prove the deps are installed",
+    and the safe answer is to install: an empty marker is exactly what a fresh
+    clone used to carry (it was committed by mistake), and treating it as
+    "already installed" is how a first run ends up starting the app in an
+    interpreter with no Flask - which crashes with the console closing before
+    anybody can read why.
+    """
     marker = project / DEPS_MARKER
     if not marker.exists():
         return True
     recorded = marker_fingerprint(project)
-    if not recorded:                     # an old empty marker: assume installed
-        return False
+    if not recorded:
+        return True
     return recorded != deps_fingerprint(project)
 
 

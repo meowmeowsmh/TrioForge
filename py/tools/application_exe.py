@@ -28,6 +28,8 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
+from datetime import datetime
 from pathlib import Path
 
 GITHUB_URL = "https://github.com/meowmeowsmh/TrioForge.git"
@@ -114,6 +116,50 @@ def try_install_python() -> bool:
     return False
 
 
+def log_path(project: Path) -> Path:
+    """Where to keep a copy of everything the launcher printed."""
+    try:
+        logs = project / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        return logs / "bootstrap.log"
+    except Exception:
+        return Path(tempfile.gettempdir()) / "trioforge-bootstrap.log"
+
+
+def run_launcher(cmd: list, cwd: Path, logfile: Path) -> int:
+    """Run the launcher, teeing its output to a log file so failures survive."""
+    try:
+        with logfile.open("a", encoding="utf-8", errors="replace") as fh:
+            fh.write("\n=== {} ===\n".format(datetime.now().isoformat(timespec="seconds")))
+            fh.write("> {}\n".format(" ".join(str(c) for c in cmd)))
+            fh.flush()
+            proc = subprocess.Popen([str(c) for c in cmd], cwd=str(cwd),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    stdin=subprocess.DEVNULL, text=True,
+                                    encoding="utf-8", errors="replace", bufsize=1)
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+                fh.write(line)
+            return proc.wait()
+    except Exception as exc:
+        print("Could not run the launcher: {}: {}".format(type(exc).__name__, exc))
+        return 1
+
+
+def wait_for_key() -> None:
+    """Keep the window open so a double-click user can actually READ the error.
+
+    Without this the console closes the instant anything fails, which is exactly
+    how "it did not open" happens with no visible reason.
+    """
+    try:
+        if sys.stdin and sys.stdin.isatty():
+            print()
+            input("Press Enter to close this window...")
+    except Exception:
+        pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="TrioForge bootstrap launcher")
     parser.add_argument("--dir", default=None, help="Where TrioForge lives / should live.")
@@ -123,10 +169,17 @@ def main() -> int:
     parser.add_argument("--remove-autostart", action="store_true",
                         help="Stop starting TrioForge at login.")
     parser.add_argument("--status", action="store_true", help="Show version/git/deps state.")
+    parser.add_argument("--no-pause", action="store_true",
+                        help="Never wait for a keypress (for scripts and CI).")
     parser.add_argument("rest", nargs=argparse.REMAINDER,
                         help="Anything else is passed straight to launcher.py.")
     args = parser.parse_args()
 
+    # Maintenance/inspection runs should exit straight away; a plain double-click
+    # (or an interactive failure) keeps the window so the reason stays readable.
+    non_interactive = bool(args.update or args.status or args.install_autostart
+                           or args.remove_autostart or args.no_pause
+                           or (not sys.stdout.isatty()))
     project = Path(args.dir).expanduser().resolve() if args.dir else find_existing()
     print("TrioForge bootstrap")
     print("  app folder: {}".format(project))
@@ -134,6 +187,8 @@ def main() -> int:
     if not is_project(project):
         print("  no checkout there yet - cloning {} (shallow)".format(GITHUB_URL))
         if not clone(project):
+            if not non_interactive:
+                wait_for_key()
             return 1
 
     launcher = project / "py" / "tools" / "launcher.py"
@@ -146,6 +201,8 @@ def main() -> int:
             print()
             print("Python is required. Install it (https://www.python.org/downloads/) or")
             print("run application.bat, which installs it for you. Then run application.exe again.")
+            if not non_interactive:
+                wait_for_key()
             return 1
     print("  python    : {}".format(" ".join(interpreter)))
 
@@ -162,7 +219,17 @@ def main() -> int:
 
     # The launcher owns updates, dependency install, auto-start and running the
     # app, so the exe stays a thin, always-current shim.
-    return run(interpreter + [str(launcher), str(project), "--no-banner"] + passthrough, cwd=project)
+    logfile = log_path(project)
+    print("  log       : {}".format(logfile))
+    code = run_launcher(interpreter + [str(launcher), str(project), "--no-banner"] + passthrough,
+                        cwd=project, logfile=logfile)
+    if code != 0:
+        print()
+        print("TrioForge did not start (exit {}). The full output is in:".format(code))
+        print("  {}".format(logfile))
+        if not non_interactive:
+            wait_for_key()
+    return code
 
 
 if __name__ == "__main__":
