@@ -885,22 +885,18 @@ body.light-mode::before { opacity: 0; }
     font-size:19px; background: linear-gradient(135deg,#58a6ff,#a371f7);
     -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; font-weight:700;
 }
-/* Brand: the same logo wordmark as Chat and Notes. min-width:0 keeps the flex
-   row from forcing the top bar wider than the window. */
+/* Brand: the same logo wordmark as Chat and Notes, on its own. min-width:0 keeps
+   the flex row from forcing the top bar wider than the window. */
 .top-bar .left h1.brand {
     display:flex; align-items:center; gap:10px; min-width:0;
     background:none; -webkit-text-fill-color: currentColor;
 }
 .brand-logo {
-    height:26px; width:auto; max-width:46vw; object-fit:contain; display:block;
+    height:28px; width:auto; max-width:50vw; object-fit:contain; display:block;
     flex:0 1 auto; min-width:0; filter: drop-shadow(0 0 6px rgba(255,120,40,0.25));
 }
-.brand-page {
-    font-size:14px; font-weight:600; letter-spacing:.2px; color:#8b949e; white-space:nowrap;
-}
-body.light-mode .brand-page { color:#57606a; }
-@media (max-width: 900px) { .brand-logo { height:22px; } .brand-page { font-size:13px; } }
-@media (max-width: 520px) { .brand-logo { height:19px; } .brand-page { display:none; } }
+@media (max-width: 900px) { .brand-logo { height:24px; } }
+@media (max-width: 520px) { .brand-logo { height:20px; } }
 .center-tabs {
     display:flex; gap:4px; background: rgba(255,255,255,0.06); padding:4px;
     border-radius:30px; backdrop-filter: blur(5px); border:1px solid rgba(255,255,255,0.06); justify-self:center;
@@ -1921,7 +1917,6 @@ html.embedded #weatherWidget { display: none !important; }</style>
         <div class="left">
             <h1 class="brand">
             <img src="/static/logo/wordmark.png" alt="TrioForge" class="brand-logo">
-            <span class="brand-page">Cork Board</span>
         </h1>
         </div>
         <div class="center-tabs">
