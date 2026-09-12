@@ -1,0 +1,147 @@
+"""TrioForge's own app window - the desktop edition.
+
+This is a real window: TrioForge in the taskbar, TrioForge in the title bar, its
+own icon, no tabs, no address bar, no browser. Inside it is the complete
+application - chat, notes and the corkboard - because that is what app.py,
+notes.py and cork_board.py already serve.
+
+It renders through the WebView2 engine that ships with Windows 10/11 (the same
+component Edge uses), embedded by pywebview. Nothing is downloaded from the
+internet and nothing leaves the machine: the window points at the local server.
+
+Why not native tkinter widgets? Because the interface is ~18,000 lines of HTML,
+CSS and JavaScript (streaming chat, markdown, the corkboard's drag-and-link
+canvas, the notes editor). tkinter has no HTML or JavaScript engine, so that
+whole interface would have to be rebuilt by hand - and it would do less.
+
+    python py/tools/app_window.py --url https://localhost:5003
+
+Exit codes: 0 closed normally, 3 pywebview is not installed, 4 could not open.
+"""
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+
+def project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def user_data_dir() -> Path:
+    """Where the embedded engine keeps cookies/cache/localStorage.
+
+    Deliberately NOT inside the project: this is browser profile data (cookies,
+    history, localStorage) and a project folder is one `git add -A` away from
+    publishing it. Per-user application data is where it belongs.
+    """
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = str(Path.home() / "Library" / "Application Support")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(base) / "TrioForge" / "webview"
+
+
+def is_local(url: str) -> bool:
+    return any(h in url for h in ("localhost", "127.0.0.1", "[::1]"))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="TrioForge app window")
+    parser.add_argument("--url", required=True, help="Where the local server is listening.")
+    parser.add_argument("--title", default="TrioForge")
+    parser.add_argument("--width", type=int, default=1320)
+    parser.add_argument("--height", type=int, default=880)
+    parser.add_argument("--no-persist", action="store_true",
+                        help="Do not keep cookies/localStorage between runs (debugging).")
+    args = parser.parse_args()
+
+    try:
+        import webview
+    except Exception:
+        print("pywebview is not installed - run: uv pip install pywebview")
+        return 3
+
+    # The app serves HTTPS with a locally generated (mkcert) certificate. WebView2
+    # refuses an untrusted certificate and would show an error page instead of the
+    # app, so for LOCAL addresses only we tell the embedded engine to accept it.
+    # Never done for a remote URL.
+    if args.url.startswith("https://") and is_local(args.url):
+        existing = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+        if "ignore-certificate-errors" not in existing:
+            os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+                existing + " --ignore-certificate-errors").strip()
+
+    # Links to other sites should open in the real browser, not replace the app.
+    try:
+        webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
+    except Exception:
+        pass
+
+    storage = user_data_dir()
+    kwargs = {"title": args.title, "url": args.url,
+              "width": args.width, "height": args.height,
+              "min_size": (900, 600), "text_select": True}
+
+    try:
+        window = webview.create_window(**kwargs)
+    except TypeError as exc:
+        # Older/newer pywebview disagree about some keyword; drop the optional ones.
+        print("Window options not supported ({}); retrying with the basics.".format(exc))
+        window = webview.create_window(title=args.title, url=args.url,
+                                       width=args.width, height=args.height)
+    except Exception as exc:
+        print("Could not create the window: {}: {}".format(type(exc).__name__, exc))
+        return 4
+
+    def _on_loaded():
+        # A certificate or connection failure lands on a blank/error page; make it
+        # obvious rather than showing an empty window.
+        try:
+            title = window.evaluate_js("document.title") or ""
+        except Exception:
+            title = ""
+        if not title.strip():
+            try:
+                window.load_html(
+                    "<body style='background:#0b0d12;color:#e6edf3;font-family:Segoe UI;"
+                    "display:flex;align-items:center;justify-content:center;height:100vh;"
+                    "text-align:center'><div><h2>TrioForge is not reachable</h2>"
+                    "<p style='color:#9aa4b2'>The local server did not answer at {}</p>"
+                    "<p style='color:#6e7784'>Check that TrioForge is running (the control "
+                    "panel shows its status), then press Reload.</p></div></body>".format(args.url))
+            except Exception:
+                pass
+
+    try:
+        window.events.loaded += _on_loaded
+    except Exception:
+        pass
+
+    try:
+        start_kwargs = {"gui": "edgechromium"}
+        if not args.no_persist:
+            # Keep localStorage/cookies: the app keeps theme and provider settings
+            # there, and pywebview's default private mode wipes them every launch.
+            start_kwargs["private_mode"] = False
+            try:
+                storage.mkdir(parents=True, exist_ok=True)
+                start_kwargs["storage_path"] = str(storage)
+            except Exception:
+                pass
+        webview.start(**start_kwargs)
+    except Exception as exc:
+        # Fall back to whatever backend pywebview finds (e.g. MSHTML on old boxes).
+        try:
+            webview.start(private_mode=False)
+        except Exception:
+            print("Could not start the window: {}: {}".format(type(exc).__name__, exc))
+            return 4
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

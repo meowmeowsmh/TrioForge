@@ -321,6 +321,28 @@ def _app_command(project: Path) -> List[str]:
     return [uv, "run", "python", str(app_path)]
 
 
+def pid_alive(pid: int) -> bool:
+    """Is that process still running? (Never signals it: OpenProcess only.)"""
+    if not pid or pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+            if not handle:
+                return False
+            code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return bool(ok) and code.value == STILL_ACTIVE
+        os.kill(int(pid), 0)
+        return True
+    except Exception:
+        return False
+
+
 def panel_pid_file(project: Path) -> Path:
     """Where the control panel records its own pid (one panel per folder)."""
     return project / "logs" / "control-panel.pid"

@@ -13,6 +13,8 @@ there is nothing extra to install.
 """
 
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -79,7 +81,9 @@ class ControlPanel:
     # ── window ───────────────────────────────────────────────────────────────
     def _build(self) -> None:
         self.root = tk.Tk()
-        self.root.title("TrioForge")
+        # NOT "TrioForge": that is the app window's title, and two identically named
+        # windows in the taskbar are impossible to tell apart.
+        self.root.title("TrioForge control panel")
         self.root.configure(bg=BG)
         self.root.geometry("560x460")
         self.root.minsize(480, 380)
@@ -129,12 +133,14 @@ class ControlPanel:
         # buttons
         bar = tk.Frame(self.root, bg=BG)
         bar.pack(fill="x", padx=18, pady=(0, 10))
-        self.open_btn = self._button(bar, "Open TrioForge", self.open_app, primary=True)
+        self.open_btn = self._button(bar, "Open app window", self.open_app_window, primary=True)
         self.open_btn.pack(side="left")
+        self.browser_btn = self._button(bar, "Browser", self.open_app)
+        self.browser_btn.pack(side="left", padx=8)
         self.restart_btn = self._button(bar, "Restart", self.restart_app)
-        self.restart_btn.pack(side="left", padx=8)
+        self.restart_btn.pack(side="left")
         self.stop_btn = self._button(bar, "Stop", self.stop_app)
-        self.stop_btn.pack(side="left")
+        self.stop_btn.pack(side="left", padx=8)
         self.update_btn = self._button(bar, "Check updates", self.check_updates)
         self.update_btn.pack(side="right")
 
@@ -254,13 +260,91 @@ class ControlPanel:
         self.worker.start()
 
     def open_app(self) -> None:
+        """The web interface, in a browser (handy on a phone or for debugging)."""
         url = (self.supervisor.url if self.supervisor and self.supervisor.url else
                "http://localhost:{}".format(self.port))
-        self.log_line("Opening {}".format(url))
+        self.log_line("Opening {} in your browser".format(url))
         try:
             webbrowser.open(url)
         except Exception as exc:
             self.log_line("Could not open a browser: {}".format(exc))
+
+    # ── the app window (the desktop edition's own window) ────────────────────
+    def _pythonw(self) -> str:
+        exe = launcher.project_venv_python(self.project) or sys.executable
+        candidate = Path(exe).with_name("pythonw.exe")
+        return str(candidate if candidate.is_file() else exe)
+
+    def _webview_installed(self) -> bool:
+        try:
+            import webview  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def ensure_webview(self) -> bool:
+        """Install pywebview into the project venv the first time it is needed.
+
+        The app window renders through the WebView2 engine Windows already has;
+        pywebview is only the ~1 MB glue. Installing it on demand keeps it out of
+        the core requirements (Docker and Linux servers do not need it at all).
+        """
+        if self._webview_installed():
+            return True
+        venv_python = launcher.project_venv_python(self.project)
+        if not venv_python:
+            self.log_line("No project venv found; cannot install the window engine.")
+            return False
+        uv = shutil.which("uv")
+        cmd = ([uv, "pip", "install", "--python", venv_python, "pywebview"] if uv
+               else [venv_python, "-m", "pip", "install", "pywebview"])
+        self.log_line("Installing the app window engine (one time, ~1 MB)...")
+        try:
+            result = subprocess.run(cmd, cwd=str(self.project), stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                                    errors="replace", timeout=300,
+                                    creationflags=launcher._no_window_flags())
+        except Exception as exc:
+            self.log_line("Could not install it: {}".format(exc))
+            return False
+        if result.returncode != 0:
+            self.log_line("Install failed: " + (result.stdout or "").strip().splitlines()[-1:] and
+                          (result.stdout or "").strip().splitlines()[-1] or "unknown error")
+            return False
+        self.log_line("Window engine installed.")
+        # The panel's own interpreter already tried and failed to import it; the
+        # window runs in a separate process, so that is fine.
+        return True
+
+    def open_app_window(self) -> None:
+        """TrioForge in its own window: no browser, no tabs, no address bar."""
+        url = (self.supervisor.url if self.supervisor and self.supervisor.url else
+               "http://localhost:{}".format(self.port))
+        script = self.project / "py" / "tools" / "app_window.py"
+        if not script.is_file():
+            self.log_line("app_window.py is missing (update TrioForge); using the browser.")
+            return self.open_app()
+        if getattr(self, "_window_pid", None) and launcher.pid_alive(self._window_pid):
+            self.log_line("The app window is already open.")
+            return
+
+        def work():
+            if not self.ensure_webview():
+                self.log_line("Falling back to the browser.")
+                self.root.after(0, self.open_app)
+                return
+            cmd = [self._pythonw(), str(script), "--url", url, "--title", "TrioForge"]
+            flags = getattr(subprocess, "DETACHED_PROCESS", 0) | launcher._no_window_flags()
+            try:
+                proc = subprocess.Popen(cmd, cwd=str(self.project), creationflags=flags,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                        stdin=subprocess.DEVNULL)
+                self._window_pid = proc.pid
+                self.log_line("App window opened ({})".format(url))
+            except Exception as exc:
+                self.log_line("Could not open the app window: {}".format(exc))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def stop_app(self) -> None:
         if self.supervisor:
@@ -276,6 +360,15 @@ class ControlPanel:
     def quit_app(self) -> None:
         if self.supervisor:
             self.supervisor._stop_child()
+        # Close the app window too: leaving a window pointing at a dead server is
+        # worse than closing it.
+        if getattr(self, "_window_pid", None) and launcher.pid_alive(self._window_pid):
+            try:
+                subprocess.run(["taskkill", "/PID", str(self._window_pid), "/F"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+                               creationflags=launcher._no_window_flags())
+            except Exception:
+                pass
         try:
             if getattr(self, "_pid_file", None):
                 self._pid_file.unlink()
@@ -384,11 +477,12 @@ class ControlPanel:
                     self.log_line("Server is up: {}".format(url))
                     if not getattr(self, "_opened", False):
                         self._opened = True
-                        # Deliberately NOT opening a browser. The desktop app is the
-                        # app: it must not throw a web page at you on every start.
-                        # Press "Open TrioForge" when you want the web interface
-                        # (useful on a phone too), or use the panel as it is.
-                        self.log_line("Press Open TrioForge for the web interface.")
+                        # Open TrioForge's OWN window. This is the desktop app: it
+                        # must not throw a web page at you every time it starts.
+                        if os.environ.get("TRIOFORGE_NO_BROWSER") == "1":
+                            self.log_line("Press Open app window when you are ready.")
+                        else:
+                            self.open_app_window()
             elif self.state == "running":
                 self.set_state("starting", "The server is not answering; waiting...")
         try:
