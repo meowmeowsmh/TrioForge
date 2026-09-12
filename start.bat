@@ -22,7 +22,8 @@ if not exist "%PY%" (
 rem pythonw is a GUI-subsystem program, so cmd launches it and returns at once;
 rem the launcher keeps hosting in the background. --window opens TrioForge's own
 rem WebView2 window (it waits for the server itself); --no-browser stops the app
-rem from opening a browser tab.
-%PY% "%ROOT%\py\tools\launcher.py" "%ROOT%" --no-banner --no-browser --window --detach
+rem from opening a browser tab; --background-update means the app opens straight
+rem away and any update check happens quietly afterwards, with no git window.
+%PY% "%ROOT%\py\tools\launcher.py" "%ROOT%" --no-banner --no-browser --window --detach --background-update
 
 endlocal

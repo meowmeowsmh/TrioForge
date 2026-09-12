@@ -556,7 +556,10 @@ def ensure_certificates():
     # Install the local CA (best-effort: on Linux it may need sudo; the cert is
     # still generated and just shows a browser warning if install fails).
     try:
-        subprocess.run([mkcert, "-install"], check=True, capture_output=True)
+        # CREATE_NO_WINDOW: mkcert is a console program, and the app itself runs
+        # without a console now, so this would otherwise flash a terminal window.
+        subprocess.run([mkcert, "-install"], check=True, capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except Exception as e:
         logger.warning("mkcert -install failed (browser may warn): %s", e)
     try:
@@ -564,6 +567,7 @@ def ensure_certificates():
             [mkcert, "-cert-file", cert_file, "-key-file", key_file,
              "localhost", "127.0.0.1"],
             check=True, capture_output=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return os.path.exists(cert_file) and os.path.exists(key_file)
     except Exception as e:
