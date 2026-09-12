@@ -337,6 +337,8 @@ def main() -> int:
     parser.add_argument("--status", action="store_true", help="Show version/git/deps state.")
     parser.add_argument("--no-pause", action="store_true",
                         help="Never wait for a keypress (for scripts and CI).")
+    parser.add_argument("--panel", action="store_true",
+                        help="Open the old control panel window instead of just the app window.")
     parser.add_argument("rest", nargs=argparse.REMAINDER,
                         help="Anything else is passed straight to launcher.py.")
     args = parser.parse_args()
@@ -399,6 +401,41 @@ def main() -> int:
     # (maintenance / non_interactive are computed once, above, so that --no-pause
     #  only silences the keypress and never changes which mode runs.)
     if not maintenance and not passthrough:
+        # What a double-click does now: start the server hidden and open TrioForge in
+        # its own window. No control panel, no console - the panel is only for the
+        # people who want it, behind --panel.
+        if not args.panel:
+            launcher_script = project / "py" / "tools" / "launcher.py"
+            if launcher_script.is_file():
+                setup_cmd = interpreter + [str(launcher_script), str(project),
+                                           "--no-banner", "--no-browser", "--window", "--detach"]
+                try:
+                    flags = 0
+                    if os.name == "nt":
+                        flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                                 | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    proc = subprocess.Popen([str(c) for c in setup_cmd], cwd=str(project),
+                                            creationflags=flags,
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                            stdin=subprocess.DEVNULL)
+                    emit("  TrioForge is starting - its window opens in a moment.")
+                    print("              (a hidden process sets up and hosts it; nothing else"
+                          " is shown)")
+                    time.sleep(10)              # a first run installs dependencies
+                    if proc.poll() not in (None, 0):
+                        print("  Setup exited with {}; see {}".format(
+                            proc.returncode, log_path(project)))
+                        if not has_console():
+                            alert("TrioForge could not start",
+                                  "Setup failed (exit {}).\n\nLog: {}".format(
+                                      proc.returncode, log_path(project)))
+                        return 1
+                    return 0
+                except Exception as exc:
+                    print("  could not start it ({}); using the console launcher.".format(exc))
+            else:
+                print("  launcher.py not found; falling back to the control panel.")
+
         gui = project / "py" / "tools" / "launcher_gui.py"
         if gui.is_file():
             # One panel per folder. Double-clicking again must not spawn a second
