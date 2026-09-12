@@ -127,3 +127,6 @@ voiceguide_llama.cpp_guide/control.txt
 # It must NEVER be committed - a fresh clone carrying an empty marker made the
 # launcher skip the dependency install, and the app then crashed on import.
 .deps_installed
+
+# Control panel pid file (one panel per folder)
+logs/control-panel.pid

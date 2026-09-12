@@ -451,9 +451,18 @@ gunicorn -c py/gunicorn_conf.py py.app:app  # Gunicorn (Linux / WSL2 / Docker)
 
 ## 🌐 Remote access (phone / LAN / tunnel)
 
-TrioForge binds to **`0.0.0.0`** (all interfaces), so it's reachable from any device on your network out of the box.
+TrioForge listens on **`127.0.0.1` (this computer only) by default** — the same choice Ollama makes. That keeps your workspace off the network, and it means Windows stops asking *"allow this app to communicate on public networks?"* on every single launch.
 
-- **LAN (same Wi-Fi):** open `http://<your-computer-IP>:5003` on your phone — the app logs the exact URL at startup (**http** on Linux/macOS, **https** on Windows). You may need to allow port `5003` through your firewall. On **https**, other devices warn about the self-signed cert: expected, use *Advanced → Continue*. Using **http** on the LAN avoids the warning entirely (but note the mic/clipboard "secure context" benefits only apply to `localhost`, not a LAN IP).
+To reach it from another device, open it up deliberately:
+
+```bash
+TRIOFORGE_HOST=0.0.0.0 ./run.sh          # Linux / macOS / WSL
+set TRIOFORGE_HOST=0.0.0.0 && application.bat   # Windows (cmd)
+```
+
+…or just turn on **host mode** (`--host`, or the checkbox in the control panel), which binds all interfaces *and* puts a password in front of it. Either way the firewall will ask once — allow it for private networks.
+
+- **LAN (same Wi-Fi):** open `http://<your-computer-IP>:5003` on your phone — the app logs the exact URL at startup (**http** on Linux/macOS, **https** on Windows). On **https**, other devices warn about the self-signed cert: expected, use *Advanced → Continue*. Using **http** on the LAN avoids the warning entirely (but note the mic/clipboard "secure context" benefits only apply to `localhost`, not a LAN IP).
 - **Internet (anywhere):** run a tunnel from another terminal, then open the tunnel URL. Match the scheme your instance uses (`http` unless you set `TRIOFORGE_SSL=1`):
 
 ```bash

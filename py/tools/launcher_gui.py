@@ -61,8 +61,20 @@ class ControlPanel:
         self._build()
         self._start_app()
         self.root.after(400, self._tick)
+        self._write_pid_file()
         self.log_line("TrioForge control panel on port {}".format(self.port))
         self.log_line("Log file: {}".format(self._logfile))
+
+    # ── one panel per folder ─────────────────────────────────────────────────
+    def _write_pid_file(self) -> None:
+        """Record this panel so a second launch attaches instead of duplicating."""
+        try:
+            path = launcher.panel_pid_file(self.project)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{} {}\n".format(os.getpid(), self.port), encoding="utf-8")
+            self._pid_file = path
+        except Exception:
+            self._pid_file = None
 
     # ── window ───────────────────────────────────────────────────────────────
     def _build(self) -> None:
@@ -203,6 +215,14 @@ class ControlPanel:
 
     # ── the hosted app ───────────────────────────────────────────────────────
     def _start_app(self) -> None:
+        # Already serving? Attach to it instead of starting a second copy: two
+        # copies means two ports, two consoles and two firewall prompts.
+        if self._is_up():
+            self.set_state("running", "Already running on http://localhost:{}".format(self.port))
+            self.log_line("TrioForge is already running on port {} - attaching.".format(self.port))
+            self._opened = True
+            return
+
         self.set_state("starting", "Setting up the environment and starting the server...")
         self.log_line("Starting TrioForge from {}".format(self.project))
 
@@ -256,6 +276,11 @@ class ControlPanel:
     def quit_app(self) -> None:
         if self.supervisor:
             self.supervisor._stop_child()
+        try:
+            if getattr(self, "_pid_file", None):
+                self._pid_file.unlink()
+        except Exception:
+            pass
         self.root.destroy()
 
     def toggle_autostart(self) -> None:
@@ -336,12 +361,18 @@ class ControlPanel:
 
     # ── polling ──────────────────────────────────────────────────────────────
     def _is_up(self) -> bool:
-        try:
-            with urllib.request.urlopen("http://127.0.0.1:{}/api/ping".format(self.port),
-                                        timeout=2) as resp:
-                return b"trioforge" in resp.read(200).lower()
-        except (urllib.error.URLError, OSError, ValueError):
-            return False
+        """Is the hosted app answering? Tries https too - Windows serves HTTPS."""
+        import ssl as _ssl
+        ctx = _ssl._create_unverified_context()
+        for scheme in ("http", "https"):
+            try:
+                with urllib.request.urlopen("{}://127.0.0.1:{}/api/ping".format(scheme, self.port),
+                                            timeout=2, context=ctx) as resp:
+                    if b"trioforge" in resp.read(200).lower():
+                        return True
+            except (urllib.error.URLError, OSError, ValueError, _ssl.SSLError):
+                continue
+        return False
 
     def _tick(self) -> None:
         if self.state in ("starting", "working") or self.state == "running":

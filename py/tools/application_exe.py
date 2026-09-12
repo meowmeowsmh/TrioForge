@@ -182,6 +182,56 @@ def _tail(path: Path, lines: int = 12) -> list:
         return []
 
 
+def pid_alive(pid: int) -> bool:
+    """Is that process still running? (Never signals it: OpenProcess only.)"""
+    if pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+            if not handle:
+                return False
+            code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return bool(ok) and code.value == STILL_ACTIVE
+        os.kill(int(pid), 0)
+        return True
+    except Exception:
+        return False
+
+
+def panel_pid_file(project: Path) -> Path:
+    return project / "logs" / "control-panel.pid"
+
+
+def panel_already_open(project: Path) -> bool:
+    """True if the control panel for this folder is already running.
+
+    Without this every impatient double-click spawned another panel, which started
+    another server on the next free port (5004, 5005, ...) - the "windows keep
+    popping up" complaint - plus a firewall prompt for each new listener.
+    """
+    try:
+        path = panel_pid_file(project)
+        if not path.is_file():
+            return False
+        pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+    except Exception:
+        return False
+    if pid_alive(pid):
+        return True
+    try:
+        path.unlink()                      # stale file from a crash: clean it up
+    except Exception:
+        pass
+    return False
+
+
 def log_path(project: Path) -> Path:
     """Where to keep a copy of everything the launcher printed."""
     try:
@@ -351,6 +401,12 @@ def main() -> int:
     if not maintenance and not passthrough:
         gui = project / "py" / "tools" / "launcher_gui.py"
         if gui.is_file():
+            # One panel per folder. Double-clicking again must not spawn a second
+            # window (and a second server on the next free port).
+            if panel_already_open(project):
+                emit("  control   : TrioForge is already running - the panel window is open.")
+                print("              Not starting a second copy.")
+                return 0
             gui_cmd = gui_interpreter(interpreter) + [str(gui), str(project)]
             try:
                 flags = 0
