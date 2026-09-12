@@ -249,7 +249,11 @@ class ControlPanel:
                 self.project,
                 watch_seconds=int(os.environ.get("TRIOFORGE_WATCH", "1800")),
                 auto_restart=True,
-                no_browser=bool(os.environ.get("TRIOFORGE_NO_BROWSER") == "1"),
+                # The app must NOT open a browser on its own: the panel is the host
+                # and it opens TrioForge's window (and a browser only when you press
+                # the Browser button). Without this, every start threw open a browser
+                # tab AND the app window - "the app keeps opening".
+                no_browser=True,
                 on_output=self.log_line,
             )
             self.log_line("Launching the app...")
