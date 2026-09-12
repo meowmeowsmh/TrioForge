@@ -1,4 +1,7 @@
-"""TrioForge.exe — the double-clickable entry point for Windows.
+"""application.exe â€” the double-clickable entry point for Windows.
+
+Named after ``application.bat`` so the Windows entry point is one word everywhere:
+``application.bat`` (from a clone), ``application.exe`` (downloaded).
 
 This is deliberately a *bootstrap*, not a bundle: it does not contain Flask, the
 providers or the app. It only
@@ -8,16 +11,16 @@ providers or the app. It only
 3. hands over to ``py/tools/launcher.py``, which sets up Python/deps as usual.
 
 That keeps the executable a couple of megabytes instead of gigabytes, and means
-the app itself keeps auto-updating exactly like a plain ``git clone`` does — the
+the app itself keeps auto-updating exactly like a plain ``git clone`` does â€” the
 maintainer pushes, everybody's next launch is the new version.
 
 Built by .github/workflows/build-windows-exe.yml (PyInstaller, one file).
 
 Usage:
-    TrioForge.exe                 # update and run
-    TrioForge.exe --update        # update only
-    TrioForge.exe --install-autostart
-    TrioForge.exe --dir D:\\TrioForge
+    application.exe                 # update and run
+    application.exe --update        # update only
+    application.exe --install-autostart
+    application.exe --dir D:\\TrioForge
 """
 
 import argparse
@@ -75,7 +78,7 @@ def clone(target: Path) -> bool:
 def python_command(project: Path) -> list:
     """How to invoke a REAL Python interpreter (never this exe).
 
-    Inside a PyInstaller build `sys.executable` is TrioForge.exe itself, so using
+    Inside a PyInstaller build `sys.executable` is application.exe itself, so using
     it here would relaunch the bootstrap with launcher arguments - a loop, not a
     launcher. Prefer the project venv, then a python on PATH, then `py -3`.
     """
@@ -142,7 +145,7 @@ def main() -> int:
         if not interpreter:
             print()
             print("Python is required. Install it (https://www.python.org/downloads/) or")
-            print("run application.bat, which installs it for you. Then run TrioForge.exe again.")
+            print("run application.bat, which installs it for you. Then run application.exe again.")
             return 1
     print("  python    : {}".format(" ".join(interpreter)))
 

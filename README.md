@@ -24,7 +24,7 @@
 
 **Windows — nothing to install first.** Download the launcher and double-click it:
 
-> ### ⬇️ [`TrioForge.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/TrioForge.exe) <sub>([all releases](https://github.com/meowmeowsmh/TrioForge/releases) · 7.9 MB · no Python needed)</sub>
+> ### ⬇️ [`application.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/application.exe) <sub>([all releases](https://github.com/meowmeowsmh/TrioForge/releases) · 7.9 MB · no Python needed)</sub>
 
 It fetches TrioForge, keeps it updated on every launch, installs the dependencies and starts the
 app — then opens the Setup panel, where **⚡ Auto-install** gets llama.cpp for your GPU.
@@ -125,10 +125,10 @@ Then, inside the app:
 | 🍎 **macOS (Intel or Apple Silicon)** | `run.sh` | `./run.sh` — uses Homebrew's Python, finds `/opt/homebrew/bin` tools | `brew install llama.cpp`, or **⚡ Auto-install** | `http://localhost:5003` |
 | 🐧🪟 **WSL2** | `run.sh` | same as Linux | same as Linux | `http://localhost:5003` |
 | 🐳 **Docker** | `docker/application.sh` | `./docker/application.sh` | host llama-server via `LLAMA_HOST` | `http://localhost:5002` |
-| 🪟 **Windows (no terminal)** | [`TrioForge.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/TrioForge.exe) | Download and double-click it | fetches + updates the app for you, then **⚡ Auto-install** | `https://localhost:5003` |
+| 🪟 **Windows (no terminal)** | [`application.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/application.exe) | Download and double-click it | fetches + updates the app for you, then **⚡ Auto-install** | `https://localhost:5003` |
 | 🛠️ Any OS (advanced) | `py/tools/launcher.py` | `python py/tools/launcher.py` | — | — |
 
-`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `TrioForge.exe` is a thin wrapper around the same thing (it clones the repo on first run, then keeps it updated). `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
+`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `application.exe` is a thin wrapper around the same thing (it clones the repo on first run, then keeps it updated). `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
 
 ### 🚀 First-run setup checker
 
@@ -497,7 +497,7 @@ your next launch *is* the new version.
 | How you run it | How it updates |
 |---|---|
 | `application.bat` / `./run.sh` | Pulls the latest code on every start (git fast-forward). If the dependency manifests changed, they are reinstalled before the app starts. |
-| `TrioForge.exe` | Same — and if there is no checkout yet, it clones one into `%LOCALAPPDATA%\TrioForge` first. |
+| `application.exe` | Same — and if there is no checkout yet, it clones one into `%LOCALAPPDATA%\TrioForge` first. |
 | Docker | `./docker/application.sh --update` pulls the newest image (CI rebuilds it on every push). `restart: unless-stopped` already brings the container back after a reboot. |
 | A long-running instance | `--watch-updates 1800` checks in the background and **restarts the app** when a new version lands. On by default in auto-start mode. |
 
@@ -533,7 +533,7 @@ launcher.py --no-auto-restart      # pull new code but keep the running process
 launcher.py --force-update         # update even with local edits (stashed, not lost)
 ```
 
-> Windows: `TrioForge.exe` is **unsigned**, so SmartScreen shows *"Windows protected your PC"*
+> Windows: `application.exe` is **unsigned**, so SmartScreen shows *"Windows protected your PC"*
 > the first time — **More info → Run anyway**. Signing it needs a code-signing certificate.
 
 ---
@@ -710,7 +710,7 @@ TrioForge/
 │   │   ├── launcher.py          # Cross-platform launcher (+ self-update, auto-start)
 │   │   ├── updater.py           # git/archive self-update: never touches your data
 │   │   ├── autostart.py         # Start-at-login entries (Windows / Linux / macOS)
-│   │   ├── trioforge_exe.py     # What TrioForge.exe runs: find/clone/update + launch
+│   │   ├── application_exe.py   # What application.exe runs: find/clone/update + launch
 │   │   └── voice_agent.py       # Local voice-to-voice agent launcher
 │   ├── https_guni_n_waitress.py # Waitress + HTTPS server (Windows)
 │   └── gunicorn_conf.py         # Gunicorn server config (Linux/Docker)
