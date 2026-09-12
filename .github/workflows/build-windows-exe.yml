@@ -71,13 +71,33 @@ jobs:
             dist/application.exe
             dist/application-cli.exe
           body: |
-            **Windows:** download `application.exe` and double-click it — a small window
-            appears and hosts TrioForge in the background (no console, no terminal).
-            Press **Open TrioForge** to use the web interface, or leave it and point any
-            browser at the address it shows. Unsigned, so SmartScreen warns once
-            ("More info → Run anyway").
-            `application-cli.exe` is the same thing for the command line:
-            `--status`, `--update`, `--install-autostart`, `--host`.
-            **Docker / NAS / Linux / macOS:** `docker run … ghcr.io/meowmeowsmh/trioforge:latest`
-            or `git clone && ./run.sh`.
+            ## Windows — download `application.exe` and double-click it
+
+            Two windows appear: **TrioForge control panel** (the host — status, Restart, Stop,
+            hosting toggle, activity log) and **TrioForge**, the app's own window: TrioForge in
+            the title bar and taskbar, no tabs, no address bar, nothing browser-like, with chat,
+            notes and the corkboard inside it.
+
+            - No console window, no terminal, no Python to install.
+            - Chrome/Edge stays out of it. There is a **Browser** button if you want the web
+              interface on a phone or another device.
+            - It listens on `127.0.0.1` only, so Windows does not ask about the firewall and
+              nothing is exposed on your network unless you ask for it.
+            - Starting it again does **not** start a second copy: it attaches to the one running.
+            - Unsigned, so SmartScreen warns once: **More info → Run anyway**.
+
+            ## Hosting it for other people
+
+            `application-cli.exe --host` (or the hosting checkbox in the control panel) opens it
+            to your network **and** puts a password in front of it, then prints the links to share.
+            Without that, it stays local.
+
+            ## Command line
+
+            `application-cli.exe` is the same program for terminals:
+            `--status`, `--update`, `--install-autostart`, `--host`, `--host-password`.
+
+            ## Docker / NAS / Linux / macOS
+
+            `docker run … ghcr.io/meowmeowsmh/trioforge:latest` or `git clone && ./run.sh`.
 
