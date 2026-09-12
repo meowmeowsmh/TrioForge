@@ -252,6 +252,10 @@ body.light-mode::before { opacity: 0; }
    chose in Chat (shared through localStorage), and both pages have their own AI
    controls.
 
+   The chat's own sidebar (conversation list) goes as well: those views have their
+   own navigation inside the frame, so the chat list next to them is just
+   interference. Its tab-bar toggle is hidden with it, so there is no dead button.
+
    The fullscreen button and the weather toggle are the TWO exceptions: without
    the first there is no fullscreen control that keeps this tab bar visible, and
    without the second the weather widget (which stays on screen in these views)
@@ -267,6 +271,11 @@ html.view-embed #topBarIcons {
     justify-content: flex-end;
     padding-right: 18px;
 }
+/* The sidebar toggle that used to give the top bar its left margin is hidden in
+   these views, so the wordmark would otherwise touch the window edge. */
+html.view-embed .top-bar .left {
+    padding-left: 16px;
+}
 html.view-embed #topBarIcons > *:not(#fullscreenBtn):not(#weatherToggleBtn) {
     display: none !important;
 }
@@ -276,6 +285,8 @@ html.view-embed #topBarIcons > *:not(#fullscreenBtn):not(#weatherToggleBtn) {
     }
 }
 html.view-embed #statusBar,
+html.view-embed .sidebar,
+html.view-embed .sidebar-toggle,
 html.view-embed #providerSelect,
 html.view-embed #personaSelect,
 html.view-embed #personaCustomInput,
