@@ -312,8 +312,18 @@ def _app_command(project: Path) -> List[str]:
     The project venv wins: that is where install_deps() just put the dependencies.
     Falling back to `uv run` before checking it would start the app in an
     interpreter that may not have them.
+
+    Hidden launches use the venv's pythonw: a console interpreter cannot be kept
+    quiet, because .venv/Scripts/python.exe is a shim that starts the real
+    interpreter as a child, and CREATE_NO_WINDOW only silences the shim - the child
+    allocates a console window of its own. When we DO have a console (someone ran
+    application.bat in a terminal) the console interpreter is used, so the app's
+    output stays in the terminal they are watching.
     """
     app_path = project / "py" / "app.py"
+    hidden = _no_window_flags() != 0
+    if hidden:
+        return [venv_pythonw(project), str(app_path)]
     venv_python = project_venv_python(project)
     if venv_python:
         return [venv_python, str(app_path)]

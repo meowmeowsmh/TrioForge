@@ -667,9 +667,14 @@ def start(model=None):
         try:
             spawn_kwargs = {}
             if os.name == "nt":
-                # No console window for the model server: from a windowed desktop app
-                # every spawn without this flag pops up a cmd window that stays.
-                spawn_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                # No console window for the model server. CREATE_NO_WINDOW alone was
+                # not enough here: DETACHED_PROCESS is also needed so the child cannot
+                # attach to (or allocate) a console at all - otherwise a model server
+                # started by a windowless app still opened a terminal window.
+                spawn_kwargs["creationflags"] = (
+                    getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    | getattr(subprocess, "DETACHED_PROCESS", 0))
+                spawn_kwargs["close_fds"] = True
             _process = subprocess.Popen(
                 cmd,
                 stdout=_out,
