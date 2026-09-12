@@ -13,6 +13,7 @@
 #
 # Usage:
 #   ./docker/application.sh                 # setup + build (if needed) + start
+#   ./docker/application.sh --update        # pull the newest image and recreate
 #   ./docker/application.sh --build         # force a rebuild first
 #   ./docker/application.sh --no-build      # start without building
 #   ./docker/application.sh --foreground    # run attached (Ctrl+C to stop)
@@ -20,6 +21,10 @@
 #   ./docker/application.sh --status        # show container status
 #   ./docker/application.sh --stop          # stop and remove the container
 #   ./docker/application.sh --help
+#
+# Updating: the image is rebuilt by CI on every push to main, so --update is all
+# you need. The compose file already uses `restart: unless-stopped`, which means
+# the container comes back automatically after a reboot - no extra setup.
 #
 # First time?  chmod +x docker/application.sh
 
@@ -46,12 +51,13 @@ for arg in "$@"; do
     case "$arg" in
         --build)      DO_BUILD="force" ;;
         --no-build)   DO_BUILD="never" ;;
+        --update|--pull) MODE="update" ;;
         --foreground|-f) MODE="up-foreground" ;;
         --logs)       MODE="logs" ;;
         --status)     MODE="status" ;;
         --stop|--down) MODE="stop" ;;
         --help|-h)
-            sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -175,6 +181,18 @@ case "$MODE" in
         echo ""
         echo "[TrioForge] Following logs (Ctrl+C to stop watching — the app keeps running)..."
         cd docker && $COMPOSE logs -f
+        exit 0
+        ;;
+    update)
+        # The image is rebuilt by CI on every push to main, so updating is a pull
+        # plus a recreate. Data lives in the bind mounts, so nothing is lost.
+        echo ""
+        echo "[TrioForge] Pulling the newest image..."
+        cd docker
+        $COMPOSE pull || echo "[TrioForge] No published image to pull (built locally)."
+        $COMPOSE up -d --remove-orphans
+        echo ""
+        echo "[TrioForge] Updated and running. Open http://localhost:$HOST_PORT"
         exit 0
         ;;
 esac

@@ -98,6 +98,14 @@ if [ "$MISSING" -eq 1 ]; then
         echo "            $VENV/bin/python -m pip install -r requirements.txt"
         exit 1
     }
+    # Record the manifest fingerprint so the launcher knows these deps are current
+    # and only reinstalls when requirements actually change (e.g. after an update).
+    "$VENV/bin/python" - <<'PY' 2>/dev/null || true
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path("py/tools").resolve()))
+import updater
+updater.write_deps_marker(pathlib.Path(".").resolve())
+PY
     echo "[TrioForge] Core dependencies installed."
 fi
 
@@ -133,4 +141,6 @@ fi
 echo "[TrioForge] Port: $TRIOFORGE_PORT"
 echo "[TrioForge] Launching TrioForge..."
 echo "[TrioForge] (Models: drop .gguf files into models/, video_model/ or universal_models_to_text/)"
-exec "$VENV/bin/python" py/tools/launcher.py --no-install "$@"
+# No --no-install here: the launcher reinstalls only when requirements/lock files
+# changed since the last install — which is exactly what an auto-update needs.
+exec "$VENV/bin/python" py/tools/launcher.py "$@"

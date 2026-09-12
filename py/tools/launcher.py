@@ -24,8 +24,18 @@ import shutil
 import subprocess
 import sys
 import platform
+import threading
+import time
 from pathlib import Path
 from typing import Iterator, List, Optional
+
+try:                                    # same folder; both are stdlib-only
+    import updater
+    import autostart
+except ImportError:                     # pragma: no cover - launched oddly
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import updater
+    import autostart
 
 # Core files that must exist together for a folder to be a TrioForge project.
 REQUIRED_FILES = (
@@ -36,7 +46,9 @@ REQUIRED_FILES = (
     "py/features/cork_board.py",
     "py/features/viewer.py",
 )
-DEPS_MARKER = ".deps_installed"
+# The dependency marker (.deps_installed, plus a hash of the manifests) lives in
+# py/tools/updater.py — it is what decides whether deps need reinstalling. No
+# second copy of the name here on purpose.
 
 BANNER = r""" _____     _       _____                    
 |_   _| __(_) ___ |  ___|__  _ __ __ _  ___ 
@@ -115,7 +127,7 @@ def install_deps(project: Path) -> None:
         print("Installing dependencies with uv (uv sync)...")
         result = subprocess.run([uv, "sync"], cwd=str(project))
         if result.returncode == 0:
-            (project / DEPS_MARKER).touch()
+            updater.write_deps_marker(project)      # records a hash of the manifests
             print("Dependencies installed (uv).")
             return
         print("uv sync failed; falling back to pip.")
@@ -130,7 +142,7 @@ def install_deps(project: Path) -> None:
         print("Dependency installation failed.")
         print("Install manually with: pip install -r requirements.txt")
         sys.exit(1)
-    (project / DEPS_MARKER).touch()
+    updater.write_deps_marker(project)
     print("Dependencies installed.")
 
 
@@ -177,16 +189,112 @@ def start_voice_agent(project: Path, enabled: bool = True) -> None:
         print("Voice agent: failed to start ({})".format(e))
 
 
-def run_app(project: Path, start_voice: bool = True) -> None:
-    """Start the Flask app, replacing this launcher process.
-
-    The voice agent is NOT auto-started here: it runs its own llama-server on a
-    dedicated port (8082, separate from the chat server's 8080). Start it
-    separately (py\\tools\\voice_agent.py) only when you actually want
-    voice-to-voice.
-    """
+def _app_command(project: Path) -> List[str]:
+    """The command that runs the Flask app (venv python, else uv, else plain python)."""
     app_path = project / "py" / "app.py"
-    print("Project folder: {}".format(project))
+    in_venv = hasattr(sys, "base_prefix") and sys.prefix != sys.base_prefix
+    uv = shutil.which("uv")
+    if in_venv or not uv:
+        return [sys.executable, str(app_path)]
+    return [uv, "run", "python", str(app_path)]
+
+
+class AppSupervisor:
+    """Runs the app as a child process so an update can restart it.
+
+    `os.execv` (the old behaviour) replaced this process with the app, which made
+    "update while running" impossible. Watching is opt-in via --watch-updates, and
+    the app is only restarted when an update was actually applied - never on a
+    normal exit or Ctrl+C.
+    """
+
+    def __init__(self, project: Path, watch_seconds: int = 0,
+                 auto_restart: bool = True, no_browser: bool = False):
+        self.project = project
+        self.watch_seconds = watch_seconds
+        self.auto_restart = auto_restart
+        self.no_browser = no_browser
+        self.child: Optional[subprocess.Popen] = None
+        self.pending = threading.Event()
+        self.message = ""
+
+    def _environment(self) -> dict:
+        env = dict(os.environ)
+        if self.no_browser:
+            env["TRIOFORGE_NO_BROWSER"] = "1"
+        return env
+
+    def _watch(self) -> None:
+        """Poll GitHub every N seconds; apply + request a restart when newer."""
+        while True:
+            time.sleep(self.watch_seconds)
+            try:
+                state = updater.check(self.project)
+                if not state.get("update_available"):
+                    continue
+                print()
+                print("[update] newer version found ({} -> {}); pulling it now...".format(
+                    state["local"].get("short") or "?", state["remote"].get("short") or "?"))
+                result = updater.apply_update(self.project)
+                print("[update] {}".format(result.get("message", "")))
+                if result.get("updated"):
+                    if updater.deps_changed(self.project):
+                        print("[update] dependencies changed; installing them before restart...")
+                        install_deps(self.project)
+                    self.message = result.get("message", "")
+                    self.pending.set()
+                    if self.child and self.child.poll() is None:
+                        self._stop_child()
+                    return
+            except Exception as exc:                 # pragma: no cover - defensive
+                print("[update] watcher error: {}".format(exc))
+
+    def _stop_child(self) -> None:
+        child = self.child
+        if not child or child.poll() is not None:
+            return
+        try:
+            child.terminate()
+            try:
+                child.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                child.kill()
+        except Exception:
+            pass
+
+    def run(self) -> int:
+        app_path = self.project / "py" / "app.py"
+        print("Project folder: {}".format(self.project))
+        print("Starting TrioForge... it will open your browser automatically.")
+        if self.watch_seconds:
+            print("Watching for updates every {}s (disable with --watch-updates 0).".format(
+                self.watch_seconds))
+        print()
+        os.chdir(str(self.project))
+        cmd = _app_command(self.project)
+
+        if self.watch_seconds:
+            threading.Thread(target=self._watch, daemon=True).start()
+
+        while True:
+            self.child = subprocess.Popen(cmd, cwd=str(self.project), env=self._environment())
+            try:
+                code = self.child.wait()
+            except KeyboardInterrupt:
+                self._stop_child()
+                return 0
+            if self.pending.is_set() and self.auto_restart:
+                self.pending.clear()
+                self.no_browser = True          # don't pop a new tab on every restart
+                print("[update] restarting TrioForge on the new version "
+                      "(refresh your browser tab)...")
+                continue
+            return code
+
+
+def run_app(project: Path, start_voice: bool = True, watch_seconds: int = 0,
+            auto_restart: bool = True, no_browser: bool = False) -> int:
+    """Start the Flask app (supervised, so updates can restart it)."""
     if start_voice:
         print("Voice agent is NOT auto-started (it runs on its own port 8082).")
         print("Run py\\tools\\voice_agent.py separately for voice-to-voice.")
@@ -198,32 +306,105 @@ def run_app(project: Path, start_voice: bool = True) -> None:
         _scheme = "http"
     else:
         _scheme = "https" if platform.system() == "Windows" else "http"
-    print("Starting TrioForge... it will open your browser automatically.")
     print("  requested: {}://localhost:{}  (if that port is busy, the app picks the "
           "next free one and prints the real URL below)".format(_scheme, port))
-    print()
-    os.chdir(str(project))
-    # If we are ALREADY running inside a venv (e.g. run.sh launched us with
-    # .venv-linux/bin/python), use it directly — don't let `uv run` spin up its
-    # OWN .venv and bypass the one that was just set up.
-    in_venv = hasattr(sys, "base_prefix") and sys.prefix != sys.base_prefix
-    uv = shutil.which("uv")
-    if in_venv:
-        os.execv(sys.executable, [sys.executable, str(app_path)])
-    elif uv:
-        os.execv(uv, [uv, "run", "python", str(app_path)])
-    else:
-        os.execv(sys.executable, [sys.executable, str(app_path)])
+    return AppSupervisor(project, watch_seconds=watch_seconds, auto_restart=auto_restart,
+                         no_browser=no_browser).run()
 
 
-def prepare_and_run(project: Path, args) -> None:
-    """Install deps if needed, then start the app."""
-    marker = project / DEPS_MARKER
-    if args.install:
+def do_update(project: Path, force: bool = False) -> int:
+    """`--update`: check and apply now, without starting the app."""
+    print("Checking {} ({})...".format(updater.GITHUB_REPO,
+                                       updater.local_revision(project).get("short") or "no git"))
+    state = updater.check(project)
+    if not state.get("update_available"):
+        print("Already up to date ({}). {}".format(
+            state["local"].get("short") or "?", state.get("reason", "")))
+        return 0
+    print("Update available: {} -> {}".format(
+        state["local"].get("short") or "?", state["remote"].get("short") or "?"))
+    result = updater.apply_update(project, allow_dirty=force)
+    print(result.get("message", ""))
+    for line in result.get("changes", []) or []:
+        print("   " + line)
+    if result.get("updated") and updater.deps_changed(project):
+        print("Dependencies changed; installing them...")
         install_deps(project)
-    elif not args.no_install and not marker.exists():
+    return 0 if result.get("ok") else 1
+
+
+def show_status(project: Path) -> int:
+    """`--status`: everything support needs to know, in one screen."""
+    info = updater.status(project)
+    print("TrioForge status")
+    print("  project        : {}".format(info["project"]))
+    print("  python         : {} ({})".format(info["python"], sys.executable))
+    print("  git checkout   : {}".format("yes" if info["git_checkout"] else "no (archive updates)"))
+    print("  branch/commit  : {} {}".format(info["branch"] or "-", info["commit"] or "-"))
+    print("  last commit    : {}".format(info["commit_subject"] or "-"))
+    print("  local changes  : {}".format("YES (auto-update paused)" if info["local_changes"] else "none"))
+    print("  deps installed : {}{}".format(
+        "yes" if info["deps_installed"] else "no",
+        " (manifests changed - will reinstall)" if info["deps_changed"] else ""))
+    enabled, detail = autostart.state()
+    print("  start at login : {}".format(detail))
+    state = updater.check(project)
+    print("  upstream       : {}".format(
+        "update available ({} -> {})".format(state["local"].get("short") or "?",
+                                             state["remote"].get("short") or "?")
+        if state.get("update_available") else "up to date" if state.get("remote", {}).get("sha")
+        else state.get("reason", "unknown")))
+    return 0
+
+
+def prepare_and_run(project: Path, args) -> int:
+    """Optionally update, install deps if needed, then start the app."""
+    autostart_mode = bool(getattr(args, "autostart", False))
+
+    if not args.no_update:
+        _startup_update(project, force=getattr(args, "force_update", False))
+
+    if args.install or updater.deps_changed(project):
+        if not args.no_install:
+            install_deps(project)
+
+    watch = getattr(args, "watch_updates", -1)
+    if watch is None or watch < 0:
+        # Unset: a background/autostart instance keeps itself current, an
+        # interactive launch just updates at start-up.
+        watch = 1800 if autostart_mode else 0
+    return run_app(
+        project,
+        start_voice=not getattr(args, "no_voice", False),
+        watch_seconds=int(watch or 0),
+        auto_restart=not getattr(args, "no_auto_restart", False),
+        no_browser=bool(getattr(args, "no_browser", False) or autostart_mode),
+    )
+
+
+def _startup_update(project: Path, force: bool = False) -> None:
+    """Best-effort update at launch. Never blocks or breaks the start-up."""
+    try:
+        state = updater.check(project)
+    except Exception as exc:
+        print("[update] check failed ({}); starting the current version.".format(exc))
+        return
+    if not state.get("update_available"):
+        if state.get("remote", {}).get("sha"):
+            print("[update] up to date ({}).".format(state["local"].get("short") or "?"))
+        return
+    print("[update] newer version available ({} -> {}); updating...".format(
+        state["local"].get("short") or "?", state["remote"].get("short") or "?"))
+    result = updater.apply_update(project, allow_dirty=force)
+    print("[update] {}".format(result.get("message", "")))
+    log = result.get("changes") or []
+    if log:
+        print("[update] what changed:")
+        for line in log[:8]:
+            print("   " + line)
+    if result.get("updated") and updater.deps_changed(project):
+        print("[update] dependency manifests changed; installing before start...")
         install_deps(project)
-    run_app(project, start_voice=not getattr(args, "no_voice", False))
 
 
 def run_native(args) -> int:
@@ -234,8 +415,7 @@ def run_native(args) -> int:
         print("Run from inside the project folder, pass its path as an argument,")
         print("or set the TRIOFORGE_HOME environment variable.")
         return 1
-    prepare_and_run(project, args)
-    return 0
+    return prepare_and_run(project, args)
 
 
 def _win_to_wsl_path(p: str) -> str:
@@ -357,10 +537,60 @@ def main() -> int:
                         help="Don't auto-start the voice agent; run the app only.")
     parser.add_argument("--unix", action="store_true",
                         help="(internal) Run natively; used when launched via WSL/bash.")
+    # ── keeping up to date ──
+    parser.add_argument("--update", action="store_true",
+                        help="Check for a new version, apply it, and exit (no start).")
+    parser.add_argument("--no-update", action="store_true",
+                        help="Don't update on start-up (run exactly this checkout).")
+    parser.add_argument("--force-update", action="store_true",
+                        help="Update even if tracked files have local edits.")
+    parser.add_argument("--watch-updates", type=int, default=-1, metavar="SECONDS",
+                        help="While running, check for updates every SECONDS and "
+                             "restart when one lands (0 = off; default: off when "
+                             "interactive, 1800 in --autostart mode).")
+    parser.add_argument("--no-auto-restart", action="store_true",
+                        help="With --watch-updates: pull the new code but don't "
+                             "restart the running app.")
+    # ── start automatically ──
+    parser.add_argument("--install-autostart", action="store_true",
+                        help="Start TrioForge automatically when you log in.")
+    parser.add_argument("--remove-autostart", action="store_true",
+                        help="Stop starting TrioForge automatically at login.")
+    parser.add_argument("--autostart", action="store_true",
+                        help="(internal) Quiet mode used by the login entry: no "
+                             "menu, no browser tab, updates watched in background.")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="Don't open a browser tab when starting.")
+    parser.add_argument("--status", action="store_true",
+                        help="Print version, git state, deps and auto-start state.")
     args = parser.parse_args()
 
     try:
-        if args.menu:
+        if args.install_autostart or args.remove_autostart:
+            project = find_project(args.path)
+            if project is None:
+                print("Could not locate the TrioForge project.")
+                return 1
+            if args.install_autostart:
+                ok, detail = autostart.install(project)
+            else:
+                ok, detail = autostart.remove()
+            print("{}: {}".format("Auto-start enabled" if args.install_autostart
+                                  else "Auto-start disabled", detail))
+            return 0 if ok else 1
+        if args.status:
+            project = find_project(args.path)
+            if project is None:
+                print("Could not locate the TrioForge project.")
+                return 1
+            return show_status(project)
+        if args.update:
+            project = find_project(args.path)
+            if project is None:
+                print("Could not locate the TrioForge project.")
+                return 1
+            return do_update(project, force=args.force_update)
+        if args.menu and not args.autostart:
             return menu_loop(args)
         return run_native(args)
     except KeyboardInterrupt:

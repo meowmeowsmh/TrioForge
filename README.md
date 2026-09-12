@@ -468,6 +468,56 @@ The default model is **`vaultbox/qwen3.5-uncensored:9b`** — an abliterated (re
 
 ---
 
+## 🔄 Staying up to date (and starting automatically)
+
+**You never update TrioForge by hand.** Every way of running it checks for a new version when it
+starts and applies it before the app comes up — so when the maintainer pushes from their editor,
+your next launch *is* the new version.
+
+| How you run it | How it updates |
+|---|---|
+| `application.bat` / `./run.sh` | Pulls the latest code on every start (git fast-forward). If the dependency manifests changed, they are reinstalled before the app starts. |
+| `TrioForge.exe` | Same — and if there is no checkout yet, it clones one into `%LOCALAPPDATA%\TrioForge` first. |
+| Docker | `./docker/application.sh --update` pulls the newest image (CI rebuilds it on every push). `restart: unless-stopped` already brings the container back after a reboot. |
+| A long-running instance | `--watch-updates 1800` checks in the background and **restarts the app** when a new version lands. On by default in auto-start mode. |
+
+Your data is never part of an update: conversations, SQLite databases, models, uploads and
+certificates are all outside the update set. If you have edited *tracked* files yourself, the
+automatic update pauses and says so instead of overwriting your work (`--force-update` parks
+those edits in a `git stash`, applies the update, then puts them back). No git? An update
+downloads the repository archive and overlays only the code paths, leaving your data alone.
+
+### Start it automatically when you log in
+
+```bash
+# Windows
+application.bat --install-autostart        # undo with --remove-autostart
+
+# Linux / macOS
+./run.sh --install-autostart
+```
+
+That writes a per-user login entry — no admin rights (Windows `HKCU\...\Run`, Linux
+`~/.config/autostart/trioforge.desktop`, macOS `~/Library/LaunchAgents/com.trioforge.plist`).
+It starts quietly in the background: no console window, no browser tab, and it keeps itself
+updated. Docker doesn't need any of this — `restart: unless-stopped` already covers it.
+
+### Maintenance flags
+
+```bash
+launcher.py --status               # version, git state, deps, auto-start, update available
+launcher.py --update               # check + apply now, without starting the app
+launcher.py --no-update            # run exactly this checkout; don't touch the network
+launcher.py --watch-updates 900    # check every 15 min while running, restart on update
+launcher.py --no-auto-restart      # pull new code but keep the running process
+launcher.py --force-update         # update even with local edits (stashed, not lost)
+```
+
+> Windows: `TrioForge.exe` is **unsigned**, so SmartScreen shows *"Windows protected your PC"*
+> the first time — **More info → Run anyway**. Signing it needs a code-signing certificate.
+
+---
+
 ## 🐳 Docker
 
 Docker runs the app with **gunicorn** (the native Windows path uses Waitress instead). This is the recommended way to run TrioForge on a **Linux server, WSL2, or a NAS**.
@@ -636,7 +686,10 @@ TrioForge/
 │   │   ├── cork_board.py        # Corkboard blueprint (pins, links, AI assist)
 │   │   └── viewer.py            # Image viewer blueprint
 │   ├── tools/
-│   │   ├── launcher.py          # Cross-platform launcher
+│   │   ├── launcher.py          # Cross-platform launcher (+ self-update, auto-start)
+│   │   ├── updater.py           # git/archive self-update: never touches your data
+│   │   ├── autostart.py         # Start-at-login entries (Windows / Linux / macOS)
+│   │   ├── trioforge_exe.py     # What TrioForge.exe runs: find/clone/update + launch
 │   │   └── voice_agent.py       # Local voice-to-voice agent launcher
 │   ├── https_guni_n_waitress.py # Waitress + HTTPS server (Windows)
 │   └── gunicorn_conf.py         # Gunicorn server config (Linux/Docker)
