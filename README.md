@@ -43,9 +43,11 @@ TrioForge opens in a window of its own — its name in the title bar and taskbar
 bar — with chat, notes and the corkboard inside it. The server starts hidden behind it; `start.bat`
 does the same thing from a terminal. Nothing flashes, because the whole launch runs invisibly.
 
-> **Make it a desktop icon:** right-click `start.vbs` → *Send to → Desktop (create shortcut)*, then
-> right-click the shortcut → *Properties* → *Change Icon* → pick `static/logo/triorforge.ico`.
-> Double-clicking that is the whole app.
+> **It makes its own shortcut.** On the first run TrioForge puts a **TrioForge** icon on your
+> **Desktop** and in your **Start Menu** (per-user: no admin rights, nothing machine-wide), with its
+> own logo rather than a generic script icon. After that, one double-click is the whole app. Manage
+> them with `application.bat --install-shortcut` / `--remove-shortcut`, or skip creating them with
+> `TRIOFORGE_NO_SHORTCUT=1`.
 
 > **How the window works:** it renders with **WebView2**, the engine Windows 10/11 already ships
 > (the component Edge uses), embedded by [pywebview](https://pywebview.flowrl.com/) — one ~1 MB
@@ -605,6 +607,17 @@ launcher.py --window               # open TrioForge in its own WebView2 window
 launcher.py --detach               # start the server hidden and return immediately
 launcher.py --host                 # open it to your network with a password
 launcher.py --no-browser           # never open a browser tab (what start.vbs uses)
+launcher.py --background-update    # start now, check for updates quietly afterwards
+launcher.py --install-shortcut     # Desktop + Start Menu icon (with the app's logo)
+launcher.py --remove-shortcut      # take them away again
+```
+
+`--status` reports both of those, so you can see the state at a glance:
+
+```
+  start at login : enabled -> "...pythonw.exe" "...launcher.py" "D:\TrioForge" --autostart --window --no-browser
+  shortcut       : Desktop: yes
+  shortcut       : Start Menu: yes
 ```
 
 `start.vbs` and `start.bat` are just `launcher.py --window --detach --no-browser`, run through the

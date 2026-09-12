@@ -567,6 +567,12 @@ def show_status(project: Path) -> int:
         " (manifests changed - will reinstall)" if info["deps_changed"] else ""))
     enabled, detail = autostart.state()
     print("  start at login : {}".format(detail))
+    try:
+        from shortcuts import state as shortcut_state
+        for line in shortcut_state(project):
+            print("  shortcut       : {}".format(line))
+    except Exception:
+        pass
     state = updater.check(project)
     print("  upstream       : {}".format(
         "update available ({} -> {})".format(state["local"].get("short") or "?",
@@ -594,6 +600,20 @@ def prepare_and_run(project: Path, args) -> int:
     # Spawned before the app so it can wait for the server to come up on its own.
     if getattr(args, "window", False):
         _open_app_window(project)
+
+    # First run: give the user something to double-click next time, with the app's
+    # own icon. Per-user (Desktop + Start Menu), no admin rights, and skippable with
+    # TRIOFORGE_NO_SHORTCUT=1 or undone with --remove-shortcut.
+    if os.environ.get("TRIOFORGE_NO_SHORTCUT", "").strip() not in ("1", "true", "on"):
+        try:
+            from shortcuts import install as shortcut_install, state as shortcut_state
+            existing = [line for line in shortcut_state(project) if line.endswith("yes")]
+            if not existing:
+                print("Adding a TrioForge shortcut so you can just double-click it next time:")
+                for line in shortcut_install(project):
+                    print("  " + line)
+        except Exception as exc:
+            print("[shortcut] not created: {}".format(exc))
 
     # --detach: start the server in the background with no console and return. The
     # window (above) waits for it; the .bat that calls this returns immediately.
@@ -930,6 +950,10 @@ def main() -> int:
                         help="Start the server (and window) in the background and return immediately.")
     parser.add_argument("--background-update", action="store_true",
                         help="Do not wait for an update: start now, check quietly in the background.")
+    parser.add_argument("--install-shortcut", action="store_true",
+                        help="Put a TrioForge shortcut (with its icon) on the Desktop and Start Menu.")
+    parser.add_argument("--remove-shortcut", action="store_true",
+                        help="Remove those shortcuts again.")
     args = parser.parse_args()
 
     try:
@@ -945,6 +969,24 @@ def main() -> int:
             print("{}: {}".format("Auto-start enabled" if args.install_autostart
                                   else "Auto-start disabled", detail))
             return 0 if ok else 1
+        if args.install_shortcut or args.remove_shortcut:
+            project = find_project(args.path)
+            if project is None:
+                print("Could not locate the TrioForge project.")
+                return 1
+            try:
+                from shortcuts import install as shortcut_install, remove as shortcut_remove
+            except Exception as exc:
+                print("Shortcut support unavailable: {}".format(exc))
+                return 1
+            if args.remove_shortcut:
+                for line in shortcut_remove(project):
+                    print(line)
+            else:
+                print("Adding TrioForge shortcuts (Desktop and Start Menu, this user only):")
+                for line in shortcut_install(project):
+                    print("  " + line)
+            return 0
         if args.status:
             project = find_project(args.path)
             if project is None:
