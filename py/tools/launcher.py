@@ -232,6 +232,77 @@ def start_voice_agent(project: Path, enabled: bool = True) -> None:
         print("Voice agent: failed to start ({})".format(e))
 
 
+def host_setup(project: Path, explicit: str = "") -> str:
+    """Turn on host mode: pick a password, tell the user what to share.
+
+    Everything the app needs is the TRIOFORGE_PASSWORD environment variable; the
+    password is kept in json_configuration/host_password (git-ignored, like all the
+    other local data) so the same link keeps working after a restart.
+    """
+    password = (explicit or os.environ.get("TRIOFORGE_PASSWORD") or "").strip()
+    store = project / "json_configuration" / "host_password"
+    if not password:
+        try:
+            if store.is_file():
+                password = store.read_text(encoding="utf-8").strip()
+        except Exception:
+            password = ""
+    if not password:
+        # Readable but not guessable: 4 groups of 4 hex characters.
+        import secrets as _secrets
+        password = "-".join(_secrets.token_hex(2) for _ in range(4))
+        try:
+            store.parent.mkdir(parents=True, exist_ok=True)
+            store.write_text(password + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+    os.environ["TRIOFORGE_PASSWORD"] = password
+
+    print()
+    print("=" * 62)
+    print("  HOST MODE ON - other people can use this TrioForge")
+    print("=" * 62)
+    print("  Password : {}".format(password))
+    print("  (kept in json_configuration/host_password - delete it to reset)")
+    print()
+    print("  Share it depending on how you are hosting:")
+    print("    same Wi-Fi / LAN : this machine's IP, e.g.")
+    for url in _lan_urls():
+        print("                       {}".format(url))
+    print("    internet (tunnel): cloudflared tunnel --url http://localhost:{}".format(
+        os.environ.get("TRIOFORGE_PORT", "5003")))
+    print("    Docker / server  : docker run -p 5002:5001 ... ghcr.io/meowmeowsmh/trioforge:latest")
+    print("    one person only  : hand them application.exe and the password is not needed")
+    print()
+    print("  Everyone you share it with sees this workspace, including its notes,")
+    print("  pins and conversations on this machine. Use --host-password to choose")
+    print("  your own, or --no-host to go back to local-only.")
+    print("=" * 62)
+    print()
+    return password
+
+
+def _lan_urls() -> List[str]:
+    """Best-effort list of the URLs other devices on the network can use."""
+    port = os.environ.get("TRIOFORGE_PORT", "5003")
+    scheme = "https" if os.environ.get("TRIOFORGE_SSL", "").strip() in ("1", "true", "on") else "http"
+    urls: List[str] = []
+    try:
+        import socket
+        host = socket.gethostname()
+        for info in socket.getaddrinfo(host, None, socket.AF_INET):
+            ip = info[4][0]
+            if ip.startswith("127.") or ip in urls:
+                continue
+            urls.append("{}://{}:{}".format(scheme, ip, port))
+    except Exception:
+        pass
+    if not urls:
+        urls.append("{}://<this-machine-ip>:{}".format(scheme, port))
+    return urls[:3]
+
+
 def _app_command(project: Path) -> List[str]:
     """The command that runs the Flask app.
 
@@ -449,6 +520,9 @@ def prepare_and_run(project: Path, args) -> int:
     """Optionally update, install deps if needed, then start the app."""
     autostart_mode = bool(getattr(args, "autostart", False))
 
+    if getattr(args, "host", False) or getattr(args, "host_password", ""):
+        host_setup(project, explicit=getattr(args, "host_password", ""))
+
     if not args.no_update:
         _startup_update(project, force=getattr(args, "force_update", False))
 
@@ -651,6 +725,12 @@ def main() -> int:
                         help="Don't open a browser tab when starting.")
     parser.add_argument("--status", action="store_true",
                         help="Print version, git state, deps and auto-start state.")
+    # ── host it for other people ──
+    parser.add_argument("--host", action="store_true",
+                        help="Host mode: ask for a password before anything is served, "
+                             "and print the links to share (LAN / tunnel / Docker).")
+    parser.add_argument("--host-password", default="",
+                        help="Use this password for host mode instead of a generated one.")
     args = parser.parse_args()
 
     try:
