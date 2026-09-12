@@ -22,6 +22,7 @@ Usage:
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -71,14 +72,43 @@ def clone(target: Path) -> bool:
     return True
 
 
-def python_for(project: Path) -> str:
-    """Prefer the project venv (what the launcher creates), else this interpreter."""
+def python_command(project: Path) -> list:
+    """How to invoke a REAL Python interpreter (never this exe).
+
+    Inside a PyInstaller build `sys.executable` is TrioForge.exe itself, so using
+    it here would relaunch the bootstrap with launcher arguments - a loop, not a
+    launcher. Prefer the project venv, then a python on PATH, then `py -3`.
+    """
     for rel in ("Scripts/python.exe", "bin/python3", "bin/python"):
         candidate = project / ".venv" / rel
         if candidate.is_file():
-            return str(candidate)
-    # A frozen exe has no usable interpreter for the project: ask the system one.
-    return sys.executable
+            return [str(candidate)]
+    if not getattr(sys, "frozen", False):
+        return [sys.executable]                 # running as a script: good enough
+    for name in ("python", "python3"):
+        found = shutil.which(name)
+        if found:
+            return [found]
+    launcher = shutil.which("py")
+    if launcher:
+        return [launcher, "-3"]                 # the Windows py launcher picks 3.x
+    return []
+
+
+def try_install_python() -> bool:
+    """Last resort on Windows: install Python with winget (same as the .bat)."""
+    if os.name != "nt":
+        return False
+    winget = shutil.which("winget")
+    if not winget:
+        return False
+    print("  no Python found - installing it with winget (a few minutes, one time)")
+    for package in ("Python.Python.3", "Python.Python.3.13"):
+        code = run([winget, "install", "--id", package, "-e", "--source", "winget",
+                    "--accept-package-agreements", "--accept-source-agreements"])
+        if code == 0:
+            return True
+    return False
 
 
 def main() -> int:
@@ -104,8 +134,17 @@ def main() -> int:
             return 1
 
     launcher = project / "py" / "tools" / "launcher.py"
-    interpreter = python_for(project)
-    print("  python    : {}".format(interpreter))
+    interpreter = python_command(project)
+    if not interpreter:
+        print("  python    : not found")
+        if try_install_python():
+            interpreter = python_command(project)
+        if not interpreter:
+            print()
+            print("Python is required. Install it (https://www.python.org/downloads/) or")
+            print("run application.bat, which installs it for you. Then run TrioForge.exe again.")
+            return 1
+    print("  python    : {}".format(" ".join(interpreter)))
 
     passthrough = []
     if args.update:
@@ -120,7 +159,7 @@ def main() -> int:
 
     # The launcher owns updates, dependency install, auto-start and running the
     # app, so the exe stays a thin, always-current shim.
-    return run([interpreter, str(launcher), str(project), "--no-banner"] + passthrough, cwd=project)
+    return run(interpreter + [str(launcher), str(project), "--no-banner"] + passthrough, cwd=project)
 
 
 if __name__ == "__main__":
