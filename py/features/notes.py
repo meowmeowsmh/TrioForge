@@ -873,7 +873,9 @@ NOTES_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="64x64" href="/static/logo/favicon.png">
+<link rel="shortcut icon" href="/static/logo/favicon.png">
+<link rel="apple-touch-icon" href="/static/pwa/apple-touch-icon.png">
 <title>Notes · Obsidian + AI + Weather</title>
 <script src="/static/vendor/marked.min.js"></script>
 <!-- vis-network for graph view -->
@@ -1148,6 +1150,42 @@ body.light-mode .btn-icon:hover { background: rgba(0,0,0,0.10); }
     -webkit-text-fill-color: transparent;
     background-clip: text;
     font-weight: 700;
+}
+/* Brand: the same logo wordmark as Chat and Cork Board. min-width:0 keeps the
+   flex row from forcing the top bar wider than the window. */
+.top-bar .left h1.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+}
+.brand-logo {
+    height: 26px;
+    width: auto;
+    max-width: 46vw;
+    object-fit: contain;
+    display: block;
+    flex: 0 1 auto;
+    min-width: 0;
+    filter: drop-shadow(0 0 6px rgba(255,120,40,0.25));
+}
+.brand-page {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: #8b949e;
+    white-space: nowrap;
+}
+body.light-mode .brand-page { color: #57606a; }
+@media (max-width: 900px) {
+    .brand-logo { height: 22px; }
+    .brand-page { font-size: 13px; }
+}
+@media (max-width: 520px) {
+    .brand-logo { height: 19px; }
+    .brand-page { display: none; }
 }
 .sidebar-toggle {
     background: transparent;
@@ -2166,7 +2204,10 @@ html.embedded #weatherWidget { display: none !important; }</style>
                         <line x1="9" y1="3" x2="9" y2="21"></line>
                     </svg>
                 </button>
-                <h1>📚 Trio-Forge Custom Notes</h1>
+                <h1 class="brand">
+                <img src="/static/logo/wordmark.png" alt="TrioForge" class="brand-logo">
+                <span class="brand-page">Notes</span>
+            </h1>
             </div>
             <div class="center-tabs">
                 <a href="/" class="tab-btn" style="text-decoration:none;">💬 Chat</a>

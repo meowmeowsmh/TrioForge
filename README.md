@@ -70,6 +70,14 @@ docker exec ollama ollama pull llama3.2:3b      # ~2 GB, runs on CPU
 |------|-------|-----------|
 | ![Chat interface](chat.png) | ![Notes](notes.png) | ![Cork Board](cork_board.png) |
 
+<p align="center">
+  <img src="static/logo/logo-512.png" alt="TrioForge artwork" width="320">
+</p>
+
+The wordmark in the header of all three screens (and the app icon) is cut from that artwork:
+`python py/make_brand_assets.py` regenerates `static/logo/*` and `static/pwa/*` whenever the
+source file in `logo/` changes — no Photoshop round-trip, and nothing to hand-resize.
+
 ---
 
 ## 🚀 Quick start
@@ -676,7 +684,8 @@ TrioForge/
 │   ├── llamacpp_service.py      # llama-server lifecycle + cross-platform exe/model resolution
 │   ├── llama_installer.py       # ⚡ Auto-install llama.cpp for the detected GPU backend
 │   ├── setup_check.py           # First-run checker + GPU-backend detection (Metal/CUDA/ROCm/Vulkan/CPU)
-│   ├── make_pwa_icons.py        # Regenerates static/pwa icons (pure stdlib, no Pillow)
+│   ├── make_pwa_icons.py        # Fallback icon generator (pure stdlib, no artwork needed)
+│   ├── make_brand_assets.py     # Cuts the wordmark/app icons out of logo/*.png
 │   ├── comfyui_service.py       # ComfyUI image + video + audio generation (live workflow discovery)
 │   ├── video_to_text.py         # Video → frames / audio → WAV chunks (ffmpeg) for vision & audio models
 │   ├── providers/

@@ -4,6 +4,12 @@ Draws a blue→purple gradient tile with three white dots (a "trio") and writes
 real PNGs. Run once; the results are committed under static/pwa/.
 
     python py/make_pwa_icons.py
+
+NOTE: this is the *fallback* generator, used when there is no artwork to derive
+icons from (it needs nothing but the standard library). If `logo/` contains the
+illustration, `py/make_brand_assets.py` is the one to run: it cuts the wordmark
+and the app icons out of that artwork and writes the same static/pwa/*.png files,
+so it always wins if both are run.
 """
 import os
 import struct
