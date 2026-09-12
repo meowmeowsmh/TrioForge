@@ -2017,7 +2017,19 @@ html.embedded #weatherWidget { display: none !important; }</style>
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
         <button class="top-btn" id="suggestLinksBtn" onclick="openLinkSuggestions()">💡 Suggest Links</button>
         <button class="top-btn" id="importConvBtn" onclick="importConversationTree()">💬 Import Conversation</button>
-        <button class="top-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+        <button class="top-btn" onclick="toggleFullscreen()" title="Full screen"
+                aria-label="Toggle full screen" style="display:inline-flex; align-items:center; gap:6px;">
+            <!-- Drawn icon instead of the ⛶ emoji: Windows renders that codepoint as
+                 a barely visible monochrome glyph in this toolbar. -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                <path d="M16 3h3a2 2 0 0 1 2 2v3"></path>
+                <path d="M8 21H5a2 2 0 0 1-2-2v-3"></path>
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+            </svg>
+            Fullscreen
+        </button>
     </div>
 
     <!-- TAG FILTER -->
