@@ -143,9 +143,11 @@ def ensure_project_venv(project: Path) -> Optional[str]:
     uv = shutil.which("uv")
     print("Creating the project virtual environment (.venv)...")
     if uv:
-        result = subprocess.run([uv, "venv", ".venv"], cwd=str(project))
+        result = subprocess.run([uv, "venv", ".venv"], cwd=str(project),
+                                creationflags=_no_window_flags())
     else:
-        result = subprocess.run([sys.executable, "-m", "venv", ".venv"], cwd=str(project))
+        result = subprocess.run([sys.executable, "-m", "venv", ".venv"], cwd=str(project),
+                                creationflags=_no_window_flags())
     if result.returncode != 0:
         print("Could not create the virtual environment.")
         return None
@@ -175,12 +177,13 @@ def install_deps(project: Path) -> None:
     print("Installing dependencies into .venv (this may take a while on first run)...")
     if uv:
         result = subprocess.run([uv, "pip", "install", "--python", venv_python,
-                                 "-r", str(req)], cwd=str(project))
+                                 "-r", str(req)], cwd=str(project),
+                                creationflags=_no_window_flags())
     else:
         subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"],
-                       cwd=str(project))
+                       cwd=str(project), creationflags=_no_window_flags())
         result = subprocess.run([venv_python, "-m", "pip", "install", "-r", str(req)],
-                                cwd=str(project))
+                                cwd=str(project), creationflags=_no_window_flags())
     if result.returncode != 0:
         print("Dependency installation failed.")
         print("Install manually with: {} -m pip install -r requirements.txt".format(venv_python))
@@ -570,7 +573,7 @@ def prepare_and_run(project: Path, args) -> int:
     if getattr(args, "host", False) or getattr(args, "host_password", ""):
         host_setup(project, explicit=getattr(args, "host_password", ""))
 
-    if not args.no_update:
+    if not args.no_update and not getattr(args, "background_update", False):
         _startup_update(project, force=getattr(args, "force_update", False))
 
     if args.install or updater.deps_changed(project):
@@ -603,6 +606,8 @@ def prepare_and_run(project: Path, args) -> int:
         print("[detach] server starting in the background on port {}{}.".format(
             os.environ.get("TRIOFORGE_PORT", "5003"),
             " with no browser tab" if child_env.get("TRIOFORGE_NO_BROWSER") else ""))
+        if getattr(args, "background_update", False):
+            _spawn_background_update(project)
         return 0
 
     watch = getattr(args, "watch_updates", -1)
@@ -693,6 +698,33 @@ def _open_app_window(project: Path) -> None:
         print("[window] opening TrioForge in its own window on port {}.".format(port))
     except Exception as exc:
         print("[window] could not open the window: {}: {}".format(type(exc).__name__, exc))
+
+
+def _spawn_background_update(project: Path) -> None:
+    """Check for updates in the background, hidden, without delaying the start.
+
+    The blocking update at start-up runs git before the app can open, which is
+    exactly the "server should be quick, without git interfering" complaint. This
+    runs the same update as its own hidden process: no window, no console, and the
+    app is already on screen. New code applies to the next launch.
+    """
+    try:
+        script = Path(__file__).resolve()
+        log = project / "logs" / "background-update.log"
+        try:
+            log.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        flags = _no_window_flags()
+        if os.name == "nt":
+            flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+        out = open(str(log), "a", encoding="utf-8", errors="replace")
+        subprocess.Popen([venv_pythonw(project), str(script), str(project),
+                          "--update", "--no-banner"],
+                         cwd=str(project), creationflags=flags,
+                         stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    except Exception as exc:
+        print("[update] background check not started: {}".format(exc))
 
 
 def _startup_update(project: Path, force: bool = False) -> None:
@@ -886,6 +918,8 @@ def main() -> int:
                         help="Open TrioForge in its own WebView2 window instead of a browser.")
     parser.add_argument("--detach", action="store_true",
                         help="Start the server (and window) in the background and return immediately.")
+    parser.add_argument("--background-update", action="store_true",
+                        help="Do not wait for an update: start now, check quietly in the background.")
     args = parser.parse_args()
 
     try:

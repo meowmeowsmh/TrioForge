@@ -42,14 +42,24 @@ def _python_for_autostart() -> str:
     return sys.executable
 
 
+def _extra_args() -> List[str]:
+    """What the login entry should use.
+
+    --window opens TrioForge in its own window, the same thing start.vbs does, so
+    "start at login" gives you the app rather than a silent server you cannot see.
+    --no-browser keeps a browser tab from opening as well.
+    """
+    return ["--autostart", "--window", "--no-browser"]
+
+
 def _command(project: Path) -> List[str]:
     """The command the OS should run at login."""
-    return [_python_for_autostart(), str(_launcher_path()), str(project), "--autostart"]
+    return [_python_for_autostart(), str(_launcher_path()), str(project)] + _extra_args()
 
 
 def _windows_command_line(project: Path) -> str:
-    return '"{}" "{}" "{}" --autostart'.format(
-        _python_for_autostart(), _launcher_path(), project)
+    return '"{}" "{}" "{}" {}'.format(
+        _python_for_autostart(), _launcher_path(), project, " ".join(_extra_args()))
 
 
 # ── Windows ──────────────────────────────────────────────────────────────────

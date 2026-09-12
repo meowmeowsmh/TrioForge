@@ -110,11 +110,22 @@ def _env() -> Dict[str, str]:
 
 
 def run(cmd: List[str], cwd: Path, timeout: int = 60) -> Tuple[int, str]:
-    """Run a command, returning (returncode, combined output). Never raises."""
+    """Run a command, returning (returncode, combined output). Never raises.
+
+    Git is a console program: without CREATE_NO_WINDOW, a hidden launch (start.vbs,
+    pythonw) gets a fresh console window for every git call - the "why is a terminal
+    popping up with git/..." complaint.
+    """
     try:
+        try:
+            from procutil import no_window_flags
+            flags = no_window_flags()
+        except Exception:
+            flags = 0
         done = subprocess.run(
             cmd, cwd=str(cwd), env=_env(), timeout=timeout,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            creationflags=flags,
         )
         return done.returncode, done.stdout.decode("utf-8", "replace").strip()
     except subprocess.TimeoutExpired:
