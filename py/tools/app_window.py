@@ -29,6 +29,39 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _probe(url: str, timeout: float = 2.0) -> bool:
+    """True if a TrioForge server answers on this base URL."""
+    import json
+    import ssl as _ssl
+    import urllib.request
+    ctx = _ssl._create_unverified_context()
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/ping", timeout=timeout,
+                                    context=ctx) as resp:
+            return json.loads(resp.read(200).decode("utf-8", "replace")).get("app") == "trioforge"
+    except Exception:
+        return False
+
+
+def resolve_url(explicit: str, port: int) -> str:
+    """Pick the URL to show, waiting for the server to come up.
+
+    With no --url it discovers the scheme (https on Windows by default) by probing
+    /api/ping and retries until the app answers, so the window opens cleanly even
+    while the server is still installing dependencies on a first run.
+    """
+    import time
+    if explicit:
+        return explicit
+    for _ in range(120):                      # up to ~3 minutes of first run
+        for scheme in ("https", "http"):
+            candidate = "{}://127.0.0.1:{}/".format(scheme, port)
+            if _probe(candidate):
+                return candidate
+        time.sleep(1.5)
+    return "http://127.0.0.1:{}/".format(port)
+
+
 def user_data_dir() -> Path:
     """Where the embedded engine keeps cookies/cache/localStorage.
 
@@ -62,7 +95,9 @@ def is_local(url: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="TrioForge app window")
-    parser.add_argument("--url", required=True, help="Where the local server is listening.")
+    parser.add_argument("--url", default="", help="Explicit server URL (optional).")
+    parser.add_argument("--port", type=int, default=5003,
+                        help="Port to auto-detect the server on when --url is not given.")
     parser.add_argument("--title", default="TrioForge")
     parser.add_argument("--width", type=int, default=1320)
     parser.add_argument("--height", type=int, default=880)
@@ -76,11 +111,13 @@ def main() -> int:
         print("pywebview is not installed - run: uv pip install pywebview")
         return 3
 
+    url = resolve_url(args.url, args.port)
+
     # The app serves HTTPS with a locally generated (mkcert) certificate. WebView2
     # refuses an untrusted certificate and would show an error page instead of the
     # app, so for LOCAL addresses only we tell the embedded engine to accept it.
     # Never done for a remote URL.
-    if args.url.startswith("https://") and is_local(args.url):
+    if url.startswith("https://") and is_local(url):
         existing = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
         if "ignore-certificate-errors" not in existing:
             os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
@@ -93,7 +130,7 @@ def main() -> int:
         pass
 
     storage = user_data_dir()
-    kwargs = {"title": args.title, "url": args.url,
+    kwargs = {"title": args.title, "url": url,
               "width": args.width, "height": args.height,
               "min_size": (900, 600), "text_select": True}
 
@@ -102,7 +139,7 @@ def main() -> int:
     except TypeError as exc:
         # Older/newer pywebview disagree about some keyword; drop the optional ones.
         print("Window options not supported ({}); retrying with the basics.".format(exc))
-        window = webview.create_window(title=args.title, url=args.url,
+        window = webview.create_window(title=args.title, url=url,
                                        width=args.width, height=args.height)
     except Exception as exc:
         print("Could not create the window: {}: {}".format(type(exc).__name__, exc))
