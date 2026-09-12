@@ -2984,8 +2984,11 @@ def _execute_tool(name, args):
             return {"error": "app is required."}
         try:
             if os.name == "nt":
-                # On Windows, `start` opens apps by name (notepad, calc, …) or path.
-                subprocess.Popen(["cmd", "/c", "start", "", app], shell=False)
+                # Open by name (notepad, calc, …) or by path, but without spawning a
+                # visible console window - `cmd /c start` used to flash one every time
+                # the agent opened an app.
+                subprocess.Popen(["cmd", "/c", "start", "", app], shell=False,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             else:
                 subprocess.Popen(["xdg-open", app] if not os.path.isfile(app) else [app])
             return {"ok": True, "opened": app}
