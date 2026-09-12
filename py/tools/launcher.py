@@ -273,7 +273,7 @@ def host_setup(project: Path, explicit: str = "") -> str:
     print("    internet (tunnel): cloudflared tunnel --url http://localhost:{}".format(
         os.environ.get("TRIOFORGE_PORT", "5003")))
     print("    Docker / server  : docker run -p 5002:5001 ... ghcr.io/meowmeowsmh/trioforge:latest")
-    print("    one person only  : hand them application.exe and the password is not needed")
+    print("    one person only  : point them at the repo (git clone + start.vbs) - no password needed")
     print()
     print("  Everyone you share it with sees this workspace, including its notes,")
     print("  pins and conversations on this machine. Use --host-password to choose")

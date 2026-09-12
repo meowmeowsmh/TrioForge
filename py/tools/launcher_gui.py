@@ -1,15 +1,15 @@
-"""TrioForge control panel — the small window the app pops up.
+"""TrioForge control panel — an optional host window.
 
-Same idea as Ollama's desktop app: you launch it, a window appears, and it hosts
-TrioForge in the background. From here you can open the workspace, watch what the
-server is doing, restart or stop it, pull updates, and decide whether TrioForge
-starts when you log in.
+The everyday way to run TrioForge is the app itself: double-click ``start.vbs``
+(Windows) or run ``./run.sh`` and open the web interface. This panel is for people
+who want a small window to manage it instead: it starts and supervises the server,
+shows what it is doing, lets you restart or stop it, pull updates, turn on hosting,
+and decide whether TrioForge starts when you log in.
 
-Only the standard library is used (tkinter), so the Windows exe stays small and
-there is nothing extra to install.
+Only the standard library is used (tkinter), so there is nothing extra to install.
 
-    application.exe            -> this window (and the app it hosts)
-    application.exe --status   -> plain console output, no window
+    python py/tools/launcher_gui.py <project>   -> this window (the host)
+    python py/tools/launcher.py <project>       -> plain console, no window
 """
 
 import os

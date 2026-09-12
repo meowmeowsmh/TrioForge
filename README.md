@@ -22,22 +22,36 @@
 
 ## ⚡ Start in 60 seconds
 
-**Windows — nothing to install first.** Download the launcher and double-click it:
+**Windows — two ways to open it. Pick one.**
 
-> ### ⬇️ [`application.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/application.exe) <sub>([all releases](https://github.com/meowmeowsmh/TrioForge/releases) · 7.9 MB · no Python needed)</sub>
+**1 · Its own window (recommended).** No browser, no terminal, nothing else on screen:
 
-It fetches TrioForge, keeps it updated on every launch, installs the dependencies and starts the
-app — then opens the Setup panel, where **⚡ Auto-install** gets llama.cpp for your GPU.
+```bash
+git clone https://github.com/meowmeowsmh/TrioForge.git
+cd TrioForge
+```
 
-> Windows SmartScreen warns once because the exe is not code-signed: **More info → Run anyway**.
-> Signing needs a certificate; until then that is the expected first-run dialog.
->
-> **Prefer to avoid that dialog entirely?** One command downloads it without a browser (so
-> Windows never marks the file as "from the internet"):
->
-> ```powershell
-> irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/install.ps1 | iex
-> ```
+then double-click **`start.vbs`**.
+
+TrioForge opens in a window of its own — its name in the title bar, no tabs, no address bar —
+with chat, notes and the corkboard inside it. The server starts hidden behind it; `start.bat`
+does the same thing from a terminal. Nothing flashes, because the whole launch runs invisibly.
+
+**2 · The web interface.** Same app, in your browser:
+
+```bat
+application.bat          :: Windows
+```
+
+```bash
+./run.sh                 # Linux / macOS / WSL
+```
+
+Then open **http://localhost:5003** (the app prints the exact URL). Use this one if you want it on
+your phone or another device on your network, or if you prefer your own browser.
+
+Both need **Python**, which the launcher finds or installs for you, and they install the
+dependencies on first run. Nothing else to set up.
 
 **Docker / Linux / macOS / NAS** — if you already run Ollama (or a llama-server on your host),
 this is the entire install:
@@ -132,10 +146,10 @@ Then, inside the app:
 | 🍎 **macOS (Intel or Apple Silicon)** | `run.sh` | `./run.sh` — uses Homebrew's Python, finds `/opt/homebrew/bin` tools | `brew install llama.cpp`, or **⚡ Auto-install** | `http://localhost:5003` |
 | 🐧🪟 **WSL2** | `run.sh` | same as Linux | same as Linux | `http://localhost:5003` |
 | 🐳 **Docker** | `docker/application.sh` | `./docker/application.sh` | host llama-server via `LLAMA_HOST` | `http://localhost:5002` |
-| 🪟 **Windows (no terminal)** | [`application.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/application.exe) | Download and double-click it | fetches + updates the app for you, then **⚡ Auto-install** | `https://localhost:5003` |
+| 🪟 **Windows — app window** | `start.vbs` | Double-click it. Nothing else appears: no browser, no terminal | **⚡ Auto-install** | own window |
 | 🛠️ Any OS (advanced) | `py/tools/launcher.py` | `python py/tools/launcher.py` | — | — |
 
-`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `application.exe` is a thin wrapper around the same thing (it clones the repo on first run, then keeps it updated). `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
+`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `start.vbs` (Windows) is the same launcher with `--window`: the server starts hidden and TrioForge opens in its own WebView2 window instead of your browser; `start.bat` does that from a terminal. `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
 
 ### 🚀 First-run setup checker
 
@@ -483,7 +497,7 @@ ngrok http 5003
 
 | Give them | They get | You need |
 |---|---|---|
-| **`application.exe`** | their own copy, their own chats, fully local | nothing — just send the file |
+| **The repo link** (`git clone`, then `start.vbs` / `run.sh`) | their own copy, their own chats, fully local | nothing |
 | **A link to your instance** | the workspace *you* are hosting: your notes, pins and chats | host mode on (below) |
 
 Turn host mode on with the checkbox in the control panel, or:
@@ -499,7 +513,7 @@ What stays reachable without the password: the login page, `/api/ping` (so the c
 
 > ⚠️ **Hosting shares your workspace, not just an app.** Everyone you give the link to sees the conversations, notes and pins on that machine. Use a password, hand out the link only to people you trust, and remember you can turn host mode off again (the checkbox, or `TRIOFORGE_PASSWORD=` unset) — the app goes straight back to local-only.
 >
-> Prefer to keep *their* data separate from yours? Send them `application.exe` instead; that is a copy on their machine with its own storage.
+> Prefer to keep *their* data separate from yours? Point them at the repo — `git clone` and `start.vbs` (Windows) or `./run.sh` gives them their own copy with its own storage.
 
 ### 📱 Install it as an app (PWA)
 
@@ -536,7 +550,7 @@ your next launch *is* the new version.
 | How you run it | How it updates |
 |---|---|
 | `application.bat` / `./run.sh` | Pulls the latest code on every start (git fast-forward). If the dependency manifests changed, they are reinstalled before the app starts. |
-| `application.exe` | Same — and if there is no checkout yet, it clones one into `%LOCALAPPDATA%\TrioForge` first. |
+| `start.vbs` / `start.bat` (Windows) | Same — they run the same launcher with `--window`, so the server starts hidden and the app opens in its own window. |
 | Docker | `./docker/application.sh --update` pulls the newest image (CI rebuilds it on every push). `restart: unless-stopped` already brings the container back after a reboot. |
 | A long-running instance | `--watch-updates 1800` checks in the background and **restarts the app** when a new version lands. On by default in auto-start mode. |
 
@@ -570,10 +584,14 @@ launcher.py --no-update            # run exactly this checkout; don't touch the 
 launcher.py --watch-updates 900    # check every 15 min while running, restart on update
 launcher.py --no-auto-restart      # pull new code but keep the running process
 launcher.py --force-update         # update even with local edits (stashed, not lost)
+launcher.py --window               # open TrioForge in its own WebView2 window
+launcher.py --detach               # start the server hidden and return immediately
+launcher.py --host                 # open it to your network with a password
 ```
 
-> Windows: `application.exe` is **unsigned**, so SmartScreen shows *"Windows protected your PC"*
-> the first time — **More info → Run anyway**. Signing it needs a code-signing certificate.
+> There is **no .exe to download**: TrioForge is the repo (plus Docker). On Windows,
+> `start.vbs` is the double-click way in — it needs no terminal, shows no console and no
+> SmartScreen dialog, because nothing is compiled or downloaded as a binary.
 
 ---
 
@@ -749,7 +767,8 @@ TrioForge/
 │   │   ├── launcher.py          # Cross-platform launcher (+ self-update, auto-start)
 │   │   ├── updater.py           # git/archive self-update: never touches your data
 │   │   ├── autostart.py         # Start-at-login entries (Windows / Linux / macOS)
-│   │   ├── application_exe.py   # What application.exe runs: find/clone/update + launch
+│   │   ├── app_window.py        # TrioForge's own window (WebView2, no browser chrome)
+│   │   ├── launcher_gui.py      # Optional control panel window
 │   │   └── voice_agent.py       # Local voice-to-voice agent launcher
 │   ├── https_guni_n_waitress.py # Waitress + HTTPS server (Windows)
 │   └── gunicorn_conf.py         # Gunicorn server config (Linux/Docker)
