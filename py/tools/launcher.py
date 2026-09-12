@@ -628,13 +628,46 @@ def venv_pythonw(project: Path) -> str:
     return str(candidate if candidate.is_file() else base)
 
 
+def _app_window_pid_file():
+    """Where the app window records its own pid (same place app_window.py uses)."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = str(Path.home() / "Library" / "Application Support")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(base) / "TrioForge" / "app_window.pid"
+
+
+def _app_window_open() -> bool:
+    """True if the app window is already showing (so we never open a second)."""
+    try:
+        path = _app_window_pid_file()
+        if not path.is_file():
+            return False
+        pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+    except Exception:
+        return False
+    if pid_alive(pid):
+        return True
+    try:
+        path.unlink()
+    except Exception:
+        pass
+    return False
+
+
 def _open_app_window(project: Path) -> None:
     """Open TrioForge in its own WebView2 window (no browser, no console).
 
     The window is a separate process; it probes for the server itself and waits,
-    so firing it before the app is ready is fine.
+    so firing it before the app is ready is fine. Only one window ever: the window
+    writes its pid, and we check it here before starting another.
     """
     try:
+        if _app_window_open():
+            print("[window] TrioForge is already open in its own window.")
+            return
         script = project / "py" / "tools" / "app_window.py"
         if not script.is_file():
             print("[window] app_window.py not found; skipping.")
