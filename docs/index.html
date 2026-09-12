@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrioForge — your own private AI workspace</title>
+<meta name="description" content="TrioForge is a self-hosted AI workspace: chat with local or cloud models, keep notes, and plan on a corkboard — turn any conversation into a board you keep. Free, private, no account.">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/favicon.png">
+
+<!-- Link previews (Reddit / Discord / X) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="TrioForge — your own private AI workspace">
+<meta property="og:description" content="Chat is the input. The board is the output. Self-hosted AI workspace with chat, notes and a corkboard. Free, local, no account.">
+<meta property="og:image" content="https://meowmeowsmh.github.io/TrioForge/assets/logo.png">
+<meta property="og:url" content="https://meowmeowsmh.github.io/TrioForge/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0b0d12">
+
+<style>
+:root{
+  --bg:#0b0d12; --panel:#12151d; --panel-2:#171b25; --line:rgba(255,255,255,.09);
+  --text:#e6edf3; --muted:#9aa4b2; --dim:#6e7784;
+  --accent:#ff7a2f; --accent-2:#ffb066; --blue:#58a6ff; --green:#3fb950;
+  --radius:14px; --wrap:1100px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg); color:var(--text); line-height:1.6;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,Cantarell,"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 22px}
+h2{font-size:26px;letter-spacing:-.3px;margin-bottom:6px}
+h3{font-size:17px;margin-bottom:6px}
+p.lead{color:var(--muted);font-size:17px}
+section{padding:56px 0;border-top:1px solid var(--line)}
+.muted{color:var(--muted)}
+.small{font-size:13.5px}
+
+/* ── top nav ───────────────────────────────────────────── */
+header.nav{
+  position:sticky;top:0;z-index:50;background:rgba(11,13,18,.86);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--line);
+}
+.nav-in{display:flex;align-items:center;gap:18px;height:58px}
+.nav-in img{height:24px;width:auto;display:block}
+.nav-links{margin-left:auto;display:flex;gap:18px;align-items:center;font-size:14px}
+.nav-links a{color:var(--muted)}
+.nav-links a:hover{color:var(--text);text-decoration:none}
+@media(max-width:720px){.nav-links a.hide-sm{display:none}}
+
+/* ── hero ──────────────────────────────────────────────── */
+.hero{padding:44px 0 8px;border-top:none}
+.hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:34px;align-items:center}
+.hero h1{font-size:15px;font-weight:600;color:var(--accent-2);letter-spacing:.4px;text-transform:uppercase;margin-bottom:10px}
+.hero .claim{font-size:40px;line-height:1.15;font-weight:750;letter-spacing:-1px;margin-bottom:14px}
+.hero .claim em{font-style:normal;color:var(--accent)}
+.hero .sub{color:var(--muted);font-size:18px;max-width:52ch}
+.hero-art img{width:100%;border-radius:var(--radius);border:1px solid var(--line);display:block}
+@media(max-width:860px){.hero-grid{grid-template-columns:1fr}.hero .claim{font-size:31px}.hero-art{order:-1}}
+
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}
+.btn{
+  display:inline-flex;align-items:center;gap:9px;padding:13px 22px;border-radius:10px;
+  font-weight:650;font-size:15.5px;border:1px solid transparent;
+}
+.btn-primary{background:linear-gradient(135deg,#ff7a2f,#ff9a4d);color:#1a0e05;box-shadow:0 8px 26px rgba(255,122,47,.28)}
+.btn-primary:hover{text-decoration:none;transform:translateY(-1px)}
+.btn-ghost{background:var(--panel-2);color:var(--text);border-color:var(--line)}
+.btn-ghost:hover{text-decoration:none;border-color:rgba(255,255,255,.22)}
+.cta-note{margin-top:12px;color:var(--dim);font-size:13px}
+
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.badge{font-size:12.5px;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:5px 11px;border-radius:999px}
+
+/* ── demo gif ──────────────────────────────────────────── */
+.demo{margin-top:34px}
+.demo img{width:100%;border-radius:var(--radius);border:1px solid var(--line);display:block}
+.demo figcaption{margin-top:10px;color:var(--dim);font-size:13px}
+
+/* ── grids / cards ─────────────────────────────────────── */
+.grid{display:grid;gap:14px;margin-top:22px}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:860px){.g3,.g2{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 16px}
+.card .ico{font-size:20px;margin-bottom:8px;display:block}
+.card p{color:var(--muted);font-size:14.5px}
+
+.steps{counter-reset:s;margin-top:22px;display:grid;gap:14px;grid-template-columns:repeat(3,1fr)}
+@media(max-width:860px){.steps{grid-template-columns:1fr}}
+.step{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;padding:16px}
+.step b{display:block;margin-bottom:4px}
+.step p{color:var(--muted);font-size:14.5px}
+
+/* ── screenshots ───────────────────────────────────────── */
+.shots{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:22px}
+@media(max-width:860px){.shots{grid-template-columns:1fr}}
+.shots figure{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.shots img{width:100%;display:block}
+.shots figcaption{padding:9px 12px;font-size:13px;color:var(--muted);border-top:1px solid var(--line)}
+
+/* ── tables ────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;margin-top:20px;font-size:14.5px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.5px}
+td:first-child{color:var(--text);white-space:nowrap}
+td{color:var(--muted)}
+
+/* ── code ──────────────────────────────────────────────── */
+pre{
+  background:#080a0e;border:1px solid var(--line);border-radius:12px;padding:15px 16px;overflow-x:auto;
+  font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:13px;color:#d7dde5;margin-top:12px;position:relative;
+}
+code{font-family:'SF Mono','Fira Code',Consolas,monospace}
+p code,li code{background:#161a23;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:13px}
+.copy{position:absolute;top:9px;right:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);
+  border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer}
+.copy:hover{color:var(--text)}
+
+/* ── install tabs ──────────────────────────────────────── */
+.installs{margin-top:20px;display:grid;gap:22px}
+.install{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.install h3{display:flex;align-items:center;gap:8px}
+.install .tag{font-size:12px;font-weight:600;color:var(--green);border:1px solid rgba(63,185,80,.35);background:rgba(63,185,80,.08);padding:2px 8px;border-radius:999px}
+
+.note{border-left:3px solid var(--accent);background:var(--panel);border-radius:10px;padding:13px 16px;color:var(--muted);font-size:14.5px;margin-top:16px}
+footer{border-top:1px solid var(--line);padding:30px 0 46px;color:var(--dim);font-size:14px}
+.foot-links{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px}
+.foot-links a{color:var(--muted)}
+ul.ticks{list-style:none;margin-top:10px}
+ul.ticks li{color:var(--muted);font-size:14.5px;padding-left:22px;position:relative;margin-bottom:6px}
+ul.ticks li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a href="#top"><img src="assets/wordmark.png" alt="TrioForge"></a>
+    <nav class="nav-links">
+      <a href="#what" class="hide-sm">What it is</a>
+      <a href="#features">Features</a>
+      <a href="#shots" class="hide-sm">Screens</a>
+      <a href="#requirements" class="hide-sm">Requirements</a>
+      <a href="#install">Download</a>
+      <a href="https://github.com/meowmeowsmh/TrioForge" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ── HERO ─────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <h1>Self-hosted AI workspace</h1>
+        <p class="claim">Chat is the input.<br><em>The board is the output.</em></p>
+        <p class="sub">Ask a local model anything, send the answer to the corkboard, let the model rewrite it there, and link it to what you already know. One app — chat, notes and pins — running on your own machine.</p>
+
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/meowmeowsmh/TrioForge/releases/latest/download/application.exe">
+            ⬇ Download for Windows
+          </a>
+          <a class="btn btn-ghost" href="#install">🐳 Docker &amp; other platforms</a>
+        </div>
+        <p class="cta-note">7.9&nbsp;MB · no Python, no terminal, no account · it keeps itself updated</p>
+
+        <div class="badges">
+          <span class="badge">MIT licensed</span>
+          <span class="badge">Runs offline</span>
+          <span class="badge">Windows · macOS · Linux · WSL2 · Docker</span>
+          <span class="badge">No telemetry</span>
+        </div>
+      </div>
+      <div class="hero-art">
+        <img src="assets/logo.png" alt="TrioForge artwork">
+      </div>
+    </div>
+
+    <div class="wrap demo">
+      <figure>
+        <img src="assets/demo.gif" alt="A conversation turned into corkboard pins, rewritten on the board, then linked">
+        <figcaption>Real session, local model: ask → <b>Import Conversation</b> turns the answer into a pin → <b>✨ AI Assist</b> rewrites it on the board → link it. (The model's ~20&nbsp;s rewrite is sped up here.)</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ── WHAT IT IS ───────────────────────────────────── -->
+  <section id="what">
+    <div class="wrap">
+      <h2>What it is</h2>
+      <p class="lead">Most tools make you pick one: a chat UI, <em>or</em> a notes app, <em>or</em> a whiteboard. TrioForge connects them — and the AI works in all three.</p>
+
+      <div class="steps">
+        <div class="step"><b>1 · Ask</b><p>Chat with a local model (llama.cpp, Ollama) or a cloud one (Groq, DeepSeek, Claude, Gemini, OpenRouter).</p></div>
+        <div class="step"><b>2 · Keep it</b><p>Send any answer to the corkboard: it lands as a pin you can rewrite with the model, in place.</p></div>
+        <div class="step"><b>3 · Connect it</b><p>Link pins to each other and to your notes, so an idea keeps the context that produced it.</p></div>
+      </div>
+
+      <div class="note">Notes and the corkboard work with <b>no model installed at all</b> — the AI is an upgrade, not a requirement.</div>
+    </div>
+  </section>
+
+  <!-- ── FEATURES ─────────────────────────────────────── -->
+  <section id="features">
+    <div class="wrap">
+      <h2>Features</h2>
+      <p class="lead">Everything below runs on your machine. Nothing needs an account.</p>
+      <div class="grid g3">
+        <div class="card"><span class="ico">📌</span><h3>Chat → board</h3><p>Turn any conversation into pins, rewrite them with the model on the board, and link them into a map you keep.</p></div>
+        <div class="card"><span class="ico">🤖</span><h3>Coding agent</h3><p>Point it at a folder and it reads, searches, writes, edits and runs — up to 20 steps, with a live diff panel.</p></div>
+        <div class="card"><span class="ico">🔎</span><h3>Full-text search</h3><p>SQLite FTS5 across every message you have ever sent, ranked with highlighted snippets and click-to-jump.</p></div>
+        <div class="card"><span class="ico">📤</span><h3>Export &amp; import</h3><p>Any chat, or all of them, as Markdown or lossless JSON — and import them back as new chats.</p></div>
+        <div class="card"><span class="ico">🗣️</span><h3>Voice, locally</h3><p>Speech-to-speech on your own hardware (STT + llama.cpp + TTS), plus browser mic and speaker buttons.</p></div>
+        <div class="card"><span class="ico">📚</span><h3>Document chat</h3><p>Upload PDFs, Word files, code or Markdown and ask questions grounded in them (RAG).</p></div>
+        <div class="card"><span class="ico">🖼️</span><h3>Image, video, audio</h3><p>Generate with ComfyUI locally, or OpenRouter / Gemini in the cloud — results land in your chat.</p></div>
+        <div class="card"><span class="ico">⚔️</span><h3>Compare &amp; multi-agent</h3><p>Two models side by side on one prompt, or up to six models on one task at the same time.</p></div>
+        <div class="card"><span class="ico">📱</span><h3>Installable app</h3><p>Add it to your phone or desktop home screen; the layout adapts, and it works over your LAN.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SCREENSHOTS ──────────────────────────────────── -->
+  <section id="shots">
+    <div class="wrap">
+      <h2>The three views</h2>
+      <p class="lead">One window, one tab row — the chat's chrome gets out of the way when you're in the other two.</p>
+      <div class="shots">
+        <figure><img src="assets/shot-chat.png" alt="Chat view"><figcaption>💬 Chat — with the full-text search sidebar</figcaption></figure>
+        <figure><img src="assets/shot-notes.png" alt="Notes view"><figcaption>📖 Notes — auto-save, tags, backlinks</figcaption></figure>
+        <figure><img src="assets/shot-board.png" alt="Corkboard view"><figcaption>📌 Cork Board — pins, links, AI assist</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── REQUIREMENTS ─────────────────────────────────── -->
+  <section id="requirements">
+    <div class="wrap">
+      <h2>System requirements</h2>
+      <p class="lead">Much lighter than the feature list suggests: the app itself is small, and only the models are big.</p>
+      <table>
+        <tr><th>Operating system</th><td>Windows 10/11 (64-bit) · macOS 12+ · Linux (glibc) · WSL2 · Docker</td></tr>
+        <tr><th>Python</th><td><b>Not required.</b> The launcher finds or installs it and sets up its own environment.</td></tr>
+        <tr><th>Memory</th><td>8&nbsp;GB minimum, 16&nbsp;GB comfortable. Notes and the corkboard need very little.</td></tr>
+        <tr><th>Graphics</th><td><b>Optional.</b> NVIDIA (CUDA), AMD (ROCm), Apple Silicon (Metal) and Vulkan are auto-detected for local models; CPU works too, just slower.</td></tr>
+        <tr><th>Disk</th><td>~1&nbsp;GB for the app and its dependencies, plus whatever models you download (typically 1–8&nbsp;GB each).</td></tr>
+        <tr><th>Models</th><td>Bring your own <code>.gguf</code> (llama.cpp), use Ollama, or skip local models entirely with an API key.</td></tr>
+        <tr><th>Internet</th><td>Only needed to install or fetch models. Chat with local models works offline.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── INSTALL ──────────────────────────────────────── -->
+  <section id="install">
+    <div class="wrap">
+      <h2>Get it running</h2>
+      <p class="lead">Three ways in. Pick the one that matches your machine.</p>
+
+      <div class="installs">
+        <div class="install">
+          <h3>🪟 Windows — download and double-click <span class="tag">easiest</span></h3>
+          <p class="muted">No Python, no terminal, no git. The launcher fetches the app, installs what it needs, starts it and opens the setup panel.</p>
+          <div class="cta" style="margin-top:14px">
+            <a class="btn btn-primary" href="https://github.com/meowmeowsmh/TrioForge/releases/latest/download/application.exe">⬇ application.exe — 7.9 MB</a>
+          </div>
+          <p class="cta-note">Unsigned, so Windows SmartScreen warns once: <b>More info → Run anyway</b>.</p>
+        </div>
+
+        <div class="install">
+          <h3>🐳 Docker — servers, NAS, WSL2, Linux, macOS</h3>
+          <p class="muted">Runs the app in a container and talks to a llama-server or Ollama on your host. Your chats and files stay on your disk.</p>
+          <pre><button class="copy" data-copy>Copy</button><code>docker run -d --name trioforge -p 5002:5001 \
+  --add-host host.docker.internal:host-gateway \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  -v trioforge-data:/app/sqlite_data \
+  -v trioforge-config:/app/json_configuration \
+  ghcr.io/meowmeowsmh/trioforge:latest</code></pre>
+          <p class="cta-note">Then open <b>http://localhost:5002</b>. Update later with <code>./docker/application.sh --update</code>.</p>
+        </div>
+
+        <div class="install">
+          <h3>📦 From source — full control</h3>
+          <p class="muted">One command finds or installs Python, builds the environment and starts the app. It also keeps the checkout updated on every launch.</p>
+          <pre><button class="copy" data-copy>Copy</button><code>git clone https://github.com/meowmeowsmh/TrioForge.git
+cd TrioForge
+./run.sh          # Windows: double-click application.bat</code></pre>
+        </div>
+      </div>
+
+      <div class="note" style="margin-top:22px">
+        <b>Start it automatically at login:</b> <code>application.bat --install-autostart</code> (or <code>./run.sh --install-autostart</code>) —
+        per-user, no admin rights, quiet in the background, and it keeps itself up to date.
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PRIVACY / VERSION ────────────────────────────── -->
+  <section id="privacy">
+    <div class="wrap grid g2">
+      <div>
+        <h2>Private by default</h2>
+        <ul class="ticks">
+          <li>No account, no sign-up, no telemetry</li>
+          <li>Conversations live in SQLite under <code>sqlite_data/</code> on your disk</li>
+          <li>Model files are never uploaded and never committed</li>
+          <li>API keys stay in your browser unless you set them as environment variables</li>
+          <li>Works fully offline with local models</li>
+        </ul>
+      </div>
+      <div>
+        <h2>Release</h2>
+        <p class="muted"><b>v1.0.3</b> — installs without a C++ compiler, and the Windows launcher no longer closes on failure.</p>
+        <ul class="ticks">
+          <li>MIT licensed — use it, fork it, ship it</li>
+          <li>Every push rebuilds the container image and the Windows exe</li>
+          <li>CI runs the app and the ComfyUI flow on real Apple Silicon</li>
+        </ul>
+        <div class="cta">
+          <a class="btn btn-ghost" href="https://github.com/meowmeowsmh/TrioForge/releases">All releases &amp; changelog</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-links">
+      <a href="https://github.com/meowmeowsmh/TrioForge">GitHub</a>
+      <a href="https://github.com/meowmeowsmh/TrioForge#readme">Documentation</a>
+      <a href="https://github.com/meowmeowsmh/TrioForge/releases">Releases</a>
+      <a href="https://github.com/meowmeowsmh/TrioForge/issues">Issues &amp; feedback</a>
+      <a href="https://github.com/meowmeowsmh/TrioForge/pkgs/container/trioforge">Container image</a>
+    </div>
+    <p class="small">TrioForge — MIT licensed. Built and maintained by one person; feedback is more useful than stars.</p>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var code = btn.parentElement.querySelector('code');
+    var text = code ? code.innerText : '';
+    var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+    if (navigator.clipboard) { navigator.clipboard.writeText(text).then(done, done); return; }
+    var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done();
+  });
+});
+</script>
+</body>
+</html>
