@@ -71,33 +71,48 @@ jobs:
             dist/application.exe
             dist/application-cli.exe
           body: |
-            ## Windows — download `application.exe` and double-click it
+            ## Windows
 
-            Two windows appear: **TrioForge control panel** (the host — status, Restart, Stop,
-            hosting toggle, activity log) and **TrioForge**, the app's own window: TrioForge in
-            the title bar and taskbar, no tabs, no address bar, nothing browser-like, with chat,
-            notes and the corkboard inside it.
+            ### The repo way - no console, no exe, just your app
 
-            - No console window, no terminal, no Python to install.
-            - Chrome/Edge stays out of it. There is a **Browser** button if you want the web
-              interface on a phone or another device.
-            - It listens on `127.0.0.1` only, so Windows does not ask about the firewall and
-              nothing is exposed on your network unless you ask for it.
-            - Starting it again does **not** start a second copy: it attaches to the one running.
-            - Unsigned, so SmartScreen warns once: **More info → Run anyway**.
+            `git clone` the repo, then double-click **`start.vbs`**. The only thing that appears
+            is TrioForge's own window (TrioForge in the title bar, no tabs, no address bar) with
+            chat, notes and the corkboard inside it. The server runs hidden; `start.bat` does the
+            same from a terminal.
 
-            ## Hosting it for other people
+            ### The one-file way
 
-            `application-cli.exe --host` (or the hosting checkbox in the control panel) opens it
-            to your network **and** puts a password in front of it, then prints the links to share.
-            Without that, it stays local.
+            Download `application.exe` and double-click it - a control panel hosts the app and
+            TrioForge opens in its own window. No Python, no terminal, no git.
 
-            ## Command line
+            **Seeing "Windows protected your PC"?** That is SmartScreen warning about an *unsigned*
+            app, not a virus report: TrioForge has no code-signing certificate (they cost money every
+            year). Click **More info → Run anyway**, or avoid the dialog completely - this downloads
+            it without a browser, so Windows never marks it as "from the internet":
 
-            `application-cli.exe` is the same program for terminals:
-            `--status`, `--update`, `--install-autostart`, `--host`, `--host-password`.
+            ```powershell
+            irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/install.ps1 | iex
+            ```
 
-            ## Docker / NAS / Linux / macOS
+            It listens on `127.0.0.1` only (no firewall prompt, nothing exposed on your network), and
+            starting it twice attaches to the running copy instead of starting a second one.
 
-            `docker run … ghcr.io/meowmeowsmh/trioforge:latest` or `git clone && ./run.sh`.
+            ### If a model does not start
+
+            TrioForge refuses to load a model that cannot fit in your free memory instead of thrashing
+            the machine. Pick a smaller GGUF, or use Ollama, which can offload to the GPU.
+            `TRIOFORGE_SKIP_RAM_CHECK=1` overrides the check.
+
+            ### Hosting it for other people
+
+            `application-cli.exe --host` (or the hosting checkbox in the control panel) opens it to
+            your network **and** puts a password in front of it, then prints the links to share.
+
+            ### Command line
+
+            `application-cli.exe`: `--status`, `--update`, `--install-autostart`, `--host`, `--host-password`.
+
+            ### Docker / NAS / Linux / macOS
+
+            `docker run … ghcr.io/meowmeowsmh/trioforge:latest`, or `git clone` and `./run.sh`.
 
