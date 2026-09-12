@@ -10,6 +10,12 @@
 
 **Everything else it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), a file-editing agent with a live diff panel, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation, Windows/macOS/Linux/WSL + Docker, installable on your phone. → [full feature list](#-features) · [screenshots](#-see-it-in-action)
 
+**Opens in its own window.** On Windows, double-click `start.vbs` and TrioForge appears in a real
+window — its own icon and title, no browser tabs, no address bar, no terminal. The server runs
+hidden behind it. Prefer your browser, or your phone? The same app serves the web interface too,
+and there is **no .exe to download**: it's the repo (or Docker), so nothing to install and no
+SmartScreen dialog.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![GitHub last commit](https://img.shields.io/github/last-commit/meowmeowsmh/TrioForge)](https://github.com/meowmeowsmh/TrioForge)
@@ -33,9 +39,20 @@ cd TrioForge
 
 then double-click **`start.vbs`**.
 
-TrioForge opens in a window of its own — its name in the title bar, no tabs, no address bar —
-with chat, notes and the corkboard inside it. The server starts hidden behind it; `start.bat`
+TrioForge opens in a window of its own — its name in the title bar and taskbar, no tabs, no address
+bar — with chat, notes and the corkboard inside it. The server starts hidden behind it; `start.bat`
 does the same thing from a terminal. Nothing flashes, because the whole launch runs invisibly.
+
+> **Make it a desktop icon:** right-click `start.vbs` → *Send to → Desktop (create shortcut)*, then
+> right-click the shortcut → *Properties* → *Change Icon* → pick `static/logo/triorforge.ico`.
+> Double-clicking that is the whole app.
+
+> **How the window works:** it renders with **WebView2**, the engine Windows 10/11 already ships
+> (the component Edge uses), embedded by [pywebview](https://pywebview.flowrl.com/) — one ~1 MB
+> dependency the launcher installs for you on first run. Your interface stays the same HTML app;
+> it simply has a real window instead of browser chrome. Nothing is fetched from the internet, and
+> because nothing arrives as a compiled binary there is **no .exe, no installer and no
+> SmartScreen dialog**.
 
 **2 · The web interface.** Same app, in your browser:
 
@@ -500,7 +517,7 @@ ngrok http 5003
 | **The repo link** (`git clone`, then `start.vbs` / `run.sh`) | their own copy, their own chats, fully local | nothing |
 | **A link to your instance** | the workspace *you* are hosting: your notes, pins and chats | host mode on (below) |
 
-Turn host mode on with the checkbox in the control panel, or:
+Turn host mode on with a flag — or, if you use the optional control panel, with its hosting checkbox:
 
 ```bash
 ./run.sh --host                      # generates a password, prints the links to share
@@ -587,7 +604,23 @@ launcher.py --force-update         # update even with local edits (stashed, not 
 launcher.py --window               # open TrioForge in its own WebView2 window
 launcher.py --detach               # start the server hidden and return immediately
 launcher.py --host                 # open it to your network with a password
+launcher.py --no-browser           # never open a browser tab (what start.vbs uses)
 ```
+
+`start.vbs` and `start.bat` are just `launcher.py --window --detach --no-browser`, run through the
+windowed interpreter so nothing is ever shown.
+
+### The optional control panel
+
+Do you want a small window that shows whether the server is up, and lets you restart it, check for
+updates, enable start-at-login and turn hosting on? That exists, and it is **not** part of the normal
+start-up — you only get it if you ask:
+
+```bash
+python py/tools/launcher_gui.py .        # the panel (it hosts the app and shows its activity)
+```
+
+Everything the panel does is also a flag above, so most people never need it.
 
 > There is **no .exe to download**: TrioForge is the repo (plus Docker). On Windows,
 > `start.vbs` is the double-click way in — it needs no terminal, shows no console and no
