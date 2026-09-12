@@ -316,6 +316,33 @@ class ControlPanel:
         # window runs in a separate process, so that is fine.
         return True
 
+    def _app_window_open(self) -> bool:
+        """True if an app window is already showing.
+
+        Checked through the pid file the window itself writes, not a pid we stored
+        when launching it: the venv's pythonw.exe is a shim that exits right after
+        starting the real interpreter, so a stored pid dies immediately and we
+        would open another window on every click.
+        """
+        try:
+            from app_window import window_pid_file     # same folder
+        except Exception:
+            return False
+        try:
+            path = window_pid_file()
+            if not path.is_file():
+                return False
+            pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+        except Exception:
+            return False
+        if launcher.pid_alive(pid):
+            return True
+        try:
+            path.unlink()                 # stale file from a closed/crashed window
+        except Exception:
+            pass
+        return False
+
     def open_app_window(self) -> None:
         """TrioForge in its own window: no browser, no tabs, no address bar."""
         url = (self.supervisor.url if self.supervisor and self.supervisor.url else
@@ -324,7 +351,7 @@ class ControlPanel:
         if not script.is_file():
             self.log_line("app_window.py is missing (update TrioForge); using the browser.")
             return self.open_app()
-        if getattr(self, "_window_pid", None) and launcher.pid_alive(self._window_pid):
+        if self._app_window_open():
             self.log_line("The app window is already open.")
             return
 
@@ -362,9 +389,11 @@ class ControlPanel:
             self.supervisor._stop_child()
         # Close the app window too: leaving a window pointing at a dead server is
         # worse than closing it.
-        if getattr(self, "_window_pid", None) and launcher.pid_alive(self._window_pid):
+        if self._app_window_open():
             try:
-                subprocess.run(["taskkill", "/PID", str(self._window_pid), "/F"],
+                from app_window import window_pid_file
+                pid = int(window_pid_file().read_text(encoding="utf-8").strip().split()[0])
+                subprocess.run(["taskkill", "/PID", str(pid), "/F"],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
                                creationflags=launcher._no_window_flags())
             except Exception:
