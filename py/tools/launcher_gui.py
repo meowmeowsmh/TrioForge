@@ -384,11 +384,11 @@ class ControlPanel:
                     self.log_line("Server is up: {}".format(url))
                     if not getattr(self, "_opened", False):
                         self._opened = True
-                        # Auto-start mode (and scripts) must not hijack the browser.
-                        if os.environ.get("TRIOFORGE_NO_BROWSER") == "1":
-                            self.log_line("Open {} when you're ready.".format(url))
-                        else:
-                            self.open_app()
+                        # Deliberately NOT opening a browser. The desktop app is the
+                        # app: it must not throw a web page at you on every start.
+                        # Press "Open TrioForge" when you want the web interface
+                        # (useful on a phone too), or use the panel as it is.
+                        self.log_line("Press Open TrioForge for the web interface.")
             elif self.state == "running":
                 self.set_state("starting", "The server is not answering; waiting...")
         try:
