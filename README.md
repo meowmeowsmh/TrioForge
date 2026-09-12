@@ -16,13 +16,24 @@
 
 **Why it exists:** most tools make you pick one — a chat UI, *or* a notes app, *or* a whiteboard. Chat is where you think; a board is where you keep what you thought. TrioForge is the only one that connects them, and everything stays on your disk.
 
-**Jump to:** [60-second start](#-60-second-start-docker) · [Quick start](#-quick-start) · [Model folders](#️-model-folders-automatic-projector-pairing) · [Features](#-features) · [Configuration](#️-configuration) · [Top-bar panels](#️-the-top-bar-panels) · [Workspaces](#️-workspaces--folder-access) · [Search, export & titles](#-search-export--titles) · [Generation](#-image-video--audio-generation) · [ComfyUI](#-comfyui-setup-optional--for-free-local-generation) · [HTTP vs HTTPS](#-http-vs-https) · [Remote access](#-remote-access-phone--lan--tunnel) · [Docker](#-docker) · [Your data](#️-where-your-data-lives) · [Project structure](#-project-structure) · [License](#-license)
+**Jump to:** [60-second start](#-start-in-60-seconds) · [Quick start](#-quick-start) · [Model folders](#️-model-folders-automatic-projector-pairing) · [Features](#-features) · [Configuration](#️-configuration) · [Top-bar panels](#️-the-top-bar-panels) · [Workspaces](#️-workspaces--folder-access) · [Search, export & titles](#-search-export--titles) · [Generation](#-image-video--audio-generation) · [ComfyUI](#-comfyui-setup-optional--for-free-local-generation) · [HTTP vs HTTPS](#-http-vs-https) · [Remote access](#-remote-access-phone--lan--tunnel) · [Docker](#-docker) · [Your data](#️-where-your-data-lives) · [Project structure](#-project-structure) · [License](#-license)
 
 ---
 
-## ⚡ 60-second start (Docker)
+## ⚡ Start in 60 seconds
 
-If you already run Ollama (or a llama-server on your host), this is the entire install:
+**Windows — nothing to install first.** Download the launcher and double-click it:
+
+> ### ⬇️ [`TrioForge.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/TrioForge.exe) <sub>([all releases](https://github.com/meowmeowsmh/TrioForge/releases) · 7.9 MB · no Python needed)</sub>
+
+It fetches TrioForge, keeps it updated on every launch, installs the dependencies and starts the
+app — then opens the Setup panel, where **⚡ Auto-install** gets llama.cpp for your GPU.
+
+> Windows SmartScreen warns once because the exe is not code-signed: **More info → Run anyway**.
+> Signing needs a certificate; until then that is the expected first-run dialog.
+
+**Docker / Linux / macOS / NAS** — if you already run Ollama (or a llama-server on your host),
+this is the entire install:
 
 ```bash
 docker run -d --name trioforge -p 5002:5001 \
@@ -114,9 +125,10 @@ Then, inside the app:
 | 🍎 **macOS (Intel or Apple Silicon)** | `run.sh` | `./run.sh` — uses Homebrew's Python, finds `/opt/homebrew/bin` tools | `brew install llama.cpp`, or **⚡ Auto-install** | `http://localhost:5003` |
 | 🐧🪟 **WSL2** | `run.sh` | same as Linux | same as Linux | `http://localhost:5003` |
 | 🐳 **Docker** | `docker/application.sh` | `./docker/application.sh` | host llama-server via `LLAMA_HOST` | `http://localhost:5002` |
+| 🪟 **Windows (no terminal)** | [`TrioForge.exe`](https://github.com/meowmeowsmh/TrioForge/releases/latest/download/TrioForge.exe) | Download and double-click it | fetches + updates the app for you, then **⚡ Auto-install** | `https://localhost:5003` |
 | 🛠️ Any OS (advanced) | `py/tools/launcher.py` | `python py/tools/launcher.py` | — | — |
 
-`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
+`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `TrioForge.exe` is a thin wrapper around the same thing (it clones the repo on first run, then keeps it updated). `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
 
 ### 🚀 First-run setup checker
 
