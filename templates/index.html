@@ -255,12 +255,25 @@ body.light-mode::before { opacity: 0; }
    The fullscreen button and the weather toggle are the TWO exceptions: without
    the first there is no fullscreen control that keeps this tab bar visible, and
    without the second the weather widget (which stays on screen in these views)
-   could not be shown or hidden any more. Both keep the row's normal centred
-   layout - right-aligning them would put them underneath the weather widget,
-   which lives in the top-right corner. Fullscreen itself is held by this
-   document, so it stays on while you switch views - press Esc to leave it. */
+   could not be shown or hidden any more. Both sit at the RIGHT end of the row.
+
+   The weather card is a fixed overlay in that same corner, so while it is open the
+   buttons step to its left instead of hiding underneath it. The card removes its
+   .toast node when it closes (both the X and the toggle do that), which is what
+   :has() keys off - so there is no gap when the card is not on screen.
+   Fullscreen itself is held by this document, so it stays on while you switch
+   views - press Esc to leave it. */
+html.view-embed #topBarIcons {
+    justify-content: flex-end;
+    padding-right: 18px;
+}
 html.view-embed #topBarIcons > *:not(#fullscreenBtn):not(#weatherToggleBtn) {
     display: none !important;
+}
+@supports selector(:has(*)) {
+    html.view-embed body:has(#toastContainer .toast) #topBarIcons {
+        padding-right: 292px;   /* clears the card (max-width 280px + 12px gap) */
+    }
 }
 html.view-embed #statusBar,
 html.view-embed #providerSelect,
