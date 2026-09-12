@@ -45,6 +45,17 @@ def user_data_dir() -> Path:
     return Path(base) / "TrioForge" / "webview"
 
 
+def window_pid_file() -> Path:
+    """Marks an app window as open, so the panel cannot open a second one.
+
+    Written by THIS process (the real interpreter), not by whatever launched it:
+    a venv's pythonw.exe is a shim that exits immediately, so a pid recorded by the
+    launcher is dead within milliseconds and every attempt would open another
+    window.
+    """
+    return user_data_dir().parent / "app_window.pid"
+
+
 def is_local(url: str) -> bool:
     return any(h in url for h in ("localhost", "127.0.0.1", "[::1]"))
 
@@ -132,7 +143,20 @@ def main() -> int:
                 start_kwargs["storage_path"] = str(storage)
             except Exception:
                 pass
-        webview.start(**start_kwargs)
+        try:
+            pid_file = window_pid_file()
+            pid_file.parent.mkdir(parents=True, exist_ok=True)
+            pid_file.write_text("{} {}\n".format(os.getpid(), args.url), encoding="utf-8")
+        except Exception:
+            pid_file = None
+        try:
+            webview.start(**start_kwargs)
+        finally:
+            try:
+                if pid_file:
+                    pid_file.unlink()
+            except Exception:
+                pass
     except Exception as exc:
         # Fall back to whatever backend pywebview finds (e.g. MSHTML on old boxes).
         try:
