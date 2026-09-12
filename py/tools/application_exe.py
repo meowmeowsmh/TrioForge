@@ -28,6 +28,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -114,6 +115,15 @@ def try_install_python() -> bool:
         if code == 0:
             return True
     return False
+
+
+def _tail(path: Path, lines: int = 12) -> list:
+    """The last few lines of a log file (never raises)."""
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            return [l.rstrip() for l in fh.readlines()[-lines:]]
+    except Exception:
+        return []
 
 
 def log_path(project: Path) -> Path:
@@ -211,9 +221,12 @@ def main() -> int:
 
     # Maintenance/inspection runs should exit straight away; a plain double-click
     # (or an interactive failure) keeps the window so the reason stays readable.
+    # --no-pause only silences the keypress - it must NOT change which mode runs.
     non_interactive = bool(args.update or args.status or args.install_autostart
                            or args.remove_autostart or args.no_pause
                            or (not sys.stdout.isatty()))
+    maintenance = bool(args.update or args.status or args.install_autostart
+                       or args.remove_autostart)
     project = Path(args.dir).expanduser().resolve() if args.dir else find_existing()
     print("TrioForge bootstrap")
     print("  app folder: {}".format(project))
@@ -265,13 +278,29 @@ def main() -> int:
                 if os.name == "nt":
                     flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                              | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-                subprocess.Popen([str(c) for c in gui_cmd], cwd=str(project),
-                                 creationflags=flags,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 stdin=subprocess.DEVNULL)
+                panel = subprocess.Popen([str(c) for c in gui_cmd], cwd=str(project),
+                                         creationflags=flags,
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                         stdin=subprocess.DEVNULL)
                 print("  control   : TrioForge is starting - the control panel window opens")
                 print("              in a moment. It hosts the app and shows what it is doing.")
                 print("              Log: {}".format(log_path(project)))
+
+                # If the panel dies straight away this console is about to close and
+                # take the reason with it, which is exactly how "it does not run"
+                # happens with nothing to read. Wait a moment and report instead.
+                time.sleep(8)
+                if panel.poll() is not None:
+                    print()
+                    print("  The control panel could not start (exit {}).".format(panel.returncode))
+                    print("  Last lines of its log:")
+                    for line in _tail(log_path(project), 12):
+                        print("    " + line)
+                    print("  Also kept in: {}".format(
+                        project / "logs" / "control-panel.log"))
+                    if not non_interactive:
+                        wait_for_key()
+                    return 1
                 return 0
             except Exception as exc:
                 print("  control   : could not open the panel ({});".format(exc))
