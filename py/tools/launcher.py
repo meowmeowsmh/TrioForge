@@ -120,27 +120,70 @@ def find_project(explicit: Optional[str]) -> Optional[Path]:
     return None
 
 
-def install_deps(project: Path) -> None:
-    """Install dependencies once (prefers uv, falls back to pip), then write the marker file."""
-    uv = shutil.which("uv")
-    if uv:
-        print("Installing dependencies with uv (uv sync)...")
-        result = subprocess.run([uv, "sync"], cwd=str(project))
-        if result.returncode == 0:
-            updater.write_deps_marker(project)      # records a hash of the manifests
-            print("Dependencies installed (uv).")
-            return
-        print("uv sync failed; falling back to pip.")
+def project_venv_python(project: Path) -> Optional[str]:
+    """The project's own venv interpreter, if one exists."""
+    for rel in ("Scripts/python.exe", "bin/python3", "bin/python"):
+        candidate = project / ".venv" / rel
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
+
+def ensure_project_venv(project: Path) -> Optional[str]:
+    """Create <project>/.venv if needed and return its interpreter path.
+
+    Everything is installed into THIS venv and the app is started from it, so the
+    install target and the run target can never disagree (installing into one
+    interpreter and running with another is how a first run ends up crashing with
+    ModuleNotFoundError right after a successful-looking install).
+    """
+    existing = project_venv_python(project)
+    if existing:
+        return existing
+    uv = shutil.which("uv")
+    print("Creating the project virtual environment (.venv)...")
+    if uv:
+        result = subprocess.run([uv, "venv", ".venv"], cwd=str(project))
+    else:
+        result = subprocess.run([sys.executable, "-m", "venv", ".venv"], cwd=str(project))
+    if result.returncode != 0:
+        print("Could not create the virtual environment.")
+        return None
+    return project_venv_python(project)
+
+
+def install_deps(project: Path) -> None:
+    """Install dependencies into the project venv, then write the marker file.
+
+    Deliberately requirements.txt-driven rather than `uv sync`: uv.lock freezes
+    exact versions, and an old lock can pin something with no wheel for this
+    Python (e.g. pyyaml 5.1) so the install tries to compile it and fails without
+    a C++ toolchain. requirements.txt is the file the docs point at and it always
+    resolves to installable versions.
+    """
     req = project / "requirements.txt"
     if not req.is_file():
         print("No requirements.txt found; skipping dependency install.")
         return
-    print("Installing dependencies (this may take a while on first run)...")
-    result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(req)])
+
+    venv_python = ensure_project_venv(project)
+    if venv_python is None:
+        print("Dependency installation skipped (no usable virtual environment).")
+        return
+
+    uv = shutil.which("uv")
+    print("Installing dependencies into .venv (this may take a while on first run)...")
+    if uv:
+        result = subprocess.run([uv, "pip", "install", "--python", venv_python,
+                                 "-r", str(req)], cwd=str(project))
+    else:
+        subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"],
+                       cwd=str(project))
+        result = subprocess.run([venv_python, "-m", "pip", "install", "-r", str(req)],
+                                cwd=str(project))
     if result.returncode != 0:
         print("Dependency installation failed.")
-        print("Install manually with: pip install -r requirements.txt")
+        print("Install manually with: {} -m pip install -r requirements.txt".format(venv_python))
         sys.exit(1)
     updater.write_deps_marker(project)
     print("Dependencies installed.")
@@ -190,8 +233,16 @@ def start_voice_agent(project: Path, enabled: bool = True) -> None:
 
 
 def _app_command(project: Path) -> List[str]:
-    """The command that runs the Flask app (venv python, else uv, else plain python)."""
+    """The command that runs the Flask app.
+
+    The project venv wins: that is where install_deps() just put the dependencies.
+    Falling back to `uv run` before checking it would start the app in an
+    interpreter that may not have them.
+    """
     app_path = project / "py" / "app.py"
+    venv_python = project_venv_python(project)
+    if venv_python:
+        return [venv_python, str(app_path)]
     in_venv = hasattr(sys, "base_prefix") and sys.prefix != sys.base_prefix
     uv = shutil.which("uv")
     if in_venv or not uv:
