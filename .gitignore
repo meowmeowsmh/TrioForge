@@ -130,3 +130,6 @@ voiceguide_llama.cpp_guide/control.txt
 
 # Control panel pid file (one panel per folder)
 logs/control-panel.pid
+
+# WebView2 profile (cookies, cache, localStorage) - machine state, never commit
+json_configuration/webview/
