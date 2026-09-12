@@ -922,6 +922,20 @@ body.light-mode::before { opacity: 0; }
     overflow: hidden;
 }
 .sidebar.hidden { width: 0; margin: 0; border: none; overflow: hidden; padding: 0; }
+/* The toggle lives INSIDE the sidebar, so hiding it would hide the way back. This
+   button appears only while the sidebar is hidden (pure CSS via :has) and brings
+   it straight back - in the framed view too, where this page's top bar is hidden
+   and the old top-bar toggle is therefore unreachable. */
+#sbShow {
+    position: fixed; left: 12px; top: 68px; z-index: 400;
+    display: none; align-items: center; justify-content: center;
+    width: 40px; height: 34px; border-radius: 8px; cursor: pointer;
+    background: rgba(28, 28, 40, 0.9); border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #8b949e; backdrop-filter: blur(10px);
+}
+#sbShow:hover { color: #e6edf3; border-color: rgba(255, 255, 255, 0.28); }
+html:has(#sidebar.hidden) #sbShow { display: inline-flex; }
+html.embedded:has(#sidebar.hidden) #sbShow { top: 12px; }   /* no top bar when framed */
 .sidebar-header {
     padding: 20px 16px 12px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
@@ -2167,11 +2181,29 @@ html.embedded #weatherWidget,
    would cover the shell's tab bar, so the button is only shown standalone. */
 html.embedded #fsBtn { display: none !important; }</style>
 <div class="app">
+    <!-- Shown only while the sidebar is hidden (CSS :has) so the notes list can
+         always be brought back, framed or standalone. -->
+    <button id="sbShow" onclick="toggleSidebar()" title="Show the notes list"
+            aria-label="Show the notes list">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <line x1="9" y1="4" x2="9" y2="20"></line>
+        </svg>
+    </button>
     <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <h2>📖 Notes</h2>
             <button class="new-note-btn" onclick="createNewNote()">+ New</button>
+            <button class="new-note-btn btn-icon" onclick="toggleSidebar()" title="Hide the notes list"
+                    aria-label="Hide the notes list" style="display:flex; align-items:center; justify-content:center;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                    <line x1="9" y1="4" x2="9" y2="20"></line>
+                </svg>
+            </button>
             <button class="new-note-btn btn-icon" id="fsBtn" onclick="toggleFullscreen()" title="Full screen"
                     aria-label="Toggle full screen" style="display:flex; align-items:center; justify-content:center;">
                 <!-- Drawn icon instead of the ⛶ emoji: Windows renders that codepoint
