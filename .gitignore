@@ -66,6 +66,9 @@ json_configuration/corkboard.json
 json_configuration/notes.json
 json_configuration/sync_config.json
 json_configuration/workspaces/
+# Host mode: the shared password and the session-signing key. Never commit these.
+json_configuration/host_password
+json_configuration/.host_secret
 sqlite_data/
 
 # ──────────────────────────────────────────────────────────────
