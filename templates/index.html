@@ -252,16 +252,14 @@ body.light-mode::before { opacity: 0; }
    chose in Chat (shared through localStorage), and both pages have their own AI
    controls.
 
-   The fullscreen button is the ONE exception: it is the only fullscreen control
-   that keeps this tab bar visible, so it stays (alone, right-aligned) instead of
-   disappearing with the rest of the row. Fullscreen itself is held by this
+   The fullscreen button and the weather toggle are the TWO exceptions: without
+   the first there is no fullscreen control that keeps this tab bar visible, and
+   without the second the weather widget (which stays on screen in these views)
+   could not be shown or hidden any more. Both keep the row's normal centred
+   layout - right-aligning them would put them underneath the weather widget,
+   which lives in the top-right corner. Fullscreen itself is held by this
    document, so it stays on while you switch views - press Esc to leave it. */
-html.view-embed #topBarIcons {
-    display: flex !important;
-    justify-content: flex-end;
-    padding: 0 16px 6px;
-}
-html.view-embed #topBarIcons > *:not(#fullscreenBtn) {
+html.view-embed #topBarIcons > *:not(#fullscreenBtn):not(#weatherToggleBtn) {
     display: none !important;
 }
 html.view-embed #statusBar,
