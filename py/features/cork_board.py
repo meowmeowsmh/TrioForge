@@ -1910,7 +1910,10 @@ body.light-mode .weather-controls select option {
 if (window.self !== window.top) document.documentElement.classList.add('embedded');
 </script>
 <style>html.embedded .top-bar,
-html.embedded #weatherWidget { display: none !important; }</style>
+html.embedded #weatherWidget,
+/* Framed: fullscreen is the shell's job. Letting this page fullscreen the FRAME
+   would cover the shell's tab bar, so the button is only shown standalone. */
+html.embedded #fsBtn { display: none !important; }</style>
 <div class="app">
     <!-- TOP BAR -->
     <div class="top-bar">
@@ -2017,7 +2020,7 @@ html.embedded #weatherWidget { display: none !important; }</style>
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>
         <button class="top-btn" id="suggestLinksBtn" onclick="openLinkSuggestions()">💡 Suggest Links</button>
         <button class="top-btn" id="importConvBtn" onclick="importConversationTree()">💬 Import Conversation</button>
-        <button class="top-btn" onclick="toggleFullscreen()" title="Full screen"
+        <button class="top-btn" id="fsBtn" onclick="toggleFullscreen()" title="Full screen"
                 aria-label="Toggle full screen" style="display:inline-flex; align-items:center; gap:6px;">
             <!-- Drawn icon instead of the ⛶ emoji: Windows renders that codepoint as
                  a barely visible monochrome glyph in this toolbar. -->
@@ -3205,6 +3208,12 @@ function createNewPin() {
 }
 
 function toggleFullscreen() {
+    // Framed by the chat shell: fullscreen belongs to the shell, otherwise the
+    // frame fills the screen and the tab bar disappears. Ask the parent instead.
+    if (window.self !== window.top) {
+        try { window.parent.postMessage({ trioFullscreen: 'toggle' }, window.location.origin); } catch (e) {}
+        return;
+    }
     if (!document.fullscreenElement) {
         if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function(){});
     } else {

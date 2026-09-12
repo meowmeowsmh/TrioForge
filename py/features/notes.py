@@ -2162,14 +2162,17 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 if (window.self !== window.top) document.documentElement.classList.add('embedded');
 </script>
 <style>html.embedded .top-bar,
-html.embedded #weatherWidget { display: none !important; }</style>
+html.embedded #weatherWidget,
+/* Framed: fullscreen is the shell's job. Letting this page fullscreen the FRAME
+   would cover the shell's tab bar, so the button is only shown standalone. */
+html.embedded #fsBtn { display: none !important; }</style>
 <div class="app">
     <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <h2>📖 Notes</h2>
             <button class="new-note-btn" onclick="createNewNote()">+ New</button>
-            <button class="new-note-btn btn-icon" onclick="toggleFullscreen()" title="Full screen"
+            <button class="new-note-btn btn-icon" id="fsBtn" onclick="toggleFullscreen()" title="Full screen"
                     aria-label="Toggle full screen" style="display:flex; align-items:center; justify-content:center;">
                 <!-- Drawn icon instead of the ⛶ emoji: Windows renders that codepoint
                      as a barely visible monochrome glyph. -->
@@ -5349,6 +5352,13 @@ html.embedded #weatherWidget { display: none !important; }</style>
     });
 
     function toggleFullscreen() {
+        // Framed by the chat shell: fullscreen belongs to the shell, otherwise the
+        // frame fills the screen and the tab bar (Chat / Notes / Cork Board)
+        // disappears. Ask the parent instead.
+        if (window.self !== window.top) {
+            try { window.parent.postMessage({ trioFullscreen: 'toggle' }, window.location.origin); } catch (e) {}
+            return;
+        }
         if (!document.fullscreenElement) {
             if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function(){});
         } else {
