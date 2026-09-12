@@ -245,6 +245,23 @@ body.light-mode::before { opacity: 0; }
 @media (max-width: 520px) {
     .brand-logo { height: 20px; }
 }
+/* Looking at Notes or the Cork Board inside the shell: the chat-only chrome (the
+   icon row, the status bar, the generation panels) is not what you are working
+   with there, so it gets out of the way and the embedded view gets the space.
+   Fullscreen is NOT affected: this document holds it, so it simply stays on -
+   press Esc (or come back to Chat) to leave it. */
+html.view-embed #topBarIcons,
+html.view-embed #statusBar,
+html.view-embed #imageGenPanel,
+html.view-embed #videoGenPanel,
+html.view-embed #audioGenPanel,
+html.view-embed #ragPanel,
+html.view-embed #comparePanel,
+html.view-embed #multiPanel,
+html.view-embed #liveCodePanel {
+    display: none !important;
+}
+
 /* ── Centered tab buttons (pill style) ── only Chat, Notes, Cork Board ── */
 .top-bar .center-tabs {
     display: flex;
@@ -7386,6 +7403,7 @@ function openEmbeddedView(url, view) {
     if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
     host.style.display = 'block';
     chat.style.display = 'none';
+    document.documentElement.classList.add('view-embed');   // hides chat-only chrome
     setActiveTab(view);
     try { localStorage.setItem('trio_last_view', view); } catch (err) {}
     return false;                          // stay in this document
@@ -7396,6 +7414,7 @@ function showChatView() {
     var chat = document.getElementById('chatPanel');
     if (host) host.style.display = 'none';
     if (chat) chat.style.display = 'flex';
+    document.documentElement.classList.remove('view-embed');   // chat chrome back
     setActiveTab('chat');
     try { localStorage.setItem('trio_last_view', 'chat'); } catch (err) {}
     if (typeof scrollToBottom === 'function') { try { scrollToBottom(); } catch (err) {} }
