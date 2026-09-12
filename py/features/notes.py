@@ -2128,6 +2128,13 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 </style>
 </head>
 <body>
+<script>
+/* Embedded in the chat shell (iframe): the shell already provides the top bar
+   and the three tabs, so this page hides its own to avoid a double row. */
+if (window.self !== window.top) document.documentElement.classList.add('embedded');
+</script>
+<style>html.embedded .top-bar,
+html.embedded #weatherWidget { display: none !important; }</style>
 <div class="app">
     <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
