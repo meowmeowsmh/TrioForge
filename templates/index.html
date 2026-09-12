@@ -248,10 +248,17 @@ body.light-mode::before { opacity: 0; }
 /* Looking at Notes or the Cork Board inside the shell: the chat-only chrome (the
    icon row, the status bar, the generation panels) is not what you are working
    with there, so it gets out of the way and the embedded view gets the space.
+   The provider/persona pickers go too - Notes and Cork Board keep using whichever
+   one you last chose in Chat (it is shared through localStorage), and the pages
+   have their own AI controls.
    Fullscreen is NOT affected: this document holds it, so it simply stays on -
    press Esc (or come back to Chat) to leave it. */
 html.view-embed #topBarIcons,
 html.view-embed #statusBar,
+html.view-embed #providerSelect,
+html.view-embed #personaSelect,
+html.view-embed #personaCustomInput,
+html.view-embed #apiKeyInput,
 html.view-embed #imageGenPanel,
 html.view-embed #videoGenPanel,
 html.view-embed #audioGenPanel,
