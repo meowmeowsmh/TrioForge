@@ -22,6 +22,10 @@ CONFIG_PATH = root_path("voiceguide_llama.cpp_guide", "config.json")
 _process = None
 _running_model = None
 _lock = threading.Lock()
+# Anti-storm: the timestamp of the last spawn we did. While a server is still
+# loading, a new request must reuse it instead of starting a second copy.
+_last_spawn = 0.0
+_SPAWN_COOLDOWN = 20.0
 
 # Common GGUF quantization suffixes, used to split a model name into its base name
 # so the mmproj projector can be paired with the right text model.
@@ -501,8 +505,37 @@ def _voice_agent_running():
     return False
 
 
+def _same_model(a, b):
+    """True when two model references mean the same file.
+
+    Compares full paths first, then bare file names. A llama-server frequently
+    reports only the file name on /v1/models, and abspath()-ing that against the
+    app's working directory gives a path that never equals the real one - which
+    made every chat request conclude "wrong model", kill the running server and
+    start a new one. Each of those reloaded the whole model into RAM (and opened a
+    console window): the machine-ending spawn storm.
+    """
+    if not a or not b:
+        return False
+    try:
+        if os.path.normcase(os.path.abspath(str(a))) == os.path.normcase(os.path.abspath(str(b))):
+            return True
+    except Exception:
+        pass
+    return os.path.normcase(os.path.basename(str(a))) == os.path.normcase(os.path.basename(str(b)))
+
+
+def _free_ram_bytes():
+    """Free physical RAM in bytes, or None if it cannot be determined."""
+    try:
+        import psutil
+        return int(psutil.virtual_memory().available)
+    except Exception:
+        return None
+
+
 def start(model=None):
-    global _process, _running_model
+    global _process, _running_model, _last_spawn
     with _lock:
         cfg = _config()
         if not cfg:
@@ -535,7 +568,7 @@ def start(model=None):
         mmproj = find_mmproj(model_path)
 
         # Already running with the requested model → nothing to do.
-        if _process is not None and _process.poll() is None and _running_model == model_path:
+        if _process is not None and _process.poll() is None and _same_model(_running_model, model_path):
             return {"running": True, "model": os.path.basename(model_path), "message": "already running"}
 
         # Stop a previous (different-model) instance we own.
@@ -551,8 +584,20 @@ def start(model=None):
         # earlier with a different model) must be restarted — otherwise the user
         # selects model X but keeps getting answers from a stale model Y.
         if _port_in_use(host, port):
+            # Anti-storm: if something is listening and we spawned it moments ago,
+            # it is still loading. Starting another one would load a second copy of
+            # the model into RAM.
+            if (time.time() - _last_spawn) < _SPAWN_COOLDOWN:
+                _running_model = model_path
+                return {"running": True, "model": os.path.basename(model_path),
+                        "message": "llama-server is starting (reusing it)"}
+
             running_model = _server_model(host, port)
-            if running_model and os.path.normcase(running_model) == os.path.normcase(model_path):
+            if running_model is None or _same_model(running_model, model_path):
+                # Either it is the model we want, or we cannot tell which model it
+                # is. Reuse it. Only a POSITIVE mismatch justifies killing a server
+                # that may hold gigabytes of loaded model.
+                _running_model = model_path
                 return {"running": True, "model": os.path.basename(model_path),
                         "message": "llama-server already running with the requested model"}
             # Wrong model on the port → stop the stale llama-server so we can start
@@ -575,6 +620,25 @@ def start(model=None):
         exe = _resolve_llama_server_exe(cfg.get("llama_server", ""))
         if not exe or not os.path.isfile(exe):
             return {"running": False, "error": "llama-server executable not found: {}".format(cfg.get("llama_server"))}
+
+        # RAM sanity check. Loading a model bigger than the free memory is what
+        # turns a working machine into a thrashing one (a 12B model on a 15 GB box
+        # with no offload will do it). Only refuse when it clearly cannot fit;
+        # GPU offload means the file size overstates the RAM needed, hence the
+        # generous factor, and TRIOFORGE_SKIP_RAM_CHECK=1 overrides it.
+        if os.environ.get("TRIOFORGE_SKIP_RAM_CHECK", "").strip() not in ("1", "true", "on"):
+            try:
+                need = os.path.getsize(model_path)
+                free = _free_ram_bytes()
+                if free and need > free * 1.5:
+                    return {"running": False,
+                            "error": "not enough free RAM: {} needs about {:.1f} GB but only {:.1f} GB "
+                                     "is free. Close something, pick a smaller model, or run this model "
+                                     "through Ollama (which can offload to the GPU). Override with "
+                                     "TRIOFORGE_SKIP_RAM_CHECK=1.".format(
+                                         os.path.basename(model_path), need / 1073741824.0, free / 1073741824.0)}
+            except Exception:
+                pass
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
         if mmproj:
@@ -601,6 +665,11 @@ def start(model=None):
         except Exception:
             _out = subprocess.DEVNULL
         try:
+            spawn_kwargs = {}
+            if os.name == "nt":
+                # No console window for the model server: from a windowed desktop app
+                # every spawn without this flag pops up a cmd window that stays.
+                spawn_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             _process = subprocess.Popen(
                 cmd,
                 stdout=_out,
@@ -608,10 +677,12 @@ def start(model=None):
                 stdin=subprocess.DEVNULL,
                 cwd=exe_dir,
                 env=env,
+                **spawn_kwargs
             )
         except Exception as e:
             return {"running": False, "error": str(e)}
         _running_model = model_path
+        _last_spawn = time.time()
         return {"running": True, "model": os.path.basename(model_path),
                 "message": "starting llama.cpp with {}".format(os.path.basename(model_path))}
 
