@@ -175,6 +175,16 @@ def wait_for_key() -> None:
         pass
 
 
+def gui_interpreter(interpreter: list) -> list:
+    """Prefer pythonw.exe so the control panel runs without a console window."""
+    first = str(interpreter[0])
+    if os.name == "nt":
+        candidate = Path(first).with_name("pythonw.exe")
+        if candidate.is_file():
+            return [str(candidate)] + [str(a) for a in interpreter[1:]]
+    return interpreter
+
+
 def main() -> int:
     # A frozen Windows console is cp1252; the launcher prints arrows/box-drawing
     # characters, so switch our own streams to UTF-8 up front and never let a
@@ -240,6 +250,32 @@ def main() -> int:
     if args.status:
         passthrough.append("--status")
     passthrough += [a for a in args.rest if a]
+
+    # With no flags this is a double-click: pop up the control panel (the small
+    # window that hosts the app), the way Ollama's desktop app does. Maintenance
+    # flags stay plain console commands so scripts and CI keep working.
+    maintenance = bool(args.update or args.status or args.install_autostart
+                       or args.remove_autostart or args.no_pause)
+    if not maintenance and not passthrough:
+        gui = project / "py" / "tools" / "launcher_gui.py"
+        if gui.is_file():
+            gui_cmd = gui_interpreter(interpreter) + [str(gui), str(project)]
+            try:
+                flags = 0
+                if os.name == "nt":
+                    flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                subprocess.Popen([str(c) for c in gui_cmd], cwd=str(project),
+                                 creationflags=flags,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 stdin=subprocess.DEVNULL)
+                print("  control   : TrioForge is starting - the control panel window opens")
+                print("              in a moment. It hosts the app and shows what it is doing.")
+                print("              Log: {}".format(log_path(project)))
+                return 0
+            except Exception as exc:
+                print("  control   : could not open the panel ({});".format(exc))
+                print("              falling back to the console launcher.")
 
     # The launcher owns updates, dependency install, auto-start and running the
     # app, so the exe stays a thin, always-current shim.

@@ -260,14 +260,17 @@ class AppSupervisor:
     """
 
     def __init__(self, project: Path, watch_seconds: int = 0,
-                 auto_restart: bool = True, no_browser: bool = False):
+                 auto_restart: bool = True, no_browser: bool = False,
+                 on_output=None):
         self.project = project
         self.watch_seconds = watch_seconds
         self.auto_restart = auto_restart
         self.no_browser = no_browser
+        self.on_output = on_output          # GUI hook: called with each output line
         self.child: Optional[subprocess.Popen] = None
         self.pending = threading.Event()
         self.message = ""
+        self.url = ""                       # filled in from the app's own output
 
     def _environment(self) -> dict:
         env = dict(os.environ)
@@ -313,6 +316,23 @@ class AppSupervisor:
         except Exception:
             pass
 
+    def _emit(self, line: str) -> None:
+        """Forward one line of app output (to the GUI, or to this console)."""
+        line = line.rstrip("\r\n")
+        if not line.strip():
+            return
+        # The app prints the URL it actually settled on (it may move ports).
+        marker = "Open your browser at:"
+        if marker in line:
+            self.url = line.split(marker, 1)[1].strip()
+        if self.on_output:
+            try:
+                self.on_output(line)
+                return
+            except Exception:
+                pass
+        print(line, flush=True)
+
     def run(self) -> int:
         app_path = self.project / "py" / "app.py"
         print("Project folder: {}".format(self.project))
@@ -328,7 +348,14 @@ class AppSupervisor:
             threading.Thread(target=self._watch, daemon=True).start()
 
         while True:
-            self.child = subprocess.Popen(cmd, cwd=str(self.project), env=self._environment())
+            if self.on_output:
+                self.child = subprocess.Popen(cmd, cwd=str(self.project), env=self._environment(),
+                                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                              stdin=subprocess.DEVNULL, text=True,
+                                              encoding="utf-8", errors="replace", bufsize=1)
+                threading.Thread(target=self._pump, args=(self.child,), daemon=True).start()
+            else:
+                self.child = subprocess.Popen(cmd, cwd=str(self.project), env=self._environment())
             try:
                 code = self.child.wait()
             except KeyboardInterrupt:
@@ -341,6 +368,16 @@ class AppSupervisor:
                       "(refresh your browser tab)...")
                 continue
             return code
+
+    def _pump(self, child: subprocess.Popen) -> None:
+        """Read the child's output for the GUI (never let this kill the thread)."""
+        try:
+            if not child.stdout:
+                return
+            for line in child.stdout:
+                self._emit(line)
+        except Exception:
+            pass
 
 
 def run_app(project: Path, start_voice: bool = True, watch_seconds: int = 0,
