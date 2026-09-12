@@ -78,6 +78,29 @@ def user_data_dir() -> Path:
     return Path(base) / "TrioForge" / "webview"
 
 
+def apply_icon_when_ready(window, ico: Path, timeout: float = 15.0) -> bool:
+    """Wait for the native window, then put the icon on it.
+
+    webview.start(func=...) runs before the GUI window exists, so the first attempt
+    finds window.native = None. Poll for it, apply the icon twice (the form's handle
+    is not always realised on the very first frame), and report what happened.
+    """
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if getattr(window, "native", None) is not None:
+            break
+        time.sleep(0.25)
+    else:
+        print("[icon] native window never appeared")
+        return False
+
+    ok = apply_window_icon(window, ico)
+    time.sleep(1.0)
+    apply_window_icon(window, ico)          # second pass: the handle is up by now
+    return ok
+
+
 def window_pid_file() -> Path:
     """Marks an app window as open, so the panel cannot open a second one.
 
@@ -87,6 +110,104 @@ def window_pid_file() -> Path:
     window.
     """
     return user_data_dir().parent / "app_window.pid"
+
+
+APP_ID = "TrioForge.Desktop"
+
+
+def icon_path() -> Path:
+    """The .ico shipped with the project (used for the window, taskbar and pins)."""
+    return project_root() / "static" / "logo" / "triorforge.ico"
+
+
+def register_app_id(ico: Path) -> None:
+    """Tell Windows this program is 'TrioForge', and which icon to show for it.
+
+    The window runs under pythonw.exe, so without this the taskbar and Alt-Tab show
+    Python's logo. An AppUserModelID with a registered icon is how a script-hosted
+    window gets its own identity.
+    """
+    try:
+        import winreg
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                              r"Software\Classes\AppUserModelId\%s" % APP_ID) as key:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "TrioForge")
+            if ico.is_file():
+                winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(ico))
+    except Exception:
+        pass
+
+
+def set_process_app_id() -> None:
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:
+        pass
+
+
+def apply_window_icon(window, ico: Path) -> bool:
+    """Put the TrioForge icon on the real window (title bar, taskbar, Alt-Tab).
+
+    Two mechanisms, because a WinForms form and the native window keep separate
+    icons: assigning form.Icon (pythonnet is already present for WebView2) and
+    sending WM_SETICON to the form's window handle. WM_SETICON is what actually
+    repaints the title bar and the taskbar button.
+    """
+    if not ico.is_file():
+        print("[icon] .ico not found at", ico)
+        return False
+
+    native = getattr(window, "native", None)
+    form = None
+    try:
+        form = native.TopLevelControl if native is not None and native.TopLevelControl else native
+    except Exception:
+        form = native
+    if form is None:
+        print("[icon] no native window yet")
+        return False
+
+    ok = False
+    # 1) the WinForms property (covers Alt-Tab / task switchers)
+    try:
+        import clr
+        try:
+            clr.AddReference("System.Drawing")
+        except Exception:
+            pass
+        from System.Drawing import Icon as DotNetIcon
+        form.Icon = DotNetIcon(str(ico))
+        form.Text = "TrioForge"
+        print("[icon] form.Icon set")
+        ok = True
+    except Exception as exc:
+        print("[icon] form.Icon failed: {}: {}".format(type(exc).__name__, exc))
+
+    # 2) WM_SETICON on the handle (this is the one that repaints the title bar and
+    #    the taskbar button)
+    try:
+        import ctypes
+        raw = form.Handle
+        # pythonnet hands back a System.IntPtr, which int() refuses.
+        handle = raw.ToInt64() if hasattr(raw, "ToInt64") else int(raw)
+        user32 = ctypes.windll.user32
+        IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
+        WM_SETICON, ICON_SMALL, ICON_BIG = 0x0080, 0, 1
+        for size, which in ((16, ICON_SMALL), (32, ICON_BIG), (48, ICON_BIG)):
+            h = user32.LoadImageW(None, str(ico), IMAGE_ICON, size, size, LR_LOADFROMFILE)
+            if h:
+                user32.SendMessageW(ctypes.c_void_p(handle), WM_SETICON, which, h)
+        # ask Windows to redraw the non-client area (title bar) straight away
+        SWP_NOSIZE, SWP_NOMOVE, SWP_NOZORDER, SWP_FRAMECHANGED = 0x1, 0x2, 0x4, 0x20
+        user32.SetWindowPos(ctypes.c_void_p(handle), 0, 0, 0, 0, 0,
+                            SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED)
+        print("[icon] WM_SETICON sent to hwnd {}".format(handle))
+        ok = True
+    except Exception as exc:
+        print("[icon] WM_SETICON failed: {}: {}".format(type(exc).__name__, exc))
+
+    return ok
 
 
 def is_local(url: str) -> bool:
@@ -183,11 +304,26 @@ def main() -> int:
         try:
             pid_file = window_pid_file()
             pid_file.parent.mkdir(parents=True, exist_ok=True)
-            pid_file.write_text("{} {}\n".format(os.getpid(), args.url), encoding="utf-8")
+            pid_file.write_text("{} {}\n".format(os.getpid(), url), encoding="utf-8")
         except Exception:
             pid_file = None
+
+        # Own identity + own icon before the window appears: the host process is
+        # pythonw.exe, so without this the taskbar and Alt-Tab say "Python".
+        ico = icon_path()
+        register_app_id(ico)
+        set_process_app_id()
+        print("[icon] .ico = {} (exists: {})".format(ico, ico.is_file()))
         try:
-            webview.start(**start_kwargs)
+            try:
+                webview.start(**start_kwargs,
+                              func=lambda: apply_icon_when_ready(window, ico),
+                              icon=str(ico))
+            except TypeError as exc:
+                # An older/newer pywebview that does not accept one of these.
+                print("[icon] start() rejected an argument ({}); retrying without them".format(exc))
+                webview.start(**start_kwargs,
+                              func=lambda: apply_icon_when_ready(window, ico))
         finally:
             try:
                 if pid_file:
@@ -196,6 +332,7 @@ def main() -> int:
                 pass
     except Exception as exc:
         # Fall back to whatever backend pywebview finds (e.g. MSHTML on old boxes).
+        print("[window] start failed: {}: {}".format(type(exc).__name__, exc))
         try:
             webview.start(private_mode=False)
         except Exception:
