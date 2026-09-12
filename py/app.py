@@ -973,6 +973,7 @@ def execute_ollama_command_sync(text):
             model = args[0]
             r = requests.delete(f"{OLLAMA_BASE_URL}/api/delete", json={"name": model}, timeout=10)
             r.raise_for_status()
+            _models_cache_clear()
             return f"✅ Model '{model}' deleted."
         elif cmd == 'stop':
             if not args:
@@ -994,6 +995,7 @@ def execute_ollama_command_sync(text):
                         last_status = chunk['status']
                     if 'error' in chunk:
                         return f"❌ Error pulling '{model}': {chunk['error']}"
+            _models_cache_clear()
             return f"✅ Model '{model}' pulled successfully.\nLast status: {last_status}"
         elif cmd == 'push':
             if not args:
@@ -1375,15 +1377,42 @@ def get_provider_models():
     models = _cached_models(provider_name, api_key or 'None')
     return jsonify({'models': models})
 
-@lru_cache(maxsize=128)
+
+# Model lists CHANGE while the app runs: you pull a model in Ollama, download a
+# GGUF into models/, or install llama.cpp. An @lru_cache here cached the answer
+# for the life of the process, so the dropdown stayed empty until a restart -
+# exactly what happens when Ollama is installed after TrioForge was started.
+# A short TTL keeps it fast without ever going permanently stale.
+_MODELS_TTL_SECONDS = 10
+_models_cache: dict = {}
+_models_cache_lock = threading.Lock()
+
+
+def _models_cache_clear() -> None:
+    """Forget cached model lists (call after pulling/downloading/removing a model)."""
+    with _models_cache_lock:
+        _models_cache.clear()
+
+
 def _cached_models(provider_name, api_key):
+    now = time.time()
+    key = (provider_name, api_key)
+    with _models_cache_lock:
+        hit = _models_cache.get(key)
+        if hit and (now - hit[0]) < _MODELS_TTL_SECONDS:
+            return hit[1]
+
+    models = []
     provider = providers.get(provider_name)
-    if not provider:
-        return []
-    try:
-        return provider.list_models(api_key=api_key if api_key != 'None' else None)
-    except Exception:
-        return []
+    if provider:
+        try:
+            models = provider.list_models(api_key=api_key if api_key != 'None' else None)
+        except Exception:
+            models = []
+
+    with _models_cache_lock:
+        _models_cache[key] = (now, models)
+    return models
 
 @app.route('/api/models/download', methods=['POST'])
 def download_hf_model():
@@ -1422,7 +1451,7 @@ def download_hf_model():
             return jsonify({'error': f'Failed to download {fname}: {e}'}), 500
 
     # Invalidate cached model lists so the new file shows up immediately.
-    _cached_models.cache_clear()
+    _models_cache_clear()
     llcpp = providers.get("llamacpp")
     if llcpp:
         llcpp.available_models = llcpp._discover_models()
@@ -1460,7 +1489,7 @@ def set_model():
     save_model_config(model)
     providers["ollama"].model = model
     cached_vision_check.cache_clear()
-    _cached_models.cache_clear()
+    _models_cache_clear()
     _cached_html = None
     return jsonify({'ok': True, 'model': model})
 
