@@ -10,11 +10,12 @@ name: Build Windows launcher (.exe)
 on:
   push:
     branches: [main]
-    paths:
-      - 'py/tools/trioforge_exe.py'
-      - '.github/workflows/build-windows-exe.yml'
-  tags: ['v*']
+    tags: ['v*']
   workflow_dispatch:
+
+concurrency:
+  group: exe-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
