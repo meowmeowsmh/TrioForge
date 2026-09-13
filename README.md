@@ -247,6 +247,25 @@ TrioForge/
 - **Pairing order:** same folder → shared base name across the model roots → explicit `mmproj_pairs` in `voiceguide_llama.cpp_guide/config.json` → a single generic quant-only projector as a last resort. With more than one generic projector it **refuses to guess** (a wrong projector crashes the server).
 - The **llama.cpp dropdown** lists every `.gguf` under all three roots **recursively**, each tagged with its folder capability. The server launches with `--jinja` (reasoning) and `--image-min-tokens 1024` only for Qwen-VL-style models, so gemma-4, Qwen3.5, VideoGuard, etc. load cleanly.
 
+### 🧠 Model memory: where it goes, and how it comes back
+
+Models are big, so TrioForge is deliberate about them:
+
+- **The GPU comes first.** If your GPU has enough free VRAM for the file, every layer is loaded
+  onto it (`--n-gpu-layers 99`) instead of into RAM. Free VRAM and free RAM are written to
+  `logs/llamacpp.log` each time a model starts, along with which one it chose.
+- **What will not fit is refused.** Running a model in RAM needs its file size plus ~1.5 GB of
+  headroom (KV cache, compute buffers, Windows). If that is missing you get an explanation
+  instead of a machine that swaps. `TRIOFORGE_SKIP_RAM_CHECK=1` overrides it.
+- **It unloads when you stop using it.** Five minutes after the last request the model server is
+  stopped and the RAM *and* VRAM come back — the same idea as Ollama's keep-alive. Change it with
+  `TRIOFORGE_IDLE_UNLOAD=<seconds>`, or `0` to keep models resident.
+- **Scanning costs nothing.** The three model folders are only listed at start-up, never loaded.
+
+Worth knowing: while a model *is* loaded, Windows counts the mapped model file as used RAM, so
+the number climbs during a session even with GPU offload — but it now returns by itself. For the
+lowest footprint, use a small model (Ollama's `qwen2.5:0.5b` sits in ~600 MB of VRAM).
+
 ---
 
 ## ✨ Features

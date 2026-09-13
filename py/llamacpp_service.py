@@ -26,6 +26,9 @@ _lock = threading.Lock()
 # loading, a new request must reuse it instead of starting a second copy.
 _last_spawn = 0.0
 _SPAWN_COOLDOWN = 20.0
+# Idle unload: the model is only needed while you are talking to it.
+_last_used = 0.0
+_idle_thread_started = False
 
 # Common GGUF quantization suffixes, used to split a model name into its base name
 # so the mmproj projector can be paired with the right text model.
@@ -534,8 +537,46 @@ def _free_ram_bytes():
         return None
 
 
+def _free_vram_bytes():
+    """Free GPU memory in bytes, or None when there is no NVIDIA GPU to ask.
+
+    Used to decide whether a model can live in VRAM instead of RAM - the difference
+    between a few hundred MB of system memory and five gigabytes of it.
+    """
+    try:
+        import warnings
+        warnings.filterwarnings("ignore", message=".*pynvml package is deprecated.*")
+        import pynvml
+        pynvml.nvmlInit()
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            return int(pynvml.nvmlDeviceGetMemoryInfo(handle).free)
+        finally:
+            try:
+                pynvml.nvmlShutdown()
+            except Exception:
+                pass
+    except Exception:
+        return None
+
+
+def _log(message: str) -> None:
+    """Write a line to logs/llamacpp.log (the same file the server writes to)."""
+    try:
+        path = root_path("logs", "llamacpp.log")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8", errors="replace") as fh:
+            fh.write("[{}] {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), message))
+    except Exception:
+        pass
+
+
 def start(model=None):
-    global _process, _running_model, _last_spawn
+    global _process, _running_model, _last_spawn, _last_used
+    # Every request (a chat, the UI asking to start it) counts as use, so the idle
+    # unload can never take the model away from a session in progress.
+    _last_used = time.time()
+    ensure_idle_watchdog()
     with _lock:
         cfg = _config()
         if not cfg:
@@ -625,26 +666,56 @@ def start(model=None):
         # turns a working machine into a thrashing one (a 12B model on a 15 GB box
         # with no offload will do it). Only refuse when it clearly cannot fit;
         # GPU offload means the file size overstates the RAM needed, hence the
-        # generous factor, and TRIOFORGE_SKIP_RAM_CHECK=1 overrides it.
-        if os.environ.get("TRIOFORGE_SKIP_RAM_CHECK", "").strip() not in ("1", "true", "on"):
-            try:
-                need = os.path.getsize(model_path)
-                free = _free_ram_bytes()
-                if free and need > free * 1.5:
-                    return {"running": False,
-                            "error": "not enough free RAM: {} needs about {:.1f} GB but only {:.1f} GB "
-                                     "is free. Close something, pick a smaller model, or run this model "
-                                     "through Ollama (which can offload to the GPU). Override with "
-                                     "TRIOFORGE_SKIP_RAM_CHECK=1.".format(
-                                         os.path.basename(model_path), need / 1073741824.0, free / 1073741824.0)}
-            except Exception:
-                pass
+        # ── Where will the model actually live: VRAM or RAM? ─────────────────
+        # llama-server was being started with no -ngl at all, so a 5-6 GB model was
+        # loaded into RAM (the "opening the app takes my memory to 86%" report) while
+        # a 7 GB GPU sat idle. Decide from the real numbers and say so in the log.
+        size = 0
+        try:
+            size = os.path.getsize(model_path)
+        except Exception:
+            pass
+        vram_free = _free_vram_bytes()
+        ram_free = _free_ram_bytes()
+        offload = bool(vram_free and size and vram_free > size * 1.12)
+
+        try:
+            _log(("model {:.2f} GB · VRAM free {} · RAM free {}{}").format(
+                size / 1073741824.0,
+                "{:.2f} GB".format(vram_free / 1073741824.0) if vram_free else "unknown",
+                "{:.2f} GB".format(ram_free / 1073741824.0) if ram_free else "unknown",
+                " -> offloading to the GPU (RAM stays free)" if offload
+                else " -> running on the CPU, in RAM"))
+        except Exception:
+            pass
+
+        # Refuse a CPU load that would not fit: this is what turned a 15 GB machine
+        # into a swapping one. Needs ~1.5 GB of headroom for the KV cache, compute
+        # buffers and the rest of Windows.
+        if (not offload and ram_free and size
+                and os.environ.get("TRIOFORGE_SKIP_RAM_CHECK", "").strip() not in ("1", "true", "on")):
+            if size + int(1.5 * 1073741824) > ram_free:
+                return {"running": False,
+                        "error": "not enough free memory for {}: the model needs about {:.1f} GB and only "
+                                 "{:.1f} GB of RAM is free{} (it would put this machine into swap).\n"
+                                 "Options: pick a smaller GGUF, close some apps, use Ollama (it offloads to "
+                                 "the GPU), or override with TRIOFORGE_SKIP_RAM_CHECK=1.".format(
+                                     os.path.basename(model_path), size / 1073741824.0,
+                                     ram_free / 1073741824.0,
+                                     "" if vram_free is None
+                                     else " and the GPU has only {:.1f} GB free (the model needs about "
+                                          "{:.1f} GB to fit there)".format(vram_free / 1073741824.0,
+                                                                          size * 1.12 / 1073741824.0))}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
         if mmproj:
             cmd += ["--mmproj", mmproj]
         # Peak GPU/performance defaults (config llama_args may override).
         cmd += _default_server_args(model_path)
+        if offload:
+            # All layers on the GPU: this is the difference between a 5 GB RAM load
+            # and a few hundred MB of RAM + VRAM.
+            cmd += ["--n-gpu-layers", "99"]
         cmd += [str(a) for a in cfg.get("llama_args", [])]
         # Run the prebuilt llama-server from ITS OWN directory and point
         # LD_LIBRARY_PATH there: the llama.cpp release tarballs ship libggml.so /
@@ -688,6 +759,8 @@ def start(model=None):
             return {"running": False, "error": str(e)}
         _running_model = model_path
         _last_spawn = time.time()
+        _last_used = time.time()
+        ensure_idle_watchdog()
         return {"running": True, "model": os.path.basename(model_path),
                 "message": "starting llama.cpp with {}".format(os.path.basename(model_path))}
 
@@ -703,3 +776,45 @@ def stop():
         _process = None
         _running_model = None
     return {"running": False, "message": "stopped"}
+
+
+def touch() -> None:
+    """Mark the model server as used right now (keeps the idle unload away)."""
+    global _last_used
+    _last_used = time.time()
+
+
+def _idle_watchdog() -> None:
+    """Unload the model after a period without use, so memory comes back.
+
+    A 5 GB GGUF kept resident for days is why "opening the app" looked like a memory
+    problem: the model is only needed while you are actually talking to it. Ollama
+    does the same thing (its models unload after a few idle minutes).
+    """
+    global _idle_thread_started
+    while True:
+        time.sleep(30)
+        try:
+            # Default 5 minutes, like Ollama: long enough not to reload during a
+            # normal conversation, short enough that the RAM comes back by itself.
+            limit = int(os.environ.get("TRIOFORGE_IDLE_UNLOAD", "300") or 0)
+        except Exception:
+            limit = 300
+        if limit <= 0:
+            continue
+        with _lock:
+            running = _process is not None and _process.poll() is None
+            idle_for = time.time() - _last_used
+        if running and idle_for > limit:
+            name = os.path.basename(_running_model or "model")
+            stop()
+            _log("unloaded {} after {:.0f} minutes idle - memory freed".format(
+                name, idle_for / 60.0))
+
+
+def ensure_idle_watchdog() -> None:
+    global _idle_thread_started
+    if _idle_thread_started:
+        return
+    _idle_thread_started = True
+    threading.Thread(target=_idle_watchdog, daemon=True).start()
