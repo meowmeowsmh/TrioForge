@@ -300,11 +300,39 @@ def main() -> int:
     # refuses an untrusted certificate and would show an error page instead of the
     # app, so for LOCAL addresses only we tell the embedded engine to accept it.
     # Never done for a remote URL.
+    browser_args = []
     if url.startswith("https://") and is_local(url):
-        existing = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
-        if "ignore-certificate-errors" not in existing:
-            os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
-                existing + " --ignore-certificate-errors").strip()
+        browser_args.append("--ignore-certificate-errors")
+
+    # Trim the embedded engine. WebView2 shares Edge's runtime, so by default a single
+    # window drags in 14 processes and ~1 GB of memory - Edge's shopping, autofill,
+    # sync, collections, PDF and update services, none of which this app uses. A
+    # browser tab costs ~150-300 MB because it reuses an engine that is already
+    # running; these flags are how the app window gets closer to that.
+    browser_args += [
+        "--disable-features=msEdgeAutofill,msEdgeCommerce,msEdgeShoppingAssistant,"
+        "msEdgeCollections,msEdgeSidebar,msEdgeIdentityFeature,msEdgeSyncFeature,"
+        "msEdgeTranslate,msEdgePDF,msEdgeReadAloud,msEdgeWebView2DisablePopups,"
+        "AutofillServerCommunication,EdgeCollections,EdgeShoppingAssistant,"
+        "OptimizationGuideModelDownloading,OptimizationHints,"
+        "CalculateNativeWinOcclusion,MediaRouter,Translate",
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-domain-reliability",
+        "--disable-sync",
+        "--disable-extensions",
+        "--disable-default-apps",
+        "--disable-client-side-phishing-detection",
+        "--disable-breakpad",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--no-service-autorun",
+        "--renderer-process-limit=1",
+        "--process-per-site",
+    ]
+    existing = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "").strip()
+    os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+        (existing + " " if existing else "") + " ".join(browser_args)).strip()
 
     # Links to other sites should open in the real browser, not replace the app.
     try:

@@ -69,6 +69,17 @@ application.bat          :: Windows
 Then open **http://localhost:5003** (the app prints the exact URL). Use this one if you want it on
 your phone or another device on your network, or if you prefer your own browser.
 
+> **Window or browser? The memory difference is real.** Measured on a 15 GB Windows machine:
+>
+> | How you open it | Memory while running |
+> |---|---|
+> | `start.vbs` — TrioForge's own window | **~600 MB** (a private WebView2 engine: browser, GPU, renderers, utilities) |
+> | `start-web.vbs` — a tab in your browser | **~150–300 MB** (reuses the engine that is already loaded) |
+>
+> Same server, same data, same interface. `start-web.vbs` starts the server hidden and opens it in
+> your default browser — that is the lighter one, and the one to use on a small machine. The engine
+> cannot be shared between them, so this is a straight trade: a window of its own, or less memory.
+
 Both need **Python**, which the launcher finds or installs for you, and they install the
 dependencies on first run. Nothing else to set up.
 
