@@ -458,9 +458,16 @@ def _default_server_args(model_path=None):
     exits. We drop it for non-Qwen-VL models.
     """
     threads = (os.cpu_count() or 4)
+    # 16k is stable in ~8 GB of VRAM (32k crashed it). The context is the main lever
+    # on KV-cache memory, so it is overridable: TRIOFORGE_CTX_SIZE=4096 on a small
+    # machine, or 32768 if you have the room.
+    try:
+        ctx = int(os.environ.get("TRIOFORGE_CTX_SIZE", "16384") or 16384)
+    except Exception:
+        ctx = 16384
     args = [
         "--flash-attn", "on",
-        "--ctx-size", "16384",     # 16k: stable in 8 GB VRAM (32k crashed it)
+        "--ctx-size", str(ctx),
         "--cache-type-k", "q8_0",
         "--cache-type-v", "q8_0",
         "--threads", str(threads),
@@ -677,15 +684,22 @@ def start(model=None):
             pass
         vram_free = _free_vram_bytes()
         ram_free = _free_ram_bytes()
-        offload = bool(vram_free and size and vram_free > size * 1.12)
+        # Forcing every layer needs room for the weights AND the KV cache AND the
+        # compute buffers. Without that headroom llama.cpp aborts with
+        # "failed to fit params to free device memory" / "failed to allocate Vulkan1
+        # buffer" and the model quietly runs on the CPU instead - which is exactly how
+        # a 6 GB model ends up in RAM. When it does not fit comfortably we pass
+        # nothing and let llama.cpp auto-fit the number of layers itself.
+        kv_headroom = int(1.5 * 1073741824)
+        offload = bool(vram_free and size and vram_free > size * 1.12 + kv_headroom)
 
         try:
-            _log(("model {:.2f} GB · VRAM free {} · RAM free {}{}").format(
+            _log(("model {:.2f} GB · VRAM free {} · RAM free {} -> {}").format(
                 size / 1073741824.0,
                 "{:.2f} GB".format(vram_free / 1073741824.0) if vram_free else "unknown",
                 "{:.2f} GB".format(ram_free / 1073741824.0) if ram_free else "unknown",
-                " -> offloading to the GPU (RAM stays free)" if offload
-                else " -> running on the CPU, in RAM"))
+                "all layers on the GPU" if offload
+                else "let llama.cpp auto-fit the layers (model + KV cache do not fit entirely)"))
         except Exception:
             pass
 
