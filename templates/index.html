@@ -2794,7 +2794,13 @@ function loadModels() {
                 unloadBtn.style.display = 'none';
             }
             if (provider === 'llamacpp' && modelSelect.value) {
-                startLlamacpp(modelSelect.value);
+                // NOT started here on purpose. Loading a model is the expensive part
+                // (a 6 GB GGUF takes five gigabytes of RAM/VRAM for as long as it is
+                // resident), so opening the app must not do it: the model starts when
+                // you send a message, when you pick it in the dropdown, or when you
+                // press the llama.cpp button. It then unloads again after five idle
+                // minutes.
+                status.textContent = '🦙 llama.cpp ready — the model loads when you send a message.';
             }
             if (provider === 'deepseek' && modelSelect.value) {
                 checkDeepSeekStatus();
