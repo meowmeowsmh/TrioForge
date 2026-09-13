@@ -296,6 +296,9 @@ Configuration is done through environment variables — all optional, the app wo
 | `TRIOFORGE_ML` | `1` = also install the optional torch/semantic-search stack | *(unset)* |
 | `TRIOFORGE_AUTO_TITLE` | Chat-title generation: `heuristic` (instant, no model call) or `llm` (refine via the model in the background) | `heuristic` |
 | `TRIOFORGE_PASSWORD` | **Host mode**: when set, every page and API call asks for this password first (for instances other people can reach). Unset = local use, no gate | *(unset)* |
+| `TRIOFORGE_CTX_SIZE` | Context window for a llama.cpp model, in tokens. The main lever on KV-cache memory | `16384` |
+| `TRIOFORGE_IDLE_UNLOAD` | Seconds without a request before a llama.cpp model is unloaded and its memory returned; `0` keeps it resident | `300` |
+| `TRIOFORGE_SKIP_RAM_CHECK` | `1` loads a model even when it will not fit in free RAM (it will swap) | *(unset)* |
 | `LLAMA_SERVER` | Explicit path to the `llama-server` executable (skips auto-detection) | *(auto-detected)* |
 | `LLAMA_HOST` | llama-server host. Set it (e.g. `host.docker.internal`) to enable **remote mode** — connect instead of launching a local server | `127.0.0.1` |
 | `LLAMA_PORT` | llama-server port | `8080` |
