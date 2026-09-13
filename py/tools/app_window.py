@@ -112,6 +112,68 @@ def window_pid_file() -> Path:
     return user_data_dir().parent / "app_window.pid"
 
 
+def pid_alive(pid: int) -> bool:
+    """Is that process still running? (Never signals it.)"""
+    if not pid or pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
+            if not handle:
+                return False
+            code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return bool(ok) and code.value == 259        # STILL_ACTIVE
+        os.kill(int(pid), 0)
+        return True
+    except Exception:
+        return False
+
+
+def rotate_profile_if_stale(storage: Path) -> bool:
+    """Drop a WebView2 profile left behind by a killed or crashed window.
+
+    If the previous run never removed its pid file it was killed rather than closed,
+    and then the embedded engine's profile can be locked or half-written - which made
+    the next window hang forever with no error at all (seen after a test killed the
+    window). Rotating it costs only cache and cookies: app settings live on the
+    server side. Returns True when a rotation happened.
+    """
+    try:
+        marker = window_pid_file()
+        if not marker.is_file():
+            return False
+        try:
+            pid = int(marker.read_text(encoding="utf-8").strip().split()[0])
+        except Exception:
+            pid = 0
+        if pid and pid_alive(pid):
+            return False                      # a real window is running: leave it alone
+        marker.unlink()
+    except Exception:
+        return False
+    if not storage.exists():
+        return False
+    try:
+        import time as _time
+        stale = storage.with_name(storage.name + "-stale-" + str(int(_time.time())))
+        storage.rename(stale)
+        print("[window] previous run was killed; old profile moved to {}".format(stale.name))
+    except Exception as exc:
+        print("[window] could not rotate the profile ({}); trying anyway".format(exc))
+        return False
+    # Keep only the newest rotated profile, so repeated crashes cannot fill the disk.
+    try:
+        import shutil
+        for old in sorted(storage.parent.glob(storage.name + "-stale-*"))[:-1]:
+            shutil.rmtree(old, ignore_errors=True)
+    except Exception:
+        pass
+    return True
+
+
 APP_ID = "TrioForge.Desktop"
 
 
@@ -251,6 +313,7 @@ def main() -> int:
         pass
 
     storage = user_data_dir()
+    rotate_profile_if_stale(storage)
     kwargs = {"title": args.title, "url": url,
               "width": args.width, "height": args.height,
               "min_size": (900, 600), "text_select": True}
