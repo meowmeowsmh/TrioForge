@@ -727,9 +727,17 @@ def _open_app_window(project: Path) -> None:
         if os.name == "nt":
             flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                      | getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        subprocess.Popen([pythonw, str(script), "--port", str(port), "--title", "TrioForge"],
+        # The window's own output goes to a log file: a hang or a crash there used to
+        # leave no evidence at all (stdout went to DEVNULL).
+        window_log = project / "logs" / "app_window.log"
+        try:
+            window_log.parent.mkdir(parents=True, exist_ok=True)
+            wout = open(str(window_log), "a", encoding="utf-8", errors="replace")
+        except Exception:
+            wout = subprocess.DEVNULL
+        subprocess.Popen([pythonw, "-u", str(script), "--port", str(port), "--title", "TrioForge"],
                          cwd=str(project), creationflags=flags,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdout=wout, stderr=subprocess.STDOUT,
                          stdin=subprocess.DEVNULL)
         print("[window] opening TrioForge in its own window on port {}.".format(port))
     except Exception as exc:

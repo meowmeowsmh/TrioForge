@@ -79,13 +79,14 @@ def user_data_dir() -> Path:
     return Path(base) / "TrioForge" / "webview"
 
 
-def apply_icon_when_ready(window, ico: Path, timeout: float = 15.0) -> bool:
-    """Wait for the native window, then put the icon on it.
+def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 15.0) -> bool:
+    """Wait for the native window, then put the icon on it and start watching it.
 
     webview.start(func=...) runs before the GUI window exists, so the first attempt
     finds window.native = None. Poll for it, apply the icon twice (the form's handle
-    is not always realised on the very first frame), and report what happened. The
-    first success is also what tells the fallback watchdog that the window is real.
+    is not always realised on the very first frame), and report what happened. This is
+    also the moment we know the window is real, so it is where the hang watchdog and
+    the fallback watchdog get their proof - both need `url` and the real handle.
     """
     global _window_ready
     import time
@@ -99,6 +100,17 @@ def apply_icon_when_ready(window, ico: Path, timeout: float = 15.0) -> bool:
         return False
 
     _window_ready = True
+    try:
+        import threading as _th
+
+        def _handle():
+            form = window.native.TopLevelControl or window.native
+            return form.Handle
+
+        _th.Thread(target=hang_watchdog, args=(_handle, url), daemon=True).start()
+        print("[window] watching for hangs (a frozen window is handed to your browser)")
+    except Exception as _exc:
+        print("[window] hang watchdog not started:", _exc)
     ok = apply_window_icon(window, ico)
     time.sleep(1.0)
     apply_window_icon(window, ico)          # second pass: the handle is up by now
@@ -114,6 +126,91 @@ def window_pid_file() -> Path:
     window.
     """
     return user_data_dir().parent / "app_window.pid"
+
+
+def hang_marker() -> Path:
+    """Records that the window hung, so the next start can avoid the same cause."""
+    return user_data_dir().parent / "window_hung.txt"
+
+
+def hardware_gpu_allowed() -> bool:
+    """False once the window has hung: the next start uses software rendering.
+
+    A hung WebView2 window is almost always its renderer or GPU process stalling - and
+    this machine's GPU driver has already failed a Vulkan allocation for llama.cpp, so
+    it is the prime suspect. Chromium's own remedy is --disable-gpu: the page keeps
+    working, it is just drawn by the CPU. Stability beats decoration.
+    """
+    if os.environ.get("TRIOFORGE_WINDOW_HARDWARE", "").strip() in ("1", "true", "on"):
+        return True
+    if os.environ.get("TRIOFORGE_WINDOW_SOFTWARE", "").strip() in ("1", "true", "on"):
+        return False
+    return not hang_marker().is_file()
+
+
+def note_hang(reason: str) -> None:
+    """Remember a hang (with a count) so the next launch can do something about it."""
+    try:
+        marker = hang_marker()
+        count = 0
+        if marker.is_file():
+            try:
+                count = int(marker.read_text(encoding="utf-8").strip().split()[0])
+            except Exception:
+                count = 0
+        marker.write_text("{} {}\n".format(count + 1, reason), encoding="utf-8")
+        print("[window] noted a hang ({}): {}".format(count + 1, reason))
+    except Exception:
+        pass
+
+
+def hang_watchdog(get_handle, url: str, hung_seconds: int = 20, interval: float = 5.0,
+                  is_hung=None) -> None:
+    """Watch the real window; when Windows says it stopped responding, get out.
+
+    "Not responding" means the window is no longer pumping messages. The app is still
+    perfectly usable in a browser, so instead of leaving a frozen window on screen we
+    mark the hang (the next start then uses software rendering) and open the browser.
+
+    is_hung is injectable so this can be exercised without a genuinely frozen window.
+    """
+    import time
+    if is_hung is None:
+        import ctypes
+        user32 = ctypes.windll.user32
+
+        def is_hung(hwnd):
+            return bool(user32.IsHungAppWindow(ctypes.c_void_p(int(hwnd))))
+    hung = 0.0
+    while True:
+        time.sleep(interval)
+        if not _window_ready:
+            continue
+        try:
+            hwnd = get_handle()
+        except Exception:
+            hwnd = None
+        if not hwnd:
+            continue
+        try:
+            if is_hung(hwnd):
+                hung += interval
+                print("[window] not responding for {}s".format(int(hung)))
+                if hung >= hung_seconds:
+                    note_hang("IsHungAppWindow for {}s".format(int(hung)))
+                    print("[window] the window is not responding - opening your browser instead "
+                          "(the server is fine). The next start will use software rendering.")
+                    try:
+                        import webbrowser
+                        webbrowser.open(url)
+                    except Exception as exc:
+                        print("[window] could not open a browser:", exc)
+                    time.sleep(5)
+                    os._exit(1)
+            else:
+                hung = 0.0
+        except Exception:
+            hung = 0.0
 
 
 def pid_alive(pid: int) -> bool:
@@ -393,6 +490,9 @@ def main() -> int:
     # app, so for LOCAL addresses only we tell the embedded engine to accept it.
     # Never done for a remote URL.
     browser_args = []
+    if not hardware_gpu_allowed():
+        browser_args.append("--disable-gpu")
+        print("[window] software rendering (a previous window stopped responding; the GPU driver is the suspect)")
     if url.startswith("https://") and is_local(url):
         browser_args.append("--ignore-certificate-errors")
 
@@ -506,13 +606,13 @@ def main() -> int:
         try:
             try:
                 webview.start(**start_kwargs,
-                              func=lambda: apply_icon_when_ready(window, ico),
+                              func=lambda: apply_icon_when_ready(window, ico, url),
                               icon=str(ico))
             except TypeError as exc:
                 # An older/newer pywebview that does not accept one of these.
                 print("[icon] start() rejected an argument ({}); retrying without them".format(exc))
                 webview.start(**start_kwargs,
-                              func=lambda: apply_icon_when_ready(window, ico))
+                              func=lambda: apply_icon_when_ready(window, ico, url))
         finally:
             try:
                 if pid_file:
