@@ -5,6 +5,7 @@ Supports image (vision) input for providers and models that allow it.
 
 import importlib.util
 import os
+import sys
 import glob
 import re
 import hashlib
@@ -556,6 +557,36 @@ def _default_llamacpp_url() -> str:
         return "http://{}:{}/v1".format(host, port)
 
 
+def _gpu_oom_hint(error_text: str) -> str:
+    """A helpful message (and a recovery) when the GPU ran out of memory.
+
+    Vulkan and CUDA can fail to allocate *during generation* even after the model
+    loaded, because the decode buffers are only needed then:
+
+        decode() failed: vk::Device::allocateMemory: ErrorOutOfDeviceMemory
+
+    The server is unusable until it is restarted with a smaller GPU footprint, so we
+    ask the llama.cpp service to step down (fewer GPU layers, KV cache in RAM, then
+    CPU only). The next message starts the model that way.
+    """
+    low = (error_text or "").lower()
+    if not any(k in low for k in ("outofdevicememory", "failed to allocate", "out of memory")):
+        return ""
+    try:
+        sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
+        import llamacpp_service
+        result = llamacpp_service.gpu_oom_recovery(error_text)
+        if result.get("handled"):
+            return ("GPU ran out of memory (the model plus its context does not fit in VRAM). "
+                    "I have stopped the model server and will restart it with {} - send your "
+                    "message again to continue. To avoid this: lower the context "
+                    "(TRIOFORGE_CTX_SIZE=8192) or use a smaller model.".format(result["detail"]))
+    except Exception:
+        pass
+    return ("GPU ran out of memory: the model plus its context does not fit in VRAM. "
+            "Try a smaller model, or lower the context with TRIOFORGE_CTX_SIZE=8192.")
+
+
 class LlamaCppProvider(LLMProvider):
     # Keep llama.cpp max_tokens conservative: sending a huge value (e.g. the
     # 65536 base default) makes some small/GGUF models return 400 Bad Request.
@@ -760,7 +791,10 @@ class LlamaCppProvider(LLMProvider):
                     detail = (e.response.text or "").strip()[:400]
             except Exception:
                 detail = ""
-            raise ProviderError(f"llama.cpp error: {e}" + (f" {detail}" if detail else ""))
+            hint = _gpu_oom_hint(detail or str(e))
+            raise ProviderError(f"llama.cpp error: {e}"
+                                + (f" {detail}" if detail else "")
+                                + (f"\n\n{hint}" if hint else ""))
         except Exception as e:
             raise ProviderError(f"llama.cpp error: {e}")
 

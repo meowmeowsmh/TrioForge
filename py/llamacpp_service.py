@@ -29,6 +29,44 @@ _SPAWN_COOLDOWN = 20.0
 # Idle unload: the model is only needed while you are talking to it.
 _last_used = 0.0
 _idle_thread_started = False
+# Set when the GPU runs out of memory during generation. -1 = let llama.cpp decide,
+# otherwise the number of layers to put on the GPU (0 = CPU only).
+_gpu_layers_override = -1
+
+
+def gpu_oom_recovery(error_text: str) -> dict:
+    """React to a GPU out-of-memory failure: try again with less on the GPU.
+
+    A Vulkan/CUDA allocation can fail *during generation* even though the model
+    loaded, because the decode buffers only need allocating then:
+
+        decode() failed: vk::Device::allocateMemory: ErrorOutOfDeviceMemory
+
+    The model server is then unusable until it is restarted with a smaller GPU
+    footprint, so we stop it and remember to put fewer layers there next time -
+    fewer layers, then KV in RAM, then the CPU. The next message picks it up.
+    """
+    global _gpu_layers_override, _last_spawn
+    if "outofdevicememory" not in (error_text or "").lower().replace(" ", "") \
+            and "failed to allocate" not in (error_text or "").lower() \
+            and "out of memory" not in (error_text or "").lower():
+        return {"handled": False}
+    current = _gpu_layers_override
+    if current < 0:
+        # We let llama.cpp fit the layers; step down to a deliberately small number
+        # so the weights are not the problem any more.
+        _gpu_layers_override = 16
+        detail = "16 layers on the GPU, the rest on the CPU"
+    elif current > 0:
+        _gpu_layers_override = 0
+        detail = "CPU only (the GPU ran out of memory twice)"
+    else:
+        _gpu_layers_override = 0
+        detail = "CPU only - the GPU is too full right now"
+    stop()
+    _last_spawn = 0.0                    # allow the next request to start immediately
+    _log("GPU out of memory; next start will use {}".format(detail))
+    return {"handled": True, "detail": detail}
 
 # Common GGUF quantization suffixes, used to split a model name into its base name
 # so the mmproj projector can be paired with the right text model.
@@ -726,10 +764,21 @@ def start(model=None):
             cmd += ["--mmproj", mmproj]
         # Peak GPU/performance defaults (config llama_args may override).
         cmd += _default_server_args(model_path)
-        if offload:
+        forced = _gpu_layers_override
+        if forced >= 0:
+            # Stepped down after a GPU out-of-memory. This WINS over the VRAM
+            # estimate: the estimate said the model fitted and then the decode
+            # buffers failed to allocate, so trust the failure, not the arithmetic.
+            cmd += ["--n-gpu-layers", str(forced), "--no-kv-offload"]
+            _log("using {} GPU layers with the KV cache in RAM (after a GPU OOM)".format(forced))
+        elif offload:
             # All layers on the GPU: this is the difference between a 5 GB RAM load
             # and a few hundred MB of RAM + VRAM.
             cmd += ["--n-gpu-layers", "99"]
+        else:
+            # Let llama.cpp fit the layers itself, and keep the KV cache in system
+            # RAM: that is what "decode() failed ... ErrorOutOfDeviceMemory" needs.
+            cmd += ["--no-kv-offload"]
         cmd += [str(a) for a in cfg.get("llama_args", [])]
         # Run the prebuilt llama-server from ITS OWN directory and point
         # LD_LIBRARY_PATH there: the llama.cpp release tarballs ship libggml.so /
