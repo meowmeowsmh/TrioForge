@@ -22,6 +22,7 @@ Exit codes: 0 closed normally, 3 pywebview is not installed, 4 could not open.
 import argparse
 import os
 import sys
+import threading
 from pathlib import Path
 
 
@@ -83,8 +84,10 @@ def apply_icon_when_ready(window, ico: Path, timeout: float = 15.0) -> bool:
 
     webview.start(func=...) runs before the GUI window exists, so the first attempt
     finds window.native = None. Poll for it, apply the icon twice (the form's handle
-    is not always realised on the very first frame), and report what happened.
+    is not always realised on the very first frame), and report what happened. The
+    first success is also what tells the fallback watchdog that the window is real.
     """
+    global _window_ready
     import time
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -95,6 +98,7 @@ def apply_icon_when_ready(window, ico: Path, timeout: float = 15.0) -> bool:
         print("[icon] native window never appeared")
         return False
 
+    _window_ready = True
     ok = apply_window_icon(window, ico)
     time.sleep(1.0)
     apply_window_icon(window, ico)          # second pass: the handle is up by now
@@ -175,6 +179,40 @@ def rotate_profile_if_stale(storage: Path) -> bool:
 
 
 APP_ID = "TrioForge.Desktop"
+
+# Set once the native window really exists (the icon callback is the proof).
+_window_ready = False
+
+
+def fallback_watchdog(url: str, timeout: float = 25.0) -> None:
+    """If the embedded window never appears, open the browser instead of hanging.
+
+    WebView2 is the least reliable part of this app by nature: it loads a private
+    copy of Edge's runtime, keeps a profile folder that an unclean shutdown can
+    corrupt, and runs its own GPU process on the same driver. Any of those can leave
+    a window that never shows - and then the user has nothing at all. A browser tab
+    has none of those failure modes, so that is the fallback: same server, same data.
+    """
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _window_ready:
+            return
+        time.sleep(0.5)
+    if _window_ready:
+        return
+    print("[window] the embedded window did not appear within {}s - opening your browser "
+          "instead (the server is fine)".format(int(timeout)))
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception as exc:
+        print("[window] could not open a browser either:", exc)
+    time.sleep(5)          # give the browser a moment to appear
+    # Leave nothing hung behind: no window, no hidden process. Skipping the normal
+    # cleanup is deliberate - the leftover pid marker makes the next start treat this
+    # as a crash and use a fresh profile, which is exactly right here.
+    os._exit(1)
 
 
 def icon_path() -> Path:
@@ -405,6 +443,8 @@ def main() -> int:
         register_app_id(ico)
         set_process_app_id()
         print("[icon] .ico = {} (exists: {})".format(ico, ico.is_file()))
+        # If the window never shows, the user still gets the app (in a browser).
+        threading.Thread(target=fallback_watchdog, args=(url,), daemon=True).start()
         try:
             try:
                 webview.start(**start_kwargs,
