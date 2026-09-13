@@ -4741,6 +4741,11 @@ if __name__ == '__main__':
             pass
         sys.exit(0)
 
+    try:
+        from version import __version__ as _trio_version
+    except Exception:
+        _trio_version = "?"
+    logger.info("TrioForge v%s", _trio_version)
     logger.info("AI CHAT Interfacing Loading... - Multi-Conversation")
     logger.info("Default model : %s", DEFAULT_MODEL)
     logger.info("Current model : %s", current_model)

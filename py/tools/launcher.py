@@ -556,6 +556,12 @@ def show_status(project: Path) -> int:
     """`--status`: everything support needs to know, in one screen."""
     info = updater.status(project)
     print("TrioForge status")
+    try:
+        sys.path.insert(0, str(project / "py"))
+        from version import __version__ as _trio_version
+        print("  version        : {}".format(_trio_version))
+    except Exception:
+        pass
     print("  project        : {}".format(info["project"]))
     print("  python         : {} ({})".format(info["python"], sys.executable))
     print("  git checkout   : {}".format("yes" if info["git_checkout"] else "no (archive updates)"))
