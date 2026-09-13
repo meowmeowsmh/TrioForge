@@ -158,16 +158,58 @@ def rotate_profile_if_stale(storage: Path) -> bool:
         marker.unlink()
     except Exception:
         return False
+    return rotate_profile(storage)
+
+
+def _carry_settings_over(old: Path, new: Path) -> None:
+    """Copy the app's own settings into a fresh profile.
+
+    The profile folder holds the engine's cache and cookies AND the app's UI settings
+    (localStorage: theme, sidebar state, provider and per-view AI choices). Rotating
+    the profile must not throw those away with the cache, or the user comes back to a
+    default-looking app. Cache and cookies are disposable; this is not.
+    """
+    import shutil
+    for rel in ("EBWebView/Default/Local Storage",
+                "EBWebView/Default/Session Storage",
+                "EBWebView/Default/Preferences"):
+        src = old / rel
+        if not src.exists():
+            continue
+        dst = new / rel
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.is_dir():
+                shutil.rmtree(dst, ignore_errors=True)
+            elif dst.exists():
+                dst.unlink()
+            if src.is_dir():
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+            print("[window] carried {} over to the fresh profile".format(rel))
+        except Exception as exc:
+            print("[window] could not carry {} over: {}".format(rel, exc))
+
+
+def rotate_profile(storage: Path) -> bool:
+    """Move a broken profile aside and start a fresh one that keeps your settings.
+
+    Only used when the window genuinely failed to appear: a locked or half-written
+    profile is then the most likely cause and nothing else helps. Cache and cookies
+    go; the app's settings ride along.
+    """
     if not storage.exists():
         return False
     try:
         import time as _time
         stale = storage.with_name(storage.name + "-stale-" + str(int(_time.time())))
         storage.rename(stale)
-        print("[window] previous run was killed; old profile moved to {}".format(stale.name))
+        print("[window] old profile moved to {}".format(stale.name))
     except Exception as exc:
         print("[window] could not rotate the profile ({}); trying anyway".format(exc))
         return False
+    _carry_settings_over(stale, storage)
     # Keep only the newest rotated profile, so repeated crashes cannot fill the disk.
     try:
         import shutil
@@ -184,14 +226,16 @@ APP_ID = "TrioForge.Desktop"
 _window_ready = False
 
 
-def fallback_watchdog(url: str, timeout: float = 25.0) -> None:
-    """If the embedded window never appears, open the browser instead of hanging.
+def fallback_watchdog(url: str, timeout: float = 25.0, storage: Path = None) -> None:
+    """If the embedded window never appears: retry once with a fresh profile, then
+    fall back to the browser.
 
-    WebView2 is the least reliable part of this app by nature: it loads a private
-    copy of Edge's runtime, keeps a profile folder that an unclean shutdown can
-    corrupt, and runs its own GPU process on the same driver. Any of those can leave
-    a window that never shows - and then the user has nothing at all. A browser tab
-    has none of those failure modes, so that is the fallback: same server, same data.
+    WebView2 is the least reliable part of this app by nature: it loads a private copy
+    of Edge's runtime, keeps a profile folder that an unclean shutdown can corrupt,
+    and runs its own GPU process on the same driver. Any of those can leave a window
+    that never shows. A corrupt or locked profile is the usual cause, so the first
+    response is a clean retry with a fresh profile (settings carried over); only if
+    that fails too does the app open in a browser, where none of this applies.
     """
     import time
     deadline = time.time() + timeout
@@ -201,8 +245,19 @@ def fallback_watchdog(url: str, timeout: float = 25.0) -> None:
         time.sleep(0.5)
     if _window_ready:
         return
-    print("[window] the embedded window did not appear within {}s - opening your browser "
-          "instead (the server is fine)".format(int(timeout)))
+    print("[window] the embedded window did not appear within {}s".format(int(timeout)))
+
+    retried = os.environ.get("TRIOFORGE_WINDOW_RETRIED") == "1"
+    if storage is not None and not retried:
+        rotate_profile(storage)
+        os.environ["TRIOFORGE_WINDOW_RETRIED"] = "1"
+        print("[window] retrying once with a fresh profile (your settings are kept)")
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as exc:
+            print("[window] retry failed:", exc)
+
+    print("[window] opening your browser instead (the server is fine)")
     try:
         import webbrowser
         webbrowser.open(url)
@@ -210,8 +265,7 @@ def fallback_watchdog(url: str, timeout: float = 25.0) -> None:
         print("[window] could not open a browser either:", exc)
     time.sleep(5)          # give the browser a moment to appear
     # Leave nothing hung behind: no window, no hidden process. Skipping the normal
-    # cleanup is deliberate - the leftover pid marker makes the next start treat this
-    # as a crash and use a fresh profile, which is exactly right here.
+    # cleanup is deliberate - the leftover marker marks this run as failed.
     os._exit(1)
 
 
@@ -379,7 +433,11 @@ def main() -> int:
         pass
 
     storage = user_data_dir()
-    rotate_profile_if_stale(storage)
+    # NO proactive rotation here. It used to run whenever the previous window had not
+    # exited cleanly, and it threw the profile away - including the app's UI settings
+    # (theme, sidebar, provider, per-view choices), so a crash meant coming back to a
+    # default-looking app. A rotation is now a response to a window that actually
+    # failed to appear, and it carries those settings over.
     kwargs = {"title": args.title, "url": url,
               "width": args.width, "height": args.height,
               "min_size": (900, 600), "text_select": True}
@@ -444,7 +502,7 @@ def main() -> int:
         set_process_app_id()
         print("[icon] .ico = {} (exists: {})".format(ico, ico.is_file()))
         # If the window never shows, the user still gets the app (in a browser).
-        threading.Thread(target=fallback_watchdog, args=(url,), daemon=True).start()
+        threading.Thread(target=fallback_watchdog, args=(url, 25.0, storage), daemon=True).start()
         try:
             try:
                 webview.start(**start_kwargs,
