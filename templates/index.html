@@ -2963,12 +2963,35 @@ function saveWorkspace() {
 
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
-    // ComfyUI (image and video) are not chat providers — selecting one shows the
+    // Declared before the media branch below, which returns early.
+    var keyInput = document.getElementById('apiKeyInput');
+    // ComfyUI (image, video and audio) are not chat providers — selecting one shows the
     // right media panel and keeps the dropdown there until a chat provider is picked.
     if (provider === 'comfyui' || provider === 'comfyui-video' || provider === 'comfyui-audio') {
         if (provider === 'comfyui-video') { gen_mode = 'video'; showVideoGenPanel(); }
         else if (provider === 'comfyui-audio') { gen_mode = 'audio'; showAudioGenPanel(); }
         else { gen_mode = 'image'; showImageGenPanel(); }
+        // Keep the previous key: switching to Image/Video must not lose a key that was
+        // typed but not yet blurred.
+        var prevKey = this.dataset.prev || 'ollama';
+        if (KEY_PROVIDERS.indexOf(prevKey) !== -1) {
+            saveApiKey(prevKey, keyInput.value);
+        } else if (prevKey === 'comfyui' || prevKey === 'comfyui-video') {
+            saveApiKey(loadApiKey('gemini') && !loadApiKey('openrouter') ? 'gemini' : 'openrouter', keyInput.value);
+        }
+        this.dataset.prev = provider;
+        saveAiProvider(provider);
+        // Image and Video call OpenRouter or Gemini for their cloud backends, so they
+        // need a key too. This branch used to return before ever touching the key box,
+        // so it stayed hidden and the key could not be entered at all (it only looked
+        // fine in a browser whose profile already had a key saved).
+        if (provider === 'comfyui' || provider === 'comfyui-video') {
+            keyInput.style.display = 'inline-block';
+            keyInput.placeholder = 'Enter OpenRouter (or Gemini) API Key';
+            keyInput.value = loadApiKey('openrouter') || loadApiKey('gemini') || '';
+        } else {
+            keyInput.style.display = 'none';
+        }
         return;
     }
     hideImageGenPanel();
@@ -2977,8 +3000,6 @@ providerSelect.addEventListener('change', function() {
     var prevProvider = this.dataset.prev || 'ollama';
     this.dataset.prev = provider;
     saveAiProvider(provider);
-
-    var keyInput = document.getElementById('apiKeyInput');
 
     // Persist the PREVIOUS provider's key before we overwrite the field, so
     // switching never loses a key that was typed but not yet blurred.
@@ -3030,13 +3051,20 @@ apiKeyInput.addEventListener('input', function() {
     // Save on every keystroke so a key is never lost if the field doesn't blur
     // (e.g. switching provider or reloading mid-typing).
     var provider = providerSelect.value;
-    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude' || provider === 'gemini' || provider === 'openrouter') {
+    if (provider === 'comfyui' || provider === 'comfyui-video') {
+        // Image/video: the backend reads the openrouter or gemini key, so store it
+        // under BOTH the image backend it was chosen for and the provider name.
+        saveApiKey(loadApiKey('gemini') && !loadApiKey('openrouter') ? 'gemini' : 'openrouter', this.value);
+    } else if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude' || provider === 'gemini' || provider === 'openrouter') {
         saveApiKey(provider, this.value);
     }
 });
 apiKeyInput.addEventListener('blur', function() {
     var provider = providerSelect.value;
-    if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude' || provider === 'gemini' || provider === 'openrouter') {
+    if (provider === 'comfyui' || provider === 'comfyui-video') {
+        saveApiKey(loadApiKey('gemini') && !loadApiKey('openrouter') ? 'gemini' : 'openrouter', this.value);
+        status.textContent = '🔑 Key saved for image/video generation.';
+    } else if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude' || provider === 'gemini' || provider === 'openrouter') {
         saveApiKey(provider, this.value);
         loadModels();  // re-scan the model list live with the new key
         if (provider === 'deepseek') checkDeepSeekStatus();
@@ -5263,9 +5291,11 @@ window.addEventListener('load', function() {
     safe(function() {
         // Restore the right key input visibility for the restored provider, so a
         // reload never leaves the field hidden (which made the key seem "gone").
-        if (KEY_PROVIDERS.indexOf(provider) !== -1) {
+        // Image and Video providers need the box too - they use OpenRouter or Gemini.
+        var mediaProvider = (provider === 'comfyui' || provider === 'comfyui-video');
+        if (KEY_PROVIDERS.indexOf(provider) !== -1 || mediaProvider) {
             apiKeyInput.style.display = 'inline-block';
-            var placeholder = '';
+            var placeholder = mediaProvider ? 'Enter OpenRouter (or Gemini) API Key' : '';
             if (provider === 'groq') placeholder = 'Enter Groq API Key';
             else if (provider === 'huggingface') placeholder = 'Enter HF Token (optional)';
             else if (provider === 'deepseek') placeholder = 'Enter DeepSeek API Key';
@@ -5273,7 +5303,9 @@ window.addEventListener('load', function() {
             else if (provider === 'gemini') placeholder = 'Enter Gemini API Key';
             else if (provider === 'openrouter') placeholder = 'Enter OpenRouter API Key';
             apiKeyInput.placeholder = placeholder;
-            apiKeyInput.value = loadApiKey(provider);
+            apiKeyInput.value = mediaProvider
+                ? (loadApiKey('openrouter') || loadApiKey('gemini') || '')
+                : loadApiKey(provider);
         } else {
             apiKeyInput.style.display = 'none';
         }
