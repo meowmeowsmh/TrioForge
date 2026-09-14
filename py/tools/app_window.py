@@ -105,7 +105,11 @@ def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 15.
 
         def _handle():
             form = window.native.TopLevelControl or window.native
-            return form.Handle
+            raw = form.Handle
+            # pythonnet hands back a System.IntPtr, and int() refuses it. The watchdog
+            # used to swallow that failure, so it silently checked nothing at all -
+            # which is why a window could sit at "not responding" for a minute.
+            return int(raw.ToInt64()) if hasattr(raw, "ToInt64") else int(raw)
 
         _th.Thread(target=hang_watchdog, args=(_handle, url), daemon=True).start()
         print("[window] watching for hangs (a frozen window is handed to your browser)")
@@ -209,7 +213,13 @@ def hang_watchdog(get_handle, url: str, hung_seconds: int = 20, interval: float 
                     os._exit(1)
             else:
                 hung = 0.0
-        except Exception:
+        except Exception as exc:
+            # Never swallow this silently: a broken check looks exactly like a healthy
+            # window, which is how the int(IntPtr) bug hid for a whole debugging round.
+            global _hang_check_error_logged
+            if not _hang_check_error_logged:
+                _hang_check_error_logged = True
+                print("[window] hang check failed: {}: {}".format(type(exc).__name__, exc))
             hung = 0.0
 
 
@@ -321,6 +331,7 @@ APP_ID = "TrioForge.Desktop"
 
 # Set once the native window really exists (the icon callback is the proof).
 _window_ready = False
+_hang_check_error_logged = False
 
 
 def fallback_watchdog(url: str, timeout: float = 25.0, storage: Path = None) -> None:
