@@ -706,17 +706,111 @@ def _app_window_open() -> bool:
     return False
 
 
+def focus_app_window(pid: int) -> bool:
+    """Bring the running app window to the front.
+
+    A shortcut click should behave like every other app: when TrioForge is already
+    open, show it. Doing nothing is indistinguishable from a broken shortcut - which
+    is exactly what the user reported.
+    """
+    if os.name != "nt" or not pid:
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        found = []
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def callback(hwnd, _lparam):
+            owner = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value == int(pid) and user32.IsWindowVisible(hwnd):
+                found.append(hwnd)
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(callback), 0)
+        if not found:
+            return False
+        hwnd = found[0]
+        SW_RESTORE, SW_SHOW = 9, 5
+        user32.ShowWindow(hwnd, SW_RESTORE)      # un-minimise
+        user32.ShowWindow(hwnd, SW_SHOW)
+        user32.SetForegroundWindow(hwnd)         # and raise it
+        return True
+    except Exception as exc:
+        print("[window] could not bring it to the front: {}".format(exc))
+        return False
+
+
+def _app_window_pid() -> int:
+    """The pid of the running app window, or 0."""
+    try:
+        path = _app_window_pid_file()
+        if not path.is_file():
+            return 0
+        return int(path.read_text(encoding="utf-8").strip().split()[0])
+    except Exception:
+        return 0
+
+
+def window_is_hung(pid: int) -> bool:
+    """True when the app window has stopped responding.
+
+    A frozen window cannot be focused (SetForegroundWindow does nothing to it), so a
+    shortcut click would appear to do nothing at all. Replace it instead.
+    """
+    if os.name != "nt" or not pid:
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        found = []
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def callback(hwnd, _lparam):
+            owner = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value == int(pid) and user32.IsWindowVisible(hwnd):
+                found.append(hwnd)
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(callback), 0)
+        if not found:
+            return False
+        return bool(user32.IsHungAppWindow(ctypes.c_void_p(found[0])))
+    except Exception:
+        return False
+
+
 def _open_app_window(project: Path) -> None:
     """Open TrioForge in its own WebView2 window (no browser, no console).
 
-    The window is a separate process; it probes for the server itself and waits,
-    so firing it before the app is ready is fine. Only one window ever: the window
-    writes its pid, and we check it here before starting another.
+    The window is a separate process; it probes for the server itself and waits, so
+    firing it before the app is ready is fine. One window at a time: an existing one is
+    brought to the front - and if it has stopped responding it is replaced, because
+    focusing a frozen window is indistinguishable from a broken shortcut.
     """
     try:
         if _app_window_open():
-            print("[window] TrioForge is already open in its own window.")
-            return
+            pid = _app_window_pid()
+            if window_is_hung(pid):
+                print("[window] the open window is not responding - replacing it.")
+                try:
+                    subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   timeout=15, creationflags=_no_window_flags())
+                except Exception:
+                    pass
+                try:
+                    _app_window_pid_file().unlink()
+                except Exception:
+                    pass
+            elif focus_app_window(pid):
+                print("[window] TrioForge is already open - brought its window to the front.")
+                return
+            else:
+                print("[window] TrioForge is already open in its own window.")
+                return
         script = project / "py" / "tools" / "app_window.py"
         if not script.is_file():
             print("[window] app_window.py not found; skipping.")
