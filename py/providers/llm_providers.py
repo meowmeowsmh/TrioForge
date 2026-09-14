@@ -391,6 +391,66 @@ class LLMProvider:
         )
 
 
+def ensure_ollama_running(base_url: str, wait_seconds: int = 25) -> bool:
+    """Start Ollama if it is installed but not running. True when it answers.
+
+    Ollama is a separate background app, and "it is not running" looks exactly like a
+    broken TrioForge: the model list comes back empty and a chat says the server is
+    unreachable. TrioForge already starts llama.cpp on demand when that is the
+    provider, so it does the same for Ollama - launch it hidden, wait for it to answer,
+    carry on. Never fatal: if it cannot be started the caller reports as before.
+    """
+    import os
+    import shutil
+    import subprocess
+    import time
+    import urllib.request
+
+    probe = base_url.rstrip("/") + "/api/tags"
+
+    def up(timeout=2):
+        try:
+            with urllib.request.urlopen(probe, timeout=timeout) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    if up():
+        return True
+
+    candidates = []
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA", "")
+        if local:
+            serve = os.path.join(local, "Programs", "Ollama", "ollama.exe")
+            tray = os.path.join(local, "Programs", "Ollama", "ollama app.exe")
+            if os.path.isfile(serve):
+                candidates.append([serve, "serve"])
+            if os.path.isfile(tray):
+                candidates.append([tray])
+    else:
+        which = shutil.which("ollama")
+        if which:
+            candidates.append([which, "serve"])
+
+    for cmd in candidates:
+        try:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+            subprocess.Popen([str(c) for c in cmd], creationflags=flags,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL)
+            print("Started Ollama: {}".format(" ".join(str(c) for c in cmd)))
+        except Exception as exc:
+            print("Could not start Ollama ({}): {}".format(" ".join(str(c) for c in cmd), exc))
+            continue
+        for _ in range(wait_seconds):
+            if up():
+                print("Ollama is up.")
+                return True
+            time.sleep(1)
+    return up()
+
+
 class OllamaProvider(LLMProvider):
     """Ollama provider using /api/chat for all requests (preserves conversation history)."""
     def __init__(self, model: str = "vaultbox/qwen3.5-uncensored:9b",
@@ -445,7 +505,13 @@ class OllamaProvider(LLMProvider):
         }
 
         try:
-            resp = requests.post(self.chat_url, json=payload, timeout=180)
+            try:
+                resp = requests.post(self.chat_url, json=payload, timeout=180)
+            except requests.exceptions.ConnectionError:
+                # Ollama not running: start it (it is a separate app) and try once more.
+                if not ensure_ollama_running(self.base_url):
+                    raise
+                resp = requests.post(self.chat_url, json=payload, timeout=180)
             resp.raise_for_status()
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"Ollama request failed: {e}")
@@ -495,7 +561,13 @@ class OllamaProvider(LLMProvider):
             payload["tools"] = tools
 
         try:
-            resp = requests.post(self.chat_url, json=payload, timeout=180)
+            try:
+                resp = requests.post(self.chat_url, json=payload, timeout=180)
+            except requests.exceptions.ConnectionError:
+                # Ollama not running: start it (it is a separate app) and try once more.
+                if not ensure_ollama_running(self.base_url):
+                    raise
+                resp = requests.post(self.chat_url, json=payload, timeout=180)
             resp.raise_for_status()
         except requests.exceptions.RequestException as e:
             raise ProviderError(f"Ollama request failed: {e}")
@@ -533,6 +605,7 @@ class OllamaProvider(LLMProvider):
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         try:
+            ensure_ollama_running(self.base_url)
             resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
             resp.raise_for_status()
             return [m["name"] for m in resp.json().get("models", [])]
