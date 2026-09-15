@@ -1007,7 +1007,7 @@ def ensure_triorforge_exe(project: Path) -> Optional[str]:
         # display name from the version resource's FileDescription and the logo from
         # RT_GROUP_ICON - neither follows the file name - so both are rewritten here.
         # Bump PATCH_REV whenever this patch changes, so existing installs re-apply it.
-        PATCH_REV = "2"
+        PATCH_REV = "3"
         have = ""
         if not refreshed and marker.is_file():
             try:
