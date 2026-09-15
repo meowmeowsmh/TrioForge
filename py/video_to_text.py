@@ -43,23 +43,103 @@ def is_audio_file(name: str, mime: str = "") -> bool:
     return ext in _AUDIO_EXTS
 
 
-def find_ffmpeg():
-    """Return the ffmpeg executable path, or None if not installed/on PATH."""
-    exe = shutil.which("ffmpeg")
-    if exe:
-        return exe
-    # Common Windows locations (so we don't hard-code a single absolute path,
-    # but still find it if it isn't on PATH).
-    candidates = [
-        os.path.expandvars(r"%LOCALAPPDATA%\Programs\ffmpeg\bin\ffmpeg.exe"),
-        os.path.expandvars(r"%APPDATA%\Python\Python314\Scripts\ffmpeg.exe"),
-        os.path.expandvars(r"%APPDATA%\Python\Python313\Scripts\ffmpeg.exe"),
-        os.path.expandvars(r"%APPDATA%\Python\Python312\Scripts\ffmpeg.exe"),
-    ]
-    for c in candidates:
-        if c and os.path.isfile(c):
-            return c
+_FFMPEG_CACHE = []          # [path] once resolved, so we probe the version only once
+
+# Why the most recent conversion/extraction produced nothing. Callers report this
+# instead of assuming "ffmpeg is missing" - which was wrong every time a current
+# ffmpeg was installed but the file, codec or audio track was the real problem.
+LAST_ERROR = ""
+
+
+def last_error():
+    """A human-readable reason for the most recent failure ("" when there was none)."""
+    return LAST_ERROR
+
+
+def _fail(message, *args):
+    """Record + log why a conversion produced nothing (and return None)."""
+    global LAST_ERROR
+    try:
+        text = message.format(*args) if args else message
+    except Exception:
+        text = str(message)
+    LAST_ERROR = text
+    logger.warning("%s", text)
     return None
+
+
+def find_ffmpeg():
+    """Return the ffmpeg executable to use, or None.
+
+    Order matters. A very old ffmpeg found first on PATH used to win, and an old
+    build silently fails on modern containers/codecs - which surfaced as a
+    misleading "is ffmpeg installed?" error. So:
+
+      1. TRIOFORGE_FFMPEG (explicit override)
+      2. the build this app installed itself: tools/ffmpeg (see ffmpeg_installer)
+      3. ffmpeg on PATH
+      4. common per-user locations
+
+    The chosen path and its version are logged, so the log says which build ran.
+    """
+    if _FFMPEG_CACHE:
+        return _FFMPEG_CACHE[0]
+
+    found = None
+    override = os.environ.get("TRIOFORGE_FFMPEG", "").strip()
+    if override and os.path.isfile(override):
+        found = override
+
+    if not found:
+        try:
+            import ffmpeg_installer
+            found = ffmpeg_installer.find_installed()
+        except Exception:
+            found = None
+
+    if not found:
+        found = shutil.which("ffmpeg")
+
+    if not found:
+        # Common Windows locations (so we don't hard-code a single absolute path,
+        # but still find it if it isn't on PATH).
+        candidates = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\ffmpeg\bin\ffmpeg.exe"),
+            os.path.expandvars(r"%APPDATA%\Python\Python314\Scripts\ffmpeg.exe"),
+            os.path.expandvars(r"%APPDATA%\Python\Python313\Scripts\ffmpeg.exe"),
+            os.path.expandvars(r"%APPDATA%\Python\Python312\Scripts\ffmpeg.exe"),
+        ]
+        for c in candidates:
+            if c and os.path.isfile(c):
+                found = c
+                break
+
+    if not found:
+        return None
+
+    _FFMPEG_CACHE.append(found)
+    try:
+        import subprocess
+        r = subprocess.run([found, "-version"], capture_output=True, timeout=20)
+        first = (r.stdout or b"").decode("utf-8", "replace").splitlines()
+        logger.info("ffmpeg: %s (%s)", found, first[0].strip() if first else "version unknown")
+    except Exception:
+        logger.info("ffmpeg: %s", found)
+    return found
+
+
+def ffmpeg_version(path=None):
+    """First line of ``ffmpeg -version`` for `path` (or the chosen ffmpeg), or ""."""
+    import subprocess
+    exe = path or find_ffmpeg()
+    if not exe:
+        return ""
+    try:
+        r = subprocess.run([exe, "-version"], capture_output=True, timeout=20)
+        lines = (r.stdout or b"").decode("utf-8", "replace").splitlines()
+        return lines[0].strip() if lines else ""
+    except Exception:
+        return ""
 
 
 def _decode_video(b64):
@@ -138,11 +218,11 @@ def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS):
     """
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
-        logger.warning("ffmpeg not found; audio-to-text unavailable.")
-        return None
+        return _fail("No ffmpeg found - install it from the Services panel "
+                     "(or set TRIOFORGE_FFMPEG) so audio can be converted.")
     data = _decode_video(audio_b64)
     if not data:
-        return None
+        return _fail("The attached audio could not be decoded (empty or invalid base64).")
 
     ext = os.path.splitext(name or "")[1].lower() or ".bin"
     tmpdir = tempfile.mkdtemp(prefix="trioforge_audio_")
@@ -158,14 +238,13 @@ def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS):
         ]
         r = subprocess.run(cmd, capture_output=True, timeout=120)
         if r.returncode != 0 or not os.path.isfile(out_path) or os.path.getsize(out_path) == 0:
-            tail = (r.stderr or b"")[-200:]
-            logger.warning("ffmpeg audio conversion failed: %s", tail)
-            return None
+            tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
+            return _fail("ffmpeg could not read '{}' ({}). ffmpeg said: {}",
+                         name, ffmpeg, tail.replace("\n", " ") or "no output")
         with open(out_path, "rb") as fh:
             return base64.b64encode(fh.read()).decode("ascii")
     except Exception as e:
-        logger.error("Audio conversion failed: %s", e)
-        return None
+        return _fail("Audio conversion crashed: {}: {}", type(e).__name__, e)
     finally:
         try:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -218,10 +297,12 @@ def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS
     """
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
-        logger.warning("ffmpeg not found; audio-to-text unavailable.")
+        _fail("No ffmpeg found - install it from the Services panel "
+              "(or set TRIOFORGE_FFMPEG) so audio can be converted.")
         return []
     data = _decode_video(audio_b64)
     if not data:
+        _fail("The attached audio could not be decoded (empty or invalid base64).")
         return []
 
     ext = os.path.splitext(name or "")[1].lower() or ".bin"
@@ -237,12 +318,13 @@ def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS
         ]
         r = subprocess.run(cmd, capture_output=True, timeout=300)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
-            tail = (r.stderr or b"")[-200:]
-            logger.warning("ffmpeg audio conversion failed: %s", tail)
+            tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
+            _fail("ffmpeg could not read '{}' ({}). ffmpeg said: {}",
+                  name, ffmpeg, tail.replace("\n", " ") or "no output")
             return []
         return _chunk_wav_file(ffmpeg, wav_path, chunk_seconds)
     except Exception as e:
-        logger.error("Audio conversion failed: %s", e)
+        _fail("Audio conversion crashed: {}: {}", type(e).__name__, e)
         return []
     finally:
         try:
@@ -262,10 +344,12 @@ def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECOND
     """
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
-        logger.warning("ffmpeg not found; video audio-to-text unavailable.")
+        _fail("No ffmpeg found - install it from the Services panel "
+              "(or set TRIOFORGE_FFMPEG) so a video's audio can be read.")
         return []
     data = _decode_video(video_b64)
     if not data:
+        _fail("The attached video could not be decoded (empty or invalid base64).")
         return []
 
     ext = os.path.splitext(name or "")[1].lower() or ".mp4"
@@ -281,12 +365,17 @@ def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECOND
         ]
         r = subprocess.run(cmd, capture_output=True, timeout=300)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
-            tail = (r.stderr or b"")[-200:]
-            logger.warning("ffmpeg video-audio extraction failed: %s", tail)
+            tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
+            low = tail.lower()
+            if "does not contain any stream" in low or "no audio" in low or "matches no streams" in low:
+                _fail("'{}' has no audio track, so there is nothing to transcribe.", name)
+            else:
+                _fail("ffmpeg could not read the audio of '{}' ({}). ffmpeg said: {}",
+                      name, ffmpeg, tail.replace("\n", " ") or "no output")
             return []
         return _chunk_wav_file(ffmpeg, wav_path, chunk_seconds)
     except Exception as e:
-        logger.error("Video audio extraction failed: %s", e)
+        _fail("Video audio extraction crashed: {}: {}", type(e).__name__, e)
         return []
     finally:
         try:

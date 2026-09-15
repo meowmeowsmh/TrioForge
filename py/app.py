@@ -1579,6 +1579,40 @@ def llamacpp_install_status():
     return jsonify({"installed": bool(installed), "path": installed or ""})
 
 
+@app.route('/api/ffmpeg/status', methods=['GET'])
+def ffmpeg_status():
+    """Report which ffmpeg audio/video conversion will use, and how old it is.
+
+    Age matters: an ancient build (a real user had a 2013 one shipped inside a
+    Python package) silently fails on modern containers, and every audio/video
+    feature then reported a misleading "is ffmpeg installed?" error.
+    """
+    import video_to_text
+    path = video_to_text.find_ffmpeg()
+    return jsonify({
+        "installed": bool(path),
+        "path": path or "",
+        "version": video_to_text.ffmpeg_version(path) if path else "",
+        "managed": bool(path and "tools" + os.sep + "ffmpeg" in path),
+    })
+
+
+@app.route('/api/ffmpeg/install', methods=['POST'])
+def ffmpeg_install():
+    """Download a current ffmpeg into tools/ffmpeg (explicit user action only)."""
+    import ffmpeg_installer
+    import video_to_text
+    try:
+        result = ffmpeg_installer.install_ffmpeg()
+    except Exception as e:
+        return jsonify({'ok': False, 'path': '', 'error': str(e)}), 500
+    if result.get("ok"):
+        # Drop the cached lookup so the very next conversion uses the new build.
+        video_to_text._FFMPEG_CACHE.clear()
+        result["version"] = video_to_text.ffmpeg_version(result.get("path", ""))
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
 @app.route('/api/services/voice/start', methods=['POST'])
 def voice_start():
     return jsonify(voice_service.start())
@@ -3992,9 +4026,19 @@ def chat():
             transcription_sources = list(audio_files)
             if videos and _model_has_audio(provider_name, model):
                 transcription_sources.extend(videos)
+        reply = None
         if transcription_sources:
-            reply = provider.generate_with_audio(messages, transcription_sources, **extra_kwargs)
-        elif images or videos:
+            try:
+                reply = provider.generate_with_audio(messages, transcription_sources, **extra_kwargs)
+            except Exception as e:
+                # A silent clip, a video with no audio track, or a model without audio
+                # input all land here. That must not discard the answer when there is
+                # still something to look at - fall through to the frames path below.
+                if not (images or videos):
+                    raise
+                logger.info("Audio transcription produced nothing (%s); "
+                            "answering from the attached frames instead.", e)
+        if reply is None and (images or videos):
             frame_images = []
             if videos:
                 for v in videos:
@@ -4016,9 +4060,9 @@ def chat():
                 inject = "[Video attached but this provider/model does not support video input]\n\n[User question]\n"
                 messages[-1]['content'] = inject + messages[-1]['content']
                 reply = provider.generate(messages, **extra_kwargs)
-        elif use_tools:
+        elif reply is None and use_tools:
             reply = _run_chat_with_tools(provider, messages, extra_kwargs)
-        else:
+        elif reply is None:
             reply = provider.generate(messages, **extra_kwargs)
         end_time = time.time()
 
@@ -4254,7 +4298,16 @@ def chat_stream():
                 audio_final_text = provider.generate_with_audio(messages, transcription_sources, **extra_kwargs_audio)
                 audio_reasoning = getattr(provider, "last_reasoning", "") or ""
             except Exception as e:
-                audio_final_text = f"[audio error] {e}"
+                # Audio/video transcription can legitimately produce nothing (silent
+                # clip, video with no audio track, model without audio input). When we
+                # still have frames to look at, answer from those instead of dumping
+                # an error in place of the answer.
+                if vision_images:
+                    logger.info("Audio transcription produced nothing (%s); "
+                                "answering from the attached frames instead.", e)
+                    audio_final_text = None
+                else:
+                    audio_final_text = f"[audio error] {e}"
 
         def generate():
             full_response = ""

@@ -103,6 +103,10 @@ static/uploads/
 # Auto-installed llama.cpp binaries (downloaded by llama_installer / ⚡ Auto-install)
 tools/llama.cpp/
 
+# Auto-installed ffmpeg (downloaded by ffmpeg_installer / ⚡ Install ffmpeg).
+# ~150 MB archive + extracted binaries: machine state, never commit.
+tools/ffmpeg/
+
 # Hugging Face / Ollama download caches
 models/.cache/
 .cache/huggingface/
