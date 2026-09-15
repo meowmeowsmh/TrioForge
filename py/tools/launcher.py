@@ -624,6 +624,13 @@ def prepare_and_run(project: Path, args) -> int:
     # --detach: start the server in the background with no console and return. The
     # window (above) waits for it; the .bat that calls this returns immediately.
     if getattr(args, "detach", False):
+        if getattr(args, "window", False):
+            # The window OWNS the server now: app_window.py starts it as its own
+            # child (so they group as ONE app in the taskbar/Task Manager) and stops
+            # it when the window closes. Nothing to spawn here.
+            if getattr(args, "background_update", False):
+                _spawn_background_update(project)
+            return 0
         cmd = [venv_pythonw(project), str(project / "py" / "app.py")]
         flags = 0
         if os.name == "nt":
