@@ -23,6 +23,7 @@ import argparse
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 
@@ -602,7 +603,8 @@ def main() -> int:
         try:
             pid_file = window_pid_file()
             pid_file.parent.mkdir(parents=True, exist_ok=True)
-            pid_file.write_text("{} {}\n".format(os.getpid(), url), encoding="utf-8")
+            pid_file.write_text("{} {} {}\n".format(os.getpid(), url, int(time.time())),
+                                encoding="utf-8")
         except Exception:
             pid_file = None
 

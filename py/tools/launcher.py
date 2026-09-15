@@ -782,35 +782,72 @@ def window_is_hung(pid: int) -> bool:
         return False
 
 
+def _replace_app_window(pid: int) -> None:
+    """Kill a stale or hung window process and drop its pid marker."""
+    try:
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=15, creationflags=_no_window_flags())
+    except Exception:
+        pass
+    try:
+        _app_window_pid_file().unlink()
+    except Exception:
+        pass
+
+
+def _app_window_started_seconds_ago() -> float:
+    """Seconds since the window process started (from its pid file), or huge.
+
+    A freshly-spawned window writes its pid file before its visible window exists,
+    so a quick second launch must not mistake it for a dead one. A pid file written
+    seconds ago means "still starting"; hours ago means the window is gone while its
+    process survived (a crash, or closing the window leaving the message loop behind).
+    """
+    try:
+        path = _app_window_pid_file()
+        parts = path.read_text(encoding="utf-8").strip().split()
+        if len(parts) >= 3:
+            return max(0.0, time.time() - float(parts[2]))
+        # Older pid files carried only pid + url; fall back to the file's mtime.
+        return max(0.0, time.time() - path.stat().st_mtime)
+    except Exception:
+        return 1e9
+
+
 def _open_app_window(project: Path) -> None:
     """Open TrioForge in its own WebView2 window (no browser, no console).
 
     The window is a separate process; it probes for the server itself and waits, so
     firing it before the app is ready is fine. One window at a time: an existing one is
-    brought to the front - and if it has stopped responding it is replaced, because
-    focusing a frozen window is indistinguishable from a broken shortcut.
+    brought to the front, and a hung one is replaced (focusing a frozen window is
+    indistinguishable from a broken shortcut).
+
+    A third case matters after a crash or sleep: the window host process survives but
+    its WebView2 window is gone. The pid is still alive, so a naive "already open"
+    check believes the window exists - and then nothing appears at all, because the
+    only thing left is a window-less process. A reboot happened to fix it by killing
+    that process, which is why the bug looked "random but cured by restarting". We
+    detect it here: a live pid with no visible, focusable window is treated as gone
+    and re-opened, exactly like the hung case.
     """
     try:
         if _app_window_open():
             pid = _app_window_pid()
             if window_is_hung(pid):
                 print("[window] the open window is not responding - replacing it.")
-                try:
-                    subprocess.run(["taskkill", "/PID", str(pid), "/F"],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   timeout=15, creationflags=_no_window_flags())
-                except Exception:
-                    pass
-                try:
-                    _app_window_pid_file().unlink()
-                except Exception:
-                    pass
+                _replace_app_window(pid)
             elif focus_app_window(pid):
                 print("[window] TrioForge is already open - brought its window to the front.")
                 return
             else:
-                print("[window] TrioForge is already open in its own window.")
-                return
+                if _app_window_started_seconds_ago() < 25:
+                    # Still initialising (pid written before the native window exists);
+                    # leave it alone - it will appear on its own in a moment.
+                    print("[window] TrioForge is still opening (its window is coming up)...")
+                    return
+                print("[window] the app is running but its window is gone - reopening it.")
+                _replace_app_window(pid)
         script = project / "py" / "tools" / "app_window.py"
         if not script.is_file():
             print("[window] app_window.py not found; skipping.")
