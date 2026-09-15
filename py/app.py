@@ -4643,6 +4643,34 @@ def _auto_open_browser(url: str) -> None:
     threading.Thread(target=_open, daemon=True).start()
 
 
+APP_ID = "TrioForge.Desktop"
+
+
+def _register_app_identity() -> None:
+    """Tell Windows this process is TrioForge (name + icon, not "Python").
+
+    The launcher runs the server from TrioForge.exe, whose version resource already
+    says TrioForge. This adds the explicit AppUserModelID on top: it is the identity
+    Windows uses for the taskbar and for grouping in Task Manager, and registering a
+    DisplayName with it means no view of this process falls back to "Python".
+    """
+    try:
+        import winreg
+        ico = root_path("static", "logo", "triorforge.ico")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                              r"Software\Classes\AppUserModelId\%s" % APP_ID) as key:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "TrioForge")
+            if os.path.isfile(ico):
+                winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, ico)
+    except Exception:
+        pass
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:
+        pass
+
+
 # ── Port selection ───────────────────────────────────────────────────────────
 # If the preferred port is held by ANOTHER app, move to the next free one instead
 # of wrongly reporting "TrioForge is already running" and exiting. Cross-platform:
@@ -4790,6 +4818,12 @@ if __name__ == '__main__':
 
     logger.info("Open your browser at: %s", url)
     _auto_open_browser(url)
+
+    # Give this process TrioForge's own identity. Task Manager / the taskbar name a
+    # process from its executable, and the server used to run as pythonw.exe; the
+    # launcher's TrioForge.exe carries the right version resource, and this adds the
+    # explicit app identity on top so nothing resolves to "Python".
+    _register_app_identity()
 
     # ── Which interface to listen on ─────────────────────────────────────────
     # Default is localhost only, exactly like Ollama's default. Listening on
