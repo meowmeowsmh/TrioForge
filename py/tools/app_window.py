@@ -501,6 +501,59 @@ def _tell_server_to_shutdown(url: str) -> None:
         print("[window] could not reach the server to shut it down: {}".format(exc))
 
 
+def _server_up(port: int) -> bool:
+    """True when a TrioForge server already answers on the port (either scheme)."""
+    for scheme in ("https", "http"):
+        if _probe("{}://127.0.0.1:{}/".format(scheme, port)):
+            return True
+    return False
+
+
+def _spawn_server(port: int):
+    """Start the app's server as a CHILD of this window process.
+
+    The window OWNS the server: running it as a child (instead of the launcher
+    starting a detached, unrelated process) is what lets the taskbar and Task
+    Manager show one TrioForge app with the server nested under it, and it makes
+    "close the window" a clean teardown of the whole stack.
+    """
+    import subprocess
+    script = project_root() / "py" / "app.py"
+    env = dict(os.environ)
+    env["TRIOFORGE_NO_BROWSER"] = "1"     # the window IS the app; no browser tab
+    env["TRIOFORGE_PORT"] = str(port)
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        child = subprocess.Popen(
+            [sys.executable, str(script)],
+            cwd=str(project_root()), env=env, creationflags=flags,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+        print("[window] server started as a child process (pid {})".format(child.pid))
+        return child
+    except Exception as exc:
+        print("[window] could not start the server: {}".format(exc))
+        return None
+
+
+def _stop_child(child, timeout: float = 6.0) -> None:
+    """Wait for the server child to exit, then force it if it lingers."""
+    if child is None or child.poll() is not None:
+        return
+    try:
+        child.wait(timeout=timeout)
+    except Exception:
+        try:
+            child.terminate()
+            child.wait(timeout=5)
+        except Exception:
+            try:
+                child.kill()
+            except Exception:
+                pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="TrioForge app window")
     parser.add_argument("--url", default="", help="Explicit server URL (optional).")
@@ -518,6 +571,13 @@ def main() -> int:
     except Exception:
         print("pywebview is not installed - run: uv pip install pywebview")
         return 3
+
+    # The window OWNS the server (see _spawn_server). Start it first, then wait for
+    # it to come up. With an explicit --url we point at a remote server and start
+    # nothing.
+    server_child = None
+    if not args.url and not _server_up(args.port):
+        server_child = _spawn_server(args.port)
 
     url = resolve_url(args.url, args.port)
 
@@ -666,6 +726,7 @@ def main() -> int:
             return 4
     # Closing the window ends the session: the server and its services stop too.
     _tell_server_to_shutdown(url)
+    _stop_child(server_child)
     return 0
 
 
