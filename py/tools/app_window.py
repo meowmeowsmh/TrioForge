@@ -477,6 +477,30 @@ def is_local(url: str) -> bool:
     return any(h in url for h in ("localhost", "127.0.0.1", "[::1]"))
 
 
+def _tell_server_to_shutdown(url: str) -> None:
+    """Ask the local server to stop itself and its services (best-effort).
+
+    Closing the app window must not leave the server, a loaded llama.cpp model or
+    the voice agent running - otherwise "closed" only hides the window while a
+    Python process and gigabytes of model stay resident. The server owns those
+    services, so we POST /api/shutdown and let it tear everything down.
+    """
+    import json
+    import ssl as _ssl
+    import urllib.request
+    base = (url or "http://127.0.0.1:5003").rstrip("/")
+    ctx = _ssl._create_unverified_context() if base.startswith("https://") else None
+    try:
+        req = urllib.request.Request(
+            base + "/api/shutdown", data=b"{}",
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
+            resp.read(100)
+        print("[window] told the server to shut down (closing the app stops its services).")
+    except Exception as exc:
+        print("[window] could not reach the server to shut it down: {}".format(exc))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="TrioForge app window")
     parser.add_argument("--url", default="", help="Explicit server URL (optional).")
@@ -640,6 +664,8 @@ def main() -> int:
         except Exception:
             print("Could not start the window: {}: {}".format(type(exc).__name__, exc))
             return 4
+    # Closing the window ends the session: the server and its services stop too.
+    _tell_server_to_shutdown(url)
     return 0
 
 
