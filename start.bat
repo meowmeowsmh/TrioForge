@@ -12,9 +12,12 @@ rem Project folder without the trailing backslash (it would escape the quote).
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
-rem Console-less Python: the venv's pythonw if it exists, else the system pythonw.
+rem Console-less Python. Prefer TrioForge.exe (the launcher creates it on first run)
+rem so even this short-lived process shows as TrioForge in Task Manager instead of
+rem "Python"; fall back to the venv pythonw, then the system pythonw.
 rem On a first run the launcher creates the venv (and installs dependencies) itself.
-set "PY=%ROOT%\.venv\Scripts\pythonw.exe"
+set "PY=%ROOT%\.venv\Scripts\TrioForge.exe"
+if not exist "%PY%" set "PY=%ROOT%\.venv\Scripts\pythonw.exe"
 if not exist "%PY%" (
     where pyw >nul 2>&1 && (set "PY=pyw -3") || (set "PY=pythonw")
 )
