@@ -704,6 +704,110 @@ def _needs_refresh(src: Path, dst: Path) -> bool:
         return True
 
 
+def _app_version_tuple(project: Path):
+    """TrioForge's version as a 4-tuple, read from py/version.py (0.0.0.0 if unknown)."""
+    import re
+    try:
+        text = (project / "py" / "version.py").read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"__version__\s*=\s*[\"']([0-9]+)\.([0-9]+)\.([0-9]+)", text)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), int(m.group(3)), 0)
+    except Exception:
+        pass
+    return (0, 0, 0, 0)
+
+
+def _build_version_resource(description: str, product: str, version=(0, 0, 0, 0)) -> bytes:
+    """Build a VS_VERSIONINFO resource block (the 'Details' tab of a .exe).
+
+    Task Manager's Name column shows the version resource's FileDescription - NOT
+    the file name - so a renamed copy of pythonw.exe still displays as "Python"
+    until this resource says otherwise.
+    """
+    import struct
+
+    def align4(buf):
+        return buf + b"\x00" * ((4 - len(buf) % 4) % 4)
+
+    def wstr(s):
+        return s.encode("utf-16-le") + b"\x00\x00"
+
+    def string_entry(key, value):
+        body = struct.pack("<HHH", 0, len(value) + 1, 1) + wstr(key)
+        body = align4(body) + wstr(value)
+        body = align4(body)
+        return struct.pack("<H", len(body)) + body[2:]
+
+    def block(key, wtype, value_b, wvalue, children=b""):
+        body = struct.pack("<HHH", 0, wvalue, wtype) + wstr(key)
+        body = align4(body) + value_b
+        body = align4(body) + children
+        body = align4(body)
+        return struct.pack("<H", len(body)) + body[2:]
+
+    vtext = "{}.{}.{}.{}".format(*version)
+    ms = (version[0] << 16) | version[1]
+    ls = (version[2] << 16) | version[3]
+    fixed = struct.pack(
+        "<13I",
+        0xFEEF04BD, 0x00010000,          # signature, struct version
+        ms, ls, ms, ls,                  # file + product version
+        0x3F, 0x00,                      # flags mask, flags
+        0x00040004,                      # VOS_NT_WINDOWS32
+        0x00000001,                      # VFT_APP
+        0x00000000, 0x00000000, 0x00000000)
+
+    strings = b"".join([
+        string_entry("CompanyName", product),
+        string_entry("FileDescription", description),
+        string_entry("FileVersion", vtext),
+        string_entry("InternalName", product),
+        string_entry("OriginalFilename", product + ".exe"),
+        string_entry("ProductName", product),
+        string_entry("ProductVersion", vtext),
+    ])
+    string_file_info = block("StringFileInfo", 1, b"", 0,
+                             block("040904B0", 1, b"", 0, strings))
+    var_file_info = block("VarFileInfo", 1, b"", 0,
+                          block("Translation", 0, struct.pack("<I", 0x040904B0), 4, b""))
+    return block("VS_VERSION_INFO", 0, fixed, len(fixed), string_file_info + var_file_info)
+
+
+def set_exe_description(path: Path, description: str, product: str = "",
+                        version=(0, 0, 0, 0)) -> bool:
+    """Rewrite an .exe's version resource so Task Manager shows `description`."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        data = _build_version_resource(description, product or description, version)
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.BeginUpdateResourceW.argtypes = [wintypes.LPCWSTR, wintypes.BOOL]
+        k32.BeginUpdateResourceW.restype = wintypes.HANDLE
+        k32.UpdateResourceW.argtypes = [wintypes.HANDLE, wintypes.LPCWSTR, wintypes.LPCWSTR,
+                                        wintypes.WORD, ctypes.c_void_p, wintypes.DWORD]
+        k32.UpdateResourceW.restype = wintypes.BOOL
+        k32.EndUpdateResourceW.argtypes = [wintypes.HANDLE, wintypes.BOOL]
+        k32.EndUpdateResourceW.restype = wintypes.BOOL
+
+        # MAKEINTRESOURCE(16) = RT_VERSION, MAKEINTRESOURCE(1) = the version resource.
+        rt_version = ctypes.cast(ctypes.c_void_p(16), wintypes.LPCWSTR)
+        res_id = ctypes.cast(ctypes.c_void_p(1), wintypes.LPCWSTR)
+        buf = ctypes.create_string_buffer(data, len(data))
+
+        handle = k32.BeginUpdateResourceW(str(path), False)
+        if not handle:
+            return False
+        ok = bool(k32.UpdateResourceW(handle, rt_version, res_id, 0x0409,
+                                      ctypes.cast(buf, ctypes.c_void_p), len(data)))
+        k32.EndUpdateResourceW(handle, not ok)      # discard the edit if it failed
+        return ok
+    except Exception:
+        return False
+
+
 def ensure_triorforge_exe(project: Path) -> Optional[str]:
     """Create TrioForge.exe so Task Manager says 'TrioForge', not 'python'.
 
@@ -726,8 +830,11 @@ def ensure_triorforge_exe(project: Path) -> Optional[str]:
         return str(target) if target.is_file() else None
     try:
         scripts.mkdir(parents=True, exist_ok=True)
+        marker = scripts / ".TrioForge.description"
+        refreshed = False
         if _needs_refresh(src, target):
             _safe_copy(src, target)
+            refreshed = True          # a fresh copy has Python's resource again
         # The stub loads python3XY.dll / python3.dll and the VC runtime from its own
         # directory, so they must travel with it. Copy whatever the base ships.
         for pattern in ("python3*.dll", "vcruntime*.dll"):
@@ -735,6 +842,22 @@ def ensure_triorforge_exe(project: Path) -> Optional[str]:
                 dst = scripts / dll.name
                 if _needs_refresh(dll, dst):
                     _safe_copy(dll, dst)
+        # The copy carries Python's version resource, and Task Manager shows the
+        # resource's FileDescription rather than the file name - so without this the
+        # process still reads "Python". The marker saves re-patching on every launch.
+        want = "TrioForge"
+        have = ""
+        if not refreshed and marker.is_file():
+            try:
+                have = marker.read_text(encoding="utf-8").strip()
+            except Exception:
+                have = ""
+        if have != want:
+            if set_exe_description(target, want, want, _app_version_tuple(project)):
+                try:
+                    marker.write_text(want + "\n", encoding="utf-8")
+                except Exception:
+                    pass
         return str(target)
     except Exception:
         return str(target) if target.is_file() else None
