@@ -2321,37 +2321,74 @@ function processDropItems(items) {
     }
 }
 
-function addDroppedFile(file) {
-    var reader = new FileReader();
-    reader.onload = function(ev) {
-        var b64 = ev.target.result.split(',')[1] || '';
-        var isImage = file.type.startsWith('image/');
-        var isVideo = file.type.startsWith('video/');
-        pending.push({ type: isImage ? 'image' : (isVideo ? 'video' : 'file'), name: file.name, b64: b64, mime: file.type });
+// Files above this size cannot travel as base64 inside the chat JSON: the request
+// body is capped at 25 MB and base64 inflates by ~4/3, so a 563 MB meeting
+// recording would need a ~750 MB body. Big files are streamed to the server first
+// and the message references them by id instead.
+var UPLOAD_THRESHOLD = 8 * 1024 * 1024;
+
+function attachFile(file) {
+    var isImage = file.type.startsWith('image/');
+    var isVideo = file.type.startsWith('video/');
+    var kind = isImage ? 'image' : (isVideo ? 'video' : 'file');
+
+    function add(item, dataUrl) {
+        pending.push(item);
         var thumb = document.createElement('div');
         thumb.className = 'att-thumb';
-        if (isImage) {
+        if (isImage && dataUrl) {
             var img = document.createElement('img');
-            img.src = ev.target.result;
+            img.src = dataUrl;
             thumb.appendChild(img);
         } else if (isVideo) {
-            thumb.appendChild(document.createTextNode('🎬 ' + file.name));
+            thumb.appendChild(document.createTextNode('\uD83C\uDFAC ' + file.name));
         } else {
-            thumb.appendChild(document.createTextNode('📄 ' + file.name));
+            thumb.appendChild(document.createTextNode('\uD83D\uDCC4 ' + file.name));
         }
         var rm = document.createElement('button');
         rm.className = 'remove';
-        rm.textContent = '×';
+        rm.textContent = '\u00D7';
         rm.onclick = function() {
-            var idx = pending.findIndex(p => p.name === file.name && p.b64 === b64);
+            var idx = pending.indexOf(item);
             if (idx > -1) pending.splice(idx, 1);
             thumb.remove();
         };
         thumb.appendChild(rm);
         attachments.appendChild(thumb);
-        status.textContent = '📎 Added ' + file.name;
+    }
+
+    if (file.size > UPLOAD_THRESHOLD) {
+        var mb = (file.size / 1048576).toFixed(0);
+        status.textContent = '\u2B06\uFE0F Uploading ' + file.name + ' (' + mb + ' MB)\u2026';
+        fetch('/api/attach/upload?name=' + encodeURIComponent(file.name), {
+            method: 'POST',
+            headers: {'Content-Type': file.type || 'application/octet-stream'},
+            body: file
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (!d || !d.ok) {
+                status.textContent = '\u26A0\uFE0F Upload failed: ' + ((d && d.error) || 'unknown error');
+                return;
+            }
+            add({ type: kind, name: file.name, b64: '', mime: file.type, id: d.id }, null);
+            status.textContent = '\uD83D\uDCCE Added ' + file.name + ' (' + mb + ' MB, uploaded)';
+        }).catch(function(e) {
+            status.textContent = '\u26A0\uFE0F Upload failed: ' + e.message;
+        });
+        return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        var dataUrl = ev.target.result;
+        add({ type: kind, name: file.name, b64: (dataUrl.split(',')[1] || ''), mime: file.type }, dataUrl);
+        status.textContent = '\uD83D\uDCCE Added ' + file.name;
     };
+    reader.onerror = function() { status.textContent = '\u26A0\uFE0F Could not read ' + file.name; };
     reader.readAsDataURL(file);
+}
+
+function addDroppedFile(file) {
+    attachFile(file);
 }
 
 var themeOuter = document.getElementById('themeToggleOuter');
@@ -4273,35 +4310,7 @@ async function deleteMessage(msgDiv, idx) {
 fileInput.addEventListener('change', function() {
     var files = Array.from(fileInput.files);
     files.forEach(function(file) {
-        var reader = new FileReader();
-        reader.onload = function(ev) {
-            var b64 = ev.target.result.split(',')[1];
-            var isImage = file.type.startsWith('image/');
-            var isVideo = file.type.startsWith('video/');
-            pending.push({ type: isImage ? 'image' : (isVideo ? 'video' : 'file'), name: file.name, b64: b64, mime: file.type });
-            var thumb = document.createElement('div');
-            thumb.className = 'att-thumb';
-            if (isImage) {
-                var img = document.createElement('img');
-                img.src = ev.target.result;
-                thumb.appendChild(img);
-            } else if (isVideo) {
-                thumb.appendChild(document.createTextNode('🎬 ' + file.name));
-            } else {
-                thumb.appendChild(document.createTextNode('📄 ' + file.name));
-            }
-            var rm = document.createElement('button');
-            rm.className = 'remove';
-            rm.textContent = '×';
-            rm.onclick = function() {
-                var idx = pending.findIndex(p => p.name === file.name);
-                if (idx > -1) pending.splice(idx, 1);
-                thumb.remove();
-            };
-            thumb.appendChild(rm);
-            attachments.appendChild(thumb);
-        };
-        reader.readAsDataURL(file);
+        attachFile(file);
     });
     fileInput.value = '';
 });
@@ -4978,8 +4987,8 @@ function actuallySend(text) {
     var userEntry = {
         role: 'user',
         text: text,
-        images: images.map(i => ({ b64: i.b64, name: i.name, mime: i.mime })),
-        files: files.concat(videos).map(f => ({ name: f.name, mime: f.mime, b64: f.b64 })),
+        images: images.map(i => ({ b64: i.b64, name: i.name, mime: i.mime, id: i.id })),
+        files: files.concat(videos).map(f => ({ name: f.name, mime: f.mime, b64: f.b64, id: f.id })),
         ts: new Date().toLocaleTimeString()
     };
     var userDiv = renderMsg('user', userEntry, -1);
@@ -5041,9 +5050,9 @@ function actuallySend(text) {
         body: JSON.stringify({
             conversation_id: currentConv,
             message: text,
-            images: images.map(i => ({ b64: i.b64, name: i.name, mime: i.mime })),
-            files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime })),
-            videos: videos.map(v => ({ b64: v.b64, name: v.name, mime: v.mime })),
+            images: images.map(i => ({ b64: i.b64, name: i.name, mime: i.mime, id: i.id })),
+            files: files.map(f => ({ b64: f.b64, name: f.name, mime: f.mime, id: f.id })),
+            videos: videos.map(v => ({ b64: v.b64, name: v.name, mime: v.mime, id: v.id })),
             search: searchEnabled,
             rag: ragEnabled,
             provider: provider,
