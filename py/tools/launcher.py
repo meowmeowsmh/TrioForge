@@ -808,6 +808,160 @@ def set_exe_description(path: Path, description: str, product: str = "",
         return False
 
 
+def _read_ico(path: Path):
+    """Return [(dir_entry_bytes, image_size, image_bytes), ...] from an .ico file."""
+    import struct
+    try:
+        data = path.read_bytes()
+    except Exception:
+        return []
+    if len(data) < 6:
+        return []
+    reserved, itype, count = struct.unpack_from("<HHH", data, 0)
+    if reserved != 0 or itype != 1 or count <= 0:
+        return []
+    entries = []
+    for i in range(count):
+        off = 6 + i * 16
+        if off + 16 > len(data):
+            break
+        w, h, colors, res, planes, bits, size, img_off = struct.unpack_from(
+            "<BBBBHHII", data, off)
+        if img_off + size > len(data):
+            continue
+        entries.append((struct.pack("<BBBBHH", w, h, colors, res, planes, bits),
+                        size, data[img_off:img_off + size]))
+    return entries
+
+
+def _build_group_icon(entries) -> bytes:
+    """GRPICONDIR: the .ico directory with each image offset replaced by its id."""
+    import struct
+    out = struct.pack("<HHH", 0, 1, len(entries))
+    for i, (prefix, size, _img) in enumerate(entries, start=1):
+        out += prefix + struct.pack("<IH", size, i)
+    return out
+
+
+def _exe_resource_langs(path: Path, rtype: int):
+    """The (id, language) pairs of one resource type inside an .exe.
+
+    Needed before deleting icon resources: a delete of an id that does not exist
+    fails and POISONS the BeginUpdateResource session, after which every call
+    returns ERROR_INTERNAL_ERROR and the whole edit is silently lost.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    LOAD_LIBRARY_AS_DATAFILE = 0x00000002
+    # lpType/lpName may be integer atoms, so they must never be declared as strings.
+    ENUMNAMEPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMODULE, ctypes.c_void_p,
+                                      ctypes.c_void_p, wintypes.LPARAM)
+    ENUMLANGPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMODULE, ctypes.c_void_p,
+                                      ctypes.c_void_p, wintypes.WORD, wintypes.LPARAM)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.LoadLibraryExW.argtypes = [wintypes.LPCWSTR, wintypes.HANDLE, wintypes.DWORD]
+    k32.LoadLibraryExW.restype = wintypes.HMODULE
+    k32.FreeLibrary.argtypes = [wintypes.HMODULE]
+    k32.EnumResourceNamesW.argtypes = [wintypes.HMODULE, ctypes.c_void_p, ENUMNAMEPROC,
+                                       wintypes.LPARAM]
+    k32.EnumResourceNamesW.restype = wintypes.BOOL
+    k32.EnumResourceLanguagesW.argtypes = [wintypes.HMODULE, ctypes.c_void_p,
+                                           ctypes.c_void_p, ENUMLANGPROC, wintypes.LPARAM]
+    k32.EnumResourceLanguagesW.restype = wintypes.BOOL
+
+    pairs = []
+    mod = k32.LoadLibraryExW(str(path), None, LOAD_LIBRARY_AS_DATAFILE)
+    if not mod:
+        return pairs
+    try:
+        ids = []
+
+        def on_name(h, t, name, lp):
+            if name:
+                ids.append(int(name))
+            return True
+
+        k32.EnumResourceNamesW(mod, ctypes.c_void_p(rtype), ENUMNAMEPROC(on_name), 0)
+        for res_id in ids:
+            def on_lang(h, t, n, lang, lp):
+                pairs.append((res_id, lang))
+                return True
+
+            k32.EnumResourceLanguagesW(mod, ctypes.c_void_p(rtype),
+                                       ctypes.c_void_p(res_id), ENUMLANGPROC(on_lang), 0)
+    finally:
+        k32.FreeLibrary(mod)
+    return pairs
+
+
+def set_exe_icon(path: Path, ico_path: Path, default_lang: int = 0x0409) -> bool:
+    """Replace an .exe's icon with TrioForge's own.
+
+    The icon is not part of the version resource: it lives in RT_GROUP_ICON +
+    RT_ICON, so renaming the exe and fixing the description still leaves Python's
+    logo everywhere Windows draws it. The old entries are deleted first - if they
+    stayed, Windows would prefer the original language entry and keep showing the
+    Python icon - and only entries that actually exist are deleted, because
+    deleting a missing one breaks the whole update session.
+    """
+    if os.name != "nt":
+        return False
+    entries = _read_ico(ico_path)
+    if not entries:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        RT_ICON, RT_GROUP_ICON = 3, 14
+        old_icons = _exe_resource_langs(path, RT_ICON)
+        old_groups = _exe_resource_langs(path, RT_GROUP_ICON)
+        # Write in the language the exe already uses, so Windows has no reason to
+        # prefer another entry.
+        lang = old_groups[0][1] if old_groups else default_lang
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.BeginUpdateResourceW.argtypes = [wintypes.LPCWSTR, wintypes.BOOL]
+        k32.BeginUpdateResourceW.restype = wintypes.HANDLE
+        k32.UpdateResourceW.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
+                                        wintypes.WORD, ctypes.c_void_p, wintypes.DWORD]
+        k32.UpdateResourceW.restype = wintypes.BOOL
+        k32.EndUpdateResourceW.argtypes = [wintypes.HANDLE, wintypes.BOOL]
+        k32.EndUpdateResourceW.restype = wintypes.BOOL
+
+        handle = k32.BeginUpdateResourceW(str(path), False)
+        if not handle:
+            return False
+
+        rt_icon = ctypes.c_void_p(RT_ICON)
+        rt_group = ctypes.c_void_p(RT_GROUP_ICON)
+        # A NULL data pointer deletes an entry - only for ids/languages that exist.
+        for res_id, res_lang in old_icons:
+            k32.UpdateResourceW(handle, rt_icon, ctypes.c_void_p(res_id), res_lang, None, 0)
+        for res_id, res_lang in old_groups:
+            k32.UpdateResourceW(handle, rt_group, ctypes.c_void_p(res_id), res_lang, None, 0)
+
+        keep = []                       # the buffers must outlive UpdateResource
+        ok = True
+        group = _build_group_icon(entries)
+        gbuf = ctypes.create_string_buffer(group, len(group))
+        keep.append(gbuf)
+        if not k32.UpdateResourceW(handle, rt_group, ctypes.c_void_p(1), lang,
+                                   ctypes.cast(gbuf, ctypes.c_void_p), len(group)):
+            ok = False
+        for i, (_prefix, size, img) in enumerate(entries, start=1):
+            buf = ctypes.create_string_buffer(img, len(img))
+            keep.append(buf)
+            if not k32.UpdateResourceW(handle, rt_icon, ctypes.c_void_p(i), lang,
+                                       ctypes.cast(buf, ctypes.c_void_p), size):
+                ok = False
+        k32.EndUpdateResourceW(handle, not ok)
+        return ok
+    except Exception:
+        return False
+
+
 def ensure_triorforge_exe(project: Path) -> Optional[str]:
     """Create TrioForge.exe so Task Manager says 'TrioForge', not 'python'.
 
@@ -830,11 +984,11 @@ def ensure_triorforge_exe(project: Path) -> Optional[str]:
         return str(target) if target.is_file() else None
     try:
         scripts.mkdir(parents=True, exist_ok=True)
-        marker = scripts / ".TrioForge.description"
+        marker = scripts / ".TrioForge.patch"
         refreshed = False
         if _needs_refresh(src, target):
             _safe_copy(src, target)
-            refreshed = True          # a fresh copy has Python's resource again
+            refreshed = True          # a fresh copy has Python's resources again
         # The stub loads python3XY.dll / python3.dll and the VC runtime from its own
         # directory, so they must travel with it. Copy whatever the base ships.
         for pattern in ("python3*.dll", "vcruntime*.dll"):
@@ -842,22 +996,33 @@ def ensure_triorforge_exe(project: Path) -> Optional[str]:
                 dst = scripts / dll.name
                 if _needs_refresh(dll, dst):
                     _safe_copy(dll, dst)
-        # The copy carries Python's version resource, and Task Manager shows the
-        # resource's FileDescription rather than the file name - so without this the
-        # process still reads "Python". The marker saves re-patching on every launch.
-        want = "TrioForge"
+        # The copy carries Python's name, description AND icon. Windows takes the
+        # display name from the version resource's FileDescription and the logo from
+        # RT_GROUP_ICON - neither follows the file name - so both are rewritten here.
+        # Bump PATCH_REV whenever this patch changes, so existing installs re-apply it.
+        PATCH_REV = "2"
         have = ""
         if not refreshed and marker.is_file():
             try:
                 have = marker.read_text(encoding="utf-8").strip()
             except Exception:
                 have = ""
-        if have != want:
-            if set_exe_description(target, want, want, _app_version_tuple(project)):
+        if have != PATCH_REV:
+            want = "TrioForge"
+            described = set_exe_description(target, want, want, _app_version_tuple(project))
+            ico = project / "static" / "logo" / "triorforge.ico"
+            iconed = set_exe_icon(target, ico) if ico.is_file() else True
+            if described and iconed:
                 try:
-                    marker.write_text(want + "\n", encoding="utf-8")
+                    marker.write_text(PATCH_REV + "\n", encoding="utf-8")
                 except Exception:
                     pass
+            else:
+                # Never silent about this again: an unpatched exe still shows as
+                # "Python" with Python's logo, and the marker is withheld so the
+                # next start retries instead of assuming it is done.
+                print("[window] could not finish branding TrioForge.exe "
+                      "(name: {}, icon: {}) - will retry next start.".format(described, iconed))
         return str(target)
     except Exception:
         return str(target) if target.is_file() else None
