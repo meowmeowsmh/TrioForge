@@ -13,10 +13,10 @@ rem ---------------------------------------------------------------------------
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
-rem Prefer TrioForge.exe (built by the launcher) so the process is named TrioForge
-rem in Task Manager instead of "Python"; fall back to pythonw.
-set "PY=%ROOT%\.venv\Scripts\TrioForge.exe"
-if not exist "%PY%" set "PY=%ROOT%\.venv\Scripts\pythonw.exe"
+rem The venv pythonw, NOT TrioForge.exe: the launcher is what builds and repairs
+rem that exe, and Windows will not replace a running executable. The app it starts
+rem (the server) is TrioForge either way.
+set "PY=%ROOT%\.venv\Scripts\pythonw.exe"
 if not exist "%PY%" (
     where pyw >nul 2>&1 && (set "PY=pyw -3") || (set "PY=pythonw")
 )
