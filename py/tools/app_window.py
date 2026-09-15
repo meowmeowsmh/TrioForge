@@ -525,11 +525,25 @@ def _spawn_server(port: int):
     flags = 0
     if os.name == "nt":
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    # Keep the server's own output instead of discarding it. A windowless launch has
+    # no console, so DEVNULL meant every traceback and warning vanished - which is
+    # exactly why a real failure could only be guessed at from the UI.
+    out = subprocess.DEVNULL
+    try:
+        import time as _time
+        log_path = project_root() / "logs" / "server-console.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        out = open(str(log_path), "a", encoding="utf-8", errors="replace")
+        out.write("\n===== server started {} =====\n".format(
+            _time.strftime("%Y-%m-%d %H:%M:%S")))
+        out.flush()
+    except Exception:
+        out = subprocess.DEVNULL
     try:
         child = subprocess.Popen(
             [sys.executable, str(script)],
             cwd=str(project_root()), env=env, creationflags=flags,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+            stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         print("[window] server started as a child process (pid {})".format(child.pid))
         return child
     except Exception as exc:

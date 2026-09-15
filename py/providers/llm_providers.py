@@ -947,20 +947,28 @@ class LlamaCppProvider(LLMProvider):
         last_text = messages[-1].get("content", "") if messages else ""
 
         results = []  # (name, transcript) in order
+        notes = []    # why each source produced nothing - reported if all fail
         for af in audio_files or []:
             name = af.get("name", "audio")
             mime = (af.get("mime") or "").lower()
-            if mime.startswith("video/"):
+            is_video = mime.startswith("video/")
+            if is_video:
                 chunks = video_to_text.extract_audio_chunks(af.get("b64", ""), name)
             else:
                 chunks = video_to_text.audio_to_wav_chunks(af.get("b64", ""), name)
             if not chunks:
                 # Fall back to a single whole-clip conversion (short clip, or
                 # segmenting unsupported) so one-off uploads still work.
-                if mime.startswith("video/"):
-                    continue  # a video with no audio track → skip, not an error
+                if is_video:
+                    notes.append("{}: {}".format(
+                        name, video_to_text.last_error() or "no audio track to transcribe"))
+                    continue
                 wav_b64 = video_to_text.audio_to_wav_b64(af.get("b64", ""), name)
                 chunks = [wav_b64] if wav_b64 else []
+            if not chunks:
+                notes.append("{}: {}".format(
+                    name, video_to_text.last_error() or "could not be converted to WAV"))
+                continue
 
             segs = []
             for i, ch in enumerate(chunks, 1):
@@ -973,9 +981,18 @@ class LlamaCppProvider(LLMProvider):
             transcript = "\n".join(s for s in segs if s)
             if transcript:
                 results.append((name, transcript))
+            else:
+                notes.append("{}: converted to {} segment(s) and the model accepted them, "
+                             "but returned no text (silent clip, or a model without "
+                             "audio input?)".format(name, len(chunks)))
 
         if not results:
-            raise ProviderError("Audio could not be converted to WAV (is ffmpeg installed?)")
+            # Say what ACTUALLY went wrong. The old message always blamed ffmpeg,
+            # which was wrong whenever ffmpeg was present (it usually is) and the
+            # real cause was the file, the codec, a missing audio track, or a model
+            # that answered with nothing.
+            detail = "; ".join(notes) if notes else "no audio or video was attached"
+            raise ProviderError("Audio transcription produced nothing - {}".format(detail))
 
         if len(results) == 1:
             return results[0][1]

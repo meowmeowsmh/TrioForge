@@ -310,6 +310,7 @@ Configuration is done through environment variables — all optional, the app wo
 | `TRIOFORGE_CTX_SIZE` | Context window for a llama.cpp model, in tokens. The main lever on KV-cache memory | `16384` |
 | `TRIOFORGE_IDLE_UNLOAD` | Seconds without a request before a llama.cpp model is unloaded and its memory returned; `0` keeps it resident | `300` |
 | `TRIOFORGE_SKIP_RAM_CHECK` | `1` loads a model even when it will not fit in free RAM (it will swap) | *(unset)* |
+| `TRIOFORGE_FFMPEG` | Explicit path to the `ffmpeg` used for audio/video conversion. Otherwise TrioForge uses the build it installed itself (`tools/ffmpeg`, via **Install ffmpeg**) and only then whatever is on `PATH` — an old ffmpeg silently fails on modern formats | *(auto-detected)* |
 | `LLAMA_SERVER` | Explicit path to the `llama-server` executable (skips auto-detection) | *(auto-detected)* |
 | `LLAMA_HOST` | llama-server host. Set it (e.g. `host.docker.internal`) to enable **remote mode** — connect instead of launching a local server | `127.0.0.1` |
 | `LLAMA_PORT` | llama-server port | `8080` |

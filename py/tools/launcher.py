@@ -642,9 +642,21 @@ def prepare_and_run(project: Path, args) -> int:
         child_env = dict(os.environ)
         if getattr(args, "no_browser", False) or getattr(args, "window", False):
             child_env["TRIOFORGE_NO_BROWSER"] = "1"
+        # Keep the server's own output instead of discarding it: a detached launch
+        # has no console, so DEVNULL meant real tracebacks and warnings were lost.
+        out = subprocess.DEVNULL
+        try:
+            log_path = project / "logs" / "server-console.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            out = open(str(log_path), "a", encoding="utf-8", errors="replace")
+            out.write("\n===== server started {} =====\n".format(
+                time.strftime("%Y-%m-%d %H:%M:%S")))
+            out.flush()
+        except Exception:
+            out = subprocess.DEVNULL
         subprocess.Popen([str(c) for c in cmd], cwd=str(project), creationflags=flags,
                          env=child_env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdout=out, stderr=subprocess.STDOUT,
                          stdin=subprocess.DEVNULL)
         print("[detach] server starting in the background on port {}{}.".format(
             os.environ.get("TRIOFORGE_PORT", "5003"),
