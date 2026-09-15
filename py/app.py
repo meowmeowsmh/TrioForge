@@ -1588,6 +1588,43 @@ def voice_start():
 def voice_stop():
     return jsonify(voice_service.stop())
 
+
+@app.route('/api/shutdown', methods=['POST'])
+def shutdown_all():
+    """Stop every TrioForge service and exit the server.
+
+    The desktop window calls this when it is closed, so closing the app also frees
+    everything it started - the llama.cpp server, the voice agent, and Ollama's
+    loaded model - instead of leaving a Python process and gigabytes of model
+    resident after the window is gone. Local-only on purpose: in host mode a remote
+    visitor must not be able to kill the server.
+    """
+    if request.remote_addr not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"error": "shutdown is local-only"}), 403
+
+    def _teardown():
+        time.sleep(0.5)                     # let the HTTP reply flush first
+        try:
+            llamacpp_service.stop()
+        except Exception:
+            pass
+        try:
+            voice_service.stop()
+        except Exception:
+            pass
+        try:
+            requests.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={"model": current_model, "prompt": "", "keep_alive": 0},
+                timeout=3)
+        except Exception:
+            pass
+        os._exit(0)
+
+    threading.Thread(target=_teardown, daemon=True).start()
+    return jsonify({"ok": True, "shutting_down": True})
+
+
 @app.route('/deepseek/model_info', methods=['GET'])
 def deepseek_model_info():
     model = request.args.get('model')
