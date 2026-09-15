@@ -660,15 +660,99 @@ def prepare_and_run(project: Path, args) -> int:
     )
 
 
+def _base_python_dir(project: Path) -> Optional[Path]:
+    """The directory of the real CPython that backs the venv (pythonw.exe lives here).
+
+    pyvenv.cfg's ``home`` line is the authoritative answer for both uv and stdlib
+    venvs. The base interpreter's own directory is the fallback.
+    """
+    cfg = project / ".venv" / "pyvenv.cfg"
+    home = None
+    try:
+        if cfg.is_file():
+            for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("home"):
+                    home = line.split("=", 1)[1].strip()
+                    break
+    except Exception:
+        home = None
+    for d in (home, None):
+        if d:
+            p = Path(d)
+            if (p / "pythonw.exe").is_file():
+                return p
+    base = getattr(sys, "_base_executable", "") or sys.executable
+    d = Path(base).parent
+    return d if (d / "pythonw.exe").is_file() else None
+
+
+def _safe_copy(src: Path, dst: Path) -> None:
+    """Copy a file atomically (temp name + replace), so a racing first launch
+    cannot leave a half-written executable or DLL behind."""
+    tmp = dst.with_name(dst.name + ".tmp.{}".format(os.getpid()))
+    shutil.copy2(str(src), str(tmp))
+    os.replace(str(tmp), str(dst))
+
+
+def _needs_refresh(src: Path, dst: Path) -> bool:
+    """True when dst is missing or older than src (e.g. after a Python upgrade)."""
+    if not dst.is_file():
+        return True
+    try:
+        return src.stat().st_mtime_ns > dst.stat().st_mtime_ns
+    except Exception:
+        return True
+
+
+def ensure_triorforge_exe(project: Path) -> Optional[str]:
+    """Create TrioForge.exe so Task Manager says 'TrioForge', not 'python'.
+
+    Windows shows the executable's file name as the process name, and every
+    TrioForge process was pythonw.exe - indistinguishable from any other Python
+    program. A renamed copy of the real interpreter stub (plus its DLLs so it can
+    load) still resolves the venv through ..\\pyvenv.cfg exactly like the shim, but
+    its image name is TrioForge.exe. Returns the path, or None on any failure (the
+    caller then falls back to the venv pythonw).
+    """
+    if os.name != "nt":
+        return None
+    scripts = project / ".venv" / "Scripts"
+    target = scripts / "TrioForge.exe"
+    base = _base_python_dir(project)
+    if base is None:
+        return str(target) if target.is_file() else None
+    src = base / "pythonw.exe"
+    if not src.is_file():
+        return str(target) if target.is_file() else None
+    try:
+        scripts.mkdir(parents=True, exist_ok=True)
+        if _needs_refresh(src, target):
+            _safe_copy(src, target)
+        # The stub loads python3XY.dll / python3.dll and the VC runtime from its own
+        # directory, so they must travel with it. Copy whatever the base ships.
+        for pattern in ("python3*.dll", "vcruntime*.dll"):
+            for dll in base.glob(pattern):
+                dst = scripts / dll.name
+                if _needs_refresh(dll, dst):
+                    _safe_copy(dll, dst)
+        return str(target)
+    except Exception:
+        return str(target) if target.is_file() else None
+
+
 def venv_pythonw(project: Path) -> str:
-    """The project venv's WINDOWED interpreter.
+    """The project venv's WINDOWED interpreter (renamed to TrioForge on Windows).
 
     The venv pythonw shim execs the real pythonw (a GUI process - no console) AND
     keeps the venv's site-packages. The base interpreter via sys._base_executable
     has no console but ALSO no venv packages, so app.py would die on `import
-    flask`. This is the one that has both.
+    flask`. On Windows we prefer TrioForge.exe - the same interpreter, but its
+    process shows up in Task Manager as TrioForge instead of python.
     """
     if os.name == "nt":
+        trioforge = ensure_triorforge_exe(project)
+        if trioforge:
+            return trioforge
         p = project / ".venv" / "Scripts" / "pythonw.exe"
         if p.is_file():
             return str(p)
