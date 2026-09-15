@@ -156,7 +156,31 @@ def _decode_video(b64):
         return None
 
 
-def extract_frames(video_b64, max_frames=MAX_FRAMES):
+def _input_source(b64, name, path):
+    """Return (in_path, tmpdir, error). Uses `path` directly when it is given.
+
+    Large attachments are uploaded to disk and referenced by path: a 563 MB meeting
+    recording is ~750 MB as base64, and a request body is capped at 25 MB, so
+    base64-in-JSON could never carry it (and the string would be pointless work).
+    """
+    if path and os.path.isfile(path):
+        return path, None, ""
+    data = _decode_video(b64)
+    if not data:
+        return None, None, "empty or invalid base64"
+    ext = os.path.splitext(name or "")[1].lower() or ".bin"
+    tmpdir = tempfile.mkdtemp(prefix="trioforge_input_")
+    in_path = os.path.join(tmpdir, "input" + ext)
+    try:
+        with open(in_path, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return None, None, "could not be written to disk ({})".format(e)
+    return in_path, tmpdir, ""
+
+
+def extract_frames(video_b64, max_frames=MAX_FRAMES, path=None):
     """Return a list of frame dicts ({b64,name,mime}) sampled from a video.
 
     Returns [] if ffmpeg is unavailable, the video can't be decoded, or no frames
@@ -166,16 +190,13 @@ def extract_frames(video_b64, max_frames=MAX_FRAMES):
     if not ffmpeg:
         logger.warning("ffmpeg not found; video-to-text unavailable.")
         return []
-    data = _decode_video(video_b64)
-    if not data:
+    in_path, tmpdir, _err = _input_source(video_b64, "video.mp4", path)
+    if not in_path:
         return []
-
-    tmpdir = tempfile.mkdtemp(prefix="trioforge_video_")
-    in_path = os.path.join(tmpdir, "input.mp4")
+    out_dir = tmpdir or tempfile.mkdtemp(prefix="trioforge_frames_")
+    if tmpdir is None:
+        tmpdir = out_dir
     try:
-        with open(in_path, "wb") as f:
-            f.write(data)
-
         # Probe duration so we can sample evenly across the whole clip.
         dur = _probe_duration(ffmpeg, in_path)
         n = max(1, min(max_frames, dur if dur and dur >= 1 else 1))
@@ -220,17 +241,13 @@ def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS):
     if not ffmpeg:
         return _fail("No ffmpeg found - install it from the Services panel "
                      "(or set TRIOFORGE_FFMPEG) so audio can be converted.")
-    data = _decode_video(audio_b64)
-    if not data:
-        return _fail("The attached audio could not be decoded (empty or invalid base64).")
+    in_path, tmpdir, err = _input_source(audio_b64, name, path)
+    if not in_path:
+        return _fail("The attached audio could not be decoded ({}).", err)
 
-    ext = os.path.splitext(name or "")[1].lower() or ".bin"
-    tmpdir = tempfile.mkdtemp(prefix="trioforge_audio_")
-    in_path = os.path.join(tmpdir, "input" + ext)
-    out_path = os.path.join(tmpdir, "out.wav")
+    work = tempfile.mkdtemp(prefix="trioforge_audio_")
+    out_path = os.path.join(work, "out.wav")
     try:
-        with open(in_path, "wb") as f:
-            f.write(data)
         cmd = [
             ffmpeg, "-y", "-i", in_path,
             "-ar", "16000", "-ac", "1", "-t", str(max_seconds),
@@ -246,10 +263,9 @@ def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS):
     except Exception as e:
         return _fail("Audio conversion crashed: {}: {}", type(e).__name__, e)
     finally:
-        try:
+        shutil.rmtree(work, ignore_errors=True)
+        if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
-        except Exception:
-            pass
 
 
 def _chunk_wav_file(ffmpeg, wav_path, chunk_seconds=AUDIO_MAX_SECONDS):
@@ -288,7 +304,7 @@ def _chunk_wav_file(ffmpeg, wav_path, chunk_seconds=AUDIO_MAX_SECONDS):
         return []
 
 
-def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS):
+def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS, path=None):
     """Convert audio to 16 kHz mono WAV and split it into <= chunk_seconds parts.
 
     Gemma-4 audio input is capped at 30 s per clip, so long audio (a full song) is
@@ -300,23 +316,19 @@ def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS
         _fail("No ffmpeg found - install it from the Services panel "
               "(or set TRIOFORGE_FFMPEG) so audio can be converted.")
         return []
-    data = _decode_video(audio_b64)
-    if not data:
-        _fail("The attached audio could not be decoded (empty or invalid base64).")
+    in_path, tmpdir, err = _input_source(audio_b64, name, path)
+    if not in_path:
+        _fail("The attached audio could not be decoded ({}).", err)
         return []
 
-    ext = os.path.splitext(name or "")[1].lower() or ".bin"
-    tmpdir = tempfile.mkdtemp(prefix="trioforge_audio_")
-    in_path = os.path.join(tmpdir, "input" + ext)
-    wav_path = os.path.join(tmpdir, "audio.wav")
+    work = tempfile.mkdtemp(prefix="trioforge_audio_")
+    wav_path = os.path.join(work, "audio.wav")
     try:
-        with open(in_path, "wb") as f:
-            f.write(data)
         cmd = [
             ffmpeg, "-y", "-i", in_path,
             "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path,
         ]
-        r = subprocess.run(cmd, capture_output=True, timeout=300)
+        r = subprocess.run(cmd, capture_output=True, timeout=1800)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
             tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
             _fail("ffmpeg could not read '{}' ({}). ffmpeg said: {}",
@@ -327,13 +339,12 @@ def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS
         _fail("Audio conversion crashed: {}: {}", type(e).__name__, e)
         return []
     finally:
-        try:
+        shutil.rmtree(work, ignore_errors=True)
+        if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
-        except Exception:
-            pass
 
 
-def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECONDS):
+def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECONDS, path=None):
     """Extract the AUDIO track from a video (mp4/mov/webm) and split it into
     <= chunk_seconds 16 kHz mono WAV segments for speech-to-text.
 
@@ -347,23 +358,19 @@ def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECOND
         _fail("No ffmpeg found - install it from the Services panel "
               "(or set TRIOFORGE_FFMPEG) so a video's audio can be read.")
         return []
-    data = _decode_video(video_b64)
-    if not data:
-        _fail("The attached video could not be decoded (empty or invalid base64).")
+    in_path, tmpdir, err = _input_source(video_b64, name, path)
+    if not in_path:
+        _fail("The attached video could not be decoded ({}).", err)
         return []
 
-    ext = os.path.splitext(name or "")[1].lower() or ".mp4"
-    tmpdir = tempfile.mkdtemp(prefix="trioforge_vaudio_")
-    in_path = os.path.join(tmpdir, "input" + ext)
-    wav_path = os.path.join(tmpdir, "audio.wav")
+    work = tempfile.mkdtemp(prefix="trioforge_vaudio_")
+    wav_path = os.path.join(work, "audio.wav")
     try:
-        with open(in_path, "wb") as f:
-            f.write(data)
         cmd = [
             ffmpeg, "-y", "-i", in_path, "-vn",
             "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path,
         ]
-        r = subprocess.run(cmd, capture_output=True, timeout=300)
+        r = subprocess.run(cmd, capture_output=True, timeout=1800)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
             tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
             low = tail.lower()
@@ -378,10 +385,9 @@ def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECOND
         _fail("Video audio extraction crashed: {}: {}", type(e).__name__, e)
         return []
     finally:
-        try:
+        shutil.rmtree(work, ignore_errors=True)
+        if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
-        except Exception:
-            pass
 
 
 def _probe_duration(ffmpeg, path):

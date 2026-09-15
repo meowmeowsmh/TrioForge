@@ -150,6 +150,24 @@ except Exception:
 
 app = Flask(__name__, static_folder=root_path("static"))
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25 MB request body cap (uploads + chat JSON)
+
+
+@app.before_request
+def _allow_streamed_attachment_upload():
+    """Lift the 25 MB body cap for the streaming upload route only.
+
+    That route writes the body straight to disk in 1 MB chunks, so it needs no cap;
+    everything else keeps it, because a JSON body is held in memory.
+    """
+    if request.path == '/api/attach/upload':
+        try:
+            # NOTE: setting this to None does NOT remove the limit - Flask then falls
+            # back to the MAX_CONTENT_LENGTH config, i.e. the 25 MB cap being lifted.
+            # A real ceiling has to be set instead.
+            request.max_content_length = 16 * 1024 * 1024 * 1024
+        except Exception:
+            pass
+
 Compress(app)
 app.register_blueprint(notes_bp)
 app.register_blueprint(corkboard_bp)
@@ -615,6 +633,41 @@ _conversations_dirty = True
 
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB per attachment (defense in depth)
 
+# Uploaded large attachments (see /api/attach/upload) live in the same store the
+# app already uses for message attachments, so a message just records the file name.
+UPLOADS_DIR = ATTACHMENTS_DIR
+# Above this size an attachment is NOT re-read into base64 for the UI: a 563 MB
+# meeting recording would become a ~750 MB string in the browser for no reason.
+MAX_INLINE_RELOAD_BYTES = 24 * 1024 * 1024
+
+
+def _attachment_path(entry):
+    """Local path of an attachment uploaded by id, or None for inline base64.
+
+    The chat JSON carries small attachments as base64, but its body is capped at
+    25 MB - a meeting recording cannot fit through it. Those are uploaded first and
+    referenced by the stored file name, which is what this resolves.
+    """
+    name = os.path.basename(str((entry or {}).get("id") or ""))
+    if not name or name != str((entry or {}).get("id") or ""):
+        return None                      # rejects paths/traversal outright
+    if not name.lower().endswith((".mp4", ".mov", ".webm", ".mkv", ".m4a", ".mp3",
+                                  ".wav", ".ogg", ".opus", ".aac", ".flac", ".avi")):
+        return None
+    path = os.path.join(UPLOADS_DIR, name)
+    return path if os.path.isfile(path) else None
+
+
+def _with_source_path(entry):
+    """A copy of an attachment entry carrying `path` when it was uploaded by id."""
+    path = _attachment_path(entry)
+    if not path:
+        return entry
+    merged = dict(entry or {})
+    merged["path"] = path
+    return merged
+
+
 def _write_attachment(path, b64_data):
     try:
         raw = base64.b64decode(b64_data)
@@ -648,6 +701,12 @@ def _load_attachment_from_disk(fname):
         return ""
     path = os.path.join(ATTACHMENTS_DIR, fname)
     try:
+        if os.path.getsize(path) > MAX_INLINE_RELOAD_BYTES:
+            # Too big to inline back into the page (it would be a huge base64 string
+            # in the browser). The file is still on disk and the name is still shown.
+            logger.info("Not inlining %s (%d bytes) - keeping it as a file reference",
+                        fname, os.path.getsize(path))
+            return ""
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
     except Exception as e:
@@ -1577,6 +1636,49 @@ def llamacpp_install_status():
     import llama_installer
     installed = llama_installer.find_installed()
     return jsonify({"installed": bool(installed), "path": installed or ""})
+
+
+@app.route('/api/attach/upload', methods=['POST'])
+def attach_upload():
+    """Stream a large attachment to disk and return the stored file name.
+
+    The chat endpoint carries attachments as base64 inside its JSON and its body is
+    capped at 25 MB, so a 563 MB meeting recording (~750 MB as base64) can never get
+    through - Flask answered 413 and the audio path saw an empty payload. Big media
+    is uploaded here instead: streamed straight to disk (no base64 inflation), and
+    the chat message then references it by name.
+    """
+    hint = os.path.basename(request.args.get('name') or 'attachment')
+    ext = os.path.splitext(hint)[1][:12]
+    fname = "{}{}".format(uuid.uuid4().hex, ext)
+    dest = os.path.join(UPLOADS_DIR, fname)
+    total = 0
+    try:
+        os.makedirs(UPLOADS_DIR, exist_ok=True)
+        with open(dest, 'wb') as fh:
+            stream = request.stream
+            while True:
+                chunk = stream.read(1 << 20)      # 1 MB at a time
+                if not chunk:
+                    break
+                fh.write(chunk)
+                total += len(chunk)
+    except Exception as e:
+        try:
+            os.remove(dest)
+        except Exception:
+            pass
+        logger.warning("Attachment upload failed: %s", e)
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    if total == 0:
+        try:
+            os.remove(dest)
+        except Exception:
+            pass
+        return jsonify({'ok': False, 'error': 'the upload was empty'}), 400
+    logger.info("Attachment uploaded: %s (%d bytes) as %s", hint, total, fname)
+    return jsonify({'ok': True, 'id': fname, 'name': hint, 'size': total,
+                    'mime': request.headers.get('Content-Type') or ''})
 
 
 @app.route('/api/ffmpeg/status', methods=['GET'])
@@ -3369,11 +3471,17 @@ def _user_attachments(images, files, videos):
     """
     stored_files = list(files or [])
     for v in videos or []:
-        stored_files.append({
+        entry = {
             "name": v.get("name", "video.mp4"),
             "b64": v.get("b64", ""),
             "mime": v.get("mime", "video/mp4"),
-        })
+        }
+        # An attachment uploaded by id already lives in the attachments store: record
+        # that file so the message still points at it, instead of duplicating a huge
+        # recording as base64 (which is exactly what the 25 MB body cap prevents).
+        if v.get("id"):
+            entry["file"] = os.path.basename(str(v["id"]))
+        stored_files.append(entry)
     return images or [], stored_files
 
 
@@ -4023,9 +4131,11 @@ def chat():
         # llama.cpp universal models (gemma-4 E2B/E4B/12B) declare audio input.
         transcription_sources = []
         if provider_name == 'llamacpp':
-            transcription_sources = list(audio_files)
+            # _with_source_path() resolves an attachment uploaded by id to a local
+            # file, so a big recording is read from disk instead of base64 JSON.
+            transcription_sources = [_with_source_path(a) for a in audio_files]
             if videos and _model_has_audio(provider_name, model):
-                transcription_sources.extend(videos)
+                transcription_sources.extend(_with_source_path(v) for v in videos)
         reply = None
         if transcription_sources:
             try:
@@ -4042,7 +4152,8 @@ def chat():
             frame_images = []
             if videos:
                 for v in videos:
-                    frame_images.extend(video_to_text.extract_frames(v.get("b64", "")))
+                    frame_images.extend(video_to_text.extract_frames(
+                        v.get("b64", ""), path=_attachment_path(v)))
             if frame_images:
                 vision_images = images + frame_images
             if cached_vision_check(provider_name, model):
@@ -4208,7 +4319,8 @@ def chat_stream():
         if videos:
             frame_images = []
             for v in videos:
-                frame_images.extend(video_to_text.extract_frames(v.get("b64", "")))
+                frame_images.extend(video_to_text.extract_frames(
+                        v.get("b64", ""), path=_attachment_path(v)))
             if frame_images:
                 vision_images = images + frame_images
                 videos = list(videos)  # keep original for storage (no longer frames-only)
@@ -4251,9 +4363,11 @@ def chat_stream():
         # of any attached video (video-to-text reads the soundtrack).
         transcription_sources = []
         if provider_name == "llamacpp":
-            transcription_sources = list(audio_files)
+            # _with_source_path() resolves an attachment uploaded by id to a local
+            # file, so a big recording is read from disk instead of base64 JSON.
+            transcription_sources = [_with_source_path(a) for a in audio_files]
             if videos and _model_has_audio(provider_name, model):
-                transcription_sources.extend(videos)
+                transcription_sources.extend(_with_source_path(v) for v in videos)
         use_tools = (not vision_images and not audio_files and not transcription_sources) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
             and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
 

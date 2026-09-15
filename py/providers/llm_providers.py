@@ -952,10 +952,13 @@ class LlamaCppProvider(LLMProvider):
             name = af.get("name", "audio")
             mime = (af.get("mime") or "").lower()
             is_video = mime.startswith("video/")
+            # `path` is set when the attachment was uploaded by id (big files cannot
+            # travel as base64 inside the 25 MB request body).
+            src_path = af.get("path") or None
             if is_video:
-                chunks = video_to_text.extract_audio_chunks(af.get("b64", ""), name)
+                chunks = video_to_text.extract_audio_chunks(af.get("b64", ""), name, path=src_path)
             else:
-                chunks = video_to_text.audio_to_wav_chunks(af.get("b64", ""), name)
+                chunks = video_to_text.audio_to_wav_chunks(af.get("b64", ""), name, path=src_path)
             if not chunks:
                 # Fall back to a single whole-clip conversion (short clip, or
                 # segmenting unsupported) so one-off uploads still work.
@@ -963,7 +966,7 @@ class LlamaCppProvider(LLMProvider):
                     notes.append("{}: {}".format(
                         name, video_to_text.last_error() or "no audio track to transcribe"))
                     continue
-                wav_b64 = video_to_text.audio_to_wav_b64(af.get("b64", ""), name)
+                wav_b64 = video_to_text.audio_to_wav_b64(af.get("b64", ""), name, path=src_path)
                 chunks = [wav_b64] if wav_b64 else []
             if not chunks:
                 notes.append("{}: {}".format(
