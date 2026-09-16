@@ -56,7 +56,7 @@ def _make_lnk(lnk: Path, target: Path, icon: Path, workdir: Path) -> Tuple[bool,
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}');"
         "$s.TargetPath = '{target}';"
         "$s.WorkingDirectory = '{workdir}';"
-        "$s.Description = 'TrioForge - your own window (the server runs hidden)';"
+        "$s.Description = 'TrioForge - opens in your browser (the server runs hidden)';"
         "{icon}"
         "$s.WindowStyle = 7;"
         "$s.Save()"
@@ -117,7 +117,13 @@ def install(project: Path, where: str = "both") -> List[str]:
     lines: List[str] = []
     icon = _icon(project)
     if os.name == "nt":
-        target = project / "start.vbs"
+        # The browser is the reliable daily driver: the WebView2 window is flaky on
+        # some GPUs (blank window / freeze), while a browser tab always renders and
+        # uses less memory. start-web.vbs is the shortcut target; start.vbs remains
+        # available for whoever wants the app in a window of its own.
+        target = project / "start-web.vbs"
+        if not target.is_file():
+            target = project / "start.vbs"
         if not target.is_file():
             target = project / "application.bat"
         for label, lnk in _windows_targets(project):
