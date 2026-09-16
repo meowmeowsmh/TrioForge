@@ -542,7 +542,13 @@ def import_from_obsidian(vault_path=None):
     }
 
 def export_to_obsidian(vault_path=None):
-    """Export all app notes to markdown files in the vault."""
+    """Export all app notes to markdown files in the vault.
+
+    A note is only ever written when the target does not already exist: the vault
+    path is a free-form field, so exporting was able to clobber an unrelated
+    `.md` file in any directory on the machine (found by a Strix scan). Existing
+    files are reported as skipped instead of being overwritten.
+    """
     if vault_path is None:
         vault_path = get_vault_path()
     if not vault_path or not os.path.isdir(vault_path):
@@ -550,12 +556,16 @@ def export_to_obsidian(vault_path=None):
 
     notes = load_notes()   # use cache
     exported = 0
+    skipped = []
     for note_id, note in notes.items():
         title = note.get("title", "Untitled")
         safe_title = "".join(c for c in title if c.isalnum() or c in " _-").strip()
         if not safe_title:
             safe_title = note_id
         file_path = Path(vault_path) / (safe_title + ".md")
+        if file_path.exists():
+            skipped.append(safe_title + ".md")
+            continue
         frontmatter_dict = {
             "title": title,
             "tags": note.get("tags", []),
@@ -573,7 +583,10 @@ def export_to_obsidian(vault_path=None):
             exported += 1
         except Exception as e:
             logger.warning("Failed to export %s: %s", file_path, e)
-    return {"exported": exported}
+    if skipped:
+        logger.info("Obsidian export skipped %d existing file(s): %s",
+                    len(skipped), ", ".join(skipped[:5]))
+    return {"exported": exported, "skipped": skipped}
 
 # ======================================================================
 # Flask Blueprint
@@ -853,6 +866,13 @@ def sync_obsidian():
     data = request.get_json()
     direction = data.get('direction')  # 'import' or 'export'
     vault_path = data.get('vault_path')
+    # The vault path is free-form, so record WHICH directory a sync was allowed to
+    # read or write - it is the one setting that reaches outside the workspace, and a
+    # silent sync against an unexpected path is exactly what a finding like
+    # vuln-0003 looked like. Exports no longer overwrite existing files (see
+    # export_to_obsidian).
+    if vault_path:
+        logger.info("Obsidian %s requested for vault path: %s", direction or "sync", vault_path)
     if direction == 'import':
         result = import_from_obsidian(vault_path)
     elif direction == 'export':
