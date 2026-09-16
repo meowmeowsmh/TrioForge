@@ -337,6 +337,36 @@ def _host_password_gate():
     return Response(_host_login_page(next_url=path), mimetype="text/html"), 200
 
 
+def _request_hostname():
+    """The host this request was really addressed to, or None if it is not parseable.
+
+    Parsed as an authority, never by splitting on the first colon: a lexical split
+    returns a bogus prefix for "user:pass@host:port" or a non-numeric port, so a
+    crafted Host could satisfy the allowlist. (A Strix scan found this; confirmed
+    here - Host: evil.com:127.0.0.1 was served with 200.)
+
+    Werkzeug hands back an EMPTY request.host for a malformed authority, and the first
+    version of this check treated that as "nothing to compare, allow it" - i.e. it
+    trusted precisely the input it could not understand. Anything unparseable, or
+    carrying userinfo or a non-numeric port, is now treated as hostile.
+    """
+    from urllib.parse import urlparse
+    raw = (request.host or "").strip()
+    if not raw or "@" in raw:
+        return None
+    try:
+        parsed = urlparse("//" + raw)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port                      # ValueError if the port is not numeric
+    except Exception:
+        return None
+    if not host:
+        return None
+    if port is not None and not 0 < port < 65536:
+        return None
+    return host
+
+
 @app.before_request
 def _validate_request_host():
     """Only answer to the host names this instance is legitimately reached by.
@@ -356,9 +386,10 @@ def _validate_request_host():
         return None
     if (os.environ.get("TRIOFORGE_HOST") or "").strip() not in ("", "127.0.0.1", "localhost", "::1"):
         return None                     # deliberately bound to the network
-    host = (request.host or "").split(":")[0].strip("[]").lower()
-    if not host:
-        return None
+    host = _request_hostname()
+    if host is None:
+        logger.warning("Refused a request with an unparseable Host header: %r", request.host)
+        return jsonify({"error": "unexpected Host header"}), 403
     allowed = {"localhost", "127.0.0.1", "::1"}
     allowed |= {h.strip().lower()
                 for h in (os.environ.get("TRIOFORGE_ALLOWED_HOSTS") or "").split(",")
@@ -380,21 +411,28 @@ def _refuse_cross_site_requests():
     drive the app: send messages to your local model, or use the workspace tools.
 
     Browsers always send Origin on such a request, so anything that is not this same
-    origin is refused. Requests with no Origin at all (curl, scripts, the app's own
-    fetch) are left alone, which keeps the API usable.
+    origin is refused. A request with no Origin at all is left alone so curl, scripts
+    and the app's own fetch keep working - but when the browser tells us where it came
+    from (Sec-Fetch-Site, sent by every modern browser) a cross-site value is refused
+    even without Origin.
     """
     if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
         return None
     origin = (request.headers.get("Origin") or "").strip()
+    request_host = _request_hostname() or ""
     if not origin:
+        site = (request.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if site and site not in ("same-origin", "none"):
+            logger.warning("Refused a cross-site %s to %s (Sec-Fetch-Site: %s)",
+                           request.method, request.path, site)
+            return jsonify({"error": "cross-site request refused"}), 403
         return None
     try:
         from urllib.parse import urlparse
         origin_host = (urlparse(origin).hostname or "").lower()
     except Exception:
         origin_host = ""
-    request_host = (request.host or "").split(":")[0].strip("[]").lower()
-    if origin_host and origin_host == request_host:
+    if origin_host and request_host and origin_host == request_host:
         return None
     logger.warning("Refused a cross-site %s to %s (origin %s)",
                    request.method, request.path, origin)
