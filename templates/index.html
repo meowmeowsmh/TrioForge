@@ -3824,8 +3824,13 @@ function generateAudioChat(text) {
             busy = false;
             if (d.error) { bodyEl.textContent = '❌ ' + formatAiError('comfyui', d.error); smoothScrollToBottom(); return; }
             if (d.conversation_id) currentConv = d.conversation_id;
-            bodyEl.innerHTML = '<audio controls style="max-width:100%; width:100%; border-radius:12px;">' +
-                '<source src="' + d.url + '" type="audio/mpeg">Your browser does not support audio.</audio>';
+            // No `type` attribute on purpose: ComfyUI decides the format (.flac, .wav,
+            // .mp3 …) and the file is saved exactly as it produced it. Declaring
+            // "audio/mpeg" made the browser decode a FLAC as MP3 - the song came out
+            // as garbled noise, or would not play at all. Left alone, the browser
+            // reads the real format from the file itself.
+            bodyEl.innerHTML = '<audio controls preload="metadata" style="max-width:100%; width:100%; border-radius:12px;">' +
+                '<source src="' + d.url + '">Your browser does not support audio.</audio>';
             var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
             smoothScrollToBottom();
             if (typeof loadConversations === 'function') loadConversations();
