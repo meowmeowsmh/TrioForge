@@ -114,6 +114,9 @@ def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 15.
 
         _th.Thread(target=hang_watchdog, args=(_handle, url), daemon=True).start()
         print("[window] watching for hangs (a frozen window is handed to your browser)")
+        _th.Thread(target=blank_page_watchdog, args=(_handle, url), daemon=True).start()
+        print("[window] watching for a blank window (a page that never paints is "
+              "handed to your browser)")
     except Exception as _exc:
         print("[window] hang watchdog not started:", _exc)
     ok = apply_window_icon(window, ico)
@@ -225,6 +228,130 @@ def hang_watchdog(get_handle, url: str, hung_seconds: int = 20, interval: float 
                 _hang_check_error_logged = True
                 print("[window] hang check failed: {}: {}".format(type(exc).__name__, exc))
             hung = 0.0
+
+
+def _window_fraction_blank(hwnd: int) -> float:
+    """Fraction of the window that is near-white or near-black (0.0..1.0).
+
+    A WebView2 window whose compositor failed still runs the page (its JS keeps
+    talking to the server) but shows a solid white or black window. Looking at the
+    actual pixels is the only reliable way to tell "rendered" from "broken" - the DOM
+    is fine either way. Returns 1.0 on any error (treat as blank).
+    """
+    import ctypes
+    from ctypes import wintypes
+    try:
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        r = wintypes.RECT()
+        if not user32.GetWindowRect(wintypes.HWND(int(hwnd)), ctypes.byref(r)):
+            return 1.0
+        w, h = r.right - r.left, r.bottom - r.top
+        if w < 200 or h < 200:
+            return 0.0                    # minimised / not measurable
+        hdc = user32.GetWindowDC(wintypes.HWND(int(hwnd)))
+        mdc = gdi32.CreateCompatibleDC(hdc)
+        bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
+        gdi32.SelectObject(mdc, bmp)
+        user32.PrintWindow(wintypes.HWND(int(hwnd)), mdc, 0x00000002)   # PW_RENDERFULLCONTENT
+
+        class BMIH(ctypes.Structure):
+            _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG),
+                        ("biHeight", wintypes.LONG), ("biPlanes", wintypes.WORD),
+                        ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                        ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG),
+                        ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD),
+                        ("biClrImportant", wintypes.DWORD)]
+
+        bi = BMIH()
+        bi.biSize = ctypes.sizeof(BMIH)
+        bi.biWidth, bi.biHeight, bi.biPlanes, bi.biBitCount, bi.biCompression = w, -h, 1, 32, 0
+        buf = ctypes.create_string_buffer(w * h * 4)
+        gdi32.GetDIBits(mdc, bmp, 0, h, buf, ctypes.byref(bi), 0)
+        raw = buf.raw
+
+        blank = total = 0
+        for i in range(0, len(raw), 4 * 53):          # sample, don't scan every pixel
+            b, g, r = raw[i], raw[i + 1], raw[i + 2]
+            total += 1
+            if (r > 240 and g > 240 and b > 240) or (r < 14 and g < 14 and b < 14):
+                blank += 1
+        gdi32.DeleteObject(bmp)
+        gdi32.DeleteDC(mdc)
+        user32.ReleaseDC(wintypes.HWND(int(hwnd)), hdc)
+        return blank / float(total) if total else 1.0
+    except Exception as exc:
+        print("[window] blank check failed: {}: {}".format(type(exc).__name__, exc))
+        return 1.0
+
+
+def _find_own_window_hwnd() -> int:
+    """The handle of this process's own visible window (0 when not up yet)."""
+    import ctypes
+    from ctypes import wintypes
+    pid = os.getpid()
+    user32 = ctypes.windll.user32
+    user32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND,
+                                                      wintypes.LPARAM), wintypes.LPARAM]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    found = []
+
+    def cb(hwnd, _lp):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            r = wintypes.RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(r))
+            if r.right - r.left > 300 and r.bottom - r.top > 300:
+                found.append(hwnd)
+        return True
+
+    user32.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND,
+                                          wintypes.LPARAM)(cb), 0)
+    return int(found[0]) if found else 0
+
+
+def blank_page_watchdog(get_handle, url: str, timeout: float = 22.0) -> None:
+    """When the page never paints (solid white/black window), open the browser.
+
+    A stuck WebView2 compositor still runs the page - the JS keeps calling the server
+    - but the window shows nothing, which looks exactly like a broken app. Sample the
+    window's pixels after it has had time to draw; if it is blank, hand the app to the
+    browser (where it always renders) and remember the hang.
+    """
+    import time
+    deadline = time.time() + timeout
+    hwnd = 0
+    while time.time() < deadline:
+        hwnd = _find_own_window_hwnd()
+        if hwnd:
+            break
+        time.sleep(1.0)
+    if not hwnd:
+        try:
+            hwnd = get_handle()
+        except Exception:
+            hwnd = 0
+    if not hwnd:
+        return
+    time.sleep(12.0)                               # let the page draw first
+    frac = _window_fraction_blank(hwnd)
+    print("[window] blank-pixel fraction: {:.0f}%".format(frac * 100))
+    if frac >= 0.95:
+        note_hang("window painted blank (white/black) for ~{}s".format(int(timeout)))
+        print("[window] the window is blank (the page runs but nothing painted) - "
+              "opening your browser instead.")
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception as exc:
+            print("[window] could not open a browser:", exc)
+        time.sleep(4)
+        os._exit(1)
 
 
 def pid_alive(pid: int) -> bool:
@@ -745,9 +872,16 @@ def main() -> int:
         except Exception:
             print("Could not start the window: {}: {}".format(type(exc).__name__, exc))
             return 4
-    # Closing the window ends the session: the server and its services stop too.
-    _tell_server_to_shutdown(url)
-    _stop_child(server_child)
+    # Closing the window ends the session - but ONLY for a server THIS window started.
+    # If one was already running when we opened (server_child is None), it belongs to
+    # somebody else: the browser path (start-web), the control panel, or another
+    # window. Tearing that down killed the server out from under whoever was using it
+    # (the recurring "web vs WebView2" conflict).
+    if server_child is not None:
+        _tell_server_to_shutdown(url)
+        _stop_child(server_child)
+    else:
+        print("[window] leaving the already-running server alone (this window did not start it)")
     return 0
 
 
