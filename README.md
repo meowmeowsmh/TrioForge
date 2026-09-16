@@ -10,11 +10,7 @@
 
 **Everything else it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), a file-editing agent with a live diff panel, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation, Windows/macOS/Linux/WSL + Docker, installable on your phone. → [full feature list](#-features) · [screenshots](#-see-it-in-action)
 
-**Opens in its own window.** On Windows, double-click `start.vbs` and TrioForge appears in a real
-window — its own icon and title, no browser tabs, no address bar, no terminal. The server runs
-hidden behind it. Prefer your browser, or your phone? The same app serves the web interface too,
-and there is **no .exe to download**: it's the repo (or Docker), so nothing to install and no
-SmartScreen dialog.
+**Opens in your browser — or in its own window.** On Windows, double-click **`start-web.vbs`** and TrioForge opens in your default browser, with the server running hidden behind it: the light, always-stable way. Want a real window of its own — its own icon and title, no browser tabs, no address bar? Use **`start.vbs`**, and if the embedded engine cannot draw on your GPU TrioForge hands the app to your browser by itself. On your phone or another machine the same app serves the web interface, and there is **no .exe to download**: it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
@@ -26,28 +22,90 @@ SmartScreen dialog.
 
 ---
 
+## 🆕 What's new in 1.0.3 — the stability release
+
+**1.0.3 is about things that were quietly broken.** Every fix here came out of a real
+failure on a real machine, and each one was verified against the files that broke it —
+including a **72-minute, 563 MB meeting recording** that no previous version could even
+accept.
+
+### Audio and video now work end to end
+
+| what was wrong | what 1.0.3 does |
+|---|---|
+| **Big attachments could never be sent.** Attachments travelled as base64 inside the chat request, whose body is capped at 25 MB — so anything over ~18 MB was rejected with a 413, and a 563 MB recording arrived empty. | Large files **stream to disk** and are read by path. A 563 MB recording now uploads in ~3 s. |
+| A **2013 ffmpeg** on `PATH` silently failed on modern formats, while the app blamed a missing install. | TrioForge **installs its own current ffmpeg** (`⚡ Install ffmpeg` → `tools/ffmpeg`), prefers it over `PATH`, and logs which build each conversion used. |
+| Every failure said *"is ffmpeg installed?"* — usually a lie. | Errors now name the real cause: the file, the codec, a missing audio track, or a model that answered with nothing (with ffmpeg's own message). |
+| Transcription ran **one 30-second chunk at a time** while llama-server had **4 idle slots**. A 72-minute recording took ~48 minutes. | Chunks are transcribed **4 at a time**: ~12 minutes for the same file. |
+| The model was **unloaded 5 minutes after it started** — mid-chat, mid-transcription — because nothing ever refreshed the idle timer. | Every request and every chunk counts as use, so a long job is never cut off. |
+| A universal model reads audio **and** images, but the app picked one and **silently dropped the other**. | It now answers about **both**, in one request. |
+| **~150 cmd windows** flashed across the screen while a long recording was processed (every ffmpeg run was spawned without `CREATE_NO_WINDOW`). | Every ffmpeg/`ollama`/`nvidia-smi` spawn is windowless. |
+
+### The window opens where it can actually draw
+
+- **WebView2's compositor can fail on some GPUs**: the page loads and its JavaScript runs,
+  but the window paints blank white. 1.0.3 **samples the window's own pixels**, and when it
+  is blank (or frozen) it **opens the app in your browser** and records the hang so the next
+  start avoids it. A frozen window is replaced when you open the app again, instead of
+  silently doing nothing.
+- **The browser is the recommended default** — it always renders and uses less memory
+  (~150–300 MB versus ~600 MB for the embedded engine). You get both shortcuts, each created
+  only if missing: **`TrioForge`** (browser) and **`TrioForge (window)`**.
+- **Closing the window stops only the server *it* started**, so it can no longer kill the
+  session your browser is using. Logging in starts a **quiet background server** and opens
+  nothing.
+- **Your settings survive a profile reset.** Theme, provider, model, persona, API keys and
+  last view used to live only inside the WebView2 profile, and a reset wiped them. They are
+  mirrored server-side now and restored on load.
+
+**Plus ~10 further bugs** fixed in the attachment pipeline, the launcher and the window
+lifecycle — including a crash in the short-audio fallback, and a process kill that could
+leave the server holding its port after a frozen window.
+
+> ### Is it stable? Yes — and where it can't be, it says so and gets out of the way.
+>
+> The **browser path is rock solid**: it is a local web app, and the browser is the one piece of
+> software on your machine that is already debugged. The **optional desktop window** is the only
+> part that depends on your GPU driver, so it now watches itself: it checks whether it actually
+> painted, notices when it stops responding, and hands you the browser instead of leaving a blank
+> window — then remembers, so the next start avoids the same path.
+>
+> And the failures that used to be silent now speak: a missing codec names the file, a model that
+> was unloaded says so instead of "connection refused", an attachment that never arrived is
+> reported instead of sent empty. Everything is in the chat **and** in `logs/`.
+
+---
+
 ## ⚡ Start in 60 seconds
 
 **Windows — two ways to open it. Pick one.**
 
-**1 · Its own window (recommended).** No browser, no terminal, nothing else on screen:
+**1 · Your browser (recommended — the stable, lighter way).**
 
 ```bash
 git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
 ```
 
-then double-click **`start.vbs`**.
+then double-click **`start-web.vbs`**.
+
+The server starts hidden and the app opens in your default browser. Nothing flashes, because the
+whole launch runs invisibly. This is the one to use if your GPU driver is fussy (see *Window or
+browser?* below) — a browser tab always renders.
+
+> **It makes its own shortcuts.** TrioForge puts a **TrioForge** icon on your **Desktop** and in your
+> **Start Menu** (per-user: no admin rights, nothing machine-wide), with its own logo rather than a
+> generic script icon. Each entry point owns its own: **`TrioForge`** opens the browser version,
+> **`TrioForge (window)`** opens the desktop window — created only if missing, so neither overwrites
+> the other. Manage them with `application.bat --install-shortcut` / `--remove-shortcut`, or skip the
+> whole thing with `TRIOFORGE_NO_SHORTCUT=1`.
+
+**2 · Its own window.** No browser, no terminal, nothing else on screen — in the same folder,
+double-click **`start.vbs`**.
 
 TrioForge opens in a window of its own — its name in the title bar and taskbar, no tabs, no address
 bar — with chat, notes and the corkboard inside it. The server starts hidden behind it; `start.bat`
-does the same thing from a terminal. Nothing flashes, because the whole launch runs invisibly.
-
-> **It makes its own shortcut.** On the first run TrioForge puts a **TrioForge** icon on your
-> **Desktop** and in your **Start Menu** (per-user: no admin rights, nothing machine-wide), with its
-> own logo rather than a generic script icon. After that, one double-click is the whole app. Manage
-> them with `application.bat --install-shortcut` / `--remove-shortcut`, or skip creating them with
-> `TRIOFORGE_NO_SHORTCUT=1`.
+does the same thing from a terminal.
 
 > **How the window works:** it renders with **WebView2**, the engine Windows 10/11 already ships
 > (the component Edge uses), embedded by [pywebview](https://pywebview.flowrl.com/) — one ~1 MB
@@ -55,33 +113,38 @@ does the same thing from a terminal. Nothing flashes, because the whole launch r
 > it simply has a real window instead of browser chrome. Nothing is fetched from the internet, and
 > because nothing arrives as a compiled binary there is **no .exe, no installer and no
 > SmartScreen dialog**.
-
-**2 · The web interface.** Same app, in your browser:
-
-```bat
-application.bat          :: Windows
-```
-
-```bash
-./run.sh                 # Linux / macOS / WSL
-```
-
-Then open **http://localhost:5003** (the app prints the exact URL). Use this one if you want it on
-your phone or another device on your network, or if you prefer your own browser.
+>
+> **If the window cannot draw, you still get the app.** WebView2's compositor can fail on some GPU
+> drivers: the page loads and runs, but the window paints blank. TrioForge checks the window's own
+> pixels at start-up, and when it is blank — or frozen — it opens the app in your browser instead and
+> remembers, so the next start avoids the same path.
 
 > **Window or browser? The memory difference is real.** Measured on a 15 GB Windows machine:
 >
 > | How you open it | Memory while running |
 > |---|---|
-> | `start.vbs` — TrioForge's own window | **~600 MB** (a private WebView2 engine: browser, GPU, renderers, utilities) |
 > | `start-web.vbs` — a tab in your browser | **~150–300 MB** (reuses the engine that is already loaded) |
+> | `start.vbs` — TrioForge's own window | **~600 MB** (a private WebView2 engine: browser, GPU, renderers, utilities) |
 >
-> Same server, same data, same interface. `start-web.vbs` starts the server hidden and opens it in
-> your default browser — that is the lighter one, and the one to use on a small machine. The engine
-> cannot be shared between them, so this is a straight trade: a window of its own, or less memory.
+> Same server, same data, same interface. The engine cannot be shared between them, so this is a
+> straight trade: a window of its own, or less memory *and* one less thing that a GPU driver can
+> break.
 
 Both need **Python**, which the launcher finds or installs for you, and they install the
 dependencies on first run. Nothing else to set up.
+
+**Linux / macOS / WSL — or you just want the terminal.** Same app, same server:
+
+```bash
+./run.sh                 # Linux / macOS / WSL
+```
+
+```bat
+application.bat          :: Windows, with the output visible in the terminal
+```
+
+Then open **http://localhost:5003** (the app prints the exact URL). Use this when you want the app on
+your phone or another device on your network, or when you want to watch the log while it runs.
 
 **Docker / Linux / macOS / NAS** — if you already run Ollama (or a llama-server on your host),
 this is the entire install:
@@ -176,10 +239,11 @@ Then, inside the app:
 | 🍎 **macOS (Intel or Apple Silicon)** | `run.sh` | `./run.sh` — uses Homebrew's Python, finds `/opt/homebrew/bin` tools | `brew install llama.cpp`, or **⚡ Auto-install** | `http://localhost:5003` |
 | 🐧🪟 **WSL2** | `run.sh` | same as Linux | same as Linux | `http://localhost:5003` |
 | 🐳 **Docker** | `docker/application.sh` | `./docker/application.sh` | host llama-server via `LLAMA_HOST` | `http://localhost:5002` |
+| 🪟 **Windows — browser (recommended)** | `start-web.vbs` | Double-click it. Server hidden, app opens in your default browser | **⚡ Auto-install** | `https://localhost:5003` |
 | 🪟 **Windows — app window** | `start.vbs` | Double-click it. Nothing else appears: no browser, no terminal | **⚡ Auto-install** | own window |
 | 🛠️ Any OS (advanced) | `py/tools/launcher.py` | `python py/tools/launcher.py` | — | — |
 
-`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `start.vbs` (Windows) is the same launcher with `--window`: the server starts hidden and TrioForge opens in its own WebView2 window instead of your browser; `start.bat` does that from a terminal. `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
+`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `start-web.vbs` (Windows) does the same with `--detach`: the server starts hidden and the app opens in your browser. `start.vbs` (Windows) adds `--window`, so TrioForge opens in its own WebView2 window instead of your browser; `start.bat` does that from a terminal. `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
 
 ### 🚀 First-run setup checker
 
@@ -198,7 +262,7 @@ The **Setup panel** (reopen anytime with the **🚀** button in the top bar) det
 - **GPU backend detected** — Metal (Apple Silicon) / CUDA (NVIDIA) / ROCm (AMD) / Vulkan / CPU.
 - **`llama-server` found** on `PATH`, in `winget`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/opt/llama.cpp`, `~/.local/bin`, `~/llama.cpp{,/build/bin}`, release-tarball dirs, or `tools/llama.cpp` (where **⚡ Auto-install** extracts it). `LLAMA_SERVER` overrides it outright.
 - **Model folders created on startup**, so a fresh `git clone` always has somewhere to drop GGUFs.
-- **ffmpeg** found via `PATH` (and installed in the Docker image) for video/audio-to-text.
+- **ffmpeg** for video/audio-to-text: TrioForge uses the build it installed itself (`tools/ffmpeg`, **⚡ Install ffmpeg**) and only falls back to `PATH`. Docker images ship their own.
 - **Port auto-selection** — if 5003 is busy, the next free port is used.
 - **ComfyUI auto-detected** on Windows (`Comfy-Desktop\ComfyUI-Installs`), macOS (`~/Library/Application Support/ComfyUI`, `~/Documents/ComfyUI`) and Linux (`~/ComfyUI`, `/opt/ComfyUI`). It talks to the app over plain HTTP, so it's fully OS-agnostic.
 
@@ -311,6 +375,7 @@ Configuration is done through environment variables — all optional, the app wo
 | `TRIOFORGE_IDLE_UNLOAD` | Seconds without a request before a llama.cpp model is unloaded and its memory returned; `0` keeps it resident | `300` |
 | `TRIOFORGE_SKIP_RAM_CHECK` | `1` loads a model even when it will not fit in free RAM (it will swap) | *(unset)* |
 | `TRIOFORGE_FFMPEG` | Explicit path to the `ffmpeg` used for audio/video conversion. Otherwise TrioForge uses the build it installed itself (`tools/ffmpeg`, via **Install ffmpeg**) and only then whatever is on `PATH` — an old ffmpeg silently fails on modern formats | *(auto-detected)* |
+| `TRIOFORGE_TRANSCRIBE_WORKERS` | How many audio chunks are transcribed at once. llama-server serves 4 slots; lower it if you raise the context size or share the GPU with something else | `4` |
 | `LLAMA_SERVER` | Explicit path to the `llama-server` executable (skips auto-detection) | *(auto-detected)* |
 | `LLAMA_HOST` | llama-server host. Set it (e.g. `host.docker.internal`) to enable **remote mode** — connect instead of launching a local server | `127.0.0.1` |
 | `LLAMA_PORT` | llama-server port | `8080` |
@@ -338,7 +403,7 @@ API keys can also be entered directly in the web UI. Keys are never written to d
 | **📚 Documents (RAG)** | **⬆ Upload docs** (PDF, `.docx`, Markdown, `.txt`, code, CSV, HTML…) → chunked with overlap into **`sqlite_data/rag.db`** (survives restarts). Toggle **📚** in the input bar **ON**, then ask. The top ~6 matching chunks are injected with a `[Reference documents]` header. **Out of the box**: fast keyword-overlap scoring. **With the optional ML stack** (`pip install -r requirements-ml.txt`): semantic search via `all-MiniLM-L6-v2`. Re-uploading a file replaces its old chunks. |
 | **🧠 Thinking** | With a reasoning model (DeepSeek R1/V3, Qwen3.5 via Ollama or llama.cpp, Groq, OpenRouter), the chain-of-thought is captured **live as it streams** and shown in a collapsible **"🧠 Thinking"** block above the answer. No toggle needed — **Ollama** streams its `thinking` field, **llama.cpp / DeepSeek / Groq / OpenRouter / Hugging Face** stream `reasoning_content`/`reasoning` deltas. The ⏱️ readout shows live token speed, elapsed time, and the final duration. |
 | **🗣️ Voice** | Local **speech-to-speech** (`py/tools/voice_agent.py` — STT + llama.cpp + TTS, all on-device) plus browser speech input (🎤) and text-to-speech (🔊). For system control by voice, use the voice chat's `/open` command (needs full access):<br>`/open https://github.com` · `/open notepad` · `/bye` `/clear` `/help` |
-| **📺 Video-to-text** | Upload a video and ask about it: **ffmpeg** (auto-detected on `PATH`, nothing hard-coded) samples the clip into a few frames and feeds them to your vision model via the normal image path. `POST /api/video/frames` with `{"b64": "…"}` returns the sampled JPEGs. Without ffmpeg it degrades gracefully (a "no video support" note) instead of crashing. |
+| **📺 Video & audio → text** | Upload a video or an audio clip and ask about it. Two paths, chosen by your model's folder: a `models/` model gets **sampled frames** (the vision path), while a `universal_models_to_text/` model gets the **audio track transcribed** — a 72-minute recording is split into 30-second chunks and transcribed **4 at a time** (~12 min for an hour and a quarter). Attach **images *and* audio together** and the answer covers both. Large files (up to hundreds of MB) upload in the background, and `POST /api/video/frames` returns sampled JPEGs on its own. ffmpeg is auto-detected *and* installable in-app; without it you get a clear note, never a crash. |
 | **🚀 Setup** | The first-run checker + ⚡ installers. |
 | **⚙️ Workspace settings** | Folder, access level, thinking effort, dependency notes, full computer access. |
 | **💾 Live monitor** | Real-time RAM & VRAM usage tracking. |
@@ -642,20 +707,32 @@ launcher.py --detach               # start the server hidden and return immediat
 launcher.py --host                 # open it to your network with a password
 launcher.py --no-browser           # never open a browser tab (what start.vbs uses)
 launcher.py --background-update    # start now, check for updates quietly afterwards
-launcher.py --install-shortcut     # Desktop + Start Menu icon (with the app's logo)
+launcher.py --install-shortcut     # BOTH shortcuts, Desktop + Start Menu ("TrioForge" and "TrioForge (window)")
 launcher.py --remove-shortcut      # take them away again
 ```
+
+> **A shortcut that repairs itself.** The shortcuts are per-user and carry the app's own logo. Each
+> flavour is checked separately, in every location it belongs, and only what is missing is created —
+> so a deleted Desktop icon comes back the next time you launch that entry point, without disturbing
+> the other flavour or the Start Menu.
 
 `--status` reports both of those, so you can see the state at a glance:
 
 ```
-  start at login : enabled -> "...pythonw.exe" "...launcher.py" "D:\TrioForge" --autostart --window --no-browser
-  shortcut       : Desktop: yes
-  shortcut       : Start Menu: yes
+  start at login : enabled -> "...pythonw.exe" "...launcher.py" "D:\TrioForge" --autostart --detach --no-browser --background-update
+  shortcut       : Desktop (web): yes
+  shortcut       : Start Menu (web): yes
+  shortcut       : Desktop (window): no
+  shortcut       : Start Menu (window): no
 ```
 
-`start.vbs` and `start.bat` are just `launcher.py --window --detach --no-browser`, run through the
-windowed interpreter so nothing is ever shown.
+Login starts the **server only** — no window, no browser tab — so the app is ready when you want it
+and nothing appears uninvited. Each entry point keeps its own shortcut up to date: launching
+`start-web.vbs` makes sure the browser one exists, launching `start.vbs` makes sure the window one
+does, and neither touches the other.
+
+`start-web.vbs` and `start.vbs` are just `launcher.py` (`--detach`, and `--window --detach
+--no-browser` respectively), run through the windowed interpreter so nothing is ever shown.
 
 ### The optional control panel
 

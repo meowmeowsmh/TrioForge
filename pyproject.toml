@@ -1,6 +1,6 @@
 [project]
 name = "trioforge"
-version = "1.0.2"
+version = "1.0.3"
 description = "Your own private, free AI workspace — chat, notes, and corkboard with local + API models."
 readme = "README.md"
 requires-python = ">=3.10"

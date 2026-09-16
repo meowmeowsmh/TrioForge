@@ -5,4 +5,4 @@ running app reports). It shows up in the start-up log and in `--status`, which i
 first thing worth knowing when someone reports a problem.
 """
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
