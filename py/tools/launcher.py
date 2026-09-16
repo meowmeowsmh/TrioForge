@@ -624,13 +624,6 @@ def prepare_and_run(project: Path, args) -> int:
     # --detach: start the server in the background with no console and return. The
     # window (above) waits for it; the .bat that calls this returns immediately.
     if getattr(args, "detach", False):
-        if getattr(args, "window", False):
-            # The window OWNS the server now: app_window.py starts it as its own
-            # child (so they group as ONE app in the taskbar/Task Manager) and stops
-            # it when the window closes. Nothing to spawn here.
-            if getattr(args, "background_update", False):
-                _spawn_background_update(project)
-            return 0
         cmd = [venv_pythonw(project), str(project / "py" / "app.py")]
         flags = 0
         if os.name == "nt":
@@ -1058,7 +1051,10 @@ def ensure_triorforge_exe(project: Path) -> Optional[str]:
             want = "TrioForge"
             described = set_exe_description(target, want, want, _app_version_tuple(project))
             ico = project / "static" / "logo" / "triorforge.ico"
-            iconed = set_exe_icon(target, ico) if ico.is_file() else True
+            # A missing .ico must NOT count as done: treating it as success wrote the
+            # patch marker and the copy is never refreshed again, so the exe kept
+            # Python's icon forever.
+            iconed = bool(ico.is_file()) and set_exe_icon(target, ico)
             if described and iconed:
                 try:
                     marker.write_text(PATCH_REV + "\n", encoding="utf-8")
@@ -1070,6 +1066,16 @@ def ensure_triorforge_exe(project: Path) -> Optional[str]:
                 # next start retries instead of assuming it is done.
                 print("[window] could not finish branding TrioForge.exe "
                       "(name: {}, icon: {}) - will retry next start.".format(described, iconed))
+                if described and not iconed:
+                    # set_exe_icon deletes the old icon resources BEFORE writing the
+                    # new ones, so a failed write leaves an exe with no icon at all.
+                    # Put the pristine copy back rather than keep a broken one.
+                    try:
+                        _safe_copy(src, target)
+                        print("[window] restored the unmodified executable after the "
+                              "failed icon patch.")
+                    except Exception:
+                        pass
         return str(target)
     except Exception:
         return str(target) if target.is_file() else None
@@ -1107,6 +1113,37 @@ def _app_window_pid_file():
     return Path(base) / "TrioForge" / "app_window.pid"
 
 
+def _pid_is_our_app(pid: int) -> bool:
+    """True when `pid` really is a TrioForge/pywebview process, not a reused pid.
+
+    The pid file outlives the window if it was killed, and Windows reuses pids - so
+    trusting the number alone risks focusing, or force-killing, an unrelated
+    program. Returns True when the check cannot be made, so a failure here never
+    stops the app from starting.
+    """
+    if os.name != "nt" or not pid:
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x1000, False, int(pid))     # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            size = wintypes.DWORD(32768)
+            buf = ctypes.create_unicode_buffer(size.value)
+            if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                name = os.path.basename(buf.value).lower()
+                return (name.startswith("triorforge")
+                        or name in ("pythonw.exe", "python.exe"))
+        finally:
+            k32.CloseHandle(handle)
+    except Exception:
+        pass
+    return True
+
+
 def _app_window_open() -> bool:
     """True if the app window is already showing (so we never open a second)."""
     try:
@@ -1116,7 +1153,7 @@ def _app_window_open() -> bool:
         pid = int(path.read_text(encoding="utf-8").strip().split()[0])
     except Exception:
         return False
-    if pid_alive(pid):
+    if pid_alive(pid) and _pid_is_our_app(pid):
         return True
     try:
         path.unlink()
@@ -1202,9 +1239,13 @@ def window_is_hung(pid: int) -> bool:
 
 
 def _replace_app_window(pid: int) -> None:
-    """Kill a stale or hung window process and drop its pid marker."""
+    """Kill a stale or hung window process (and its children) and drop its pid marker.
+
+    /T matters: the server runs as this window's child, so killing only the window
+    would leave the server holding the port with nothing to close it.
+    """
     try:
-        subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        timeout=15, creationflags=_no_window_flags())
     except Exception:
@@ -1227,7 +1268,14 @@ def _app_window_started_seconds_ago() -> float:
         path = _app_window_pid_file()
         parts = path.read_text(encoding="utf-8").strip().split()
         if len(parts) >= 3:
-            return max(0.0, time.time() - float(parts[2]))
+            age = time.time() - float(parts[2])
+            # A stamp in the FUTURE (clock correction, resumed VM) must read as "very
+            # old", not as "just started" - otherwise the grace period below would
+            # keep treating a dead window as still-starting and the click would do
+            # nothing, indefinitely.
+            if age < -60 or age > 86400 * 365:
+                return 1e9
+            return max(0.0, age)
         # Older pid files carried only pid + url; fall back to the file's mtime.
         return max(0.0, time.time() - path.stat().st_mtime)
     except Exception:

@@ -68,6 +68,17 @@ def _fail(message, *args):
     return None
 
 
+def _clear_error():
+    """Forget the previous failure.
+
+    Every attempt clears it first, so a caller can never read a stale reason from an
+    earlier request (a path that returns nothing WITHOUT calling _fail - e.g. a
+    chunking error - would otherwise report the previous attempt's message).
+    """
+    global LAST_ERROR
+    LAST_ERROR = ""
+
+
 def find_ffmpeg():
     """Return the ffmpeg executable to use, or None.
 
@@ -144,7 +155,9 @@ def ffmpeg_version(path=None):
 
 def _decode_video(b64):
     """Decode a base64 data-URI or raw base64 string into bytes."""
-    if not b64:
+    if not b64 or not isinstance(b64, str):
+        # Not a string means a malformed payload (a number, a list, bytes): treat it
+        # as "no data" rather than raising on the `in` below.
         return None
     b64 = b64.strip()
     if "," in b64:
@@ -186,6 +199,7 @@ def extract_frames(video_b64, max_frames=MAX_FRAMES, path=None):
     Returns [] if ffmpeg is unavailable, the video can't be decoded, or no frames
     could be produced. Never raises — callers just fall back to "no video support".
     """
+    _clear_error()
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
         logger.warning("ffmpeg not found; video-to-text unavailable.")
@@ -229,7 +243,7 @@ def extract_frames(video_b64, max_frames=MAX_FRAMES, path=None):
             pass
 
 
-def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS):
+def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS, path=None):
     """Convert an audio clip to 16 kHz mono PCM WAV and return its raw base64.
 
     Gemma-4 (E2B/E4B/12B) audio input requires 16 kHz mono WAV, capped at 30 s, so
@@ -311,6 +325,7 @@ def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS
     split into sequential segments, each returned as its own raw base64 WAV string.
     Returns a list of base64 strings (possibly empty on failure); never raises.
     """
+    _clear_error()
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
         _fail("No ffmpeg found - install it from the Services panel "
@@ -353,6 +368,7 @@ def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECOND
     Returns a list of raw base64 WAV strings ([] if the video has no audio track);
     never raises.
     """
+    _clear_error()
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
         _fail("No ffmpeg found - install it from the Services panel "

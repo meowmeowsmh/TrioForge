@@ -647,14 +647,19 @@ def _attachment_path(entry):
     The chat JSON carries small attachments as base64, but its body is capped at
     25 MB - a meeting recording cannot fit through it. Those are uploaded first and
     referenced by the stored file name, which is what this resolves.
+
+    Any extension is accepted, deliberately: the uploader takes whatever the user
+    picked, and enumerating formats here only meant that an uploaded .wma/.aiff
+    (or a large image) silently resolved to nothing. What matters for safety is that
+    the name is one this app generated - a bare 32-hex-char uuid, never a path.
     """
-    name = os.path.basename(str((entry or {}).get("id") or ""))
-    if not name or name != str((entry or {}).get("id") or ""):
-        return None                      # rejects paths/traversal outright
-    if not name.lower().endswith((".mp4", ".mov", ".webm", ".mkv", ".m4a", ".mp3",
-                                  ".wav", ".ogg", ".opus", ".aac", ".flac", ".avi")):
-        return None
-    path = os.path.join(UPLOADS_DIR, name)
+    import re
+    raw = str((entry or {}).get("id") or "")
+    if not raw or raw != os.path.basename(raw):
+        return None                      # rejects any path/traversal outright
+    if not re.fullmatch(r"[0-9a-fA-F]{32}(\.[A-Za-z0-9]{1,12})?", raw):
+        return None                      # only names this app generated
+    path = os.path.join(UPLOADS_DIR, raw)
     return path if os.path.isfile(path) else None
 
 
@@ -666,6 +671,34 @@ def _with_source_path(entry):
     merged = dict(entry or {})
     merged["path"] = path
     return merged
+
+
+def _rehydrate_uploads(entries, max_bytes=None):
+    """Fill in base64 for attachments that were uploaded by id.
+
+    Images (and non-audio files) need their bytes inline: the vision and file-text
+    paths read `b64`. A video/audio attachment is read from disk instead, so this
+    only fills what is missing, and refuses to inline anything oversized.
+    """
+    limit = MAX_INLINE_RELOAD_BYTES if max_bytes is None else max_bytes
+    out = []
+    for entry in entries or []:
+        item = dict(entry or {})
+        if not item.get("b64"):
+            path = _attachment_path(item)
+            if path:
+                try:
+                    if os.path.getsize(path) <= limit:
+                        with open(path, "rb") as fh:
+                            item["b64"] = base64.b64encode(fh.read()).decode("ascii")
+                    else:
+                        logger.info("Attachment %s is too large to inline (%d bytes)",
+                                    item.get("name"), os.path.getsize(path))
+                except Exception as e:
+                    logger.warning("Could not read uploaded attachment %s: %s",
+                                   item.get("name"), e)
+        out.append(item)
+    return out
 
 
 def _write_attachment(path, b64_data):
@@ -4024,8 +4057,10 @@ def chat():
     try:
         data = request.get_json(force=True, silent=True) or {}
         user_message = data.get('message', '').strip()
-        images = data.get('images', [])
-        files = data.get('files', [])
+        # Attachments above 8 MB arrive uploaded-by-id with no base64 (the request
+        # body is capped at 25 MB); images and non-audio files need their bytes back.
+        images = _rehydrate_uploads(data.get('images', []))
+        files = _rehydrate_uploads(data.get('files', []))
         videos = data.get('videos', [])
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
@@ -4273,8 +4308,10 @@ def chat_stream():
     try:
         data = request.get_json(force=True, silent=True) or {}
         user_message = data.get('message', '').strip()
-        images = data.get('images', [])
-        files = data.get('files', [])
+        # Attachments above 8 MB arrive uploaded-by-id with no base64 (the request
+        # body is capped at 25 MB); images and non-audio files need their bytes back.
+        images = _rehydrate_uploads(data.get('images', []))
+        files = _rehydrate_uploads(data.get('files', []))
         videos = data.get('videos', [])
         conv_id = data.get('conversation_id')
         search_enabled = data.get('search', False)
