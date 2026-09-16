@@ -944,7 +944,8 @@ class LlamaCppProvider(LLMProvider):
             raise ProviderError(f"llama.cpp vision error: {e}")
 
     def generate_with_audio(self, messages: List[Dict[str, str]],
-                            audio_files: List[Dict], **kwargs) -> str:
+                            audio_files: List[Dict],
+                            images: Optional[List[Dict]] = None, **kwargs) -> str:
         """Text + audio — gemma-4 E2B/E4B/12B audio-to-text (ASR), full length.
 
         Accepts audio clips AND video files: a video's audio track is extracted
@@ -1055,9 +1056,28 @@ class LlamaCppProvider(LLMProvider):
             detail = "; ".join(notes) if notes else "no audio or video was attached"
             raise ProviderError("Audio transcription produced nothing - {}".format(detail))
 
-        if len(results) == 1:
-            return results[0][1]
-        return "\n\n".join(f"[{name}]\n{text}" for name, text in results)
+        transcript = (results[0][1] if len(results) == 1
+                      else "\n\n".join("[{}]\n{}".format(n, t) for n, t in results))
+
+        # Universal models read images AS WELL AS audio. This method used to return
+        # the transcript and silently drop any attached pictures, so "audio + image"
+        # answered about the sound only. Hand the model the transcript and the images
+        # in one request instead, so the answer covers both inputs.
+        if images:
+            msgs = [dict(m) for m in messages]
+            if msgs:
+                msgs[-1]["content"] = (
+                    "[Transcript of the attached audio/video]\n" + transcript +
+                    "\n\n[Question]\n" + (msgs[-1].get("content") or ""))
+            try:
+                return self.generate_with_image(msgs, images, **kwargs)
+            except Exception as exc:
+                # Never lose the transcript because the pictures could not be read.
+                logger.warning("Could not answer with the transcript + images (%s); "
+                               "returning the transcript alone.", exc)
+                return transcript
+
+        return transcript
 
     def _transcribe_audio_chunk(self, text, wav_b64, model_path,
                                 temperature, max_tokens) -> str:

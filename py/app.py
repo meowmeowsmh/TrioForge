@@ -4244,7 +4244,11 @@ def chat():
         reply = None
         if transcription_sources:
             try:
-                reply = provider.generate_with_audio(messages, transcription_sources, **extra_kwargs)
+                # images=vision_images: a universal model reads audio AND images, so
+                # pass both and it answers about the sound and the pictures together
+                # (previously the audio path won and the images were dropped).
+                reply = provider.generate_with_audio(messages, transcription_sources,
+                                                     images=vision_images, **extra_kwargs)
             except Exception as e:
                 # A silent clip, a video with no audio track, or a model without audio
                 # input all land here. That must not discard the answer when there is
@@ -4516,7 +4520,11 @@ def chat_stream():
             if api_key:
                 extra_kwargs_audio['api_key'] = api_key
             try:
-                audio_final_text = provider.generate_with_audio(messages, transcription_sources, **extra_kwargs_audio)
+                # images=vision_images: see the non-streaming path above - a universal
+                # model gets the transcript AND the pictures, so it answers about both.
+                audio_final_text = provider.generate_with_audio(
+                    messages, transcription_sources,
+                    images=vision_images, **extra_kwargs_audio)
                 audio_reasoning = getattr(provider, "last_reasoning", "") or ""
             except Exception as e:
                 # Audio/video transcription can legitimately produce nothing (silent
