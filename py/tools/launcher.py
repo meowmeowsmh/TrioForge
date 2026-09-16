@@ -607,17 +607,26 @@ def prepare_and_run(project: Path, args) -> int:
     if getattr(args, "window", False):
         _open_app_window(project)
 
-    # First run: give the user something to double-click next time, with the app's
-    # own icon. Per-user (Desktop + Start Menu), no admin rights, and skippable with
-    # TRIOFORGE_NO_SHORTCUT=1 or undone with --remove-shortcut.
+    # Each entry point makes sure ITS OWN shortcut exists, in every location it
+    # belongs, and only creates what is actually missing:
+    #   start-web.vbs -> "TrioForge"          (browser)
+    #   start.vbs     -> "TrioForge (window)" (WebView2 window)
+    # So launching one never overwrites the other, and a deleted icon comes back the
+    # next time that entry point is used. Skippable with TRIOFORGE_NO_SHORTCUT=1.
     if os.environ.get("TRIOFORGE_NO_SHORTCUT", "").strip() not in ("1", "true", "on"):
         try:
-            from shortcuts import install as shortcut_install, state as shortcut_state
-            existing = [line for line in shortcut_state(project) if line.endswith("yes")]
-            if not existing:
-                print("Adding a TrioForge shortcut so you can just double-click it next time:")
-                for line in shortcut_install(project):
-                    print("  " + line)
+            from shortcuts import (install as shortcut_install, missing as shortcut_missing,
+                                   FLAVORS)
+            flavor = "window" if getattr(args, "window", False) else "web"
+            gone = shortcut_missing(project, flavor)
+            if gone:
+                print("Adding the {} shortcut ({}) in {} - so you can double-click it "
+                      "next time:".format(flavor, FLAVORS[flavor]["script"],
+                                          ", ".join(gone)))
+                for label in gone:
+                    for line in shortcut_install(
+                            project, where=label.lower().replace(" ", ""), flavor=flavor):
+                        print("  " + line)
         except Exception as exc:
             print("[shortcut] not created: {}".format(exc))
 
@@ -1599,9 +1608,12 @@ def main() -> int:
                 for line in shortcut_remove(project):
                     print(line)
             else:
-                print("Adding TrioForge shortcuts (Desktop and Start Menu, this user only):")
-                for line in shortcut_install(project):
-                    print("  " + line)
+                print("Adding BOTH TrioForge shortcuts (Desktop and Start Menu, this user only):")
+                print("  'TrioForge'          -> opens in your browser")
+                print("  'TrioForge (window)' -> opens in its own window")
+                for flavor in ("web", "window"):
+                    for line in shortcut_install(project, flavor=flavor):
+                        print("  " + line)
             return 0
         if args.status:
             project = find_project(args.path)
