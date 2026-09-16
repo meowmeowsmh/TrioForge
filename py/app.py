@@ -337,6 +337,38 @@ def _host_password_gate():
     return Response(_host_login_page(next_url=path), mimetype="text/html"), 200
 
 
+@app.before_request
+def _refuse_cross_site_requests():
+    """Refuse state-changing requests that came from ANOTHER site.
+
+    With no password the app listens on localhost - which every page you visit can
+    reach. A cross-origin POST with Content-Type: text/plain is a "simple request",
+    so the browser sends it without a CORS preflight, and these endpoints parse JSON
+    whatever the content type says (get_json(force=True)) - so a random website could
+    drive the app: send messages to your local model, or use the workspace tools.
+
+    Browsers always send Origin on such a request, so anything that is not this same
+    origin is refused. Requests with no Origin at all (curl, scripts, the app's own
+    fetch) are left alone, which keeps the API usable.
+    """
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return None
+    origin = (request.headers.get("Origin") or "").strip()
+    if not origin:
+        return None
+    try:
+        from urllib.parse import urlparse
+        origin_host = (urlparse(origin).hostname or "").lower()
+    except Exception:
+        origin_host = ""
+    request_host = (request.host or "").split(":")[0].strip("[]").lower()
+    if origin_host and origin_host == request_host:
+        return None
+    logger.warning("Refused a cross-site %s to %s (origin %s)",
+                   request.method, request.path, origin)
+    return jsonify({"error": "cross-site request refused"}), 403
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def host_login():
     """Password gate for hosted instances (only active with TRIOFORGE_PASSWORD)."""
