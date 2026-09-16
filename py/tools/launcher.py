@@ -723,6 +723,34 @@ def _needs_refresh(src: Path, dst: Path) -> bool:
         return True
 
 
+def _window_hang_marker():
+    """The file app_window.py checks to decide whether the GPU may be used."""
+    return _app_window_pid_file().parent / "window_hung.txt"
+
+
+def note_window_hang(reason: str) -> None:
+    """Record that the window hung, so the NEXT one uses software rendering.
+
+    The in-process hang watchdog writes this too, but it cannot run when the process
+    is genuinely frozen - which is exactly the case that matters. Detecting it here,
+    from a healthy process at launch, is what breaks the loop of "open the app, it
+    freezes, open it again, it freezes again".
+    """
+    try:
+        marker = _window_hang_marker()
+        count = 0
+        if marker.is_file():
+            try:
+                count = int(marker.read_text(encoding="utf-8").strip().split()[0])
+            except Exception:
+                count = 0
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("{} {}\n".format(count + 1, reason), encoding="utf-8")
+        print("[window] noted the hang - the next window will use software rendering.")
+    except Exception:
+        pass
+
+
 def _app_version_tuple(project: Path):
     """TrioForge's version as a 4-tuple, read from py/version.py (0.0.0.0 if unknown)."""
     import re
@@ -1227,6 +1255,10 @@ def _open_app_window(project: Path) -> None:
             pid = _app_window_pid()
             if window_is_hung(pid):
                 print("[window] the open window is not responding - replacing it.")
+                # Record it BEFORE replacing: a frozen window cannot write this
+                # itself, and without it the replacement starts on the same GPU
+                # path and freezes the same way.
+                note_window_hang("window not responding when the app was opened again")
                 _replace_app_window(pid)
             elif focus_app_window(pid):
                 print("[window] TrioForge is already open - brought its window to the front.")
