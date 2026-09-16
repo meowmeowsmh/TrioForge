@@ -8,6 +8,10 @@ services:
       # Host 5001 can be taken by a stale WSL port-relay. Use host 5002 to
       # avoid the "address already in use" collision; the app still listens
       # on 5001 inside the container.
+      #
+      # SECURITY: this publishes the app on every interface of this machine, and a
+      # container has no login unless you set TRIOFORGE_PASSWORD below. Publish only
+      # to yourself with "127.0.0.1:5002:5001" if nobody else should reach it.
       - "5002:5001"
     extra_hosts:
       # Makes "host.docker.internal" resolve on native Linux Docker Engine
@@ -40,6 +44,11 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # Suppress Python warnings (like the pynvml deprecation notice)
       - PYTHONWARNINGS=ignore
+      # A container must listen on 0.0.0.0 for the published port to reach it, which
+      # means anyone who can route to this machine gets in unless you set a password.
+      # Uncomment the next line and choose your own password to require a login:
+      # - TRIOFORGE_PASSWORD=change-me
+      - TRIOFORGE_HOST=0.0.0.0
       # Serve plain HTTP on localhost (no scary "not secure" browser warning;
       # localhost is a secure context). Set TRIOFORGE_SSL=1 and mount a trusted
       # cert_store/ if you want HTTPS instead.

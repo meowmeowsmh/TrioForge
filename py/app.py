@@ -338,6 +338,38 @@ def _host_password_gate():
 
 
 @app.before_request
+def _validate_request_host():
+    """Only answer to the host names this instance is legitimately reached by.
+
+    Every other check can be defeated by DNS rebinding, because the browser is then
+    talking to what it believes is the attacker's own origin: evil.com resolves to
+    127.0.0.1, so the request arrives from the loopback, carries Host: evil.com and
+    Origin: http://evil.com (which passes a same-origin test), and its responses are
+    readable. Requiring a host name the app can really be reached by closes that.
+
+    Only enforced for a local-only instance - a host-gated or deliberately exposed one
+    is reached under whatever name the user chose (LAN IP, tunnel domain), and the
+    password is the control there. Extra names can be allowed with
+    TRIOFORGE_ALLOWED_HOSTS=myhost,otherhost.
+    """
+    if _host_gate_on():
+        return None
+    if (os.environ.get("TRIOFORGE_HOST") or "").strip() not in ("", "127.0.0.1", "localhost", "::1"):
+        return None                     # deliberately bound to the network
+    host = (request.host or "").split(":")[0].strip("[]").lower()
+    if not host:
+        return None
+    allowed = {"localhost", "127.0.0.1", "::1"}
+    allowed |= {h.strip().lower()
+                for h in (os.environ.get("TRIOFORGE_ALLOWED_HOSTS") or "").split(",")
+                if h.strip()}
+    if host in allowed:
+        return None
+    logger.warning("Refused a request with an unexpected Host header: %s", request.host)
+    return jsonify({"error": "unexpected Host header"}), 403
+
+
+@app.before_request
 def _refuse_cross_site_requests():
     """Refuse state-changing requests that came from ANOTHER site.
 
@@ -688,6 +720,25 @@ UPLOADS_DIR = ATTACHMENTS_DIR
 MAX_INLINE_RELOAD_BYTES = 24 * 1024 * 1024
 
 
+_GENERATED_MEDIA_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
+                         ".mp4", ".webm", ".mov", ".mkv",
+                         ".mp3", ".wav", ".flac", ".ogg", ".oga", ".m4a", ".opus", ".aac"}
+
+
+def _safe_media_ext(ext, fallback):
+    """A generated file's extension, restricted to known media types.
+
+    The extension comes from the provider's own reply (a MIME type or a data: URL),
+    and it is appended to the output path before os.replace - so a value such as
+    "image/x\\..\\..\\py\\app.py", or a scriptable .html/.svg, would pick the write
+    target. Anything unrecognised falls back to the caller's default.
+    """
+    ext = (ext or "").strip().lower()
+    if ext and not ext.startswith("."):
+        ext = "." + ext
+    return ext if ext in _GENERATED_MEDIA_EXTS else fallback
+
+
 def _attachment_path(entry):
     """Local path of an attachment uploaded by id, or None for inline base64.
 
@@ -711,12 +762,18 @@ def _attachment_path(entry):
 
 
 def _with_source_path(entry):
-    """A copy of an attachment entry carrying `path` when it was uploaded by id."""
-    path = _attachment_path(entry)
-    if not path:
-        return entry
+    """A copy of an attachment entry carrying `path` when it was uploaded by id.
+
+    Any `path` that arrived IN THE REQUEST is discarded first. Only an attachment
+    this app itself stored (a 32-hex id under UPLOADS_DIR) may contribute one -
+    otherwise a request could name any file on the machine and have ffmpeg decode
+    it, with the transcript handed straight back in the reply.
+    """
     merged = dict(entry or {})
-    merged["path"] = path
+    merged.pop("path", None)
+    path = _attachment_path(entry)
+    if path:
+        merged["path"] = path
     return merged
 
 
@@ -2170,7 +2227,7 @@ def generate_video():
                 length=int(data.get('length') or 81), steps=int(data.get('steps') or 20),
                 timeout=1800,
             )
-            ext = os.path.splitext(media_name)[1] or ".mp4"
+            ext = _safe_media_ext(os.path.splitext(media_name)[1], ".mp4")
         final = base + ext
         os.replace(tmp, final)
         url = f'/static/uploads/generated_video/{os.path.basename(final)}'
@@ -2242,7 +2299,7 @@ def generate_audio():
             prompt, tmp, workflow=workflow or None,
             seed=data.get('seed') or None, timeout=1800,
         )
-        ext = os.path.splitext(media_name)[1] or ".mp3"
+        ext = _safe_media_ext(os.path.splitext(media_name)[1], ".mp3")
         final = base + ext
         os.replace(tmp, final)
         url = f'/static/uploads/generated_audio/{os.path.basename(final)}'
@@ -2830,6 +2887,10 @@ def _current_workspace_id():
 
 
 def _get_workspace(wid):
+    # Belt and braces: even if a route forgets to validate, an id that could escape
+    # WORKSPACES_DIR can never resolve to a workspace.
+    if not _safe_workspace_id(wid):
+        return None
     cfg_path = os.path.join(WORKSPACES_DIR, wid, "config.json")
     if not os.path.exists(cfg_path):
         return None
@@ -3305,11 +3366,12 @@ def _execute_tool(name, args):
             return {"error": "app is required."}
         try:
             if os.name == "nt":
-                # Open by name (notepad, calc, …) or by path, but without spawning a
-                # visible console window - `cmd /c start` used to flash one every time
-                # the agent opened an app.
-                subprocess.Popen(["cmd", "/c", "start", "", app], shell=False,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                # os.startfile, NOT `cmd /c start`: a command line handed to cmd.exe is
+                # re-parsed by it, and shell=False does not help there - list2cmdline
+                # only quotes on whitespace/quotes, so "notepad&calc" arrived as a
+                # second command. os.startfile runs the shell's open verb on the exact
+                # string and spawns no console window either.
+                os.startfile(app)                       # noqa: S606 (Windows only)
             else:
                 subprocess.Popen(["xdg-open", app] if not os.path.isfile(app) else [app])
             return {"ok": True, "opened": app}
@@ -3960,9 +4022,29 @@ def create_workspace():
     return jsonify({"ok": True, "id": wid})
 
 
+_WORKSPACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _safe_workspace_id(wid):
+    """True when a workspace id can only ever name a folder INSIDE WORKSPACES_DIR.
+
+    The id comes straight from the URL, and on Windows `%5c` decodes to a literal
+    backslash inside a single URL segment - so `..\\..\\..\\Users\\you\\Desktop`
+    arrived as one id and `os.path.join(WORKSPACES_DIR, wid, "config.json")` wrote a
+    config.json into that directory. Selecting it then made that folder the workspace
+    root, with whatever folder/full_access the request asked for: arbitrary file
+    read/write, and shell execution through the agent's tools.
+    """
+    if not isinstance(wid, str) or not _WORKSPACE_ID_RE.match(wid):
+        return False
+    return os.path.basename(wid) == wid
+
+
 @app.route('/api/workspaces/<wid>/select', methods=['POST'])
 def select_workspace(wid):
     _ensure_workspace_default()
+    if not _safe_workspace_id(wid):
+        return jsonify({"error": "Invalid workspace id"}), 400
     if not os.path.isdir(os.path.join(WORKSPACES_DIR, wid)):
         return jsonify({"error": "Workspace not found"}), 404
     with open(CURRENT_WORKSPACE_FILE, "w", encoding="utf-8") as f:
@@ -3973,6 +4055,8 @@ def select_workspace(wid):
 @app.route('/api/workspaces/<wid>', methods=['PUT'])
 def update_workspace(wid):
     _ensure_workspace_default()
+    if not _safe_workspace_id(wid):
+        return jsonify({"error": "Invalid workspace id"}), 400
     wdir = os.path.join(WORKSPACES_DIR, wid)
     if not os.path.isdir(wdir):
         return jsonify({"error": "Workspace not found"}), 404
@@ -3998,15 +4082,22 @@ def update_workspace(wid):
 
 # ── Workspace folder access ──
 def _resolve_workspace_file(wid, rel_path):
-    """Resolve a path inside the workspace folder, blocking traversal."""
+    """Resolve a path inside the workspace folder, blocking traversal.
+
+    realpath, not abspath: the plain form collapses `..` but leaves symlinks alone,
+    so a link planted inside the workspace (a cloned repo can contain one) would
+    resolve to its target outside the folder while still passing the prefix check.
+    Comparing the resolved forms closes that.
+    """
     base = _workspace_setting(wid, "folder", "") or ""
     if not base:
         return None, "No folder configured for this workspace."
     base = os.path.abspath(base)
     if not os.path.isdir(base):
         return None, "Configured folder does not exist: {}".format(base)
-    target = os.path.abspath(os.path.join(base, rel_path or ""))
-    if target != base and not target.startswith(base + os.sep):
+    base_real = os.path.realpath(base)
+    target = os.path.realpath(os.path.join(base_real, rel_path or ""))
+    if target != base_real and not target.startswith(base_real + os.sep):
         return None, "Access denied: path is outside the configured folder."
     return target, None
 

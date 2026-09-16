@@ -183,6 +183,17 @@ def _decode_video(b64):
         return None
 
 
+def _stored_attachments_dir():
+    """The only directory a path-based input may live in.
+
+    Attachments this app stored itself live here; anything else is somebody naming an
+    arbitrary file on the machine, which ffmpeg would happily decode and hand back.
+    """
+    return os.path.realpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     os.pardir, "json_configuration", "attachments"))
+
+
 def _input_source(b64, name, path):
     """Return (in_path, tmpdir, error). Uses `path` directly when it is given.
 
@@ -191,7 +202,12 @@ def _input_source(b64, name, path):
     base64-in-JSON could never carry it (and the string would be pointless work).
     """
     if path and os.path.isfile(path):
-        return path, None, ""
+        stored = _stored_attachments_dir()
+        resolved = os.path.realpath(path)
+        if resolved == stored or resolved.startswith(stored + os.sep):
+            return resolved, None, ""
+        logger.warning("Refused an input path outside the attachment store: %s", path)
+        return None, None, "input path is not an uploaded attachment"
     data = _decode_video(b64)
     if not data:
         return None, None, "empty or invalid base64"

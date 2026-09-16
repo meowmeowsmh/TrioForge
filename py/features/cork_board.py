@@ -745,7 +745,7 @@ def clear_all():
     return jsonify({"ok": True})
 
 # ---------- API: file upload (supports images) ----------
-ALLOWED_EXT = {"txt", "md", "ipynb", "pdf", "png", "jpg", "jpeg", "gif", "svg", "webp"}
+ALLOWED_EXT = {"txt", "md", "ipynb", "pdf", "png", "jpg", "jpeg", "gif", "webp"}   # no svg: scriptable, served from /static
 
 @corkboard_bp.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -756,10 +756,10 @@ def upload_file():
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
 
     if ext not in ALLOWED_EXT:
-        return jsonify({"error": f"Unsupported file type: .{ext}. Allowed: txt, md, ipynb, pdf, png, jpg, jpeg, gif, svg, webp."}), 400
+        return jsonify({"error": f"Unsupported file type: .{ext}. Allowed: txt, md, ipynb, pdf, png, jpg, jpeg, gif, webp."}), 400
 
     # Handle images
-    if ext in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
+    if ext in {'png', 'jpg', 'jpeg', 'gif', 'webp'}:
         upload_dir = root_path("static", "uploads", "corkboard")
         os.makedirs(upload_dir, exist_ok=True)
         unique = str(uuid.uuid4()) + '.' + ext
@@ -2014,7 +2014,7 @@ html.embedded #fsBtn { display: none !important; }</style>
         <button class="top-btn" onclick="createNewPin()">+ New Note</button>
         <span class="file-input-wrapper">
             <button class="top-btn">📎 Import File</button>
-            <input type="file" accept=".md,.txt,.ipynb,.pdf,.png,.jpg,.jpeg,.gif,.svg,.webp" onchange="handleFileUpload(event)">
+            <input type="file" accept=".md,.txt,.ipynb,.pdf,.png,.jpg,.jpeg,.gif,.webp" onchange="handleFileUpload(event)">
         </span>
         <button class="top-btn" id="linkBtn" onclick="toggleLinkMode()">🔗 Link Mode</button>
         <button class="top-btn" id="redThreadBtn" onclick="toggleRedThread()">🔴 Red Thread</button>

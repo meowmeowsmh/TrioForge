@@ -27,7 +27,23 @@ logger = logging.getLogger(__name__)
 
 # Bind host/port. Default 5001 matches the compose mapping ("5002:5001"); set
 # TRIOFORGE_PORT (and update the mapping, e.g. "5003:5003") to change it.
-bind = "0.0.0.0:%s" % os.environ.get("TRIOFORGE_PORT", "5001")
+#
+# Bound to the LOOPBACK by default, like app.py does when it runs directly: this
+# entry point bypasses app.py's __main__ block, so a hard-coded 0.0.0.0 here meant
+# `gunicorn` served conversations, notes, API keys and the workspace tools to the
+# whole network with no password, no matter what the GUI said. Inside a container it
+# must bind 0.0.0.0 (otherwise the published port reaches nothing) - that is the
+# compose file's deliberate exposure, and it warns when no password is set.
+def _in_container():
+    return os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
+
+_bind_host = (os.environ.get("TRIOFORGE_HOST") or
+              ("0.0.0.0" if _in_container() else "127.0.0.1")).strip() or "127.0.0.1"
+if _bind_host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get("TRIOFORGE_PASSWORD"):
+    logger.warning("Reachable on %s with no TRIOFORGE_PASSWORD: anyone who can route to "
+                   "this instance can read your chats, notes and API keys and use the "
+                   "workspace tools. Set TRIOFORGE_PASSWORD to require a login.", _bind_host)
+bind = "%s:%s" % (_bind_host, os.environ.get("TRIOFORGE_PORT", "5001"))
 
 # Keep the worker count LOW. TrioForge keeps per-process state (an SQLite
 # connection, the selected model, in-memory caches, the llama.cpp handle), and

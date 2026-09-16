@@ -799,7 +799,7 @@ def upload_image():
     if f.filename == '':
         return jsonify({"error": "No file selected"}), 400
     ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
-    if ext not in {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}:
+    if ext not in {'png', 'jpg', 'jpeg', 'gif', 'webp'}:   # no svg: scriptable, and /static serves it on the app origin
         return jsonify({"error": "Unsupported image format"}), 400
     upload_dir = root_path("static", "uploads", "notes")
     os.makedirs(upload_dir, exist_ok=True)

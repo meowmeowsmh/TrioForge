@@ -4845,7 +4845,7 @@ function renderLiveCodeEdit(e) {
     card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:10px; margin-bottom:10px; background:#101018;';
     var head = document.createElement('div');
     head.style.cssText = 'font-size:12px; font-weight:700; margin-bottom:6px;';
-    head.innerHTML = (e.tool === 'edit_file' ? '✏️' : '📄') + ' ' + (e.path || '(file)');
+    head.textContent = (e.tool === 'edit_file' ? '✏️ ' : '📄 ') + (e.path || '(file)');
     head.style.color = e.tool === 'edit_file' ? '#a371f7' : '#3fb950';
     card.appendChild(head);
     if (e.detail) {
