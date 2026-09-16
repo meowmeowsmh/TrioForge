@@ -2984,7 +2984,7 @@ WORKSPACE_TOOLS = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Run a shell command inside the workspace folder and return its stdout/stderr (bounded to a few seconds). Use for building, testing, git, or inspecting files.",
+            "description": "Run a shell command inside the workspace folder and return its stdout/stderr (bounded to a few seconds). Use for building, testing, git, or inspecting files. Requires 'Full computer access' in Workspace settings.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -3209,6 +3209,15 @@ def _execute_tool(name, args):
             return {"error": str(e)}
 
     if name == "run_command":
+        # A shell command is not a workspace operation: it can read the whole disk,
+        # reach the network and install anything, no matter what folder it starts in.
+        # It therefore needs the same "Full computer access" opt-in as the other
+        # system-level tools. It used to have NO gate at all - so any chat message
+        # (or any prompt-injected text the model read) could run arbitrary commands,
+        # even with the workspace set to read-only and full access disabled.
+        if _workspace_setting(wid, "full_access", False) is not True:
+            return {"error": "Shell commands need 'Full computer access'. Enable it in "
+                             "Workspace settings (⚙️) if you want the model to run them."}
         if not base or not os.path.isdir(base):
             return {"error": "No workspace folder configured."}
         cmd = args.get("command", "")
