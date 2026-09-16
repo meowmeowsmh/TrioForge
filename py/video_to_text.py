@@ -45,6 +45,20 @@ def is_audio_file(name: str, mime: str = "") -> bool:
 
 _FFMPEG_CACHE = []          # [path] once resolved, so we probe the version only once
 
+
+def _hidden_flags() -> int:
+    """CREATE_NO_WINDOW for every ffmpeg run.
+
+    TrioForge runs under pythonw (no console). A console program started without this
+    flag makes Windows allocate a NEW console window for it - and a long recording is
+    converted one 30-second chunk at a time, so a 90-minute video flashed ~150 cmd
+    windows across the screen and hammered the machine. Never spawn ffmpeg without it.
+    """
+    if os.name != "nt":
+        return 0
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 # Why the most recent conversion/extraction produced nothing. Callers report this
 # instead of assuming "ffmpeg is missing" - which was wrong every time a current
 # ffmpeg was installed but the file, codec or audio track was the real problem.
@@ -131,7 +145,7 @@ def find_ffmpeg():
     _FFMPEG_CACHE.append(found)
     try:
         import subprocess
-        r = subprocess.run([found, "-version"], capture_output=True, timeout=20)
+        r = subprocess.run([found, "-version"], capture_output=True, timeout=20, creationflags=_hidden_flags())
         first = (r.stdout or b"").decode("utf-8", "replace").splitlines()
         logger.info("ffmpeg: %s (%s)", found, first[0].strip() if first else "version unknown")
     except Exception:
@@ -146,7 +160,7 @@ def ffmpeg_version(path=None):
     if not exe:
         return ""
     try:
-        r = subprocess.run([exe, "-version"], capture_output=True, timeout=20)
+        r = subprocess.run([exe, "-version"], capture_output=True, timeout=20, creationflags=_hidden_flags())
         lines = (r.stdout or b"").decode("utf-8", "replace").splitlines()
         return lines[0].strip() if lines else ""
     except Exception:
@@ -224,7 +238,7 @@ def extract_frames(video_b64, max_frames=MAX_FRAMES, path=None):
                 ffmpeg, "-y", "-ss", f"{t:.3f}", "-i", in_path,
                 "-frames:v", "1", "-q:v", "3", out_path,
             ]
-            r = subprocess.run(cmd, capture_output=True, timeout=60)
+            r = subprocess.run(cmd, capture_output=True, timeout=60, creationflags=_hidden_flags())
             if r.returncode == 0 and os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
                 with open(out_path, "rb") as fh:
                     frames.append({
@@ -267,7 +281,7 @@ def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS, pat
             "-ar", "16000", "-ac", "1", "-t", str(max_seconds),
             "-c:a", "pcm_s16le", "-f", "wav", out_path,
         ]
-        r = subprocess.run(cmd, capture_output=True, timeout=120)
+        r = subprocess.run(cmd, capture_output=True, timeout=120, creationflags=_hidden_flags())
         if r.returncode != 0 or not os.path.isfile(out_path) or os.path.getsize(out_path) == 0:
             tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
             return _fail("ffmpeg could not read '{}' ({}). ffmpeg said: {}",
@@ -308,7 +322,7 @@ def _chunk_wav_file(ffmpeg, wav_path, chunk_seconds=AUDIO_MAX_SECONDS):
                 "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
                 out_path,
             ]
-            r = subprocess.run(cmd, capture_output=True, timeout=120)
+            r = subprocess.run(cmd, capture_output=True, timeout=120, creationflags=_hidden_flags())
             if r.returncode == 0 and os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
                 with open(out_path, "rb") as fh:
                     chunks.append(base64.b64encode(fh.read()).decode("ascii"))
@@ -343,7 +357,7 @@ def audio_to_wav_chunks(audio_b64, name="audio", chunk_seconds=AUDIO_MAX_SECONDS
             ffmpeg, "-y", "-i", in_path,
             "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path,
         ]
-        r = subprocess.run(cmd, capture_output=True, timeout=1800)
+        r = subprocess.run(cmd, capture_output=True, timeout=1800, creationflags=_hidden_flags())
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
             tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
             _fail("ffmpeg could not read '{}' ({}). ffmpeg said: {}",
@@ -386,7 +400,7 @@ def extract_audio_chunks(video_b64, name="video", chunk_seconds=AUDIO_MAX_SECOND
             ffmpeg, "-y", "-i", in_path, "-vn",
             "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path,
         ]
-        r = subprocess.run(cmd, capture_output=True, timeout=1800)
+        r = subprocess.run(cmd, capture_output=True, timeout=1800, creationflags=_hidden_flags())
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) == 0:
             tail = (r.stderr or b"")[-300:].decode("utf-8", "replace").strip()
             low = tail.lower()
@@ -411,7 +425,7 @@ def _probe_duration(ffmpeg, path):
     import re
     cmd = [ffmpeg, "-i", path]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=_hidden_flags())
         # ffmpeg prints duration to stderr: "Duration: 00:00:02.00, ..."
         m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", r.stderr)
         if m:

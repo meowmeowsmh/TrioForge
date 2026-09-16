@@ -34,6 +34,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _no_window():
+    """CREATE_NO_WINDOW for console programs (see video_to_text._hidden_flags).
+
+    The app runs under pythonw, so a console program started without this makes
+    Windows allocate a NEW console window for it - the "cmd keeps popping up" bug.
+    """
+    import subprocess as _sp
+    import os as _os
+    if _os.name != "nt":
+        return 0
+    return getattr(_sp, "CREATE_NO_WINDOW", 0)
+
+
+
 # ── Try orjson ──
 try:
     import orjson
@@ -1054,7 +1069,8 @@ def execute_ollama_command_sync(text):
             models = r.json().get('models', [])
             return "📦 Installed models:\n" + "\n".join(m['name'] for m in models)
         elif cmd == 'ps':
-            result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5,
+                                    creationflags=_no_window())
             return result.stdout or result.stderr
         elif cmd == 'show':
             if not args:
@@ -1075,7 +1091,8 @@ def execute_ollama_command_sync(text):
             if not args:
                 return "❌ Usage: ollama stop <model>"
             model = args[0]
-            subprocess.run(['ollama', 'stop', model], capture_output=True, text=True, timeout=10)
+            subprocess.run(['ollama', 'stop', model], capture_output=True, text=True, timeout=10,
+                           creationflags=_no_window())
             return f"✅ Model '{model}' stopped (unloaded from memory)."
         elif cmd == 'pull':
             if not args:
@@ -1446,7 +1463,8 @@ def get_resources():
             try:
                 output = subprocess.check_output(
                     ['rocm-smi', '--showmeminfo', 'vram'],
-                    text=True, timeout=5, stderr=subprocess.DEVNULL
+                    text=True, timeout=5, stderr=subprocess.DEVNULL,
+                    creationflags=_no_window(),
                 )
                 match = re.search(r'Used\s+(\d+)\s+MB', output)
                 if match:

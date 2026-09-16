@@ -23,6 +23,21 @@ import requests
 
 from paths import root_path
 
+
+def _no_window():
+    """CREATE_NO_WINDOW for console programs (see video_to_text._hidden_flags).
+
+    The app runs under pythonw, so a console program started without this makes
+    Windows allocate a NEW console window for it - the "cmd keeps popping up" bug.
+    """
+    import subprocess as _sp
+    import os as _os
+    if _os.name != "nt":
+        return 0
+    return getattr(_sp, "CREATE_NO_WINDOW", 0)
+
+
+
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")
 VOICE_CONFIG = root_path("voiceguide_llama.cpp_guide", "config.json")
@@ -145,7 +160,8 @@ def _gpu_backend():
     # NVIDIA CUDA
     try:
         if shutil.which("nvidia-smi") and subprocess.run(
-                ["nvidia-smi", "-L"], capture_output=True, timeout=5).returncode == 0:
+                ["nvidia-smi", "-L"], capture_output=True, timeout=5,
+                creationflags=_no_window()).returncode == 0:
             _gpu_cache = {"os": "Linux" if os_name == "Linux" else "Windows", "arch": arch,
                           "backend": "cuda", "label": "NVIDIA CUDA"}
             return _gpu_cache
@@ -154,7 +170,8 @@ def _gpu_backend():
     # AMD ROCm
     try:
         if shutil.which("rocm-smi") and subprocess.run(
-                ["rocm-smi"], capture_output=True, timeout=5).returncode == 0:
+                ["rocm-smi"], capture_output=True, timeout=5,
+                creationflags=_no_window()).returncode == 0:
             _gpu_cache = {"os": "Linux", "arch": arch, "backend": "rocm", "label": "AMD ROCm"}
             return _gpu_cache
     except Exception:
