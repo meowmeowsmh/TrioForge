@@ -143,8 +143,11 @@ def hardware_gpu_allowed() -> bool:
 
     A hung WebView2 window is almost always its renderer or GPU process stalling - and
     this machine's GPU driver has already failed a Vulkan allocation for llama.cpp, so
-    it is the prime suspect. Chromium's own remedy is --disable-gpu: the page keeps
-    working, it is just drawn by the CPU. Stability beats decoration.
+    it is the prime suspect. The software path is SwiftShader (``--use-angle=swiftshader``),
+    NOT ``--disable-gpu``: measured on the machine that hit this, ``--disable-gpu``
+    produced a window that never painted at all (blank white, or black), while
+    SwiftShader drew the whole interface correctly. Stability beats decoration - but
+    only if the page is actually drawn.
     """
     if os.environ.get("TRIOFORGE_WINDOW_HARDWARE", "").strip() in ("1", "true", "on"):
         return True
@@ -601,8 +604,12 @@ def main() -> int:
     # Never done for a remote URL.
     browser_args = []
     if not hardware_gpu_allowed():
-        browser_args.append("--disable-gpu")
-        print("[window] software rendering (a previous window stopped responding; the GPU driver is the suspect)")
+        # SwiftShader, not --disable-gpu: --disable-gpu left this machine with a
+        # window that never painted (blank white/black). SwiftShader still draws the
+        # whole interface, it just rasterises on the CPU.
+        browser_args.append("--use-angle=swiftshader")
+        print("[window] software rendering via SwiftShader (a previous window stopped "
+              "responding; the GPU driver is the suspect)")
     if url.startswith("https://") and is_local(url):
         browser_args.append("--ignore-certificate-errors")
 
