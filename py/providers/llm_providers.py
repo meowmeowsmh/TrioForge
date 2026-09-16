@@ -791,11 +791,28 @@ class LlamaCppProvider(LLMProvider):
                     return f
         return str(model)
 
+    def _touch(self) -> None:
+        """Tell the service manager the model is in use right now.
+
+        llamacpp_service unloads a model after TRIOFORGE_IDLE_UNLOAD seconds of
+        inactivity (300 by default) so memory comes back. Nothing ever refreshed
+        that timestamp, so the model was unloaded 5 minutes after it STARTED - even
+        in the middle of a conversation or a long transcription - and the next call
+        then failed with "Cannot connect to llama.cpp server". Every request to the
+        server marks it used.
+        """
+        try:
+            import llamacpp_service
+            llamacpp_service.touch()
+        except Exception:
+            pass
+
     def _check_server(self, wait_ready: bool = True):
         """Verify the llama-server is reachable. When `wait_ready` is true, poll
         /health until the model finishes loading (large GGUF files take a while),
         so the first message doesn't fail just because the server is still starting."""
         import time
+        self._touch()
         base = self.server_url.rstrip("/")
         base = base.rsplit("/v1", 1)[0]
         health = base + "/health"
@@ -805,6 +822,7 @@ class LlamaCppProvider(LLMProvider):
                 try:
                     r = requests.get(health, timeout=2)
                     if r.status_code == 200:
+                        self._touch()
                         return
                 except Exception:
                     pass
@@ -1004,6 +1022,10 @@ class LlamaCppProvider(LLMProvider):
     def _transcribe_audio_chunk(self, text, wav_b64, model_path,
                                 temperature, max_tokens) -> str:
         """Send ONE audio segment (text + input_audio) and return the transcript."""
+        # A 90-minute recording is ~150 chunks, so this loop can run far longer than
+        # the idle-unload window: mark the model used for every chunk or it is yanked
+        # out from under the transcription half way through.
+        self._touch()
         parts = []
         if text:
             parts.append({"type": "text", "text": text})
