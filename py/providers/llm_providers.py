@@ -991,14 +991,54 @@ class LlamaCppProvider(LLMProvider):
                     name, video_to_text.last_error() or "could not be converted to WAV"))
                 continue
 
-            segs = []
-            for i, ch in enumerate(chunks, 1):
-                prompt = last_text
-                if len(chunks) > 1:
-                    prompt = (prompt or "Transcribe this audio.") + \
-                        f"\n[Audio part {i} of {len(chunks)}]"
-                segs.append(self._transcribe_audio_chunk(
-                    prompt, ch, model_path, temperature, max_tokens))
+            # Transcribe the chunks CONCURRENTLY. llama-server runs with 4 slots, and
+            # one chunk takes ~20s, so a 72-minute recording (146 chunks) took ~48
+            # minutes strictly one-at-a-time while three slots sat idle. Four at a
+            # time is the difference between "so long" and ~12 minutes. The order is
+            # preserved by index, so the transcript still stitches correctly.
+            segs = [""] * len(chunks)
+            try:
+                workers = int(os.environ.get("TRIOFORGE_TRANSCRIBE_WORKERS", "4") or 4)
+            except Exception:
+                workers = 4
+            workers = max(1, min(workers, len(chunks)))
+            total = len(chunks)
+            done = 0
+            prompts = []
+            for i in range(total):
+                p = last_text
+                if total > 1:
+                    p = (p or "Transcribe this audio.") + "\n[Audio part {} of {}]".format(i + 1, total)
+                prompts.append(p)
+
+            if workers > 1 and total > 1:
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                logger.info("Transcribing %d chunks, %d at a time (llama-server has 4 slots)",
+                            total, workers)
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = {
+                        pool.submit(self._transcribe_audio_chunk, prompts[i], chunks[i],
+                                    model_path, temperature, max_tokens): i
+                        for i in range(total)
+                    }
+                    for fut in as_completed(futures):
+                        idx = futures[fut]
+                        try:
+                            segs[idx] = fut.result() or ""
+                        except Exception as exc:
+                            notes.append("{}: chunk {} of {} failed ({})".format(
+                                name, idx + 1, total, exc))
+                        done += 1
+                        if done % 10 == 0 or done == total:
+                            logger.info("  transcribed %d/%d chunks", done, total)
+            else:
+                for i in range(total):
+                    try:
+                        segs[i] = self._transcribe_audio_chunk(
+                            prompts[i], chunks[i], model_path, temperature, max_tokens) or ""
+                    except Exception as exc:
+                        notes.append("{}: chunk {} of {} failed ({})".format(
+                            name, i + 1, total, exc))
             transcript = "\n".join(s for s in segs if s)
             if transcript:
                 results.append((name, transcript))
