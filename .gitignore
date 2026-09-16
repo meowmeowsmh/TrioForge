@@ -62,6 +62,7 @@ desktop.ini
 json_configuration/attachments
 json_configuration/conversations.json
 json_configuration/model_config.json
+json_configuration/ui_settings.json
 json_configuration/corkboard.json
 json_configuration/notes.json
 json_configuration/sync_config.json

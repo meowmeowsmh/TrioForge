@@ -1208,9 +1208,9 @@ def get_cached_html():
     global _cached_html, _cached_html_key
     try:
         st = os.stat(CHAT_HTML_PATH)
-        key = (st.st_mtime_ns, st.st_size, current_model)
+        key = (st.st_mtime_ns, st.st_size, current_model, _ui_settings_stamp())
     except Exception:
-        key = (None, None, current_model)
+        key = (None, None, current_model, _ui_settings_stamp())
     if _cached_html is None or _cached_html_key != key:
         _cached_html = build_html(current_model)
         _cached_html_key = key
@@ -1219,9 +1219,47 @@ def get_cached_html():
 # ── Build HTML (served from templates/index.html) ──
 CHAT_HTML_PATH = root_path("templates", "index.html")
 
+UI_SETTINGS_PATH = root_path("json_configuration", "ui_settings.json")
+
+
+def _load_ui_settings():
+    """The user's UI settings as a dict (empty when none have been saved yet)."""
+    try:
+        with open(UI_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            data = json_loads(f.read())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_ui_settings(data):
+    try:
+        os.makedirs(os.path.dirname(UI_SETTINGS_PATH), exist_ok=True)
+        with open(UI_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            f.write(json_dumps(data))
+    except Exception:
+        pass
+
+
+def _ui_settings_stamp():
+    """mtime of the settings file (0 when absent) - part of the HTML cache key."""
+    try:
+        return os.stat(UI_SETTINGS_PATH).st_mtime_ns
+    except Exception:
+        return 0
+
+
 def build_html(model_name=None):
     with open(CHAT_HTML_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+        html = f.read()
+    # Inject the user's UI settings (theme, provider, model, persona, last view…)
+    # so a WebView2 profile reset - which wipes localStorage - cannot lose them. The
+    # frontend overlays this onto localStorage before it reads anything, and mirrors
+    # changes back here. "</" is escaped so a value can never break out of the tag.
+    settings = _load_ui_settings()
+    blob = json_dumps(settings).replace("</", "<\\/")
+    inject = "<script>window.__ui_settings = {};</script>".format(blob)
+    return html.replace("<head>", "<head>\n" + inject, 1)
 
 # ── Routes ──
 @app.route('/unload_model', methods=['POST'])
@@ -1669,6 +1707,20 @@ def llamacpp_install_status():
     import llama_installer
     installed = llama_installer.find_installed()
     return jsonify({"installed": bool(installed), "path": installed or ""})
+
+
+@app.route('/api/ui_settings', methods=['GET'])
+def ui_settings_get():
+    return jsonify(_load_ui_settings())
+
+
+@app.route('/api/ui_settings', methods=['POST'])
+def ui_settings_save():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "expected an object"}), 400
+    _save_ui_settings(data)
+    return jsonify({"ok": True})
 
 
 @app.route('/api/attach/upload', methods=['POST'])

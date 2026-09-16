@@ -2047,6 +2047,62 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
 </div>
 
 <script>
+/* ─── UI settings survive WebView2 profile resets ───────────────
+   These preferences used to live only in localStorage, which is inside the WebView2
+   profile. Any profile reset (a crash, a runtime update, a manual fix) wiped them, so
+   the theme/provider/model/persona kept going back to defaults. Now they are also
+   mirrored to the server (json_configuration/ui_settings.json) and restored here,
+   BEFORE anything reads them, whenever a key is missing locally. */
+(function () {
+    var KEYS = ['theme', 'sidebarVisible', 'provider', 'notes_ai_provider',
+                'corkboard_ai_provider', 'trio_ai_provider', 'model', 'notes_ai_model',
+                'corkboard_ai_model', 'trio_ai_model', 'trio_persona', 'trio_persona_custom',
+                'trio_last_view', 'note_default_color', 'pin_default_color'];
+
+    // 1) restore what the server kept (only keys the local profile is missing)
+    var snap = (typeof window.__ui_settings === 'object' && window.__ui_settings) || null;
+    if (snap) {
+        Object.keys(snap).forEach(function (k) {
+            if (snap[k] != null && snap[k] !== '' && !localStorage.getItem(k)) {
+                try { localStorage.setItem(k, String(snap[k])); } catch (e) {}
+            }
+        });
+    }
+
+    // 2) mirror changes back to the server (debounced), so they are permanent
+    var origSet = Storage.prototype.setItem;
+    var origRemove = Storage.prototype.removeItem;
+    var timer = null;
+    function flush() {
+        var out = {};
+        try {
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (KEYS.indexOf(k) !== -1 || k.indexOf('trio_api_key_') === 0 ||
+                    k.indexOf('api_key_') === 0 || k.indexOf('notes_ai_api_key_') === 0 ||
+                    k.indexOf('corkboard_ai_api_key_') === 0) {
+                    out[k] = localStorage.getItem(k);
+                }
+            }
+        } catch (e) { return; }
+        fetch('/api/ui_settings', { method: 'POST', headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify(out) }).catch(function () {});
+    }
+    function schedule() {
+        if (timer) return;
+        timer = setTimeout(function () { timer = null; flush(); }, 800);
+    }
+    Storage.prototype.setItem = function (k, v) {
+        var r = origSet.call(this, k, v);
+        if (k === 'theme' || KEYS.indexOf(k) !== -1 || k.indexOf('_api_key_') !== -1) schedule();
+        return r;
+    };
+    Storage.prototype.removeItem = function (k) {
+        var r = origRemove.call(this, k);
+        schedule();
+        return r;
+    };
+})();
 /* ─── CHAT JAVASCRIPT (existing) ────────────────────────────── */
 var chatArea    = document.getElementById('chatArea');
 var msgInput    = document.getElementById('msgInput');
