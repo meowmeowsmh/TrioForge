@@ -118,6 +118,7 @@ def _make_lnk(lnk: Path, target: Path, icon: Path, workdir: Path,
 
 
 def _linux_targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path]]:
+    """Linux (Mint, Ubuntu, …): an applications-menu entry plus one on the Desktop."""
     base = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
     desk = Path(os.environ.get("XDG_DESKTOP_DIR") or (Path.home() / "Desktop"))
     slug = "trioforge" if flavor == "web" else "trioforge-window"
@@ -126,6 +127,67 @@ def _linux_targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path]]
         ("Start Menu", base / "applications" / (slug + ".desktop")),
         ("Desktop", desk / (label + ".desktop")),
     ]
+
+
+def is_wsl() -> bool:
+    """True inside Windows Subsystem for Linux - which has no desktop to put an icon on.
+
+    WSL has no GUI of its own: writing a .desktop file there would not give anyone a
+    clickable icon, and it would even create a bogus ~/Desktop directory. The app is
+    reached through Windows (the browser, at the printed URL), so no shortcut is made.
+    """
+    if os.name == "nt" or sys.platform == "darwin":
+        return False
+    if os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"):
+        return True
+    try:
+        import platform
+        return "microsoft" in platform.uname().release.lower()
+    except Exception:
+        return False
+
+
+def _mac_targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path]]:
+    """Where a Mac shortcut belongs.
+
+    macOS has no .desktop files: the thing Finder will actually double-click is a
+    `.command` file (it opens in Terminal and runs). That is what gets written.
+    """
+    label = "TrioForge" if flavor == "web" else "TrioForge (window)"
+    desk = Path.home() / "Desktop"
+    return [("Desktop", desk / (label + ".command"))]
+
+
+def _make_command_file(path: Path, project: Path, flavor: str = "web") -> Tuple[bool, str]:
+    """A double-clickable macOS launcher: run.sh, in the Terminal window Finder opens."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        flag = " --window" if flavor == "window" else ""
+        body = (
+            "#!/bin/sh\n"
+            "# TrioForge - double-click this in Finder.\n"
+            'cd "{}" || exit 1\n'
+            "exec ./run.sh{}\n".format(project, flag)
+        )
+        path.write_text(body, encoding="utf-8")
+        os.chmod(path, 0o755)
+        return True, "created"
+    except Exception as exc:
+        return False, "{}: {}".format(type(exc).__name__, exc)
+
+
+def targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path]]:
+    """(label, path) for every place this flavour's shortcut belongs - by platform.
+
+    Empty on WSL, which has no desktop of its own.
+    """
+    if is_wsl():
+        return []
+    if os.name == "nt":
+        return _windows_targets(project, flavor)
+    if sys.platform == "darwin":
+        return _mac_targets(project, flavor)
+    return _linux_targets(project, flavor)
 
 
 def _make_desktop_file(path: Path, project: Path, icon: Path, flavor: str = "web") -> Tuple[bool, str]:
@@ -164,19 +226,31 @@ def install(project: Path, where: str = "both", flavor: str = "web") -> List[str
     lines: List[str] = []
     icon = _icon(project)
     spec = FLAVORS.get(flavor) or FLAVORS["web"]
+    found = targets(project, flavor)
+    if not found:
+        # WSL: no desktop of its own, so there is nothing to create (and nothing to
+        # explain - the app is reached through Windows at the printed URL).
+        return lines
     if os.name == "nt":
         target = flavor_target(project, flavor)
         if not target.is_file():
             lines.append("{} shortcut skipped: {} not found".format(flavor, spec["script"]))
             return lines
-        for label, lnk in _windows_targets(project, flavor):
+        for label, lnk in found:
             if where not in ("both", label.lower().replace(" ", "")):
                 continue
             ok, msg = _make_lnk(lnk, target, icon, project, spec["desc"])
             lines.append("{} shortcut: {} ({})".format(label, lnk, msg) if ok
                          else "{} shortcut failed: {}".format(label, msg))
+    elif sys.platform == "darwin":
+        for label, path in found:
+            if where not in ("both", label.lower().replace(" ", "")):
+                continue
+            ok, msg = _make_command_file(path, project, flavor)
+            lines.append("{} launcher: {} ({})".format(label, path, msg) if ok
+                         else "{} launcher failed: {}".format(label, msg))
     else:
-        for label, path in _linux_targets(project, flavor):
+        for label, path in found:
             if where not in ("both", label.lower().replace(" ", "")):
                 continue
             ok, msg = _make_desktop_file(path, project, icon, flavor)
@@ -190,17 +264,11 @@ def exists(project: Path, flavor: str = "web") -> bool:
     return any(path.is_file() for _label, path in targets(project, flavor))
 
 
-def targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path]]:
-    """(label, path) for every place this flavour's shortcut belongs."""
-    return (_windows_targets(project, flavor) if os.name == "nt"
-            else _linux_targets(project, flavor))
-
-
 def missing(project: Path, flavor: str = "web") -> List[str]:
     """Labels (e.g. 'Desktop') where this flavour's shortcut is NOT there yet.
 
     Checked per location, so deleting just the Desktop icon brings that one back
-    without touching the Start Menu entry - and vice versa.
+    without touching the Start Menu entry - and vice versa. Empty on WSL.
     """
     return [label for label, path in targets(project, flavor) if not path.is_file()]
 
@@ -209,9 +277,7 @@ def remove(project: Path, flavor: str = None) -> List[str]:
     lines: List[str] = []
     flavors = [flavor] if flavor else list(FLAVORS.keys())
     for fl in flavors:
-        targets = (_windows_targets(project, fl) if os.name == "nt"
-                   else _linux_targets(project, fl))
-        for label, path in targets:
+        for label, path in targets(project, fl):
             try:
                 if path.is_file():
                     path.unlink()
@@ -228,8 +294,10 @@ def state(project: Path, flavor: str = None) -> List[str]:
     flavors = [flavor] if flavor else list(FLAVORS.keys())
     lines: List[str] = []
     for fl in flavors:
-        targets = (_windows_targets(project, fl) if os.name == "nt"
-                   else _linux_targets(project, fl))
-        for label, path in targets:
+        found = targets(project, fl)
+        if not found:
+            lines.append("({}): not applicable here".format(fl))
+            continue
+        for label, path in found:
             lines.append("{} ({}): {}".format(label, fl, "yes" if path.is_file() else "no"))
     return lines

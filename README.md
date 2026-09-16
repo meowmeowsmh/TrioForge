@@ -93,12 +93,20 @@ The server starts hidden and the app opens in your default browser. Nothing flas
 whole launch runs invisibly. This is the one to use if your GPU driver is fussy (see *Window or
 browser?* below) — a browser tab always renders.
 
-> **It makes its own shortcuts.** TrioForge puts a **TrioForge** icon on your **Desktop** and in your
-> **Start Menu** (per-user: no admin rights, nothing machine-wide), with its own logo rather than a
-> generic script icon. Each entry point owns its own: **`TrioForge`** opens the browser version,
-> **`TrioForge (window)`** opens the desktop window — created only if missing, so neither overwrites
-> the other. Manage them with `application.bat --install-shortcut` / `--remove-shortcut`, or skip the
-> whole thing with `TRIOFORGE_NO_SHORTCUT=1`.
+> **It makes its own shortcuts.** TrioForge puts a **TrioForge** icon where your platform keeps them —
+> per-user, no admin rights, nothing machine-wide, and only if it is missing:
+>
+> | platform | what it creates |
+> |---|---|
+> | **Windows** | Desktop + Start Menu `.lnk` — **`TrioForge`** (browser) and **`TrioForge (window)`** |
+> | **Linux (Mint, Ubuntu, …)** | `~/.local/share/applications/trioforge.desktop` + one on your Desktop |
+> | **macOS** | A double-clickable **`TrioForge.command`** on your Desktop (Finder can't launch a `.desktop` file) |
+> | **WSL** | **Nothing** — WSL has no desktop of its own; you reach the app through Windows at the URL it prints |
+>
+> Each entry point keeps its own up to date: launching `start-web.vbs` / `./run.sh` makes sure the
+> browser one exists, launching `start.vbs` makes sure the window one does, and neither overwrites the
+> other. Manage them with `application.bat --install-shortcut` / `--remove-shortcut`, or skip the whole
+> thing with `TRIOFORGE_NO_SHORTCUT=1`.
 
 **2 · Its own window.** No browser, no terminal, nothing else on screen — in the same folder,
 double-click **`start.vbs`**.
