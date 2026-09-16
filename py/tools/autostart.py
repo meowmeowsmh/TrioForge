@@ -45,11 +45,12 @@ def _python_for_autostart() -> str:
 def _extra_args() -> List[str]:
     """What the login entry should use.
 
-    --window opens TrioForge in its own window, the same thing start.vbs does, so
-    "start at login" gives you the app rather than a silent server you cannot see.
-    --no-browser keeps a browser tab from opening as well.
+    It starts the SERVER quietly in the background and opens nothing: no WebView2
+    window (which cannot paint on some GPUs and would meet the user with a blank
+    window at every login) and no browser tab (uninvited). The app opens when the
+    user double-clicks the TrioForge shortcut, which launches the browser.
     """
-    return ["--autostart", "--window", "--no-browser"]
+    return ["--autostart", "--detach", "--no-browser", "--background-update"]
 
 
 def _command(project: Path) -> List[str]:
