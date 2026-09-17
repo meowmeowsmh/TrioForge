@@ -33,7 +33,7 @@
 <script src="/static/theme-loader.js"></script>
 <script src="/static/vendor/highlight.min.js" defer></script>
 <script>
-/* â”€â”€ Fallback loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ── Fallback loader ───────────────────────────────────────────────────────────
    The markdown / diagram / highlight libraries are served from /static/vendor above,
    so the app works with no internet at all. If one is ever missing (an old checkout,
    a partial download), pull it from the CDN instead of silently losing markdown
@@ -81,7 +81,7 @@ body.light-mode::before { opacity: 0; }
     display:flex; height:100%;
     backdrop-filter: blur(2px);
 }
-/* â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Sidebar ─────────────────────────────────── */
 .sidebar {
     width: 280px;
     background: rgba(18, 18, 26, 0.85);
@@ -208,14 +208,14 @@ body.light-mode::before { opacity: 0; }
     backdrop-filter: blur(10px);
     transition: background 0.3s, color 0.3s;
 }
-/* â”€â”€ Main content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Main content ────────────────────────────── */
 .main {
     flex:1; display:flex; flex-direction:column; min-width:0;
     background: rgba(10,10,15,0.7);
     backdrop-filter: blur(10px);
     transition: background 0.3s ease;
 }
-/* â”€â”€ Top bar with CSS grid for perfect centering â”€â”€ */
+/* ── Top bar with CSS grid for perfect centering ── */
 .top-bar {
     display: grid;
     /* minmax(0, 1fr) (not plain 1fr) so the side columns can actually SHRINK below
@@ -255,7 +255,7 @@ body.light-mode::before { opacity: 0; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* â”€â”€ Brand: the logo wordmark alone, on all three pages â”€â”€
+/* ── Brand: the logo wordmark alone, on all three pages ──
    min-width:0 on the flex row is what stops the wordmark from pushing the top
    bar wider than the viewport (the same trap the dropdowns hit before). */
 .top-bar .left h1.brand {
@@ -338,7 +338,7 @@ html.view-embed #liveCodePanel {
     display: none !important;
 }
 
-/* â”€â”€ Centered tab buttons (pill style) â”€â”€ only Chat, Notes, Cork Board â”€â”€ */
+/* ── Centered tab buttons (pill style) ── only Chat, Notes, Cork Board ── */
 .top-bar .center-tabs {
     display: flex;
     gap: 4px;
@@ -389,7 +389,7 @@ body.light-mode .center-tabs .tab-btn.active {
     background: #1f6feb;
     color: #fff;
 }
-/* â”€â”€ Right side of top bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Right side of top bar ───────────────────── */
 .top-bar .right {
     display: flex;
     align-items: center;
@@ -402,7 +402,7 @@ body.light-mode .center-tabs .tab-btn.active {
     justify-content: flex-end;
     direction: ltr;
 }
-/* â”€â”€ Icon toolbar (all the buttons; NOT the dropdowns) â”€â”€
+/* ── Icon toolbar (all the buttons; NOT the dropdowns) ──
    Its OWN grid row, spanning the full bar width and CENTERED across the middle,
    so the top background shows no empty "limited space" gap on one side. */
 .top-bar-icons {
@@ -410,9 +410,9 @@ body.light-mode .center-tabs .tab-btn.active {
     grid-row: 2;
     display: flex;
     align-items: center;
-    /* Same gap as the dropdown row (.top-bar .right) and applied uniformly â€” a
+    /* Same gap as the dropdown row (.top-bar .right) and applied uniformly — a
        stray inline margin-left on the empty #deepseekStatus span used to add an
-       extra gap between the ðŸ§¹ clear-chat and âš™ï¸ workspace buttons. */
+       extra gap between the 🧹 clear-chat and ⚙️ workspace buttons. */
     gap: 10px;
     flex-wrap: wrap;
     justify-content: center;
@@ -584,7 +584,7 @@ body.light-mode .center-tabs .tab-btn.active {
 .toggle-outer.day .knob-sun { opacity: 1; }
 .toggle-outer.day .astronaut { opacity: 0; }
 .toggle-outer.day .biplane { opacity: 1; }
-/* â”€â”€ Chat panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Chat panel ────────────────────────────────── */
 .chat-panel {
     flex:1; display:flex; flex-direction:column; min-height:0;
 }
@@ -1093,7 +1093,7 @@ body.light-mode {
     background: #ffffff;
     color: #24292f;
 }
-/* Fullscreen uses the <html> surface â€” make it light too, otherwise it stays black. */
+/* Fullscreen uses the <html> surface — make it light too, otherwise it stays black. */
 html.light-mode {
     background: #ffffff;
 }
@@ -1247,7 +1247,7 @@ body.light-mode .vision-badge {
     color: #1e7e34;
 }
 
-/* ===== WEATHER WIDGET STYLES â€“ COMPACT (same as Notes/Cork Board) ===== */
+/* ===== WEATHER WIDGET STYLES – COMPACT (same as Notes/Cork Board) ===== */
 .toast-container {
     position: fixed;
     top: 70px;
@@ -1543,14 +1543,14 @@ body.light-mode .weather-country-select option {
     color: #24292f;
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ════════════════════════════════════════════════════════════════
    PERFORMANCE PASS
    backdrop-filter (the frosted-glass blur) is extremely expensive:
    on every scroll frame the browser must re-rasterize the backdrop
    behind each blurred element. With ~25 of them (sidebar, top bar,
    every message bubble, every button/input) scrolling becomes janky.
    We disable the blur and compensate by making surfaces more opaque.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ════════════════════════════════════════════════════════════════ */
 * {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
@@ -1690,7 +1690,7 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     #searchInput { font-size: 13px; }
 }
 
-/* â”€â”€ Media players: the galaxy theme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ── Media players: the galaxy theme ──────────────────────────────────────────
    The browser's built-in <audio controls> is ~54px tall with a hairline seek bar.
    This is the app's own player: a deep-space card with a starfield, a glowing
    nebula play button, a seek bar that fills as it plays, and a speaker button so
@@ -1800,7 +1800,7 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
    means the element keeps its own size but never exceeds the cap - so a 1920px
    recording lands at roughly the footprint of an image message (240px) instead of
    stretching the bubble across the whole chat. THIS ONE NUMBER is the size knob;
-   the â›¶ button still gives full screen. */
+   the ⛶ button still gives full screen. */
 video.tf-video {
     width: auto; max-width: 260px; max-height: 50vh;
     background: #000; border-radius: 12px; border: 1px solid #333; display: block;
@@ -1811,21 +1811,21 @@ video.tf-video {
 <div class="app">
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <h2>ðŸ’¬ Chats</h2>
+      <h2>💬 Chats</h2>
       <button class="new-chat-btn" onclick="newChat()">+ New</button>
-      <button class="new-chat-btn" onclick="openRestoreModal()" style="background:#2d2d3d; box-shadow:none;" title="Restore deleted chats, notes and pins">ðŸ—„ï¸</button>
+      <button class="new-chat-btn" onclick="openRestoreModal()" style="background:#2d2d3d; box-shadow:none;" title="Restore deleted chats, notes and pins">🗄️</button>
     </div>
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="ðŸ” Search messages... (full text)" oninput="searchChats()">
+      <input type="text" id="searchInput" placeholder="🔍 Search messages... (full text)" oninput="searchChats()">
     </div>
     <div class="conv-list" id="convList"></div>
     <div class="sidebar-io">
-      <button onclick="exportAllChats('md')" title="Download every chat as Markdown">â¬‡ All (MD)</button>
-      <button onclick="exportAllChats('json')" title="Download every chat as JSON (re-importable)">â¬‡ All (JSON)</button>
-      <button onclick="document.getElementById('importFileInput').click()" title="Import a TrioForge JSON export">â¬† Import</button>
+      <button onclick="exportAllChats('md')" title="Download every chat as Markdown">⬇ All (MD)</button>
+      <button onclick="exportAllChats('json')" title="Download every chat as JSON (re-importable)">⬇ All (JSON)</button>
+      <button onclick="document.getElementById('importFileInput').click()" title="Import a TrioForge JSON export">⬆ Import</button>
     </div>
     <input type="file" id="importFileInput" accept=".json,application/json" style="display:none" onchange="importChats(this)">
-    <div class="sidebar-footer">Drag to reorder Â· âœï¸ to rename</div>
+    <div class="sidebar-footer">Drag to reorder · ✏️ to rename</div>
   </div>
 
   <div class="main">
@@ -1843,13 +1843,13 @@ video.tf-video {
         </h1>
       </div>
 
-      <!-- CENTER TABS â€“ only Chat, Notes, Cork Board -->
+      <!-- CENTER TABS – only Chat, Notes, Cork Board -->
       <div class="center-tabs">
-        <button class="tab-btn active" id="tabChat" onclick="showChatView()">ðŸ’¬ Chat</button>
+        <button class="tab-btn active" id="tabChat" onclick="showChatView()">💬 Chat</button>
         <a href="/notes" class="tab-btn" id="tabNotes" style="text-decoration:none;"
-           onclick="return openEmbeddedView('/notes','notes')">ðŸ“ Notes</a>
+           onclick="return openEmbeddedView('/notes','notes')">📝 Notes</a>
         <a href="/corkboard" class="tab-btn" id="tabCork" style="text-decoration:none;"
-           onclick="return openEmbeddedView('/corkboard','corkboard')">ðŸ“Œ Cork Board</a>
+           onclick="return openEmbeddedView('/corkboard','corkboard')">📌 Cork Board</a>
       </div>
 
       <div class="right">
@@ -1877,7 +1877,7 @@ video.tf-video {
                   <ellipse cx="22" cy="21" rx="2" ry="1.2" fill="#b06030"/>
                   <circle cx="10" cy="11" r="3.5" fill="#d0d8e8"/>
                   <circle cx="34" cy="11" r="3.5" fill="#d0d8e8"/>
-                  <text x="22" y="37" text-anchor="middle" font-size="8" fill="#bbb">â˜…</text>
+                  <text x="22" y="37" text-anchor="middle" font-size="8" fill="#bbb">★</text>
                   <ellipse cx="9" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(-10 9 36)"/>
                   <ellipse cx="35" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(10 35 36)"/>
                   <ellipse cx="16" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
@@ -1929,21 +1929,21 @@ video.tf-video {
           <option value="claude">Claude (Anthropic)</option>
           <option value="gemini">Gemini (Google)</option>
           <option value="openrouter">OpenRouter (models)</option>
-          <option value="voice">ðŸ—£ Voice-to-Voice</option>
-          <option value="comfyui">ðŸ–¼ï¸ Image (OpenRouter / Gemini / ComfyUI)</option>
-          <option value="comfyui-video">ðŸŽ¬ Video (OpenRouter / ComfyUI)</option>
-          <option value="comfyui-audio">ðŸŽµ Audio (ComfyUI text-to-audio / music / TTS)</option>
+          <option value="voice">🗣 Voice-to-Voice</option>
+          <option value="comfyui">🖼️ Image (OpenRouter / Gemini / ComfyUI)</option>
+          <option value="comfyui-video">🎬 Video (OpenRouter / ComfyUI)</option>
+          <option value="comfyui-audio">🎵 Audio (ComfyUI text-to-audio / music / TTS)</option>
         </select>
         <select id="personaSelect" title="Assistant persona" class="provider-select" style="min-width:130px; max-width:180px;">
           <!-- Built-in defaults baked in so the dropdown is NEVER empty even if
                /api/personas can't be reached; loadPersonaSelect() refreshes them. -->
           <option value="">None (default voice)</option>
-          <option value="friendly_tutor">ðŸŽ“ Friendly Tutor</option>
-          <option value="code_mentor">ðŸ’» Code Mentor</option>
-          <option value="professional_analyst">ðŸ“Š Professional Analyst</option>
-          <option value="custom">âœï¸ Customâ€¦</option>
+          <option value="friendly_tutor">🎓 Friendly Tutor</option>
+          <option value="code_mentor">💻 Code Mentor</option>
+          <option value="professional_analyst">📊 Professional Analyst</option>
+          <option value="custom">✏️ Custom…</option>
         </select>
-        <input type="text" id="personaCustomInput" placeholder="Describe your personaâ€¦ (free text)"
+        <input type="text" id="personaCustomInput" placeholder="Describe your persona… (free text)"
                style="display:none; max-width:240px; padding:5px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.1); background:rgba(13,17,23,0.7); color:#e6edf3;"
                autocomplete="off" autocorrect="off" spellcheck="false">
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
@@ -1953,22 +1953,22 @@ video.tf-video {
       <!-- Icon toolbar: its OWN row, centered across the MIDDLE of the bar (all
            icons live here). Only the dropdowns stay in the row above. -->
       <div class="top-bar-icons" id="topBarIcons">
-        <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">ðŸ—‘</button>
-        <button class="clear-btn" id="hfDownloadBtn" onclick="openHfDownload()" title="Download a model from Hugging Face (GGUF)">â¬‡</button>
-        <span id="visionBadge" class="vision-badge" title="Vision capable">ðŸ‘</span>
-        <button class="clear-btn" onclick="clearAllChats()" title="Clear this chat's messages">ðŸ§¹</button>
+        <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑</button>
+        <button class="clear-btn" id="hfDownloadBtn" onclick="openHfDownload()" title="Download a model from Hugging Face (GGUF)">⬇</button>
+        <span id="visionBadge" class="vision-badge" title="Vision capable">👁</span>
+        <button class="clear-btn" onclick="clearAllChats()" title="Clear this chat's messages">🧹</button>
         <span id="deepseekStatus" style="font-size:12px;"></span>
         <span id="modelInfo" style="display:none;"></span>
-        <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">âš™ï¸</button>
-        <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">ðŸ—’ï¸</button>
-        <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">ðŸ§©</button>
-        <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup â€” install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">ðŸš€</button>
-        <button class="clear-btn" id="integrityBtn" onclick="openIntegrity()" title="Integrity check â€” compare this app's files with its recorded baseline and scan for injected code" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">ðŸ›¡ï¸</button>
-        <button class="clear-btn" id="themeBtn" onclick="openThemePicker()" title="Appearance â€” pick a theme for every page">ðŸŽ¨</button>
+        <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">⚙️</button>
+        <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
+        <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
+        <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup — install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🚀</button>
+        <button class="clear-btn" id="integrityBtn" onclick="openIntegrity()" title="Integrity check — compare this app's files with its recorded baseline and scan for injected code" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🛡️</button>
+        <button class="clear-btn" id="themeBtn" onclick="openThemePicker()" title="Appearance — pick a theme for every page">🎨</button>
         <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()"
-                title="Full screen â€” stays on as you switch Chat, Notes and Cork Board"
+                title="Full screen — stays on as you switch Chat, Notes and Cork Board"
                 aria-label="Toggle full screen" style="display:flex; align-items:center; justify-content:center;">
-          <!-- A drawn icon, not the â›¶ emoji: on Windows that codepoint falls back
+          <!-- A drawn icon, not the ⛶ emoji: on Windows that codepoint falls back
                to a monochrome glyph that is nearly invisible in this toolbar. -->
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1978,23 +1978,23 @@ video.tf-video {
             <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
           </svg>
         </button>
-        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Note & pin colours">ðŸŽ¨</button>
-        <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">âŒ¨ï¸</button>
-        <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">ðŸ“Š</button>
-        <button class="clear-btn" id="compareBtn" onclick="toggleComparePanel()" title="A/B compare â€” run two models side-by-side" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">âš”ï¸</button>
-        <button class="clear-btn" id="multiBtn" onclick="toggleMultiPanel()" title="Multi-agent â€” run several models on one task" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">ðŸ¤</button>
-        <button class="clear-btn" id="liveCodeBtn" onclick="toggleLiveCodePanel()" title="Live coding â€” watch the agent edit files in real time" style="border-color:rgba(163,113,247,0.4); color:#a371f7; position:relative;">ðŸ“<span id="liveCodeDot" style="display:none; position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:#3fb950; box-shadow:0 0 6px rgba(63,185,80,0.7);"></span></button>
-        <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">ðŸ–¼ï¸</button>
-        <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">ðŸŽ¬</button>
-        <button class="clear-btn" id="audioGenBtn" onclick="selectAudioGen()" title="Generate audio (ComfyUI text-to-audio / music / TTS)" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">ðŸŽµ</button>
-        <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) â€” upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">ðŸ“š</button>
+        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Note & pin colours">🎨</button>
+        <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">⌨️</button>
+        <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
+        <button class="clear-btn" id="compareBtn" onclick="toggleComparePanel()" title="A/B compare — run two models side-by-side" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">⚔️</button>
+        <button class="clear-btn" id="multiBtn" onclick="toggleMultiPanel()" title="Multi-agent — run several models on one task" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🤝</button>
+        <button class="clear-btn" id="liveCodeBtn" onclick="toggleLiveCodePanel()" title="Live coding — watch the agent edit files in real time" style="border-color:rgba(163,113,247,0.4); color:#a371f7; position:relative;">📝<span id="liveCodeDot" style="display:none; position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:#3fb950; box-shadow:0 0 6px rgba(63,185,80,0.7);"></span></button>
+        <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">🖼️</button>
+        <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
+        <button class="clear-btn" id="audioGenBtn" onclick="selectAudioGen()" title="Generate audio (ComfyUI text-to-audio / music / TTS)" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">🎵</button>
+        <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
 
         <!-- Weather toggle is an ICON, so it lives in this centered icon row. -->
-        <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">ðŸŒ¤ï¸</button>
+        <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
         </div>
     </div>
 
-    <!-- EMBEDDED VIEW HOST â€” Notes and Cork Board load here instead of navigating,
+    <!-- EMBEDDED VIEW HOST — Notes and Cork Board load here instead of navigating,
          so the chat document (and any fullscreen state) is never torn down. -->
     <div id="viewHost" style="display:none; flex:1; min-height:0; background:#0a0a0f;">
       <!-- Deliberately NO allowfullscreen: the embedded page has its own fullscreen
@@ -2008,31 +2008,31 @@ video.tf-video {
     <!-- CHAT PANEL -->
     <div id="chatPanel" class="chat-panel">
       <div class="chat-area" id="chatArea">
-        <div class="msg bot">ðŸ‘‹ Hello! Select or create a chat from the sidebar.
+        <div class="msg bot">👋 Hello! Select or create a chat from the sidebar.
         <br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>
       </div>
       <div class="attachments" id="attachments"></div>
       <div class="input-bar">
-        <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">ðŸ”</button>
-        <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">ðŸ“Ž</button>
+        <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
+        <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
         <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
-        <input id="modelSearchInput" type="text" placeholder="ðŸ” filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
+        <input id="modelSearchInput" type="text" placeholder="🔍 filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
         <select id="modelSelect" class="model-select" title="Select model"></select>
-        <button id="recordBtn" class="record-btn" title="Click to record voice input">ðŸŽ¤</button>
-        <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">ðŸ”Š</button>
-        <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">â¹ï¸</button>
+        <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
+        <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
+        <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
         <button id="sendBtn">Send</button>
       </div>
     </div>
 
     <!-- ComfyUI image settings bar (shown above chat when ComfyUI is selected) -->
     <div id="imageGenPanel" style="display:none; padding:10px 40px; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.5);">
-      <span style="font-size:13px; font-weight:600; color:#58a6ff;">ðŸ–¼ï¸ Image settings:</span>
+      <span style="font-size:13px; font-weight:600; color:#58a6ff;">🖼️ Image settings:</span>
       <select id="imageBackendSelect" title="Image backend" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
-        <option value="openrouter">ðŸ›° OpenRouter (models)</option>
-        <option value="gemini">ðŸ¦ Gemini (Google)</option>
+        <option value="openrouter">🛰 OpenRouter (models)</option>
+        <option value="gemini">🐦 Gemini (Google)</option>
         <option value="comfyui">ComfyUI (local)</option>
       </select>
       <select id="imageModelSelect" title="Image model" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
@@ -2067,9 +2067,9 @@ video.tf-video {
 
     <!-- ComfyUI video settings bar -->
     <div id="videoGenPanel" style="display:none; padding:10px 40px; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.5);">
-      <span style="font-size:13px; font-weight:600; color:#58a6ff;">ðŸŽ¬ Video settings:</span>
+      <span style="font-size:13px; font-weight:600; color:#58a6ff;">🎬 Video settings:</span>
       <select id="videoBackendSelect" title="Video backend" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
-        <option value="openrouter">ðŸ›° OpenRouter (models)</option>
+        <option value="openrouter">🛰 OpenRouter (models)</option>
         <option value="comfyui">ComfyUI (local)</option>
       </select>
       <select id="videoModelSelect" title="Video model" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"></select>
@@ -2088,9 +2088,9 @@ video.tf-video {
 
     <!-- ComfyUI audio (text-to-audio / music / TTS) settings bar -->
     <div id="audioGenPanel" style="display:none; padding:10px 40px; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.5);">
-      <span style="font-size:13px; font-weight:600; color:#f0883e;">ðŸŽµ Audio settings:</span>
+      <span style="font-size:13px; font-weight:600; color:#f0883e;">🎵 Audio settings:</span>
       <select id="audioWorkflowSelect" title="ComfyUI audio workflow (auto-detected)" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
-        <option value="">ðŸ”„ Auto-detect audio workflowâ€¦</option>
+        <option value="">🔄 Auto-detect audio workflow…</option>
       </select>
       <span style="font-size:13px; font-weight:600; color:#8b949e;">Length</span>
       <input id="audioDuration" type="number" value="30" min="3" max="180" step="1" title="Audio length in seconds" style="width:96px; padding:8px 10px; font-size:14px; background:#0a0a0f; color:#e1e4e8; border:1px solid #444; border-radius:6px;"> <span style="font-size:13px; color:#8b949e;">seconds</span>
@@ -2100,20 +2100,20 @@ video.tf-video {
         <button type="button" onclick="document.getElementById('audioDuration').value=60" title="60 seconds" style="background:#1c1c26; border:1px solid #333; color:#8b949e; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">60s</button>
         <button type="button" onclick="document.getElementById('audioDuration').value=120" title="120 seconds" style="background:#1c1c26; border:1px solid #333; color:#8b949e; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">120s</button>
       </span>
-      <button id="audioRefreshBtn" title="Re-scan ComfyUI audio workflows" onclick="loadAudioWorkflows()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">â†»</button>
-      <span id="audioStatus" style="font-size:11px; color:#8b949e;">Text-to-audio via ComfyUI (Stable Audio / ACE-Step / MiniMax Musicâ€¦). Type your prompt below and press Enter.</span>
+      <button id="audioRefreshBtn" title="Re-scan ComfyUI audio workflows" onclick="loadAudioWorkflows()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">↻</button>
+      <span id="audioStatus" style="font-size:11px; color:#8b949e;">Text-to-audio via ComfyUI (Stable Audio / ACE-Step / MiniMax Music…). Type your prompt below and press Enter.</span>
     </div>
 
     <!-- RAG document-chat panel -->
     <div id="ragPanel" style="display:none; padding:12px 40px; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.6);">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
-        <span style="font-size:13px; font-weight:600; color:#a371f7;">ðŸ“š Document chat (RAG)</span>
-        <button class="clear-btn" onclick="document.getElementById('ragFileInput').click()" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">â¬† Upload docs</button>
+        <span style="font-size:13px; font-weight:600; color:#a371f7;">📚 Document chat (RAG)</span>
+        <button class="clear-btn" onclick="document.getElementById('ragFileInput').click()" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">⬆ Upload docs</button>
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#e1e4e8; cursor:pointer; user-select:none;">
           <input type="checkbox" id="ragEnabledSwitch" checked style="cursor:pointer;"/>
           Use this material when answering
         </label>
-        <span style="font-size:11px; color:#8b949e;">Upload documents (PDF, Word, Markdown, code, CSVâ€¦). When enabled, the model reads your indexed docs with every answer.</span>
+        <span style="font-size:11px; color:#8b949e;">Upload documents (PDF, Word, Markdown, code, CSV…). When enabled, the model reads your indexed docs with every answer.</span>
       </div>
       <div id="ragDocList" style="max-height:140px; overflow-y:auto;"></div>
     </div>
@@ -2121,7 +2121,7 @@ video.tf-video {
     <!-- A/B model compare panel -->
     <div id="comparePanel" style="display:none; padding:12px 40px; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.6);">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-        <span style="font-size:13px; font-weight:600; color:#f0883e;">âš”ï¸ A/B Model Compare</span>
+        <span style="font-size:13px; font-weight:600; color:#f0883e;">⚔️ A/B Model Compare</span>
         <span style="font-size:11px; color:#8b949e;">Same prompt, two models. Pick a provider + model for each side, type a prompt, hit Compare.</span>
       </div>
       <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
@@ -2137,8 +2137,8 @@ video.tf-video {
         </div>
       </div>
       <div style="display:flex; gap:8px; margin-bottom:10px;">
-        <input id="cmpPrompt" type="text" placeholder="Prompt to compareâ€¦" style="flex:1; padding:10px 12px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:8px; font-size:14px;">
-        <button id="cmpRunBtn" onclick="runCompare()" style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border:none; border-radius:8px; padding:0 20px; font-weight:600; cursor:pointer;">âš”ï¸ Compare</button>
+        <input id="cmpPrompt" type="text" placeholder="Prompt to compare…" style="flex:1; padding:10px 12px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:8px; font-size:14px;">
+        <button id="cmpRunBtn" onclick="runCompare()" style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border:none; border-radius:8px; padding:0 20px; font-weight:600; cursor:pointer;">⚔️ Compare</button>
       </div>
       <div id="cmpResults" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
     </div>
@@ -2146,14 +2146,14 @@ video.tf-video {
     <!-- Multi-agent panel -->
     <div id="multiPanel" style="display:none; padding:12px 40px; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.6);">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-        <span style="font-size:13px; font-weight:600; color:#3fb950;">ðŸ¤ Multi-agent â€” several models, one task</span>
+        <span style="font-size:13px; font-weight:600; color:#3fb950;">🤝 Multi-agent — several models, one task</span>
         <span style="font-size:11px; color:#8b949e;">Each agent gets an optional role; they answer in parallel and results merge below.</span>
       </div>
       <div id="multiAgents" style="margin-bottom:10px;"></div>
       <div style="display:flex; gap:8px; margin-bottom:10px;">
         <button onclick="addMultiAgent()" style="padding:6px 12px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:6px; cursor:pointer;">+ Add agent</button>
-        <input id="multiPrompt" type="text" placeholder="Task for the agentsâ€¦" style="flex:1; padding:10px 12px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:8px; font-size:14px;">
-        <button id="multiRunBtn" onclick="runMultiAgent()" style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border:none; border-radius:8px; padding:0 20px; font-weight:600; cursor:pointer;">ðŸ¤ Run</button>
+        <input id="multiPrompt" type="text" placeholder="Task for the agents…" style="flex:1; padding:10px 12px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:8px; font-size:14px;">
+        <button id="multiRunBtn" onclick="runMultiAgent()" style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border:none; border-radius:8px; padding:0 20px; font-weight:600; cursor:pointer;">🤝 Run</button>
       </div>
       <div id="multiResults" style="display:flex; flex-direction:column; gap:10px;"></div>
     </div>
@@ -2161,32 +2161,32 @@ video.tf-video {
     <!-- Live coding panel (right side) -->
     <div id="liveCodePanel" style="display:none; position:fixed; top:60px; right:0; width:min(440px, 92vw); bottom:60px; z-index:5000; background:#0d0d13; border-left:1px solid #333; box-shadow:-4px 0 20px rgba(0,0,0,0.5); flex-direction:column;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222;">
-        <strong style="font-size:14px; color:#a371f7;">ðŸ“ Live coding â€” agent edits</strong>
+        <strong style="font-size:14px; color:#a371f7;">📝 Live coding — agent edits</strong>
         <div style="display:flex; gap:6px;">
-          <button onclick="restoreLiveCode()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;" title="Pick saved edits to restore from the database">â†º Restore</button>
+          <button onclick="restoreLiveCode()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;" title="Pick saved edits to restore from the database">↺ Restore</button>
           <button onclick="clearLiveCode()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">Clear</button>
-          <button onclick="toggleLiveCodePanel()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">âœ•</button>
+          <button onclick="toggleLiveCodePanel()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
         </div>
       </div>
       <div id="liveCodeBody" style="flex:1; overflow-y:auto; padding:12px 14px; font-size:12px;">
-        <div style="color:#8b949e;">Session only â€” new edits appear here as the agent makes them. Use â†º Restore to load saved edits from the database.</div>
+        <div style="color:#8b949e;">Session only — new edits appear here as the agent makes them. Use ↺ Restore to load saved edits from the database.</div>
       </div>
     </div>
 
     <!-- Restore picker modal: select which saved edits to load -->
     <div id="restorePicker" style="display:none; position:fixed; top:12vh; right:0; width:min(440px, 92vw); bottom:12vh; z-index:6000; background:#0d0d13; border-left:1px solid #1f6feb; box-shadow:-4px 0 20px rgba(0,0,0,0.6); flex-direction:column;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222;">
-        <strong style="font-size:14px; color:#1f6feb;">â†º Restore saved edits</strong>
-        <button onclick="closeRestore()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">âœ•</button>
+        <strong style="font-size:14px; color:#1f6feb;">↺ Restore saved edits</strong>
+        <button onclick="closeRestore()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
       </div>
       <div id="restorePickerList" style="flex:1; overflow-y:auto; padding:12px 14px; font-size:12px;">
-        <div style="color:#8b949e;">Loadingâ€¦</div>
+        <div style="color:#8b949e;">Loading…</div>
       </div>
       <div style="border-top:1px solid #222; padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
         <div style="font-size:11px; color:#8b949e;">Tick the outputs you want, then load them.</div>
         <div style="display:flex; gap:8px;">
           <button onclick="closeRestore()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Cancel</button>
-          <button onclick="applyRestore()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Load selected â–¸</button>
+          <button onclick="applyRestore()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Load selected ▸</button>
         </div>
       </div>
     </div>
@@ -2195,22 +2195,22 @@ video.tf-video {
     <div class="toast-container" id="toastContainer"></div>
 
     <div id="statusBar">
-      <span id="status">âœ… Ready</span>
-      <span id="resourceDisplay">ðŸ’¾ RAM: -- | ðŸŽ® VRAM: --</span>
-      <span id="tokenSpeed">â±ï¸ 0 tok/s | 0 tokens</span>
+      <span id="status">✅ Ready</span>
+      <span id="resourceDisplay">💾 RAM: -- | 🎮 VRAM: --</span>
+      <span id="tokenSpeed">⏱️ 0 tok/s | 0 tokens</span>
     </div>
   </div>
 </div>
 
-<button id="scrollBottomBtn" title="Scroll to bottom">â†“</button>
+<button id="scrollBottomBtn" title="Scroll to bottom">↓</button>
 <div id="dropOverlay">
-  <div class="icon">ðŸ“‚</div>
+  <div class="icon">📂</div>
   <div>Drop files or folders here</div>
   <div class="sub">We'll read your documents for study assistance</div>
 </div>
 
 <script>
-/* â”€â”€â”€ UI settings survive WebView2 profile resets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ─── UI settings survive WebView2 profile resets ───────────────
    These preferences used to live only in localStorage, which is inside the WebView2
    profile. Any profile reset (a crash, a runtime update, a manual fix) wiped them, so
    the theme/provider/model/persona kept going back to defaults. Now they are also
@@ -2266,7 +2266,7 @@ video.tf-video {
         return r;
     };
 })();
-/* â”€â”€â”€ CHAT JAVASCRIPT (existing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── CHAT JAVASCRIPT (existing) ────────────────────────────── */
 var chatArea    = document.getElementById('chatArea');
 var msgInput    = document.getElementById('msgInput');
 var sendBtn     = document.getElementById('sendBtn');
@@ -2286,7 +2286,7 @@ var searchQuery = '';
 var searchEnabled = true;
 // RAG (document chat) defaults ON so the model reads your indexed material.
 // It's harmless when no documents are indexed (build_context returns ""), and
-// the user can toggle it off with the ðŸ“š button in the input bar.
+// the user can toggle it off with the 📚 button in the input bar.
 var ragEnabled = true;
 var unloadBtn = document.getElementById('unloadBtn');
 
@@ -2421,12 +2421,12 @@ unloadBtn.addEventListener('click', function() {
     if (!confirm('Unload current Ollama model from memory?')) return;
     fetch('/unload_model', { method: 'POST' })
         .then(() => {
-            status.textContent = 'âœ… Model unloaded (memory freed)';
+            status.textContent = '✅ Model unloaded (memory freed)';
         })
-        .catch(() => status.textContent = 'âŒ Unload failed');
+        .catch(() => status.textContent = '❌ Unload failed');
 });
 
-// â”€â”€ Hugging Face model download â”€â”€
+// ── Hugging Face model download ──
 function openHfDownload() {
     var repo = prompt('Hugging Face repo id (e.g. bartowski/Qwen2.5-7B-Instruct-GGUF):');
     if (!repo || !repo.trim()) return;
@@ -2439,10 +2439,10 @@ function openHfDownload() {
     mmproj = (mmproj || '').trim();
 
     if (!file && !mmproj) {
-        status.textContent = 'âŒ Enter at least one filename (GGUF or mmproj).';
+        status.textContent = '❌ Enter at least one filename (GGUF or mmproj).';
         return;
     }
-    status.textContent = 'â¬‡ Downloading from Hugging Faceâ€¦ (may take a while)';
+    status.textContent = '⬇ Downloading from Hugging Face… (may take a while)';
     fetch('/api/models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2450,15 +2450,15 @@ function openHfDownload() {
     })
     .then(r => r.json())
     .then(d => {
-        if (d.error) { status.textContent = 'âŒ ' + d.error; return; }
-        status.textContent = 'âœ… Downloaded: ' + (d.downloaded || []).join(', ');
+        if (d.error) { status.textContent = '❌ ' + d.error; return; }
+        status.textContent = '✅ Downloaded: ' + (d.downloaded || []).join(', ');
         // Refresh the model list (switch provider to llama.cpp so the file shows up).
         providerSelect.value = 'llamacpp';
         providerSelect.dataset.prev = 'llamacpp';
         try { saveAiProvider('llamacpp'); } catch(e) {}
         loadModels();
     })
-    .catch(err => { status.textContent = 'âŒ Download failed: ' + err; });
+    .catch(err => { status.textContent = '❌ Download failed: ' + err; });
 }
 
 var dropOverlay = document.getElementById('dropOverlay');
@@ -2536,7 +2536,7 @@ function processDropItems(items) {
     }
     if (pendingReads === 0) {
         if (allFiles.length) allFiles.forEach(f => addDroppedFile(f));
-        else status.textContent = 'ðŸ“ No files found in drop.';
+        else status.textContent = '📁 No files found in drop.';
     }
 }
 
@@ -2621,7 +2621,7 @@ var themeKnob = document.getElementById('themeKnob');
 var isLight = localStorage.getItem('theme') === 'light';
 function applyTheme(light) {
     // Light/dark is no longer a second, competing setting: it IS a choice of theme, so
-    // this toggle and the ðŸŽ¨ picker cannot disagree any more. Switching to light selects
+    // this toggle and the 🎨 picker cannot disagree any more. Switching to light selects
     // the light theme; switching back returns to the last dark theme you were using.
     // Without this the two systems each set their own flag and half the page kept the
     // other one's colours, which is what made light and dark feel inconsistent.
@@ -2716,7 +2716,7 @@ function makeThemeStars() {
         const sp = document.createElement('div');
         sp.className = 'sparkle';
         sp.style.cssText = `left:${p.x}px;top:${p.y}px;`;
-        sp.innerHTML = 'âœ¦';
+        sp.innerHTML = '✦';
         layer.appendChild(sp);
     });
 }
@@ -2771,12 +2771,12 @@ function toggleVoice() {
     voiceEnabled = !voiceEnabled;
     if (voiceEnabled) {
         speakToggleBtn.classList.add('active');
-        speakToggleBtn.textContent = 'ðŸ”Š';
-        status.textContent = 'ðŸ”Š Voice output ON';
+        speakToggleBtn.textContent = '🔊';
+        status.textContent = '🔊 Voice output ON';
     } else {
         speakToggleBtn.classList.remove('active');
-        speakToggleBtn.textContent = 'ðŸ”‡';
-        status.textContent = 'ðŸ”‡ Voice output OFF';
+        speakToggleBtn.textContent = '🔇';
+        status.textContent = '🔇 Voice output OFF';
         stopSpeaking();
     }
 }
@@ -2814,12 +2814,12 @@ function speakText(text) {
     utterance.onstart = function() {
         speaking = true;
         stopSpeakBtn.style.display = 'flex';
-        status.textContent = 'ðŸ”Š Speaking...';
+        status.textContent = '🔊 Speaking...';
     };
     utterance.onend = function() {
         speaking = false;
         stopSpeakBtn.style.display = 'none';
-        status.textContent = voiceEnabled ? 'ðŸ”Š Voice output ON (idle)' : 'âœ… Done';
+        status.textContent = voiceEnabled ? '🔊 Voice output ON (idle)' : '✅ Done';
     };
     utterance.onerror = function(e) {
         console.warn('TTS error:', e.error);
@@ -2830,7 +2830,7 @@ function speakText(text) {
     window.speechSynthesis.speak(utterance);
 }
 
-// â”€â”€â”€ Shared AI preferences (provider + API key) across ALL pages â”€â”€â”€â”€â”€â”€
+// ─── Shared AI preferences (provider + API key) across ALL pages ──────
 var TRIO_PROVIDER_KEY = 'trio_ai_provider';
 var TRIO_MODEL_KEY = 'trio_ai_model';
 var KEY_PROVIDERS = ['groq', 'huggingface', 'deepseek', 'claude', 'gemini', 'openrouter'];
@@ -2878,7 +2878,7 @@ function saveAiModel(model) {
 }
 
 function describeProvider(provider) {
-    return KEY_PROVIDERS.indexOf(provider) !== -1 ? 'ðŸ’° Paid (API)' : 'ðŸ†“ Free (local)';
+    return KEY_PROVIDERS.indexOf(provider) !== -1 ? '💰 Paid (API)' : '🆓 Free (local)';
 }
 function formatAiError(provider, msg) {
     msg = (msg || '').toString().trim();
@@ -2887,22 +2887,22 @@ function formatAiError(provider, msg) {
     var category = 'other';
     if (/(invalid|missing|required|incorrect|wrong).*api key|api key.*(invalid|missing|required|incorrect|wrong)|401|unauthorized|forbidden|authentication|invalid.*key|key.*invalid/.test(lower)) {
         category = 'auth';
-        friendly = 'Invalid or missing API key â€” re-enter it in the API Key field.';
+        friendly = 'Invalid or missing API key — re-enter it in the API Key field.';
     } else if (/(gated|lacks access|access to this model|accept.*(license|terms)|(license|terms).*accept|403)/.test(lower)) {
         category = 'gate';
-        friendly = 'This model is gated â€” accept its license/terms on huggingface.co, then retry. (It may be free â€” gated is not the same as paid.)';
+        friendly = 'This model is gated — accept its license/terms on huggingface.co, then retry. (It may be free — gated is not the same as paid.)';
     } else if (/(token|context).*(limit|exceed|maximum|too (long|many))|too many tokens|max_tokens|context length/.test(lower)) {
         category = 'token_limit';
-        friendly = 'Token/context limit reached â€” shorten the text or pick a larger-context model.';
+        friendly = 'Token/context limit reached — shorten the text or pick a larger-context model.';
     } else if (/(insufficient|quota|billing|payment|balance|credit|exceeded.*quota|402|pay)/.test(lower)) {
         category = 'payment';
-        friendly = 'Paid API has no remaining credit/quota â€” top up billing or switch to a free model (Ollama / llama.cpp).';
+        friendly = 'Paid API has no remaining credit/quota — top up billing or switch to a free model (Ollama / llama.cpp).';
     } else if (/(429|rate limit|too many requests)/.test(lower)) {
         category = 'rate_limit';
-        friendly = 'Rate limit hit â€” wait a moment and retry.';
+        friendly = 'Rate limit hit — wait a moment and retry.';
     } else if (/(500|502|503|504|server error|overloaded|internal server)/.test(lower)) {
         category = 'server';
-        friendly = 'Service returned a server error â€” try again later.';
+        friendly = 'Service returned a server error — try again later.';
         // Keep the actual error detail so you can see WHY (e.g. the model failed
         // to load, out of memory, missing shared libs, etc.).
         if (msg.indexOf('HTTP') !== -1 || /log/.test(lower)) {
@@ -2910,18 +2910,18 @@ function formatAiError(provider, msg) {
         }
     } else if (/(timeout|timed out)/.test(lower)) {
         category = 'timeout';
-        friendly = 'Request timed out â€” try again or shorten the message.';
+        friendly = 'Request timed out — try again or shorten the message.';
     } else if (/(connect|unreachable|refused|not running|not available|not installed|no models)/.test(lower)) {
         category = 'network';
-        friendly = 'Could not reach the service â€” check connection, or start the local service / install the dependency.';
+        friendly = 'Could not reach the service — check connection, or start the local service / install the dependency.';
     }
     if (category === 'other' && KEY_PROVIDERS.indexOf(provider) !== -1) {
-        friendly = friendly + ' â€” this is a paid API; check your account/billing.';
+        friendly = friendly + ' — this is a paid API; check your account/billing.';
     }
-    return describeProvider(provider) + ' Â· ' + friendly;
+    return describeProvider(provider) + ' · ' + friendly;
 }
 
-// â”€â”€â”€ Assistant persona selector â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Assistant persona selector ──────────────────────────
 var PERSONA_KEY = 'trio_persona';
 var PERSONA_CUSTOM_KEY = 'trio_persona_custom';
 function loadPersonaSelect() {
@@ -3003,8 +3003,8 @@ function startLlamacpp(model) {
     })
     .then(r => r.json())
     .then(d => {
-        if (d.error) status.textContent = 'âš ï¸ ' + formatAiError('llamacpp', d.error);
-        else status.textContent = 'ðŸ¦™ llama.cpp loading: ' + (d.model || model) + ' â€¦';
+        if (d.error) status.textContent = '⚠️ ' + formatAiError('llamacpp', d.error);
+        else status.textContent = '🦙 llama.cpp loading: ' + (d.model || model) + ' …';
     })
     .catch(function(){});
 }
@@ -3022,7 +3022,7 @@ function loadModels() {
         .then(r => r.json())
         .then(data => {
             if (myReq !== loadModelsReq) return;  // ignore a stale response (e.g. old provider)
-            if (data.error) { status.textContent = 'âš ï¸ ' + formatAiError(provider, data.error); return; }
+            if (data.error) { status.textContent = '⚠️ ' + formatAiError(provider, data.error); return; }
             var current = modelSelect.value;
             modelSelect.innerHTML = '';
             if (data.models && data.models.length) {
@@ -3051,7 +3051,7 @@ function loadModels() {
                             providerSelect.value = 'llamacpp';
                             providerSelect.dataset.prev = 'ollama';
                             try { saveAiProvider('llamacpp'); } catch(e) {}
-                            status.textContent = 'ðŸ¦™ Ollama not running â€” switched to llama.cpp.';
+                            status.textContent = '🦙 Ollama not running — switched to llama.cpp.';
                             loadModels();
                         }
                     })
@@ -3071,7 +3071,7 @@ function loadModels() {
                 // you send a message, when you pick it in the dropdown, or when you
                 // press the llama.cpp button. It then unloads again after five idle
                 // minutes.
-                status.textContent = 'ðŸ¦™ llama.cpp ready â€” the model loads when you send a message.';
+                status.textContent = '🦙 llama.cpp ready — the model loads when you send a message.';
             }
             if (provider === 'deepseek' && modelSelect.value) {
                 checkDeepSeekStatus();
@@ -3079,7 +3079,7 @@ function loadModels() {
                 document.getElementById('modelInfo').textContent = '';
             }
         })
-        .catch(err => { status.textContent = 'âš ï¸ Could not load models: ' + err; });
+        .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
 }
 
 var voicePollTimer = null;
@@ -3095,7 +3095,7 @@ function refreshVoiceLogs(appendOnly) {
                 voiceTurnsShown = 0;
                 var header = document.createElement('div');
                 header.className = 'msg bot';
-                header.innerHTML = 'ðŸ—£ Voice-to-Voice conversation (live)';
+                header.innerHTML = '🗣 Voice-to-Voice conversation (live)';
                 chatArea.appendChild(header);
                 if (conv.length === 0) {
                     var empty = document.createElement('div');
@@ -3133,7 +3133,7 @@ function stopVoicePolling() {
     }
 }
 
-// â”€â”€ Workspaces & API keys â”€â”€
+// ── Workspaces & API keys ──
 function toggleWorkspaceSettings() {
     var m = document.getElementById('workspaceModal');
     var show = m.style.display !== 'flex';
@@ -3165,7 +3165,7 @@ function renderDeps() {
         chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:#1c1c26;border:1px solid #333;border-radius:6px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px;';
         chip.textContent = dep;
         var x = document.createElement('button');
-        x.textContent = 'âœ•';
+        x.textContent = '✕';
         x.style.cssText = 'background:transparent;border:none;color:#f66;cursor:pointer;font-size:12px;';
         x.onclick = function() { wsDeps.splice(i, 1); renderDeps(); };
         chip.appendChild(x);
@@ -3224,11 +3224,11 @@ function saveWorkspace() {
     })
     .then(r => r.json())
     .then(d => {
-        document.getElementById('wsStatus').textContent = 'âœ… Saved.';
+        document.getElementById('wsStatus').textContent = '✅ Saved.';
         toggleWorkspaceSettings();  // close the modal
     })
     .catch(function() {
-        document.getElementById('wsStatus').textContent = 'âš ï¸ Save failed.';
+        document.getElementById('wsStatus').textContent = '⚠️ Save failed.';
     });
 }
 
@@ -3236,7 +3236,7 @@ providerSelect.addEventListener('change', function() {
     var provider = this.value;
     // Declared before the media branch below, which returns early.
     var keyInput = document.getElementById('apiKeyInput');
-    // ComfyUI (image, video and audio) are not chat providers â€” selecting one shows the
+    // ComfyUI (image, video and audio) are not chat providers — selecting one shows the
     // right media panel and keeps the dropdown there until a chat provider is picked.
     if (provider === 'comfyui' || provider === 'comfyui-video' || provider === 'comfyui-audio') {
         if (provider === 'comfyui-video') { gen_mode = 'video'; showVideoGenPanel(); }
@@ -3334,7 +3334,7 @@ apiKeyInput.addEventListener('blur', function() {
     var provider = providerSelect.value;
     if (provider === 'comfyui' || provider === 'comfyui-video') {
         saveApiKey(loadApiKey('gemini') && !loadApiKey('openrouter') ? 'gemini' : 'openrouter', this.value);
-        status.textContent = 'ðŸ”‘ Key saved for image/video generation.';
+        status.textContent = '🔑 Key saved for image/video generation.';
     } else if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude' || provider === 'gemini' || provider === 'openrouter') {
         saveApiKey(provider, this.value);
         loadModels();  // re-scan the model list live with the new key
@@ -3343,10 +3343,10 @@ apiKeyInput.addEventListener('blur', function() {
 });
 apiKeyInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
-        this.blur();  // triggers the blur handler â†’ save key + re-scan models
+        this.blur();  // triggers the blur handler → save key + re-scan models
     }
 });
-// â”€â”€ Model search / filter (helps when a provider has hundreds of models, e.g. OpenRouter) â”€â”€
+// ── Model search / filter (helps when a provider has hundreds of models, e.g. OpenRouter) ──
 function filterModelSel() {
     var q = (document.getElementById('modelSearchInput').value || '').toLowerCase();
     var opts = document.querySelectorAll('#modelSelect option');
@@ -3383,12 +3383,12 @@ modelSelect.addEventListener('change', function() {
         .then(r => r.json())
         .then(data => {
             if (data.ok) {
-                status.textContent = 'âœ… Model switched to ' + model;
+                status.textContent = '✅ Model switched to ' + model;
             } else {
-                status.textContent = 'âŒ ' + (data.error || 'Failed');
+                status.textContent = '❌ ' + (data.error || 'Failed');
             }
         })
-        .catch(err => { status.textContent = 'âŒ Error: ' + err; });
+        .catch(err => { status.textContent = '❌ Error: ' + err; });
     }
     if (provider === 'llamacpp') {
         startLlamacpp(model);
@@ -3436,7 +3436,7 @@ function searchChats() {
             renderConvList(convs);
             renderMessageHits(hits, query);
         }).catch(function(err) {
-            status.textContent = 'âš ï¸ Search error: ' + err;
+            status.textContent = '⚠️ Search error: ' + err;
         });
     }, 250);
 }
@@ -3457,7 +3457,7 @@ function renderMessageHits(hits, query) {
     wrap.className = 'msg-hits';
     var head = document.createElement('div');
     head.className = 'group-heading';
-    head.textContent = 'ðŸ’¬ In messages (' + hits.length + ')';
+    head.textContent = '💬 In messages (' + hits.length + ')';
     wrap.appendChild(head);
     hits.forEach(function(h) {
         var row = document.createElement('div');
@@ -3465,7 +3465,7 @@ function renderMessageHits(hits, query) {
         row.title = 'Open this message';
         var meta = document.createElement('div');
         meta.className = 'msg-hit-meta';
-        meta.textContent = (h.role === 'user' ? 'ðŸ§‘ ' : 'ðŸ¤– ') + (h.conversation_title || 'Untitled');
+        meta.textContent = (h.role === 'user' ? '🧑 ' : '🤖 ') + (h.conversation_title || 'Untitled');
         var snip = document.createElement('div');
         snip.className = 'msg-hit-snip';
         snip.innerHTML = _snipHtml(h.snippet);
@@ -3481,7 +3481,7 @@ function jumpToMessage(cid, mid) {
     function go() {
         var el = document.querySelector('.msg[data-msg-id="' + mid + '"]');
         if (!el) {
-            status.textContent = 'âš ï¸ That message is older than the loaded history.';
+            status.textContent = '⚠️ That message is older than the loaded history.';
             return;
         }
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3493,20 +3493,20 @@ function jumpToMessage(cid, mid) {
     setTimeout(go, 700);   // wait for the conversation's messages to render
 }
 
-// â”€â”€ Export / import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Export / import ─────────────────────────────────────────────────────────
 // Downloads go through the browser (the server sets Content-Disposition), so
-// these are plain navigations â€” no fetch/blob juggling needed.
+// these are plain navigations — no fetch/blob juggling needed.
 function exportAllChats(format) {
-    status.textContent = 'â¬‡ Preparing exportâ€¦';
+    status.textContent = '⬇ Preparing export…';
     window.location.href = '/conversations/export?format=' + encodeURIComponent(format || 'md');
-    setTimeout(function() { status.textContent = 'âœ… Export started'; }, 800);
+    setTimeout(function() { status.textContent = '✅ Export started'; }, 800);
 }
 
 function exportChat(cid, format) {
-    status.textContent = 'â¬‡ Preparing exportâ€¦';
+    status.textContent = '⬇ Preparing export…';
     window.location.href = '/conversations/' + encodeURIComponent(cid) +
         '/export?format=' + encodeURIComponent(format || 'md');
-    setTimeout(function() { status.textContent = 'âœ… Export started'; }, 800);
+    setTimeout(function() { status.textContent = '✅ Export started'; }, 800);
 }
 
 function importChats(inputEl) {
@@ -3514,22 +3514,22 @@ function importChats(inputEl) {
     if (!f) return;
     var fd = new FormData();
     fd.append('file', f);
-    status.textContent = 'â¬† Importing ' + f.name + 'â€¦';
+    status.textContent = '⬆ Importing ' + f.name + '…';
     fetch('/conversations/import', { method: 'POST', body: fd })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
         .then(function(res) {
             if (res.ok && res.d.ok) {
                 var n = res.d.imported || 0;
-                status.textContent = 'âœ… Imported ' + n + ' conversation' + (n === 1 ? '' : 's');
+                status.textContent = '✅ Imported ' + n + ' conversation' + (n === 1 ? '' : 's');
                 loadConversations();
             } else {
                 var err = (res.d && res.d.error) || 'import failed';
-                status.textContent = 'âŒ ' + err;
+                status.textContent = '❌ ' + err;
                 alert('Import failed:\n' + err);
             }
         })
         .catch(function(e) {
-            status.textContent = 'âŒ Import error: ' + e;
+            status.textContent = '❌ Import error: ' + e;
             alert('Import error: ' + e);
         })
         .finally(function() { inputEl.value = ''; });
@@ -3562,7 +3562,7 @@ function loadConversations() {
 }
 function renderConvList(convs) {
     if (!convs || convs.length === 0) {
-        convList.innerHTML = '<div class="no-results">ðŸ” No chats found</div>';
+        convList.innerHTML = '<div class="no-results">🔍 No chats found</div>';
         return;
     }
     var groups = {};
@@ -3590,8 +3590,8 @@ function renderConvList(convs) {
                 div.appendChild(titleSpan);
                 var exportBtn = document.createElement('button');
                 exportBtn.className = 'rename-btn';
-                exportBtn.textContent = 'â¬‡';
-                exportBtn.title = 'Export this chat (Markdown) â€” hold Alt for JSON';
+                exportBtn.textContent = '⬇';
+                exportBtn.title = 'Export this chat (Markdown) — hold Alt for JSON';
                 exportBtn.onclick = function(e) {
                     e.stopPropagation();
                     exportChat(conv.id, e.altKey ? 'json' : 'md');
@@ -3599,7 +3599,7 @@ function renderConvList(convs) {
                 div.appendChild(exportBtn);
                 var renameBtn = document.createElement('button');
                 renameBtn.className = 'rename-btn';
-                renameBtn.textContent = 'âœï¸';
+                renameBtn.textContent = '✏️';
                 renameBtn.title = 'Rename this chat';
                 renameBtn.onclick = function(e) {
                     e.stopPropagation();
@@ -3613,7 +3613,7 @@ function renderConvList(convs) {
                 div.appendChild(timeSpan);
                 var delBtn = document.createElement('button');
                 delBtn.className = 'del';
-                delBtn.textContent = 'Ã—';
+                delBtn.textContent = '×';
                 delBtn.title = 'Delete this chat';
                 delBtn.onclick = function(e) {
                     e.stopPropagation();
@@ -3676,13 +3676,13 @@ function handleDrop(e) {
             var query = document.getElementById('searchInput').value.trim();
             if (query.length > 0) searchChats();
             else renderConvList(conversations);
-            status.textContent = 'âœ… Order updated';
+            status.textContent = '✅ Order updated';
         } else {
-            status.textContent = 'âŒ Failed to reorder';
+            status.textContent = '❌ Failed to reorder';
         }
     })
     .catch(err => {
-        status.textContent = 'âŒ Error: ' + err;
+        status.textContent = '❌ Error: ' + err;
     });
 }
 function renameChat(id) {
@@ -3703,13 +3703,13 @@ function renameChat(id) {
             var query = document.getElementById('searchInput').value.trim();
             if (query.length > 0) searchChats();
             else renderConvList(conversations);
-            status.textContent = 'âœ… Renamed to "' + newTitle + '"';
+            status.textContent = '✅ Renamed to "' + newTitle + '"';
         } else {
-            status.textContent = 'âŒ Rename failed';
+            status.textContent = '❌ Rename failed';
         }
     })
     .catch(err => {
-        status.textContent = 'âŒ Error: ' + err;
+        status.textContent = '❌ Error: ' + err;
     });
 }
 function selectConversation(id) {
@@ -3720,7 +3720,7 @@ function selectConversation(id) {
         .then(messages => {
             chatArea.innerHTML = '';
             if (messages.length === 0) {
-                chatArea.innerHTML = '<div class="msg bot">ðŸ’¬ No messages yet. Say something!<br>You can also type <code>ollama pull &lt;model&gt;</code>, etc.</div>';
+                chatArea.innerHTML = '<div class="msg bot">💬 No messages yet. Say something!<br>You can also type <code>ollama pull &lt;model&gt;</code>, etc.</div>';
             } else {
                 messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
             }
@@ -3742,7 +3742,7 @@ function toggleShortcutsModal() {
     var m = document.getElementById('shortcutsModal');
     if (m.style.display === 'flex') closeShortcutsModal(); else openShortcutsModal();
 }
-// â”€â”€ Global keyboard shortcuts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Global keyboard shortcuts ─────────────────────────────
 document.addEventListener('keydown', function(e) {
     var mod = e.ctrlKey || e.metaKey;
     if (mod && (e.key === 'n' || e.key === 'N' || e.key === 'k' || e.key === 'K')) {
@@ -3761,7 +3761,7 @@ document.addEventListener('keydown', function(e) {
         closeShortcutsModal();
     }
 });
-// â”€â”€ Token usage & cost stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Token usage & cost stats ────────────────────────────
 function openStatsModal() {
     document.getElementById('statsModal').style.display = 'flex';
     refreshStats();
@@ -3776,7 +3776,7 @@ function fmtTokens(n) {
 }
 function refreshStats() {
     var body = document.getElementById('statsBody');
-    body.innerHTML = '<div style="color:#8b949e; padding:20px; text-align:center;">â³ Loadingâ€¦</div>';
+    body.innerHTML = '<div style="color:#8b949e; padding:20px; text-align:center;">⏳ Loading…</div>';
     fetch('/api/stats')
         .then(function(r) { return r.json(); })
         .then(function(d) {
@@ -3804,7 +3804,7 @@ function refreshStats() {
             (d.by_session || []).forEach(function(s) {
                 html += '<tr style="border-top:1px solid #222;">'
                       + '<td style="padding:5px 0; color:#e1e4e8;">' + s.provider + '</td>'
-                      + '<td style="color:#8b949e;">' + (s.model || 'â€”') + '</td>'
+                      + '<td style="color:#8b949e;">' + (s.model || '—') + '</td>'
                       + '<td>' + fmtTokens(s.total_tokens) + '</td>'
                       + '<td style="color:#f0883e;">$' + (s.cost || 0).toFixed(6) + '</td>'
                       + '</tr>';
@@ -3815,10 +3815,10 @@ function refreshStats() {
             body.innerHTML = html;
         })
         .catch(function() {
-            body.innerHTML = '<div style="color:#f85149; padding:20px; text-align:center;">âš ï¸ Could not load stats.</div>';
+            body.innerHTML = '<div style="color:#f85149; padding:20px; text-align:center;">⚠️ Could not load stats.</div>';
         });
 }
-// â”€â”€ ComfyUI image + video generation panels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── ComfyUI image + video generation panels ────────────────────────
 var gen_mode = 'image';
 function showImageGenPanel() {
     document.getElementById('imageGenPanel').style.display = 'flex';
@@ -3857,7 +3857,7 @@ function loadVideoModels() {
     if (!sel) return;
     var backendEl = document.getElementById('videoBackendSelect');
     var backend = backendEl ? backendEl.value : 'openrouter';
-    sel.innerHTML = '<option value="">Loadingâ€¦</option>';
+    sel.innerHTML = '<option value="">Loading…</option>';
     if (backend === 'openrouter') {
         var rkey = (typeof loadApiKey === 'function') ? loadApiKey('openrouter') : '';
         fetch('/api/openrouter/video_models?api_key=' + encodeURIComponent(rkey))
@@ -3900,7 +3900,7 @@ function generateVideoChat(text) {
         attachments.innerHTML = '';
         var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
         var bodyEl = botDiv.querySelector('.body');
-        bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">â³ Generating videoâ€¦ this can take 1â€“3 minutes. Please wait.</div>';
+        bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">⏳ Generating video… this can take 1–3 minutes. Please wait.</div>';
         smoothScrollToBottom();
         var backend = document.getElementById('videoBackendSelect').value;
         var req = {
@@ -3922,14 +3922,14 @@ function generateVideoChat(text) {
         .then(function(r) { return r.json(); })
         .then(function(d) {
             busy = false;
-            if (d.error) { bodyEl.textContent = 'âŒ ' + formatAiError(backend, d.error); smoothScrollToBottom(); return; }
+            if (d.error) { bodyEl.textContent = '❌ ' + formatAiError(backend, d.error); smoothScrollToBottom(); return; }
             if (d.conversation_id) currentConv = d.conversation_id;
             bodyEl.innerHTML = '<video class="tf-video" src="' + d.url + '" controls></video>';
             var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
             smoothScrollToBottom();
             if (typeof loadConversations === 'function') loadConversations();
         })
-        .catch(function(e) { busy = false; bodyEl.textContent = 'âŒ ' + (e.message || 'Failed'); smoothScrollToBottom(); });
+        .catch(function(e) { busy = false; bodyEl.textContent = '❌ ' + (e.message || 'Failed'); smoothScrollToBottom(); });
     }
     if (currentConv) { go(); return; }
     fetch('/conversations', { method: 'POST' })
@@ -3953,26 +3953,26 @@ function loadAudioWorkflows() {
         .then(function(list) {
             sel.innerHTML = '';
             var auto = document.createElement('option');
-            auto.value = ''; auto.textContent = 'ðŸ”„ Auto-detect audio workflowâ€¦';
+            auto.value = ''; auto.textContent = '🔄 Auto-detect audio workflow…';
             sel.appendChild(auto);
             (list || []).forEach(function(o) {
                 var opt = document.createElement('option');
                 opt.value = o.value;
-                opt.textContent = (o.kind === 'user' ? 'â­ ' : '') + o.label;
+                opt.textContent = (o.kind === 'user' ? '⭐ ' : '') + o.label;
                 sel.appendChild(opt);
             });
             var st = document.getElementById('audioStatus');
             if (st) st.textContent = (list && list.length)
-                ? 'ðŸŽµ Detected ' + list.length + ' audio workflow(s). Type your prompt below and press Enter.'
-                : 'âš ï¸ No ComfyUI audio workflows found. Add one (Stable Audio / ACE-Step / MiniMax Music), then restart ComfyUI.';
+                ? '🎵 Detected ' + list.length + ' audio workflow(s). Type your prompt below and press Enter.'
+                : '⚠️ No ComfyUI audio workflows found. Add one (Stable Audio / ACE-Step / MiniMax Music), then restart ComfyUI.';
         })
         .catch(function() {
             sel.innerHTML = '';
             var auto = document.createElement('option');
-            auto.value = ''; auto.textContent = 'ðŸ”„ Auto-detect audio workflowâ€¦';
+            auto.value = ''; auto.textContent = '🔄 Auto-detect audio workflow…';
             sel.appendChild(auto);
             var st = document.getElementById('audioStatus');
-            if (st) st.textContent = 'âš ï¸ Could not load audio workflows (is ComfyUI running?).';
+            if (st) st.textContent = '⚠️ Could not load audio workflows (is ComfyUI running?).';
         });
 }
 // Build the app's own audio player: a big round play button, a full-width
@@ -4090,7 +4090,7 @@ function generateAudioChat(text) {
         attachments.innerHTML = '';
         var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
         var bodyEl = botDiv.querySelector('.body');
-        bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">â³ Generating audioâ€¦ this can take a minute. Please wait.</div>';
+        bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">⏳ Generating audio… this can take a minute. Please wait.</div>';
         smoothScrollToBottom();
         var req = {
             prompt: text.trim(),
@@ -4104,7 +4104,7 @@ function generateAudioChat(text) {
         .then(function(r) { return r.json(); })
         .then(function(d) {
             busy = false;
-            if (d.error) { bodyEl.textContent = 'âŒ ' + formatAiError('comfyui', d.error); smoothScrollToBottom(); return; }
+            if (d.error) { bodyEl.textContent = '❌ ' + formatAiError('comfyui', d.error); smoothScrollToBottom(); return; }
             if (d.conversation_id) currentConv = d.conversation_id;
             // The app's own player, not <audio controls>: the browser's built-in one
             // is ~54px tall with a hairline seek bar, which is what made the song
@@ -4117,7 +4117,7 @@ function generateAudioChat(text) {
             smoothScrollToBottom();
             if (typeof loadConversations === 'function') loadConversations();
         })
-        .catch(function(e) { busy = false; bodyEl.textContent = 'âŒ ' + (e.message || 'Failed'); smoothScrollToBottom(); });
+        .catch(function(e) { busy = false; bodyEl.textContent = '❌ ' + (e.message || 'Failed'); smoothScrollToBottom(); });
     }
     if (currentConv) { go(); return; }
     fetch('/conversations', { method: 'POST' })
@@ -4168,7 +4168,7 @@ function generateImageChat(text) {
         .then(function(d) {
             busy = false;
             if (d.error) {
-                bodyEl.textContent = 'âŒ ' + formatAiError(backend, d.error);
+                bodyEl.textContent = '❌ ' + formatAiError(backend, d.error);
                 smoothScrollToBottom();
                 return;
             }
@@ -4181,7 +4181,7 @@ function generateImageChat(text) {
         })
         .catch(function(e) {
             busy = false;
-            bodyEl.textContent = 'âŒ ' + (e.message || 'Failed');
+            bodyEl.textContent = '❌ ' + (e.message || 'Failed');
             smoothScrollToBottom();
         });
     }
@@ -4207,7 +4207,7 @@ function loadImageModels() {
         return;
     }
     if (backend === 'openrouter') {
-        sel.innerHTML = '<option value="">Loadingâ€¦</option>';
+        sel.innerHTML = '<option value="">Loading…</option>';
         var key = typeof loadApiKey === 'function' ? (loadApiKey('openrouter') || '') : '';
         fetch('/api/openrouter/image_models?api_key=' + encodeURIComponent(key))
             .then(function(r) { return r.json(); })
@@ -4221,7 +4221,7 @@ function loadImageModels() {
                 });
                 if (!(list || []).length) {
                     var nf = document.createElement('option');
-                    nf.value = ''; nf.textContent = 'No models â€” check OpenRouter API key';
+                    nf.value = ''; nf.textContent = 'No models — check OpenRouter API key';
                     sel.appendChild(nf);
                 }
             })
@@ -4230,7 +4230,7 @@ function loadImageModels() {
             });
         return;
     }
-    sel.innerHTML = '<option value="">Loadingâ€¦</option>';
+    sel.innerHTML = '<option value="">Loading…</option>';
     fetch('/api/image_models')
         .then(function(r) { return r.json(); })
         .then(function(list) {
@@ -4264,7 +4264,7 @@ function clearAllChats() {
         body: JSON.stringify({ cid: currentConv })
     })
         .then(() => {
-            chatArea.innerHTML = '<div class="msg bot">ðŸ—‘ This chat\'s messages were cleared. Other chats are untouched.</div>';
+            chatArea.innerHTML = '<div class="msg bot">🗑 This chat\'s messages were cleared. Other chats are untouched.</div>';
         });
 }
 function avatarStorageKey(role) { return role === 'user' ? 'trio_user_avatar' : 'trio_bot_avatar'; }
@@ -4285,7 +4285,7 @@ function renderAvatar(role) {
         im.src = data;
         av.appendChild(im);
     } else {
-        av.textContent = role === 'user' ? 'ðŸ‘¤' : 'ðŸ¤–';
+        av.textContent = role === 'user' ? '👤' : '🤖';
     }
     av.addEventListener('click', function(e) { e.stopPropagation(); openProfile(role); });
     return av;
@@ -4314,11 +4314,11 @@ function applyBotBadge(botDiv, provider) {
     if (existing) existing.remove();
     var badge = document.createElement('span');
     badge.className = 'msg-badge ' + kind;
-    badge.textContent = kind === 'api' ? 'â˜ï¸ API' : 'ðŸ–¥ï¸ Local';
+    badge.textContent = kind === 'api' ? '☁️ API' : '🖥️ Local';
     var body = botDiv.querySelector('.body');
     botDiv.insertBefore(badge, body || botDiv.firstChild);
 }
-// â”€â”€ Profile modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Profile modal ──────────────────────────────
 var profileRole = 'user';
 var pendingProfileImage = '';
 function openProfile(role) {
@@ -4345,7 +4345,7 @@ function updateProfilePreview(dataUrl) {
         im.src = dataUrl;
         el.appendChild(im);
     } else {
-        el.textContent = profileRole === 'user' ? 'ðŸ‘¤' : 'ðŸ¤–';
+        el.textContent = profileRole === 'user' ? '👤' : '🤖';
     }
 }
 function chooseProfileImage() {
@@ -4368,7 +4368,7 @@ function resetProfileImage() {
     updateProfilePreview('');
     document.querySelectorAll('.msg .avatar.' + (profileRole === 'user' ? 'user' : 'bot')).forEach(function(a) {
         a.innerHTML = '';
-        a.textContent = profileRole === 'user' ? 'ðŸ‘¤' : 'ðŸ¤–';
+        a.textContent = profileRole === 'user' ? '👤' : '🤖';
     });
 }
 function saveProfile() {
@@ -4388,7 +4388,7 @@ function saveProfile() {
         a.innerHTML = '';
         var d = getAvatarData(profileRole);
         if (d) { var im = document.createElement('img'); im.src = d; a.appendChild(im); }
-        else { a.textContent = profileRole === 'user' ? 'ðŸ‘¤' : 'ðŸ¤–'; }
+        else { a.textContent = profileRole === 'user' ? '👤' : '🤖'; }
     });
     document.querySelectorAll('.msg.' + (profileRole === 'user' ? 'user' : 'bot')).forEach(function(msg) {
         var existing = msg.querySelector('.msg-name');
@@ -4406,17 +4406,17 @@ function renderThinkingBlock(container, reasoning) {
     if (!container || !reasoning) return;
     var existing = container.querySelector('.thinking-block');
     if (existing) {
-        // Update in place â€” avoids DOM churn during streaming deltas.
+        // Update in place — avoids DOM churn during streaming deltas.
         var exBody = existing.querySelector('.thinking-body');
         if (exBody) exBody.textContent = reasoning;
         var exSum = existing.querySelector('summary');
-        if (exSum) exSum.textContent = 'ðŸ§  Thinking (' + reasoning.length + ' chars)';
+        if (exSum) exSum.textContent = '🧠 Thinking (' + reasoning.length + ' chars)';
         return;
     }
     var thinkWrap = document.createElement('details');
     thinkWrap.className = 'thinking-block';
     var thinkSum = document.createElement('summary');
-    thinkSum.textContent = 'ðŸ§  Thinking (' + reasoning.length + ' chars)';
+    thinkSum.textContent = '🧠 Thinking (' + reasoning.length + ' chars)';
     var thinkBody = document.createElement('div');
     thinkBody.className = 'thinking-body';
     thinkBody.textContent = reasoning;
@@ -4439,7 +4439,7 @@ function renderMarkdown(text) {
     // models that emit HTML breaks produce real line breaks.
     text = text.replace(/<br\s*\/?>/gi, '\n');
     // Model output sometimes contains the literal two-char sequence "\n"
-    // (backslash + n). Convert those to real newlines â€” but NOT inside fenced
+    // (backslash + n). Convert those to real newlines — but NOT inside fenced
     // code blocks, where they are usually intentional escapes. We only touch a
     // "\n" that is not preceded by another backslash (avoids breaking \\n).
     text = text.replace(/(^|[^\\])\\n/g, '$1\n');
@@ -4465,7 +4465,7 @@ function renderMsg(role, entry, msgIndex) {
         var badgeKind = entry.meta.kind === 'api' ? 'api' : 'local';
         var badge = document.createElement('span');
         badge.className = 'msg-badge ' + badgeKind;
-        badge.textContent = badgeKind === 'api' ? 'â˜ï¸ API' : 'ðŸ–¥ï¸ Local';
+        badge.textContent = badgeKind === 'api' ? '☁️ API' : '🖥️ Local';
         div.appendChild(badge);
     }
     if (entry.images && entry.images.length) {
@@ -4484,7 +4484,7 @@ function renderMsg(role, entry, msgIndex) {
     if (entry.files && entry.files.length) {
         entry.files.forEach(f => {
             // A video file (from a video attachment) renders as a playable video,
-            // not a generic file chip â€” so it stays one file instead of being
+            // not a generic file chip — so it stays one file instead of being
             // broken into frame thumbnails.
             var mime = (f.mime || '').toLowerCase();
             if (mime.indexOf('video') === 0) {
@@ -4506,7 +4506,7 @@ function renderMsg(role, entry, msgIndex) {
             }
             var chip = document.createElement('div');
             chip.className = 'file-chip';
-            chip.textContent = 'ðŸ“„ ' + (f.name || 'file');
+            chip.textContent = '📄 ' + (f.name || 'file');
             div.appendChild(chip);
         });
     }
@@ -4542,7 +4542,7 @@ function renderMsg(role, entry, msgIndex) {
         actions.className = 'msg-actions';
         var editBtn = document.createElement('button');
         editBtn.className = 'edit-btn';
-        editBtn.innerHTML = 'âœï¸';
+        editBtn.innerHTML = '✏️';
         editBtn.title = 'Edit message';
         editBtn.onclick = function(e) {
             e.stopPropagation();
@@ -4550,7 +4550,7 @@ function renderMsg(role, entry, msgIndex) {
         };
         var delBtn = document.createElement('button');
         delBtn.className = 'delete-btn';
-        delBtn.innerHTML = 'ðŸ—‘ï¸';
+        delBtn.innerHTML = '🗑️';
         delBtn.title = 'Delete message';
         delBtn.onclick = function(e) {
             e.stopPropagation();
@@ -4575,7 +4575,7 @@ function reloadCurrentChat() {
         .then(messages => {
             chatArea.innerHTML = '';
             if (messages.length === 0) {
-                chatArea.innerHTML = '<div class="msg bot">ðŸ‘‹ Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
+                chatArea.innerHTML = '<div class="msg bot">👋 Hello! Select or create a chat from the sidebar.<br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>';
             } else {
                 messages.forEach((msg, index) => renderMsg(msg.role, msg, index));
             }
@@ -4648,15 +4648,15 @@ sendBtn.addEventListener('click', doSend);
 document.getElementById('searchToggleBtn').addEventListener('click', function() {
     searchEnabled = !searchEnabled;
     this.classList.toggle('active', searchEnabled);
-    this.textContent = searchEnabled ? 'ðŸ”' : 'ðŸ” off';
-    status.textContent = searchEnabled ? 'ðŸ” Web search ON' : 'ðŸ” Web search OFF';
+    this.textContent = searchEnabled ? '🔍' : '🔍 off';
+    status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
 });
 
-// â”€â”€â”€ RAG (document chat) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// On/off switch lives INSIDE the RAG panel (single ðŸ“š button opens the panel).
+// ─── RAG (document chat) ─────────────────────────────────────────
+// On/off switch lives INSIDE the RAG panel (single 📚 button opens the panel).
 try { if (document.getElementById('ragEnabledSwitch')) document.getElementById('ragEnabledSwitch').addEventListener('change', function(e) {
     ragEnabled = e.target.checked;
-    status.textContent = ragEnabled ? 'ðŸ“š Document chat ON â€” asking your indexed docs' : 'ðŸ“š Document chat OFF';
+    status.textContent = ragEnabled ? '📚 Document chat ON — asking your indexed docs' : '📚 Document chat OFF';
     if (ragEnabled) refreshRagDocuments();
 }); } catch(e) {}
 try { if (document.getElementById('ragFileInput')) document.getElementById('ragFileInput').addEventListener('change', function(e) {
@@ -4670,9 +4670,9 @@ try { if (document.getElementById('ragFileInput')) document.getElementById('ragF
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ name: file.name, b64: ev.target.result })
                 }).then(r => r.json()).then(d => {
-                    if (d.error) { status.textContent = 'ðŸ“š ' + d.error; }
-                    else { status.textContent = 'ðŸ“š Indexed ' + file.name + ' (' + d.chunks + ' chunks)'; refreshRagDocuments(); }
-                }).catch(err => status.textContent = 'ðŸ“š ' + err.message);
+                    if (d.error) { status.textContent = '📚 ' + d.error; }
+                    else { status.textContent = '📚 Indexed ' + file.name + ' (' + d.chunks + ' chunks)'; refreshRagDocuments(); }
+                }).catch(err => status.textContent = '📚 ' + err.message);
             };
             reader.readAsDataURL(file);
         })(files[i]);
@@ -4694,17 +4694,17 @@ function refreshRagDocuments() {
     fetch('/api/rag/documents').then(r => r.json()).then(function(docs) {
         list.innerHTML = '';
         if (!docs || !docs.length) {
-            list.innerHTML = '<div style="color:#8b949e; font-size:12px;">No documents indexed yet. Upload one below, then toggle ðŸ“š to ask about it.</div>';
+            list.innerHTML = '<div style="color:#8b949e; font-size:12px;">No documents indexed yet. Upload one below, then toggle 📚 to ask about it.</div>';
             return;
         }
         docs.forEach(function(d) {
             var row = document.createElement('div');
             row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px;';
             var nm = document.createElement('span');
-            nm.textContent = 'ðŸ“„ ' + d.name + ' (' + d.chunks + ' chunks)';
+            nm.textContent = '📄 ' + d.name + ' (' + d.chunks + ' chunks)';
             nm.style.flex = '1';
             var del = document.createElement('button');
-            del.textContent = 'Ã—';
+            del.textContent = '×';
             del.style.cssText = 'background:#f85149; color:#fff; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; line-height:1;';
             del.onclick = function() {
                 fetch('/api/rag/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: d.name}) })
@@ -4716,7 +4716,7 @@ function refreshRagDocuments() {
     }).catch(function() { list.innerHTML = '<div style="color:#f85149; font-size:12px;">Failed to load documents.</div>'; });
 }
 
-// â”€â”€â”€ A/B model compare â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── A/B model compare ─────────────────────────────────────────
 var CMP_PROVIDERS = ['ollama', 'llamacpp', 'groq', 'deepseek', 'claude', 'openrouter', 'gemini', 'huggingface'];
 function populateCompareProviders() {
     CMP_PROVIDERS.forEach(function(p) {
@@ -4742,7 +4742,7 @@ function loadCompareModels(providerSelId) {
     var modelSel = document.getElementById(modelSelId);
     if (!modelSel) return;
     var key = (typeof loadApiKey === 'function') ? loadApiKey(provider) : '';
-    modelSel.innerHTML = '<option value="">Loadingâ€¦</option>';
+    modelSel.innerHTML = '<option value="">Loading…</option>';
     fetch('/providers/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4784,12 +4784,12 @@ function runCompare() {
     var mb = document.getElementById('cmpModelB').value;
     var prompt = document.getElementById('cmpPrompt').value.trim();
     var results = document.getElementById('cmpResults');
-    if (!prompt) { status.textContent = 'âš”ï¸ Enter a prompt to compare.'; return; }
-    if (!ma || !mb) { status.textContent = 'âš”ï¸ Pick a model for both sides.'; return; }
-    if (pa === pb && ma === mb) { status.textContent = 'âš”ï¸ Pick two different models.'; return; }
+    if (!prompt) { status.textContent = '⚔️ Enter a prompt to compare.'; return; }
+    if (!ma || !mb) { status.textContent = '⚔️ Pick a model for both sides.'; return; }
+    if (pa === pb && ma === mb) { status.textContent = '⚔️ Pick two different models.'; return; }
     var btn = document.getElementById('cmpRunBtn');
-    btn.disabled = true; btn.textContent = 'â³ Comparingâ€¦';
-    results.innerHTML = '<div style="color:#8b949e; font-size:13px;">Generating both responsesâ€¦ this can take a moment.</div>';
+    btn.disabled = true; btn.textContent = '⏳ Comparing…';
+    results.innerHTML = '<div style="color:#8b949e; font-size:13px;">Generating both responses… this can take a moment.</div>';
     var keyA = (typeof loadApiKey === 'function') ? loadApiKey(pa) : '';
     var keyB = (typeof loadApiKey === 'function') ? loadApiKey(pb) : '';
     fetch('/api/compare', {
@@ -4805,16 +4805,16 @@ function runCompare() {
     })
     .then(r => r.json())
     .then(function(d) {
-        btn.disabled = false; btn.textContent = 'âš”ï¸ Compare';
-        if (d.error) { results.innerHTML = '<div style="color:#f85149;">âŒ ' + d.error + '</div>'; return; }
+        btn.disabled = false; btn.textContent = '⚔️ Compare';
+        if (d.error) { results.innerHTML = '<div style="color:#f85149;">❌ ' + d.error + '</div>'; return; }
         results.innerHTML = '';
         results.appendChild(renderCompareSide('A', d.a));
         results.appendChild(renderCompareSide('B', d.b));
-        status.textContent = 'âš”ï¸ Compared ' + d.a.model + ' vs ' + d.b.model;
+        status.textContent = '⚔️ Compared ' + d.a.model + ' vs ' + d.b.model;
     })
     .catch(function(e) {
-        btn.disabled = false; btn.textContent = 'âš”ï¸ Compare';
-        results.innerHTML = '<div style="color:#f85149;">âŒ ' + (e.message || 'Failed') + '</div>';
+        btn.disabled = false; btn.textContent = '⚔️ Compare';
+        results.innerHTML = '<div style="color:#f85149;">❌ ' + (e.message || 'Failed') + '</div>';
     });
 }
 function renderCompareSide(label, side) {
@@ -4822,12 +4822,12 @@ function renderCompareSide(label, side) {
     card.style.cssText = 'flex:1; min-width:260px; border:1px solid #333; border-radius:12px; padding:12px; background:rgba(13,17,23,0.7);';
     var head = document.createElement('div');
     head.style.cssText = 'font-size:12px; color:' + (label === 'A' ? '#f0883e' : '#3fb950') + '; font-weight:700; margin-bottom:6px;';
-    head.textContent = label + ' Â· ' + (side.provider) + ' Â· ' + (side.model) + ' Â· ' + (side.duration_sec || 0) + 's';
+    head.textContent = label + ' · ' + (side.provider) + ' · ' + (side.model) + ' · ' + (side.duration_sec || 0) + 's';
     card.appendChild(head);
     if (side.error) {
         var err = document.createElement('div');
         err.style.color = '#f85149';
-        err.textContent = 'âŒ ' + side.error;
+        err.textContent = '❌ ' + side.error;
         card.appendChild(err);
         return card;
     }
@@ -4838,7 +4838,7 @@ function renderCompareSide(label, side) {
     return card;
 }
 
-// â”€â”€â”€ Multi-agent â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Multi-agent ────────────────────────────────────────────
 var multiAgentCount = 0;
 function addMultiAgent(provider, model, role) {
     var box = document.getElementById('multiAgents');
@@ -4858,14 +4858,14 @@ function addMultiAgent(provider, model, role) {
     var mod = document.createElement('select');
     mod.className = 'multi-model model-select';
     mod.style.cssText = 'flex:1; min-width:120px;';
-    mod.innerHTML = '<option value="">Loadingâ€¦</option>';
+    mod.innerHTML = '<option value="">Loading…</option>';
     var roleInp = document.createElement('input');
     roleInp.type = 'text';
     roleInp.placeholder = 'role (optional)';
     roleInp.value = role || '';
     roleInp.style.cssText = 'flex:0 0 130px; padding:6px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;';
     var rm = document.createElement('button');
-    rm.textContent = 'âœ•';
+    rm.textContent = '✕';
     rm.style.cssText = 'background:#f85149; color:#fff; border:none; border-radius:6px; padding:4px 10px; cursor:pointer;';
     rm.onclick = function() { row.remove(); };
     row.appendChild(prov); row.appendChild(mod); row.appendChild(roleInp); row.appendChild(rm);
@@ -4875,7 +4875,7 @@ function addMultiAgent(provider, model, role) {
 }
 function loadMultiModels(modelSel, provider) {
     var key = (typeof loadApiKey === 'function') ? loadApiKey(provider) : '';
-    modelSel.innerHTML = '<option value="">Loadingâ€¦</option>';
+    modelSel.innerHTML = '<option value="">Loading…</option>';
     fetch('/providers/models', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -4909,7 +4909,7 @@ function toggleMultiPanel() {
 function runMultiAgent() {
     var prompt = document.getElementById('multiPrompt').value.trim();
     var results = document.getElementById('multiResults');
-    if (!prompt) { status.textContent = 'ðŸ¤ Enter a task.'; return; }
+    if (!prompt) { status.textContent = '🤝 Enter a task.'; return; }
     var agents = [];
     document.querySelectorAll('.multi-agent-row').forEach(function(row) {
         var prov = row.querySelector('.multi-provider').value;
@@ -4918,10 +4918,10 @@ function runMultiAgent() {
         if (!mod) return;
         agents.push({ provider: prov, model: mod, role: role, api_key: (typeof loadApiKey === 'function' ? loadApiKey(prov) : '') });
     });
-    if (agents.length < 2) { status.textContent = 'ðŸ¤ Add at least 2 agents.'; return; }
+    if (agents.length < 2) { status.textContent = '🤝 Add at least 2 agents.'; return; }
     var btn = document.getElementById('multiRunBtn');
-    btn.disabled = true; btn.textContent = 'â³ Runningâ€¦';
-    results.innerHTML = '<div style="color:#8b949e; font-size:13px;">Agents working in parallelâ€¦</div>';
+    btn.disabled = true; btn.textContent = '⏳ Running…';
+    results.innerHTML = '<div style="color:#8b949e; font-size:13px;">Agents working in parallel…</div>';
     fetch('/api/agent/multi', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -4929,20 +4929,20 @@ function runMultiAgent() {
     })
     .then(r => r.json())
     .then(function(d) {
-        btn.disabled = false; btn.textContent = 'ðŸ¤ Run';
-        if (d.error) { results.innerHTML = '<div style="color:#f85149;">âŒ ' + d.error + '</div>'; return; }
+        btn.disabled = false; btn.textContent = '🤝 Run';
+        if (d.error) { results.innerHTML = '<div style="color:#f85149;">❌ ' + d.error + '</div>'; return; }
         results.innerHTML = '';
         (d.agents || []).forEach(function(a, i) {
             var card = document.createElement('div');
             card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:10px; background:rgba(13,17,23,0.7);';
             var head = document.createElement('div');
             head.style.cssText = 'font-size:12px; color:#3fb950; font-weight:700; margin-bottom:4px;';
-            head.textContent = 'Agent ' + (i+1) + (a.role ? ' Â· ' + a.role : '') + ' Â· ' + a.provider + ' Â· ' + a.model + ' Â· ' + (a.duration_sec || 0) + 's';
+            head.textContent = 'Agent ' + (i+1) + (a.role ? ' · ' + a.role : '') + ' · ' + a.provider + ' · ' + a.model + ' · ' + (a.duration_sec || 0) + 's';
             card.appendChild(head);
             if (a.error) {
                 var err = document.createElement('div');
                 err.style.cssText = 'color:#f85149; font-size:13px;';
-                err.textContent = 'âŒ ' + a.error;
+                err.textContent = '❌ ' + a.error;
                 card.appendChild(err);
             } else {
                 var body = document.createElement('div');
@@ -4954,12 +4954,12 @@ function runMultiAgent() {
         });
     })
     .catch(function(e) {
-        btn.disabled = false; btn.textContent = 'ðŸ¤ Run';
-        results.innerHTML = '<div style="color:#f85149;">âŒ ' + (e.message || 'Failed') + '</div>';
+        btn.disabled = false; btn.textContent = '🤝 Run';
+        results.innerHTML = '<div style="color:#f85149;">❌ ' + (e.message || 'Failed') + '</div>';
     });
 }
 
-// â”€â”€â”€ Live coding panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Live coding panel ──────────────────────────────────────
 var liveCodeTimer = null;
 var liveCodeLastTs = 0;
 var liveCodeCloseTimer = null;
@@ -4984,12 +4984,12 @@ function toggleLiveCodePanel() {
     var m = document.getElementById('liveCodePanel');
     if (!m) return;
     // Opening the panel just wakes the live view for the current session. It does
-    // NOT dump the whole database history â€” that is only via the Restore picker,
+    // NOT dump the whole database history — that is only via the Restore picker,
     // so nothing ever appears "out of nowhere".
     if (m.style.display === 'flex') hideLiveCodePanel();
     else showLiveCodePanel();
 }
-// Load up to `limit` persisted edits, rendered oldest â†’ newest (most recent at
+// Load up to `limit` persisted edits, rendered oldest → newest (most recent at
 // the bottom), and set the "since" cursor to the latest timestamp so new polls
 // only append new edits.
 function loadLiveCodeHistory(limit) {
@@ -5005,7 +5005,7 @@ function loadLiveCodeHistory(limit) {
                 body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">No edits yet. When the agent writes/edits files (with a workspace configured), changes appear here live.</div>';
                 return;
             }
-            // newest first from the API â†’ reverse to oldest first and append.
+            // newest first from the API → reverse to oldest first and append.
             for (var i = items.length - 1; i >= 0; i--) {
                 body.appendChild(renderLiveCodeEdit(items[i]));
             }
@@ -5071,13 +5071,13 @@ function captureLiveCodeFromReply(text) {
 }
 function maybeAutoOpenLiveCode(count) {
     // The panel NEVER auto-opens. If the panel is already open, keep polling;
-    // if closed, just flash the ðŸ“ notification dot. This is what makes the
+    // if closed, just flash the 📝 notification dot. This is what makes the
     // panel stop appearing "out of nowhere".
     if (!count) return;
     var m = document.getElementById('liveCodePanel');
     if (!m) return;
     if (m.style.display === 'flex') {
-        // Panel already open â€” new edits were already prepended by pollLiveCode.
+        // Panel already open — new edits were already prepended by pollLiveCode.
         if (liveCodeCloseTimer) clearTimeout(liveCodeCloseTimer);
         liveCodeCloseCheckpoint = liveCodeLastTs;
         liveCodeCloseTimer = setTimeout(closeLiveCodeIfIdle, 25000);
@@ -5088,7 +5088,7 @@ function maybeAutoOpenLiveCode(count) {
 function closeLiveCodeIfIdle() {
     // Compare the current "last seen edit" timestamp against what was recorded
     // when we (re)armed the close timer. If it hasn't changed, the model is
-    // idle â€” close the panel.
+    // idle — close the panel.
     if (liveCodeLastTs === liveCodeCloseCheckpoint) {
         var m = document.getElementById('liveCodePanel');
         if (m && m.style.display === 'flex') {
@@ -5114,7 +5114,7 @@ function renderLiveCodeEdit(e) {
     card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:10px; margin-bottom:10px; background:#101018;';
     var head = document.createElement('div');
     head.style.cssText = 'font-size:12px; font-weight:700; margin-bottom:6px;';
-    head.textContent = (e.tool === 'edit_file' ? 'âœï¸ ' : 'ðŸ“„ ') + (e.path || '(file)');
+    head.textContent = (e.tool === 'edit_file' ? '✏️ ' : '📄 ') + (e.path || '(file)');
     head.style.color = e.tool === 'edit_file' ? '#a371f7' : '#3fb950';
     card.appendChild(head);
     if (e.detail) {
@@ -5133,10 +5133,10 @@ function renderLiveCodeEdit(e) {
 }
 function clearLiveCode() {
     // Clear ONLY the on-screen panel display. The DB backup is left intact so
-    // â†º Restore can still bring these edits back. Also forget which edits were
+    // ↺ Restore can still bring these edits back. Also forget which edits were
     // "restored", so they don't re-appear on the next page reload.
     var body = document.getElementById('liveCodeBody');
-    if (body) body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">Cleared â€” session only. New edits appear here as the agent makes them. Use â†º Restore to load saved edits from the database.</div>';
+    if (body) body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">Cleared — session only. New edits appear here as the agent makes them. Use ↺ Restore to load saved edits from the database.</div>';
     try { localStorage.removeItem('liveCodeRestoredIds'); } catch (e) {}
     clearLiveCodeNotify();
     // Advance the cursor to the newest saved edit (not 0), so the next poll
@@ -5174,10 +5174,10 @@ function restoreLiveCode() {
                 info.style.cssText = 'flex:1; min-width:0;';
                 var t = document.createElement('div');
                 t.style.cssText = 'font-size:12px; font-weight:700; color:' + (e.tool === 'edit_file' ? '#a371f7' : '#3fb950') + '; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
-                t.textContent = (e.tool === 'edit_file' ? 'âœï¸ ' : 'ðŸ“„ ') + (e.path || '(file)');
+                t.textContent = (e.tool === 'edit_file' ? '✏️ ' : '📄 ') + (e.path || '(file)');
                 var meta = document.createElement('div');
                 meta.style.cssText = 'font-size:11px; color:#8b949e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
-                meta.textContent = (e.detail || '') + (e.ts ? ' Â· ' + new Date(e.ts * 1000).toLocaleTimeString() : '');
+                meta.textContent = (e.detail || '') + (e.ts ? ' · ' + new Date(e.ts * 1000).toLocaleTimeString() : '');
                 info.appendChild(t); info.appendChild(meta);
                 row.appendChild(cb); row.appendChild(info);
                 list.appendChild(row);
@@ -5217,7 +5217,7 @@ function applyRestore() {
     showLiveCodePanel();
 }
 
-// â”€â”€ Restore-selection persistence (localStorage) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Restore-selection persistence (localStorage) ─────────────────
 // The user's restored edits are remembered so they survive a page reload.
 function getRestoredIds() {
     try { return JSON.parse(localStorage.getItem('liveCodeRestoredIds') || '[]'); }
@@ -5297,11 +5297,11 @@ function sendVoiceCommand(cmd) {
     })
     .then(r => r.json())
     .then(data => {
-        if (bodyEl) bodyEl.textContent = data.message || (data.ok ? 'âœ… Done.' : 'âš ï¸ Error.');
+        if (bodyEl) bodyEl.textContent = data.message || (data.ok ? '✅ Done.' : '⚠️ Error.');
         smoothScrollToBottom();
     })
     .catch(function() {
-        if (bodyEl) bodyEl.textContent = 'âš ï¸ Could not reach the voice command endpoint.';
+        if (bodyEl) bodyEl.textContent = '⚠️ Could not reach the voice command endpoint.';
         smoothScrollToBottom();
     });
 }
@@ -5332,7 +5332,7 @@ function actuallySend(text) {
     bodyEl.innerHTML = '<div class="loading-spinner"></div>';
     busy = true;
     sendBtn.disabled = true;
-    status.textContent = 'â³ Generating...';
+    status.textContent = '⏳ Generating...';
     var provider = providerSelect.value;
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
@@ -5350,7 +5350,7 @@ function actuallySend(text) {
         var elapsed = (Date.now() - startTimeToken) / 1000;
         if (elapsed > 0) {
             var speed = (tokenCount / elapsed).toFixed(1);
-            tokenSpeedSpan.textContent = `â±ï¸ ${speed} tok/s | ${tokenCount} tokens | ${elapsed.toFixed(1)}s`;
+            tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens | ${elapsed.toFixed(1)}s`;
         }
     }, 200);
 
@@ -5456,7 +5456,7 @@ function actuallySend(text) {
                         processCodeBlocks(botDiv);
                         renderMermaidDiagrams(botDiv);
                         captureLiveCodeFromReply(displayText);
-                        status.textContent = 'âœ… Done';
+                        status.textContent = '✅ Done';
                         busy = false;
                         sendBtn.disabled = false;
                         smoothScrollToBottom();
@@ -5508,7 +5508,7 @@ function actuallySend(text) {
                     processCodeBlocks(botDiv);
                     renderMermaidDiagrams(botDiv);
                     captureLiveCodeFromReply(text);
-                    status.textContent = 'âœ… Done';
+                    status.textContent = '✅ Done';
                     loadConversations();
                     speakText(text);
                     if (data.usage) finalizeStats(data.usage);
@@ -5529,7 +5529,7 @@ function finalizeStats(usage) {
     var tokens = usage.tokens || tokenCount;
     var secs = usage.duration_sec || ((Date.now() - startTimeToken) / 1000);
     var speed = secs > 0 ? (tokens / secs).toFixed(1) : '?';
-    tokenSpeedSpan.textContent = `â±ï¸ ${speed} tok/s | ${tokens} tokens | ${secs.toFixed(1)}s`;
+    tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens | ${secs.toFixed(1)}s`;
 }
 
 var recordBtn = document.getElementById('recordBtn');
@@ -5548,27 +5548,27 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
             else {
                 msgInput.value = event.results[i][0].transcript;
-                status.textContent = 'ðŸŽ¤ Listening... (interim)';
+                status.textContent = '🎤 Listening... (interim)';
             }
         }
         if (transcript) {
             msgInput.value = transcript;
-            status.textContent = 'âœ… Voice recognized!';
+            status.textContent = '✅ Voice recognized!';
         }
     };
     recognition.onend = function() {
         isRecording = false;
         recordBtn.classList.remove('recording');
-        recordBtn.textContent = 'ðŸŽ¤';
-        if (msgInput.value.trim() === '') status.textContent = 'â¹ï¸ Recording stopped (no input)';
-        else status.textContent = 'âœ… Voice input ready.';
+        recordBtn.textContent = '🎤';
+        if (msgInput.value.trim() === '') status.textContent = '⏹️ Recording stopped (no input)';
+        else status.textContent = '✅ Voice input ready.';
     };
     recognition.onerror = function(event) {
         isRecording = false;
         recordBtn.classList.remove('recording');
-        recordBtn.textContent = 'ðŸŽ¤';
-        var errors = { 'not-allowed': 'âŒ Microphone access denied.', 'no-speech': 'â¹ï¸ No speech detected.', 'audio-capture': 'âŒ No microphone found.', 'network': 'âŒ Network error.' };
-        status.textContent = errors[event.error] || 'âŒ Speech error: ' + event.error;
+        recordBtn.textContent = '🎤';
+        var errors = { 'not-allowed': '❌ Microphone access denied.', 'no-speech': '⏹️ No speech detected.', 'audio-capture': '❌ No microphone found.', 'network': '❌ Network error.' };
+        status.textContent = errors[event.error] || '❌ Speech error: ' + event.error;
     };
     recordBtn.addEventListener('click', function() {
         if (isRecording) { recognition.stop(); return; }
@@ -5576,14 +5576,14 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             recognition.start();
             isRecording = true;
             recordBtn.classList.add('recording');
-            recordBtn.textContent = 'â¹';
+            recordBtn.textContent = '⏹';
             msgInput.value = '';
-            status.textContent = 'ðŸŽ¤ Listening... Speak now.';
-        } catch (e) { status.textContent = 'âŒ Failed to start recording: ' + e.message; }
+            status.textContent = '🎤 Listening... Speak now.';
+        } catch (e) { status.textContent = '❌ Failed to start recording: ' + e.message; }
     });
 } else {
     recordBtn.style.display = 'none';
-    status.textContent = 'âš ï¸ Voice recording not supported.';
+    status.textContent = '⚠️ Voice recording not supported.';
 }
 
 var resourceIntervalId = null;
@@ -5593,10 +5593,10 @@ function updateResources() {
         .then(data => {
             var disp = document.getElementById('resourceDisplay');
             if (!disp) return;
-            if (data.error) { disp.textContent = 'âš ï¸ ' + data.error; return; }
+            if (data.error) { disp.textContent = '⚠️ ' + data.error; return; }
             let ram = data.ram_used !== null ? data.ram_used.toFixed(1) + 'GB' : '--';
             let vram = data.vram_used !== null ? data.vram_used.toFixed(1) + 'GB' : '--';
-            disp.textContent = `ðŸ’¾ RAM: ${ram} | ðŸŽ® VRAM: ${vram}`;
+            disp.textContent = `💾 RAM: ${ram} | 🎮 VRAM: ${vram}`;
         })
         .catch(err => console.log('Resource update failed:', err));
 }
@@ -5658,9 +5658,9 @@ window.addEventListener('load', function() {
     // Background watch for the live-coding panel. On load, first advance the
     // cursor to the newest saved edit WITHOUT rendering any of it, so the panel
     // never gets pre-filled with old data. Then re-apply any edits the user
-    // previously restored (persisted in localStorage) â€” those stay "fixed in"
+    // previously restored (persisted in localStorage) — those stay "fixed in"
     // the panel until Clear. The background poll only notices genuinely new
-    // edits (flashing the ðŸ“ dot if the panel is closed).
+    // edits (flashing the 📝 dot if the panel is closed).
     safe(function() {
         if (typeof seedLiveCodeCursor === 'function') seedLiveCodeCursor();
         if (typeof restoreSavedSelections === 'function') restoreSavedSelections();
@@ -5676,8 +5676,8 @@ window.addEventListener('load', function() {
     safe(function() {
         var searchBtn = document.getElementById('searchToggleBtn');
         searchBtn.classList.toggle('active', searchEnabled);
-        searchBtn.textContent = searchEnabled ? 'ðŸ”' : 'ðŸ” off';
-        status.textContent = searchEnabled ? 'ðŸ” Web search ON' : 'ðŸ” Web search OFF';
+        searchBtn.textContent = searchEnabled ? '🔍' : '🔍 off';
+        status.textContent = searchEnabled ? '🔍 Web search ON' : '🔍 Web search OFF';
     });
     // RAG document-chat: if the user has indexed documents, default RAG to ON
     // so the model actually reads the material (they can turn it off with the
@@ -5693,7 +5693,7 @@ window.addEventListener('load', function() {
         }).catch(function() {});
     });
     // NOTE: initWeather() is defined in the SECOND <script> block below, so it
-    // must NOT be called here â€” at this point it's still undefined, and
+    // must NOT be called here — at this point it's still undefined, and
     // safe(undefined) just throws "fn is not a function" and is swallowed, which
     // is why the weather country never auto-detected on load. It's called at the
     // end of that second block instead.
@@ -5707,7 +5707,7 @@ try { loadConversations(); } catch(e) { console.error('load fallback:', e); }
 <script src="/viewer/static/viewer.js"></script>
 
 <script>
-/* â”€â”€â”€ WEATHER JAVASCRIPT (merged from weather.html) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── WEATHER JAVASCRIPT (merged from weather.html) ────────────── */
 
 // Polyfill for roundRect
 if (!CanvasRenderingContext2D.prototype.roundRect) {
@@ -5722,7 +5722,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
     };
 }
 
-// â”€â”€ Country data â”€â”€
+// ── Country data ──
 const countryList = [
     { code: 'AF', name: 'Afghanistan' },
     { code: 'AL', name: 'Albania' },
@@ -5969,15 +5969,15 @@ const countryLatMap = {
     'VN': 16.0, 'YE': 15.5, 'ZM': -14.0, 'ZW': -19.0
 };
 
-// â”€â”€ State â”€â”€
+// ── State ──
 let currentCity = 'Unknown';
 let currentCountry = 'Unknown';
 let currentCountryCode = '';
 let currentRegion = '';
 let currentTemp = null;
 let currentCondition = '';
-let currentWeatherEmoji = 'ðŸŒ¤ï¸';
-let currentFlag = 'ðŸŒ';
+let currentWeatherEmoji = '🌤️';
+let currentFlag = '🌍';
 let currentLat = 0;
 let currentLon = 0;
 let currentTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -5992,7 +5992,7 @@ let blobInstances = [];
 const container = document.getElementById('toastContainer');
 const countrySelect = document.getElementById('weatherCountrySelect');
 
-// â”€â”€ Toast controller â”€â”€
+// ── Toast controller ──
 function createToast() {
     if (activeToast) {
         activeToast.close();
@@ -6008,20 +6008,20 @@ function createToast() {
         <div class="toast-content">
             <div class="toast-icon" id="toastIcon"><div class="spinner"></div></div>
             <div class="toast-text">
-                <div class="toast-text-main" id="toastMain">â³ Detecting...</div>
+                <div class="toast-text-main" id="toastMain">⏳ Detecting...</div>
                 <div class="sub" id="toastSub"></div>
                 <div class="time-row" id="timeRow">
                     <span class="clock" id="clockText">--:--</span>
                     <span class="date" id="dateText"></span>
                 </div>
                 <div class="weather-row" id="weatherRow" style="display:none;">
-                    <span class="weather-emoji" id="weatherEmoji">ðŸŒ¤ï¸</span>
-                    <span class="temp" id="weatherTemp">--Â°C</span>
+                    <span class="weather-emoji" id="weatherEmoji">🌤️</span>
+                    <span class="temp" id="weatherTemp">--°C</span>
                     <span class="condition" id="weatherCondition">--</span>
                 </div>
                 <div class="fetch-status" id="fetchStatus"></div>
             </div>
-            <button class="close-btn" id="closeToastBtn">âœ•</button>
+            <button class="close-btn" id="closeToastBtn">✕</button>
         </div>
         <div class="toast-progress" id="toastProgress"></div>
     `;
@@ -6084,9 +6084,9 @@ function createToast() {
         },
         updateWeather(tempC, condition, emoji) {
             this.weatherRow.style.display = 'flex';
-            this.weatherTemp.textContent = `${Math.round(tempC)}Â°C`;
+            this.weatherTemp.textContent = `${Math.round(tempC)}°C`;
             this.weatherCondition.textContent = condition || '';
-            this.weatherEmoji.textContent = emoji || 'ðŸŒ¤ï¸';
+            this.weatherEmoji.textContent = emoji || '🌤️';
         },
         setStatus(text) {
             this.fetchStatus.textContent = text;
@@ -6126,7 +6126,7 @@ function createToast() {
     return obj;
 }
 
-// â”€â”€ Canvas sizing â”€â”€
+// ── Canvas sizing ──
 function sizeCanvas(canvas) {
     const rect = canvas.parentElement.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -6140,7 +6140,7 @@ function sizeCanvas(canvas) {
     return { w: cssW, h: cssH };
 }
 
-// â”€â”€ Walking blob â”€â”€
+// ── Walking blob ──
 function createBlob(x, y, emoji, color, speed = 1.0, size = 22) {
     return {
         x, y, baseY: y, emoji, color,
@@ -6506,7 +6506,7 @@ function drawWet(ctx, w, h, t, blobs) {
     for (let i = 0; i < 70; i++) {
         const x = (i * 31 + 7) % w;
         // t advances by ~600 units/second (t = (now-start)*0.6 in ms). Use a
-        // small per-t-unit speed so drops fall at a natural ~120â€“240 px/sec.
+        // small per-t-unit speed so drops fall at a natural ~120–240 px/sec.
         const speed = 0.2 + (i % 7) * 0.045;
         const span = groundY + 40;
         const y = ((i * 41 + 5) + t * speed) % span;
@@ -6906,7 +6906,7 @@ function drawTree(ctx, x, y, s, t, type) {
     ctx.shadowOffsetY = 0;
 
     // Palm tree: one clean trunk + a few thin fronds. No branches, no round
-    // canopy, no floating leaf particles â€” just a simple palm silhouette.
+    // canopy, no floating leaf particles — just a simple palm silhouette.
     if (type === 'palm') {
         const trunkH = 46*s;
         ctx.strokeStyle = '#5d4037';
@@ -7101,9 +7101,9 @@ function renderScene(ctx, w, h, season, time) {
 
     if (blobInstances.length === 0) {
         const blobConfigs = [
-            { x: w*0.7, y: h*0.72, emoji: 'ðŸŒ»', color: '#ffb74d', speed: 1.0, size: 20 },
-            { x: w*0.15, y: h*0.78, emoji: 'ðŸ¸', color: '#a5d6a7', speed: 0.8, size: 16 },
-            { x: w*0.45, y: h*0.76, emoji: 'ðŸ', color: '#fdd835', speed: 1.2, size: 15 },
+            { x: w*0.7, y: h*0.72, emoji: '🌻', color: '#ffb74d', speed: 1.0, size: 20 },
+            { x: w*0.15, y: h*0.78, emoji: '🐸', color: '#a5d6a7', speed: 0.8, size: 16 },
+            { x: w*0.45, y: h*0.76, emoji: '🐝', color: '#fdd835', speed: 1.2, size: 15 },
         ];
         blobInstances = blobConfigs.map(cfg => createBlob(cfg.x, cfg.y, cfg.emoji, cfg.color, cfg.speed, cfg.size));
         const drinkerIdx = Math.floor(Math.random() * blobInstances.length);
@@ -7159,14 +7159,14 @@ async function getLocationFromIP() {
 }
 
 function getFlagFromCode(code) {
-    if (!code) return 'ðŸŒ';
+    if (!code) return '🌍';
     const upper = code.toUpperCase();
     if (upper.length === 2) {
         try {
             return String.fromCodePoint(0x1F1E6 + upper.charCodeAt(0) - 65, 0x1F1E6 + upper.charCodeAt(1) - 65);
-        } catch (e) { return 'ðŸŒ'; }
+        } catch (e) { return '🌍'; }
     }
-    return 'ðŸŒ';
+    return '🌍';
 }
 
 function getMonthInTimezone(timezone) {
@@ -7196,7 +7196,7 @@ function getSeasonForCountry(country, code, lat, timezone) {
     const isNorth = effectiveLat >= 0;
     const absLat = Math.abs(effectiveLat);
 
-    // Tropics (between the Tropic of Cancer and Capricorn) are hot year-round â€”
+    // Tropics (between the Tropic of Cancer and Capricorn) are hot year-round —
     // always "summer", just with rain. No 4 seasons, no wet/dry split.
     if (absLat < 23.5) {
         return 'tropical';
@@ -7217,15 +7217,15 @@ function getSeasonForCountry(country, code, lat, timezone) {
 }
 
 function weatherEmojiFromCode(code) {
-    if (code === 0) return 'â˜€ï¸';
-    if (code >= 1 && code <= 3) return 'â›…';
-    if (code === 45 || code === 48) return 'ðŸŒ«ï¸';
-    if (code >= 51 && code <= 67) return 'ðŸŒ§ï¸';
-    if (code >= 71 && code <= 77) return 'â„ï¸';
-    if (code >= 80 && code <= 82) return 'ðŸŒ§ï¸';
-    if (code >= 85 && code <= 86) return 'â„ï¸';
-    if (code >= 95) return 'â›ˆï¸';
-    return 'ðŸŒ¤ï¸';
+    if (code === 0) return '☀️';
+    if (code >= 1 && code <= 3) return '⛅';
+    if (code === 45 || code === 48) return '🌫️';
+    if (code >= 51 && code <= 67) return '🌧️';
+    if (code >= 71 && code <= 77) return '❄️';
+    if (code >= 80 && code <= 82) return '🌧️';
+    if (code >= 85 && code <= 86) return '❄️';
+    if (code >= 95) return '⛈️';
+    return '🌤️';
 }
 function weatherDescFromCode(code) {
     const map = {
@@ -7315,9 +7315,9 @@ async function fetchWeatherByCity(city) {
 async function showSeasonToast(season, city, country, code, region, lat, manual = false) {
     const toast = createToast();
     const canvas = toast.canvas;
-    const emoji = season === 'spring' ? 'ðŸŒ¸' : season === 'summer' ? 'â˜€ï¸' : season === 'autumn' ? 'ðŸ‚' : season === 'winter' ? 'â„ï¸' : season === 'tropical' ? 'ðŸŒ´' : 'â˜€ï¸';
+    const emoji = season === 'spring' ? '🌸' : season === 'summer' ? '☀️' : season === 'autumn' ? '🍂' : season === 'winter' ? '❄️' : season === 'tropical' ? '🌴' : '☀️';
     const name = season === 'tropical' ? 'Tropical (hot, rain)' : season.charAt(0).toUpperCase() + season.slice(1);
-    const flag = 'ðŸŒ';
+    const flag = '🌐';
     let locationDisplay = city;
     if (!locationDisplay || locationDisplay === country || locationDisplay === code.toLowerCase()) {
         locationDisplay = country;
@@ -7334,10 +7334,10 @@ async function showSeasonToast(season, city, country, code, region, lat, manual 
     toast.update(mainText, subText, emoji, 80);
 
     if (currentTemp !== null && currentTemp !== undefined) {
-        toast.updateWeather(currentTemp, currentCondition || '', currentWeatherEmoji || 'ðŸŒ¤ï¸');
-        toast.setStatus('âœ… Weather loaded');
+        toast.updateWeather(currentTemp, currentCondition || '', currentWeatherEmoji || '🌤️');
+        toast.setStatus('✅ Weather loaded');
     } else {
-        toast.setStatus('â³ Loading weather...');
+        toast.setStatus('⏳ Loading weather...');
         try {
             let wData = null;
             if (city && city !== 'Unknown') {
@@ -7349,19 +7349,19 @@ async function showSeasonToast(season, city, country, code, region, lat, manual 
             if (wData && wData.tempC !== null) {
                 currentTemp = wData.tempC;
                 currentCondition = wData.condition || '';
-                currentWeatherEmoji = wData.emoji || 'ðŸŒ¤ï¸';
+                currentWeatherEmoji = wData.emoji || '🌤️';
                 if (wData.region) currentRegion = wData.region;
                 if (wData.city && wData.city !== 'Unknown') currentCity = wData.city;
                 if (wData.country) currentCountry = wData.country;
                 if (wData.lat) currentLat = wData.lat;
                 if (wData.lon) currentLon = wData.lon;
                 toast.updateWeather(currentTemp, currentCondition, currentWeatherEmoji);
-                toast.setStatus('âœ… Weather loaded');
+                toast.setStatus('✅ Weather loaded');
             } else {
-                toast.setStatus('âš ï¸ Weather unavailable');
+                toast.setStatus('⚠️ Weather unavailable');
             }
         } catch (e) {
-            toast.setStatus('âš ï¸ Weather unavailable');
+            toast.setStatus('⚠️ Weather unavailable');
         }
     }
 
@@ -7417,13 +7417,13 @@ async function updateFromCountry(code) {
     const wData = await fetchWeatherByCity(name);
     let city = name;
     let region = '';
-    let temp = null, cond = '', emoji = 'ðŸŒ¤ï¸';
+    let temp = null, cond = '', emoji = '🌤️';
     let lat = 0, lon = 0;
     let countryName = name;
     if (wData && wData.tempC !== null) {
         temp = wData.tempC;
         cond = wData.condition || '';
-        emoji = wData.emoji || 'ðŸŒ¤ï¸';
+        emoji = wData.emoji || '🌤️';
         if (wData.city && wData.city !== name) city = wData.city;
         if (wData.region) region = wData.region;
         if (wData.country) countryName = wData.country;
@@ -7478,7 +7478,7 @@ async function detectLocation() {
                 currentRegion = wData.region || '';
                 currentTemp = wData.tempC;
                 currentCondition = wData.condition || '';
-                currentWeatherEmoji = wData.emoji || 'ðŸŒ¤ï¸';
+                currentWeatherEmoji = wData.emoji || '🌤️';
                 currentFlag = getFlagFromCode(code);
                 currentLat = wData.lat || latitude;
                 currentLon = wData.lon || longitude;
@@ -7512,7 +7512,7 @@ async function detectLocation() {
             if (wData && wData.tempC !== null) {
                 currentTemp = wData.tempC;
                 currentCondition = wData.condition || '';
-                currentWeatherEmoji = wData.emoji || 'ðŸŒ¤ï¸';
+                currentWeatherEmoji = wData.emoji || '🌤️';
                 if (wData.city) currentCity = wData.city;
                 if (wData.region) currentRegion = wData.region;
                 if (wData.lat) currentLat = wData.lat;
@@ -7612,9 +7612,9 @@ function initWeather() {
     detectLocation();
 }
 
-// Run initWeather HERE â€” BEFORE detectLocation is wrapped just below to force the
+// Run initWeather HERE — BEFORE detectLocation is wrapped just below to force the
 // toast container visible. This way the country auto-detects on load WITHOUT
-// popping the weather widget open (that only happens when you click ðŸŒ¤ï¸).
+// popping the weather widget open (that only happens when you click 🌤️).
 // Previously this was called from the first <script> block, where initWeather
 // wasn't defined yet, so it silently never ran and the country stayed blank.
 try { initWeather(); } catch (e) { console.error('initWeather failed:', e); }
@@ -7625,17 +7625,17 @@ detectLocation = async function() {
     await originalDetect();
 };
 
-console.log('ðŸŒ Weather widget integrated with TrioForge');
+console.log('🌍 Weather widget integrated with TrioForge');
 
 // Safety net: Esc always closes the weather toast, so it can never get stuck open
-// even if its âœ• button is hard to hit on a small screen.
+// even if its ✕ button is hard to hit on a small screen.
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && activeToast) {
         try { activeToast.close(); } catch (err) {}
     }
 });
 
-// â”€â”€ Backup / Restore â”€â”€
+// ── Backup / Restore ──
 function openRestoreModal() {
     var m = document.getElementById('restoreModal');
     m.style.display = 'flex';
@@ -7692,7 +7692,7 @@ function renderRestoreList(containerId, items, type) {
         row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #222;';
         var label = document.createElement('span');
         label.style.cssText = 'flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
-        var extra = (type === 'conversation') ? ' Â· ' + (it.message_count || 0) + ' msgs' : '';
+        var extra = (type === 'conversation') ? ' · ' + (it.message_count || 0) + ' msgs' : '';
         label.textContent = (it.title || it.id || 'untitled') + extra;
         row.appendChild(label);
         var restoreBtn = document.createElement('button');
@@ -7701,7 +7701,7 @@ function renderRestoreList(containerId, items, type) {
         restoreBtn.onclick = function() { restoreItem(type, it.id); };
         row.appendChild(restoreBtn);
         var delBtn = document.createElement('button');
-        delBtn.textContent = 'âœ•';
+        delBtn.textContent = '✕';
         delBtn.title = 'Discard permanently';
         delBtn.style.cssText = 'padding:4px 8px; background:transparent; color:#f85149; border:1px solid #333; border-radius:5px; cursor:pointer;';
         delBtn.onclick = function() { purgeBackupItem(type, it.id); };
@@ -7710,7 +7710,7 @@ function renderRestoreList(containerId, items, type) {
     });
 }
 
-// â”€â”€ Logs viewer (server / chat / voice) â”€â”€
+// ── Logs viewer (server / chat / voice) ──
 var logsTab = 'server';
 var logsPollTimer = null;
 
@@ -7790,7 +7790,7 @@ function loadVoiceLogs() {
         .catch(() => renderLogLines([]));
 }
 
-// â”€â”€ Fullscreen toggle â”€â”€
+// ── Fullscreen toggle ──
 function toggleFullscreen() {
     var frame = document.getElementById('viewFrame');
     var current = document.fullscreenElement;
@@ -7812,11 +7812,11 @@ function toggleFullscreen() {
     }
 }
 
-// â”€â”€ Notes / Cork Board inside this document â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Notes / Cork Board inside this document ─────────────────────────────────
 // The Fullscreen API belongs to the CURRENT document, so a real page load
 // (which is what clicking the Notes/Cork Board tabs used to do) always drops
-// out of fullscreen â€” one tap could never cover all three screens. Loading them
-// in a frame keeps this document (and fullscreen) alive, so â›¶ is tapped once.
+// out of fullscreen — one tap could never cover all three screens. Loading them
+// in a frame keeps this document (and fullscreen) alive, so ⛶ is tapped once.
 // Ctrl/Cmd/middle-click still open the standalone page in a new tab.
 function openEmbeddedView(url, view) {
     var e = window.event;
@@ -7887,7 +7887,7 @@ document.addEventListener('fullscreenchange', function () {
     });
 })();
 
-// â”€â”€ Services control panel â”€â”€
+// ── Services control panel ──
 function openServicesModal() {
     var m = document.getElementById('servicesModal');
     m.style.display = 'flex';
@@ -7913,7 +7913,7 @@ function setServiceUI(name, st) {
     var statusEl = document.getElementById('svc' + name.charAt(0).toUpperCase() + name.slice(1) + 'Status');
     var btn = document.getElementById('svc' + name.charAt(0).toUpperCase() + name.slice(1) + 'Btn');
     if (statusEl) {
-        statusEl.textContent = running ? 'ðŸŸ¢ Running' : 'âšª Stopped';
+        statusEl.textContent = running ? '🟢 Running' : '⚪ Stopped';
         statusEl.style.color = running ? '#3fb950' : '#8b949e';
     }
     if (btn) {
@@ -7926,7 +7926,7 @@ function setServiceUI(name, st) {
 function toggleService(which) {
     var svc = (which === 'llamacpp') ? 'llamacpp' : 'voice';
     var statusDiv = document.getElementById('svcStatus');
-    if (statusDiv) statusDiv.textContent = 'â³ Workingâ€¦';
+    if (statusDiv) statusDiv.textContent = '⏳ Working…';
     fetch('/api/services', { method: 'GET' })
         .then(r => r.json())
         .then(state => {
@@ -7946,12 +7946,12 @@ function toggleService(which) {
         })
         .catch(function() {
             refreshServices();
-            if (statusDiv) statusDiv.textContent = 'âš ï¸ Failed to toggle service.';
+            if (statusDiv) statusDiv.textContent = '⚠️ Failed to toggle service.';
         });
 }
 
-// â”€â”€â”€ First-run setup checker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â”€â”€ Integrity radar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── First-run setup checker ──────────────────────────────
+// ── Integrity radar ──────────────────────────────────────────────────────────
 // Runs the app's own integrity check and shows it as a percentage: 0% means nothing
 // changed and nothing suspicious was found. Percentages in between are findings you
 // can click through below.
@@ -7977,7 +7977,7 @@ function integrityList(title, items, prefix, colour) {
                ' (' + items.length + ')</strong>';
     items.slice(0, 25).forEach(function (it) {
         var text = (typeof it === 'string') ? it : (it.file + ':' + it.line + '  ' + it.why +
-                   '  â€” ' + (it.text || ''));
+                   '  — ' + (it.text || ''));
         html += '<div style="font-family:ui-monospace,Consolas,monospace; font-size:11.5px; ' +
                 'color:#8b949e; margin:3px 0 0 6px; word-break:break-all;">' + prefix +
                 escapeChatText(text) + '</div>';
@@ -7992,17 +7992,17 @@ function runIntegrity() {
     var summary = document.getElementById('integritySummary');
     var details = document.getElementById('integrityDetails');
     btn.disabled = true;
-    btn.textContent = 'â³ Checkingâ€¦';
-    summary.textContent = 'Hashing this appâ€™s filesâ€¦';
+    btn.textContent = '⏳ Checking…';
+    summary.textContent = 'Hashing this app’s files…';
     details.innerHTML = '';
     fetch('/api/integrity/check')
         .then(function (r) { return r.json(); })
         .then(function (d) {
             btn.disabled = false;
-            btn.textContent = 'ðŸ” Scan now';
+            btn.textContent = '🔍 Scan now';
             if (d.error) {
                 integrityGauge(100, '#f85149');
-                summary.textContent = 'âŒ ' + d.error;
+                summary.textContent = '❌ ' + d.error;
                 return;
             }
             var pct = d.risk_pct || 0;
@@ -8013,10 +8013,10 @@ function runIntegrity() {
                        (d.clean_files || 0) + '</strong> unchanged.');
             lines.push(d.has_baseline
                 ? 'Baseline recorded ' + (d.baseline_generated || 'earlier') + '.'
-                : 'âš ï¸ No baseline recorded yet â€” nothing can be judged "modified" until you record one.');
+                : '⚠️ No baseline recorded yet — nothing can be judged "modified" until you record one.');
             lines.push(pct === 0
-                ? 'âœ… Nothing changed and nothing suspicious found.'
-                : 'âš ï¸ ' + pct + '% â€” look at the findings below.');
+                ? '✅ Nothing changed and nothing suspicious found.'
+                : '⚠️ ' + pct + '% — look at the findings below.');
             summary.innerHTML = lines.join('<br>');
             var html = '';
             html += integrityList('Changed since the baseline', d.modified, '~ ', '#d29922');
@@ -8031,7 +8031,7 @@ function runIntegrity() {
             if (pct !== 0) {
                 html += '<div style="margin-top:12px; padding:10px; border:1px solid #333; ' +
                         'border-radius:8px; color:#8b949e;">Changed those files yourself? Press ' +
-                        '<strong>âœ… Record baseline</strong> to accept the current state. ' +
+                        '<strong>✅ Record baseline</strong> to accept the current state. ' +
                         'If you did not, treat it seriously before using the app.</div>';
             }
             details.innerHTML = html;
@@ -8041,9 +8041,9 @@ function runIntegrity() {
         })
         .catch(function (e) {
             btn.disabled = false;
-            btn.textContent = 'ðŸ” Scan now';
+            btn.textContent = '🔍 Scan now';
             integrityGauge(100, '#f85149');
-            summary.textContent = 'âŒ ' + (e.message || 'check failed');
+            summary.textContent = '❌ ' + (e.message || 'check failed');
         });
 }
 function setIntegrityBaseline() {
@@ -8051,23 +8051,23 @@ function setIntegrityBaseline() {
                  'changed. Silently re-baselining is what would hide real tampering.')) { return; }
     var btn = document.getElementById('integrityBaselineBtn');
     btn.disabled = true;
-    btn.textContent = 'â³ Recordingâ€¦';
+    btn.textContent = '⏳ Recording…';
     fetch('/api/integrity/baseline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
             btn.disabled = false;
-            btn.textContent = 'âœ… Record baseline';
+            btn.textContent = '✅ Record baseline';
             if (!d.ok) { alert('Could not record the baseline: ' + (d.error || 'unknown')); return; }
             runIntegrity();
         })
         .catch(function (e) {
             btn.disabled = false;
-            btn.textContent = 'âœ… Record baseline';
+            btn.textContent = '✅ Record baseline';
             alert('Could not record the baseline: ' + e.message);
         });
 }
 
-// â”€â”€ Appearance picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Appearance picker ────────────────────────────────────────────────────────
 // One choice per browser profile that every page reads, so the chat, notes and
 // corkboard change together. Saved locally for instant use AND posted to the app's
 // settings so it survives a cleared profile.
@@ -8078,6 +8078,7 @@ var TF_THEMES = [
     { id: 'ember',    name: 'Ember',     hint: 'black with warm amber',     bg: '#0c0906', a: '#ff7a2f', a2: '#ffb347' },
     { id: 'forest',   name: 'Forest',    hint: 'moss green and gold',       bg: '#07100c', a: '#35c07a', a2: '#d8c168' },
     { id: 'sakura',   name: 'Sakura',    hint: 'dark plum and pink',        bg: '#120a12', a: '#ff6fb0', a2: '#b06bff' },
+    { id: 'paper',    name: 'Paper',     hint: 'light, warm, readable',     bg: '#f4efe6', a: '#a0522d', a2: '#7a6a3a' },
     { id: 'custom',   name: 'Custom',    hint: 'yours, built below',        bg: '#0f0f16', a: '#7c5cff', a2: '#ff5fd2' }
 ];
 function openThemePicker() {
@@ -8099,9 +8100,9 @@ function openThemePicker() {
             '<div style="height:46px; border-radius:8px; background:linear-gradient(135deg,' + a +
             ',' + a2 + '); margin-bottom:8px;"></div>' +
             '<div style="font-size:13px; font-weight:600; color:' +
-            '#e6edf3' + ';">' + t.name +
-            (t.id === current ? ' âœ“' : '') + '</div>' +
-            '<div style="font-size:11px; color:' + '#8b949e' +
+            (t.id === 'paper' ? '#241f18' : '#e6edf3') + ';">' + t.name +
+            (t.id === current ? ' ✓' : '') + '</div>' +
+            '<div style="font-size:11px; color:' + (t.id === 'paper' ? '#6b6153' : '#8b949e') +
             ';">' + t.hint + '</div>';
         card.onclick = function () { chooseTheme(t.id); };
         grid.appendChild(card);
@@ -8148,7 +8149,7 @@ function checkSetup(forceOpen) {
             (d.items || []).forEach(function(it) {
                 var row = document.createElement('div');
                 row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid #222;';
-                var icon = it.status === 'ok' ? 'âœ…' : (it.status === 'missing' ? 'âŒ' : 'âš ï¸');
+                var icon = it.status === 'ok' ? '✅' : (it.status === 'missing' ? '❌' : '⚠️');
                 var col = document.createElement('div');
                 col.style.cssText = 'flex:1; min-width:0;';
                 var name = document.createElement('div');
@@ -8164,14 +8165,14 @@ function checkSetup(forceOpen) {
                 row.appendChild(col);
                 if (it.id === 'llamacpp' && it.status !== 'ok') {
                     var ib = document.createElement('button');
-                    ib.textContent = 'âš¡ Auto-install';
+                    ib.textContent = '⚡ Auto-install';
                     ib.style.cssText = 'padding:6px 12px; background:#238636; color:#fff; border:none; border-radius:6px; font-size:12px; white-space:nowrap; cursor:pointer; margin-right:6px;';
                     ib.onclick = function() { autoInstallLlamaCpp(ib); };
                     row.appendChild(ib);
                 }
                 if (it.id === 'voice' && it.status !== 'ok') {
                     var vb = document.createElement('button');
-                    vb.textContent = 'âš¡ Install';
+                    vb.textContent = '⚡ Install';
                     vb.style.cssText = 'padding:6px 12px; background:#238636; color:#fff; border:none; border-radius:6px; font-size:12px; white-space:nowrap; cursor:pointer; margin-right:6px;';
                     vb.onclick = function() { autoInstallVoice(vb); };
                     row.appendChild(vb);
@@ -8180,7 +8181,7 @@ function checkSetup(forceOpen) {
                     var a = document.createElement('a');
                     a.href = it.url; a.target = '_blank'; a.rel = 'noopener';
                     a.style.cssText = 'padding:6px 12px; background:#1f6feb; color:#fff; border-radius:6px; text-decoration:none; font-size:12px; white-space:nowrap;';
-                    a.textContent = 'â¬‡ Download';
+                    a.textContent = '⬇ Download';
                     row.appendChild(a);
                 }
                 container.appendChild(row);
@@ -8197,16 +8198,16 @@ function checkSetup(forceOpen) {
 function autoInstallLlamaCpp(btn) {
     var orig = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'â³ Installingâ€¦';
+    btn.textContent = '⏳ Installing…';
     fetch('/api/llamacpp/install', { method: 'POST' })
         .then(function(r) { return r.json().then(function(d){ return {status:r.status, d:d}; }); })
         .then(function(res) {
             var d = res.d || {};
             if (res.status === 200 && d.ok) {
-                btn.textContent = 'âœ… Installed: ' + (d.path || '');
+                btn.textContent = '✅ Installed: ' + (d.path || '');
                 alert('llama.cpp installed successfully! The app will now auto-start it.\n\nPath: ' + (d.path || ''));
             } else {
-                btn.textContent = 'âŒ ' + (d.error || 'Install failed');
+                btn.textContent = '❌ ' + (d.error || 'Install failed');
                 alert('Could not auto-install llama.cpp:\n' + (d.error || 'unknown error'));
             }
             // Refresh the setup panel and the model list so the change shows up.
@@ -8214,7 +8215,7 @@ function autoInstallLlamaCpp(btn) {
             if (typeof loadModels === 'function') loadModels();
         })
         .catch(function(e) {
-            btn.textContent = 'âŒ Install failed';
+            btn.textContent = '❌ Install failed';
             alert('Install request failed: ' + e);
         })
         .finally(function() { btn.disabled = false; });
@@ -8223,28 +8224,28 @@ function autoInstallLlamaCpp(btn) {
 // Install the speech-to-speech package (voice-to-voice agent, required).
 function autoInstallVoice(btn) {
     btn.disabled = true;
-    btn.textContent = 'â³ Installing speech-to-speechâ€¦ (this can take a while)';
+    btn.textContent = '⏳ Installing speech-to-speech… (this can take a while)';
     fetch('/api/voice/install', { method: 'POST' })
         .then(function(r) { return r.json().then(function(d){ return {status:r.status, d:d}; }); })
         .then(function(res) {
             var d = res.d || {};
             if (res.status === 200 && d.ok) {
-                btn.textContent = 'âœ… Voice installed';
+                btn.textContent = '✅ Voice installed';
                 alert('Voice-to-voice installed! Run it with: python py\\tools\\voice_agent.py');
             } else {
-                btn.textContent = 'âŒ ' + (d.error || 'Install failed');
+                btn.textContent = '❌ ' + (d.error || 'Install failed');
                 alert('Could not install voice-to-voice:\n' + (d.error || 'unknown error'));
             }
             checkSetup(true);
         })
         .catch(function(e) {
-            btn.textContent = 'âŒ Install failed';
+            btn.textContent = '❌ Install failed';
             alert('Install request failed: ' + e);
         })
         .finally(function() { btn.disabled = false; });
 }
 
-// â”€â”€ Settings dialog â”€â”€
+// ── Settings dialog ──
 function openSettingsModal() {
     var m = document.getElementById('settingsModal');
     m.style.display = 'flex';
@@ -8268,8 +8269,8 @@ document.addEventListener('input', function(e) {
     }
 });
 
-// â”€â”€ PWA: register the service worker (enables "Add to Home Screen") â”€â”€
-// The worker intentionally does NOT cache "/" or the API â€” only /static/ assets â€”
+// ── PWA: register the service worker (enables "Add to Home Screen") ──
+// The worker intentionally does NOT cache "/" or the API — only /static/ assets —
 // so it can never serve a stale UI (the bug we fixed earlier).
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
@@ -8284,8 +8285,8 @@ if ('serviceWorker' in navigator) {
 <div id="workspaceModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:9999; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(480px, 92vw); max-height:85vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <strong style="font-size:16px;">âš™ï¸ Workspaces</strong>
-      <button onclick="toggleWorkspaceSettings()" style="background:transparent;border:none;color:#aaa;font-size:20px;">âœ•</button>
+      <strong style="font-size:16px;">⚙️ Workspaces</strong>
+      <button onclick="toggleWorkspaceSettings()" style="background:transparent;border:none;color:#aaa;font-size:20px;">✕</button>
     </div>
 
     <label style="display:block; font-size:12px; margin-bottom:4px;">Active workspace</label>
@@ -8308,16 +8309,16 @@ if ('serviceWorker' in navigator) {
 
     <label style="display:block; font-size:12px; margin-bottom:4px;">Thinking level</label>
     <select id="wsThinking" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:12px;">
-      <option value="low">Low â€” minimal thinking</option>
-      <option value="mid">Mid â€” balanced</option>
-      <option value="high">High â€” full reasoning</option>
+      <option value="low">Low — minimal thinking</option>
+      <option value="mid">Mid — balanced</option>
+      <option value="high">High — full reasoning</option>
     </select>
 
     <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px; cursor:pointer;">
       <input type="checkbox" id="wsFullAccess" style="width:18px; height:18px; accent-color:#f0883e;">
-      <span style="font-size:13px;">ðŸ¤– Full computer access (open browser/apps, type, screenshot)</span>
+      <span style="font-size:13px;">🤖 Full computer access (open browser/apps, type, screenshot)</span>
     </label>
-    <div style="font-size:11px; color:#f0883e; margin:-8px 0 12px 26px;">âš ï¸ Lets the AI control your whole machine. Only enable for a folder/workspace you trust.</div>
+    <div style="font-size:11px; color:#f0883e; margin:-8px 0 12px 26px;">⚠️ Lets the AI control your whole machine. Only enable for a folder/workspace you trust.</div>
 
     <label style="display:block; font-size:12px; margin-bottom:4px;">Dependencies (pip packages)</label>
     <div style="display:flex; gap:6px; margin-bottom:6px;">
@@ -8326,7 +8327,7 @@ if ('serviceWorker' in navigator) {
     </div>
     <div id="wsDeps" style="margin-bottom:14px;"></div>
 
-    <button onclick="saveWorkspace()" style="width:100%; padding:10px; background:#1f6feb; color:#fff; border:none; border-radius:8px; font-weight:bold;">ðŸ’¾ Save workspace</button>
+    <button onclick="saveWorkspace()" style="width:100%; padding:10px; background:#1f6feb; color:#fff; border:none; border-radius:8px; font-weight:bold;">💾 Save workspace</button>
     <div id="wsStatus" style="font-size:12px; margin-top:8px; color:#8b949e;"></div>
   </div>
 </div>
@@ -8335,18 +8336,18 @@ if ('serviceWorker' in navigator) {
 <div id="restoreModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10000; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(520px, 94vw); max-height:85vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <strong style="font-size:16px;">ðŸ—„ï¸ Restore deleted data</strong>
-      <button onclick="closeRestoreModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">🗄️ Restore deleted data</strong>
+      <button onclick="closeRestoreModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 12px;">Deleted chats, notes and pins are kept here automatically. Restore anything you want back.</p>
 
-    <div style="font-size:13px; font-weight:bold; color:#58a6ff; margin-bottom:4px;">ðŸ’¬ Conversations</div>
+    <div style="font-size:13px; font-weight:bold; color:#58a6ff; margin-bottom:4px;">💬 Conversations</div>
     <div id="restoreConvs" style="margin-bottom:14px;"></div>
 
-    <div style="font-size:13px; font-weight:bold; color:#3fb950; margin-bottom:4px;">ðŸ“ Notes</div>
+    <div style="font-size:13px; font-weight:bold; color:#3fb950; margin-bottom:4px;">📝 Notes</div>
     <div id="restoreNotes" style="margin-bottom:14px;"></div>
 
-    <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:4px;">ðŸ“Œ Corkboard pins</div>
+    <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:4px;">📌 Corkboard pins</div>
     <div id="restorePins" style="margin-bottom:6px;"></div>
   </div>
 </div>
@@ -8355,15 +8356,15 @@ if ('serviceWorker' in navigator) {
 <div id="logsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10001; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:16px; width:min(780px, 94vw); height:min(72vh, 680px); display:flex; flex-direction:column;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <strong style="font-size:16px;">ðŸ—’ï¸ Logs</strong>
-      <button onclick="closeLogsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">🗒️ Logs</strong>
+      <button onclick="closeLogsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <div style="display:flex; gap:6px; margin-bottom:10px;">
-      <button id="logsTab_server" onclick="switchLogsTab('server')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">ðŸ–¥ Server</button>
-      <button id="logsTab_chat" onclick="switchLogsTab('chat')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">ðŸ’¬ Chat</button>
-      <button id="logsTab_voice" onclick="switchLogsTab('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">ðŸ—£ Voice</button>
+      <button id="logsTab_server" onclick="switchLogsTab('server')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">🖥 Server</button>
+      <button id="logsTab_chat" onclick="switchLogsTab('chat')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">💬 Chat</button>
+      <button id="logsTab_voice" onclick="switchLogsTab('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">🗣 Voice</button>
     </div>
-    <pre id="logsContent" style="flex:1; margin:0; padding:12px; background:#0a0a0f; border:1px solid #222; border-radius:8px; color:#c9d1d9; font-size:12px; font-family:Consolas,'Courier New',monospace; white-space:pre-wrap; word-break:break-word; overflow:auto;">Loading logsâ€¦</pre>
+    <pre id="logsContent" style="flex:1; margin:0; padding:12px; background:#0a0a0f; border:1px solid #222; border-radius:8px; color:#c9d1d9; font-size:12px; font-family:Consolas,'Courier New',monospace; white-space:pre-wrap; word-break:break-word; overflow:auto;">Loading logs…</pre>
   </div>
 </div>
 
@@ -8371,21 +8372,21 @@ if ('serviceWorker' in navigator) {
 <div id="servicesModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10000; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(480px, 94vw);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <strong style="font-size:16px;">ðŸ§© Services</strong>
-      <button onclick="closeServicesModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">🧩 Services</strong>
+      <button onclick="closeServicesModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">Turn a specific service on or off. Only one of llama.cpp / Voice should run at a time.</p>
 
     <div id="svcLlama" style="display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #222;">
-      <span style="flex:1; font-size:14px;">ðŸ¦™ llama.cpp server</span>
-      <span id="svcLlamaStatus" style="font-size:12px; color:#8b949e;">â€¦</span>
-      <button id="svcLlamaBtn" onclick="toggleService('llamacpp')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer;">â€“</button>
+      <span style="flex:1; font-size:14px;">🦙 llama.cpp server</span>
+      <span id="svcLlamaStatus" style="font-size:12px; color:#8b949e;">…</span>
+      <button id="svcLlamaBtn" onclick="toggleService('llamacpp')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer;">–</button>
     </div>
 
     <div id="svcVoice" style="display:flex; align-items:center; gap:10px; padding:10px 0;">
-      <span style="flex:1; font-size:14px;">ðŸ—£ Voice agent</span>
-      <span id="svcVoiceStatus" style="font-size:12px; color:#8b949e;">â€¦</span>
-      <button id="svcVoiceBtn" onclick="toggleService('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer;">â€“</button>
+      <span style="flex:1; font-size:14px;">🗣 Voice agent</span>
+      <span id="svcVoiceStatus" style="font-size:12px; color:#8b949e;">…</span>
+      <button id="svcVoiceBtn" onclick="toggleService('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer;">–</button>
     </div>
 
     <div id="svcStatus" style="font-size:12px; margin-top:12px; color:#8b949e;"></div>
@@ -8396,8 +8397,8 @@ if ('serviceWorker' in navigator) {
 <div id="themeModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:10007; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(660px, 94vw); max-height:88vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <strong style="font-size:16px;">ðŸŽ¨ Appearance â€” one theme for every page</strong>
-      <button onclick="closeThemePicker()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">🎨 Appearance — one theme for every page</strong>
+      <button onclick="closeThemePicker()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">
       Applies to the chat, the notes and the corkboard at once, and is remembered on this
@@ -8408,7 +8409,7 @@ if ('serviceWorker' in navigator) {
     <div style="margin-top:18px; padding-top:14px; border-top:1px solid #262b33;">
       <strong style="font-size:13.5px;">Build your own</strong>
       <p style="font-size:12px; color:#8b949e; margin:6px 0 10px;">
-        Pick an accent and a background â€” it is saved as the â€œCustomâ€ theme.
+        Pick an accent and a background — it is saved as the “Custom” theme.
       </p>
       <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
         <label style="font-size:12.5px; color:#c9d1d9;">Accent
@@ -8428,42 +8429,42 @@ if ('serviceWorker' in navigator) {
 <div id="integrityModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10006; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(620px, 94vw); max-height:88vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <strong style="font-size:16px;">ðŸ›¡ï¸ Integrity â€” has anything changed?</strong>
-      <button onclick="closeIntegrity()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">🛡️ Integrity — has anything changed?</strong>
+      <button onclick="closeIntegrity()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">
       Hashes this app's own files (code, templates, the vendored libraries, the launcher
       scripts) and compares them with the recorded baseline, then scans for the fingerprints
-      of injected code â€” including markup stashed inside the executables it ships.
+      of injected code — including markup stashed inside the executables it ships.
       A check you can run on demand; not an antivirus, and it only sees this folder.
     </p>
 
     <div style="display:flex; gap:18px; align-items:center;">
       <div id="integrityGauge" style="position:relative; width:104px; height:104px; border-radius:50%; flex:0 0 auto; background:conic-gradient(#30363d 0turn 1turn); display:flex; align-items:center; justify-content:center;">
         <div style="position:absolute; inset:10px; border-radius:50%; background:#14141c;"></div>
-        <div id="integrityPct" style="position:relative; font-size:22px; font-weight:700; color:#8b949e;">â€“</div>
+        <div id="integrityPct" style="position:relative; font-size:22px; font-weight:700; color:#8b949e;">–</div>
       </div>
-      <div id="integritySummary" style="flex:1; font-size:13px; line-height:1.7; color:#c9d1d9;">Not run yet â€” press ðŸ” Scan now.</div>
+      <div id="integritySummary" style="flex:1; font-size:13px; line-height:1.7; color:#c9d1d9;">Not run yet — press 🔍 Scan now.</div>
     </div>
 
     <div id="integrityDetails" style="margin-top:14px; font-size:12.5px; color:#c9d1d9;"></div>
 
     <div style="margin-top:16px; display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;">
-      <button id="integrityBaselineBtn" onclick="setIntegrityBaseline()" title="Record the current files as trusted â€” do this after a change you made yourself" style="padding:8px 14px; background:#1c1c26; border:1px solid #333; border-radius:6px; color:#e1e4e8; cursor:pointer;">âœ… Record baseline</button>
-      <button id="integrityRunBtn" onclick="runIntegrity()" style="padding:8px 18px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-weight:600; cursor:pointer;">ðŸ” Scan now</button>
+      <button id="integrityBaselineBtn" onclick="setIntegrityBaseline()" title="Record the current files as trusted — do this after a change you made yourself" style="padding:8px 14px; background:#1c1c26; border:1px solid #333; border-radius:6px; color:#e1e4e8; cursor:pointer;">✅ Record baseline</button>
+      <button id="integrityRunBtn" onclick="runIntegrity()" style="padding:8px 18px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-weight:600; cursor:pointer;">🔍 Scan now</button>
     </div>
   </div>
 </div>
 <div id="setupModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10005; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(560px, 94vw); max-height:88vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <strong style="font-size:16px;">ðŸš€ Setup â€” what you need for local AI</strong>
-      <button onclick="closeSetupModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">🚀 Setup — what you need for local AI</strong>
+      <button onclick="closeSetupModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
-    <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">These are the local services/models TrioForge can use. Missing ones have a download link. Cloud providers (OpenRouter, Gemini, Groq, â€¦) need nothing here.</p>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">These are the local services/models TrioForge can use. Missing ones have a download link. Cloud providers (OpenRouter, Gemini, Groq, …) need nothing here.</p>
     <div id="setupItems"></div>
     <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:8px;">
-      <button onclick="checkSetup(true)" style="padding:8px 14px; background:#1c1c26; border:1px solid #333; border-radius:6px; color:#e1e4e8; cursor:pointer;">ðŸ”„ Re-check</button>
+      <button onclick="checkSetup(true)" style="padding:8px 14px; background:#1c1c26; border:1px solid #333; border-radius:6px; color:#e1e4e8; cursor:pointer;">🔄 Re-check</button>
       <button onclick="closeSetupModal()" style="padding:8px 18px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-weight:600; cursor:pointer;">Got it</button>
     </div>
   </div>
@@ -8473,15 +8474,15 @@ if ('serviceWorker' in navigator) {
 <div id="settingsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10002; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(420px, 94vw);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <strong style="font-size:16px;">ðŸŽ¨ Colours</strong>
-      <button onclick="closeSettingsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">🎨 Colours</strong>
+      <button onclick="closeSettingsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
 
-    <div style="font-size:13px; font-weight:bold; color:#3fb950; margin-bottom:6px;">ðŸ“ Notes</div>
+    <div style="font-size:13px; font-weight:bold; color:#3fb950; margin-bottom:6px;">📝 Notes</div>
     <label style="display:block; font-size:12px; margin-bottom:4px;">Default note colour</label>
     <input type="color" id="setNoteColor" style="width:100%; height:36px; background:#0a0a0f; border:1px solid #333; border-radius:6px; margin-bottom:12px; cursor:pointer;">
 
-    <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:6px;">ðŸ“Œ Corkboard</div>
+    <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:6px;">📌 Corkboard</div>
     <label style="display:block; font-size:12px; margin-bottom:4px;">Default pin colour</label>
     <input type="color" id="setPinColor" style="width:100%; height:36px; background:#0a0a0f; border:1px solid #333; border-radius:6px; margin-bottom:12px; cursor:pointer;">
   </div>
@@ -8492,18 +8493,18 @@ if ('serviceWorker' in navigator) {
   <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(440px, 94vw); max-height:90vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
       <strong id="profileTitle" style="font-size:16px;">Profile</strong>
-      <button onclick="closeProfile()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <button onclick="closeProfile()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
 
     <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
       <div id="profilePreview" style="width:64px; height:64px; border-radius:50%; overflow:hidden; background:#0a0a0f; border:1px solid #333; display:flex; align-items:center; justify-content:center; font-size:28px; flex-shrink:0;"></div>
       <div style="display:flex; flex-direction:column; gap:8px;">
-        <button onclick="chooseProfileImage()" style="padding:8px 14px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:8px; cursor:pointer;">ðŸ“· Change image</button>
-        <button onclick="resetProfileImage()" style="padding:8px 14px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:8px; cursor:pointer;">â†º Reset image</button>
+        <button onclick="chooseProfileImage()" style="padding:8px 14px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:8px; cursor:pointer;">📷 Change image</button>
+        <button onclick="resetProfileImage()" style="padding:8px 14px; border:1px solid #333; background:#1c1c26; color:#e1e4e8; border-radius:8px; cursor:pointer;">↺ Reset image</button>
       </div>
     </div>
 
-    <label style="display:block; font-size:12px; margin-bottom:4px;">Name (optional â€” leave blank to hide)</label>
+    <label style="display:block; font-size:12px; margin-bottom:4px;">Name (optional — leave blank to hide)</label>
     <input id="profileName" placeholder="Your name / nickname" style="width:100%; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; margin-bottom:10px;">
 
     <label style="display:block; font-size:12px; margin-bottom:4px;">Bio</label>
@@ -8524,7 +8525,7 @@ if ('serviceWorker' in navigator) {
 
     <div style="display:flex; gap:10px; justify-content:flex-end;">
       <button onclick="closeProfile()" style="padding:8px 16px; border:1px solid #333; background:transparent; color:#aaa; border-radius:8px; cursor:pointer;">Cancel</button>
-      <button onclick="saveProfile()" style="padding:8px 18px; border:none; background:#1f6feb; color:#fff; border-radius:8px; font-weight:bold; cursor:pointer;">ðŸ’¾ Save profile</button>
+      <button onclick="saveProfile()" style="padding:8px 18px; border:none; background:#1f6feb; color:#fff; border-radius:8px; font-weight:bold; cursor:pointer;">💾 Save profile</button>
     </div>
   </div>
 </div>
@@ -8533,8 +8534,8 @@ if ('serviceWorker' in navigator) {
 <div id="shortcutsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10004; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:22px; width:min(400px, 94vw);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-      <strong style="font-size:16px;">âŒ¨ï¸ Keyboard shortcuts</strong>
-      <button onclick="closeShortcutsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">⌨️ Keyboard shortcuts</strong>
+      <button onclick="closeShortcutsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
       <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Enter</td><td style="padding:6px 0; color:#8b949e;">Send message</td></tr>
@@ -8545,7 +8546,7 @@ if ('serviceWorker' in navigator) {
       <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + /</td><td style="padding:6px 0; color:#8b949e;">Show / hide this menu</td></tr>
       <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">?</td><td style="padding:6px 0; color:#8b949e;">Show this menu</td></tr>
       <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Esc</td><td style="padding:6px 0; color:#8b949e;">Close this menu</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Alt + â†“</td><td style="padding:6px 0; color:#8b949e;">Scroll to bottom</td></tr>
+      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Alt + ↓</td><td style="padding:6px 0; color:#8b949e;">Scroll to bottom</td></tr>
     </table>
   </div>
 </div>
@@ -8554,8 +8555,8 @@ if ('serviceWorker' in navigator) {
 <div id="statsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10005; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(560px, 94vw); max-height:88vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <strong style="font-size:16px;">ðŸ“Š Token usage & cost</strong>
-      <button onclick="closeStatsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">âœ•</button>
+      <strong style="font-size:16px;">📊 Token usage & cost</strong>
+      <button onclick="closeStatsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
     <div id="statsBody"></div>
   </div>
