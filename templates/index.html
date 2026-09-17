@@ -2545,7 +2545,13 @@ function attachFile(file) {
                 status.textContent = '\u26A0\uFE0F Upload failed: ' + ((d && d.error) || 'unknown error');
                 return;
             }
-            add({ type: kind, name: file.name, b64: '', mime: file.type, id: d.id }, null);
+            // `file` is the stored name the upload returned. Without it, the message
+            // rendered the instant it is sent has neither b64 nor file, so a large
+            // video set no src at all and showed a dead 0:00 player - even though the
+            // file was on disk and its URL worked. A page reload looked fine, because
+            // then the message comes from the API with `file` filled in, which is why
+            // this looked like "nothing changed".
+            add({ type: kind, name: file.name, b64: '', mime: file.type, id: d.id, file: d.id }, null);
             status.textContent = '\uD83D\uDCCE Added ' + file.name + ' (' + mb + ' MB, uploaded)';
         }).catch(function(e) {
             status.textContent = '\u26A0\uFE0F Upload failed: ' + e.message;
