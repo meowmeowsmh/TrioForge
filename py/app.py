@@ -1535,9 +1535,18 @@ _PWA_MANIFEST = {
 # Screen"); it deliberately does NOT cache "/" or the API â€” this app is local and
 # dynamic, and caching the shell is exactly what caused the stale-UI bug.
 _SERVICE_WORKER = """\
-const CACHE = 'trioforge-static-v1';
+// v2: static assets are NETWORK-FIRST. v1 cached them cache-first, so any change to a
+// stylesheet or script - a theme fix, a bug fix - was invisible in a browser that had
+// already cached the file: it never revalidated. That is why edits appeared everywhere
+// except the browser being used. The cache is now only an offline fallback. The name is
+// bumped so the old cache is discarded on activate.
+const CACHE = 'trioforge-static-v2';
 self.addEventListener('install', (e) => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (e) => e.waitUntil((async () => {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+  await self.clients.claim();
+})()));
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -1548,15 +1557,20 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname === '/' || url.pathname.startsWith('/api/') ||
       url.pathname.startsWith('/conversations') || url.pathname.startsWith('/notes') ||
       url.pathname.startsWith('/corkboard') || url.pathname.startsWith('/messages')) return;
-  // Static assets: cache-first, refreshed in the background.
+  // Static assets: network first, cache only as an offline fallback, so the browser can
+  // never run a stale stylesheet or script.
   if (url.pathname.startsWith('/static/')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
-      const hit = await cache.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      try { if (res && res.ok) cache.put(req, res.clone()); } catch (e) {}
-      return res;
+      try {
+        const res = await fetch(req);
+        try { if (res && res.ok) cache.put(req, res.clone()); } catch (e) {}
+        return res;
+      } catch (e) {
+        const hit = await cache.match(req);
+        if (hit) return hit;
+        throw e;
+      }
     })());
   }
 });
