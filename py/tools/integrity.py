@@ -31,10 +31,13 @@ from pathlib import Path
 
 MANIFEST_NAME = "integrity-manifest.json"
 
-# What counts as "the app's own files": code, templates, the vendored libraries, and
-# the scripts that start it. Deliberately excluded: user data, models, logs, uploads,
-# the venv, and generated output - changes there are normal and would drown the signal.
-INCLUDE_DIRS = ("py", "templates", "static/vendor", "docker")
+# What counts as "the app's own files": code, templates, the app's own static assets
+# (stylesheets, scripts, the vendored libraries, the icons) and the launcher scripts.
+# Deliberately excluded: user data, models, logs, uploads, the venv and generated
+# output - changes there are normal and would drown the signal. static/uploads and
+# static/generated* are named in SKIP_PREFIXES below, so widening this to "static" is
+# safe: it is what puts themes.css and theme-loader.js under the hash check.
+INCLUDE_DIRS = ("py", "templates", "static", "docker")
 INCLUDE_FILES = (
     "start.vbs", "start-web.vbs", "start.bat", "start-web.bat", "application.bat",
     "run.sh", "requirements.txt", "requirements-ml.txt", "pyproject.toml",
