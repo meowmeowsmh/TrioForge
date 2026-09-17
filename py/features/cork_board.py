@@ -349,6 +349,10 @@ corkboard_bp = Blueprint('corkboard', __name__, url_prefix='/corkboard')
 
 
 # ---------- Serve the corkboard HTML page ----------
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))
+
+
 def _theme_script():
     """<script> carrying the saved appearance, placed before theme-loader.js.
 
@@ -373,7 +377,19 @@ def _theme_script():
 
 
 def _page_html(html):
-    """The page HTML with the appearance settings injected before the theme loader."""
+    """The page HTML with the appearance settings injected before the theme loader.
+
+    The asset URLs are stamped with the files' mtimes as well. A browser or service worker
+    holding a cached /static/themes.css keeps serving it, which is how a theme fix can stay
+    invisible in the browser being used even when the server is correct; a URL that changes
+    with the file cannot be served from an old cache.
+    """
+    for rel in ("static/themes.css", "static/theme-loader.js"):
+        try:
+            stamp = int(os.stat(os.path.join(_ROOT, *rel.split("/"))).st_mtime)
+        except Exception:
+            continue
+        html = html.replace("/" + rel, "/" + rel + "?v=" + str(stamp))
     marker = '<script src="/static/theme-loader.js"></script>'
     if marker in html:
         return html.replace(marker, _theme_script() + marker, 1)

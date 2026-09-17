@@ -1410,17 +1410,36 @@ def _ui_settings_stamp():
         return 0
 
 
+def _stamp_assets(html):
+    """Add ?v=<file mtime> to the stylesheet and theme-loader URLs.
+
+    A browser - or a service worker - that cached /static/themes.css under that exact URL
+    keeps serving its copy, so a fix can stay invisible in the one browser that matters
+    even though the server is correct. Changing the URL whenever the FILE changes sidesteps
+    every cache there is, including a stale service worker, because the new URL has never
+    been cached. This is what finally makes an edit reach a browser that has been open all
+    day.
+    """
+    for rel in ("static/themes.css", "static/theme-loader.js"):
+        try:
+            stamp = int(os.stat(root_path(*rel.split("/"))).st_mtime)
+        except Exception:
+            continue
+        html = html.replace("/{}".format(rel), "/{}?v={}".format(rel, stamp))
+    return html
+
+
 def build_html(model_name=None):
     with open(CHAT_HTML_PATH, "r", encoding="utf-8") as f:
         html = f.read()
-    # Inject the user's UI settings (theme, provider, model, persona, last viewâ€¦)
+    # Inject the user's UI settings (theme, provider, model, persona, last view…)
     # so a WebView2 profile reset - which wipes localStorage - cannot lose them. The
     # frontend overlays this onto localStorage before it reads anything, and mirrors
     # changes back here. "</" is escaped so a value can never break out of the tag.
     settings = _load_ui_settings()
     blob = json_dumps(settings).replace("</", "<\\/")
     inject = "<script>window.__ui_settings = {};</script>".format(blob)
-    return html.replace("<head>", "<head>\n" + inject, 1)
+    return _stamp_assets(html.replace("<head>", "<head>\n" + inject, 1))
 
 # â”€â”€ Routes â”€â”€
 @app.route('/unload_model', methods=['POST'])
