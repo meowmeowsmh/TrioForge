@@ -95,6 +95,19 @@
         } catch (e) { }
     }
 
+    // Applies a theme. `remote` decides whether the SERVER copy is written, and only a
+    // real user action (the picker, or a click on the moon/sun toggle) passes true. The
+    // pages call tfSetLight() on start-up to sync the toggle, and that must never write:
+    // doing so let merely LOADING a page overwrite the saved theme with whatever that page
+    // happened to resolve - which is how the setting kept reverting to midnight.
+    function setTheme(name, remote) {
+        if (THEMES.indexOf(name) === -1) { name = 'midnight'; }
+        if (!isLight(name)) { write(LAST_DARK_KEY, name); }
+        write(KEY, name);
+        if (remote) { persist(name); }
+        apply(name);
+    }
+
     // Exposed so the picker in the chat page (and any page) can switch instantly.
     window.tfSetTheme = function (name, custom) {
         if (custom) {
@@ -102,10 +115,7 @@
             if (custom.accent2) { write(KEYS.accent2, custom.accent2); }
             if (custom.bg) { write(KEYS.bg, custom.bg); }
         }
-        if (!isLight(name)) { write(LAST_DARK_KEY, name); }
-        write(KEY, name);
-        persist(name);
-        apply(name);
+        setTheme(name, true);
     };
     window.tfCurrentTheme = function () {
         if (document.documentElement.classList.contains('light-mode')) {
@@ -130,9 +140,9 @@
         if (light) {
             var current = document.documentElement.dataset.theme;
             if (current && !isLight(current)) { write(LAST_DARK_KEY, current); }
-            window.tfSetTheme('paper');
+            setTheme('paper', false);
         } else {
-            window.tfSetTheme(read(LAST_DARK_KEY) || 'midnight');
+            setTheme(read(LAST_DARK_KEY) || 'midnight', false);
         }
     };
     window.tfCustomColors = function () {
@@ -199,13 +209,16 @@
                          ' cls=' + (bots[i].className || '') +
                          ' kids=' + bots[i].children.length);
             }
-            // INVENTORY: walk the whole DOM and list every element still painting a DARK
-            // background while a light theme is active. Naming selectors one at a time is
-            // how dark islands kept surviving; this finds all of them at once, measured,
-            // with the selector path and box size so real surfaces stand out from specks.
+            // INVENTORY: walk the whole DOM and list every element whose background has the
+            // WRONG polarity for the active theme - dark islands on a light theme, light
+            // islands on a dark theme. Naming selectors one at a time is how these kept
+            // surviving; this finds all of them at once, measured, with the selector path
+            // and box size so real surfaces stand out from specks.
             try {
                 var islands = [];
                 var intentional = 0;
+                // Which way should surfaces lean? Light themes want light backgrounds.
+                var wantLight = isLight(document.documentElement.dataset.tfTheme || stored);
                 var all = document.querySelectorAll('body *');
                 for (var k = 0; k < all.length; k++) {
                     var el2 = all[k];
@@ -214,18 +227,25 @@
                     if (!mm) { continue; }
                     if ((mm[4] === undefined ? 1 : parseFloat(mm[4])) < 0.5) { continue; }
                     var lum = (0.299 * +mm[1] + 0.587 * +mm[2] + 0.114 * +mm[3]) / 255;
-                    if (lum > 0.45) { continue; }
+                    // Wrong way: light surface in a dark theme, or dark surface in a light one.
+                    // Mid-tones (the accent, a coloured pin) are neither.
+                    var wrong = wantLight ? (lum < 0.45) : (lum > 0.75);
+                    if (!wrong) { continue; }
                     var rc = el2.getBoundingClientRect();
                     var area = rc.width * rc.height;
                     if (area < 12000) { continue; }
-                    // Deliberate dark: a modal's dim backdrop and a video's own black
-                    // letterbox. Everything else dark on a light page is a bug.
-                    var deliberate = (el2.tagName === 'VIDEO') ||
-                        (el2.classList && (el2.classList.contains('modal') ||
-                                           el2.id === 'setupModal')) ||
-                        (el2.style && el2.style.background === 'rgba(0, 0, 0, 0.7)');
-                    if (deliberate) { intentional++; continue; }
-                    var path = el2.tagName.toLowerCase();
+                    // Deliberate exceptions: media, a modal's dim backdrop, sticky notes
+                    // and pins are supposed to be their own colour.
+                    var tag2 = el2.tagName.toLowerCase();
+                    if (tag2 === 'img' || tag2 === 'video' || tag2 === 'canvas' ||
+                        el2.id === 'setupModal' || el2.id === 'themeModal' ||
+                        el2.id === 'integrityModal' || el2.id === 'logsModal' ||
+                        (el2.className && typeof el2.className === 'string' &&
+                         /(^|\s)(pin|note-item|sticky|board)\b/.test(el2.className))) {
+                        intentional++;
+                        continue;
+                    }
+                    var path = tag2;
                     if (el2.id) { path += '#' + el2.id; }
                     if (el2.className && typeof el2.className === 'string') {
                         path += '.' + el2.className.trim().split(/\s+/).slice(0, 3).join('.');
@@ -233,12 +253,13 @@
                     islands.push({ s: path, bg: bg2, a: Math.round(area) });
                 }
                 islands.sort(function (x, y) { return y.a - x.a; });
-                out.push('dark_islands=' + islands.length +
-                         ' (plus ' + intentional + ' deliberate: video letterbox / modal backdrop)');
+                out.push('wrong_colour_islands=' + islands.length +
+                         ' (theme=' + (wantLight ? 'light' : 'dark') +
+                         ', ' + intentional + ' deliberate skipped)');
                 islands.slice(0, 14).forEach(function (it) {
-                    out.push('DARK ' + it.s + ' bg=' + it.bg + ' area=' + it.a);
+                    out.push('WRONG ' + it.s + ' bg=' + it.bg + ' area=' + it.a);
                 });
-            } catch (e) { out.push('dark_islands=error ' + e.message); }
+            } catch (e) { out.push('wrong_colour_islands=error ' + e.message); }
             document.documentElement.dataset.tfProbe = out.join(' | ');
         }, 3500);
     }
