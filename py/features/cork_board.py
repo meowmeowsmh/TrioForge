@@ -874,7 +874,7 @@ body.light-mode::before { opacity: 0; }
 /* ── Top bar ────────────────────────────────────────── */
 .top-bar {
     display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;
-    background: rgba(22,27,34,0.7); backdrop-filter: blur(20px);
+    background: rgba(18,18,26,0.7); backdrop-filter: blur(20px);
     border-bottom: 1px solid rgba(255,255,255,0.05);
     padding: 12px 24px; gap:12px; flex-shrink:0;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -1536,12 +1536,12 @@ body.light-mode .link-suggestions-box .close-suggestions button { background:rgb
 
 /* ── LIGHT MODE overrides ──────────────────────────── */
 body.light-mode {
-    background: #f6f8fa;
+    background: #ffffff;
     color: #24292f;
 }
 /* Fullscreen uses the <html> surface — make it light too, otherwise it stays black. */
 html.light-mode {
-    background: #f6f8fa;
+    background: #ffffff;
 }
 body.light-mode .top-bar {
     background: rgba(255,255,255,0.9);
@@ -1624,7 +1624,7 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
     pointer-events: none;
 }
 .weather-widget .toast {
-    background: rgba(22, 27, 34, 0.94);
+    background: rgba(18, 18, 26, 0.94);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 18px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
@@ -1659,7 +1659,7 @@ body.light-mode .toolbar .search-mode-toggle button.active { background:#1f6feb;
     right: 0;
     bottom: 0;
     height: 20px;
-    background: linear-gradient(to bottom, rgba(22, 27, 34, 0), rgba(22, 27, 34, 0.95));
+    background: linear-gradient(to bottom, rgba(18, 18, 26, 0), rgba(18, 18, 26, 0.95));
     pointer-events: none;
     z-index: 2;
 }
@@ -1889,7 +1889,7 @@ body.light-mode .weather-controls select option {
    ════════════════════════════════════════════════════════════════ */
 * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 .app { background: rgba(10,10,15,0.0); }
-.top-bar { background: rgba(22,27,34,0.94); }
+.top-bar { background: rgba(18,18,26,0.94); }
 .board-wrap { background: rgba(10,10,15,0.92); }
 .center-tabs { background: rgba(255,255,255,0.08); }
 .clear-btn { background: rgba(33,38,45,0.9); }

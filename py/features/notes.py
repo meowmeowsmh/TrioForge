@@ -1167,7 +1167,7 @@ body.light-mode .btn-icon:hover { background: rgba(0,0,0,0.10); }
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    background: rgba(22, 27, 34, 0.7);
+    background: rgba(18, 18, 26, 0.7);
     backdrop-filter: blur(20px);
     border-bottom: 1px solid rgba(255,255,255,0.05);
     padding: 12px 24px;
@@ -1308,7 +1308,7 @@ body.light-mode .center-tabs .tab-btn.active { background: #1f6feb; color: #fff;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(22,27,34,0.95);
+    background: rgba(18,18,26,0.95);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 16px;
     padding: 24px;
@@ -1853,12 +1853,12 @@ body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="pa
 
 /* Light mode overrides */
 body.light-mode {
-    background: #f6f8fa;
+    background: #ffffff;
     color: #24292f;
 }
 /* Fullscreen uses the <html> surface — make it light too, otherwise it stays black. */
 html.light-mode {
-    background: #f6f8fa;
+    background: #ffffff;
 }
 body.light-mode .sidebar { background: rgba(255, 255, 255, 0.92); border-right-color: rgba(0,0,0,0.08); }
 body.light-mode .sidebar .sidebar-header { border-bottom-color: rgba(0,0,0,0.06); }
@@ -2010,7 +2010,7 @@ body.light-mode #backlinksContainer .tag-pill:hover {
     pointer-events: none;
 }
 .weather-widget .toast {
-    background: rgba(22, 27, 34, 0.94);
+    background: rgba(18, 18, 26, 0.94);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 18px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
@@ -2045,7 +2045,7 @@ body.light-mode #backlinksContainer .tag-pill:hover {
     right: 0;
     bottom: 0;
     height: 20px;
-    background: linear-gradient(to bottom, rgba(22, 27, 34, 0), rgba(22, 27, 34, 0.95));
+    background: linear-gradient(to bottom, rgba(18, 18, 26, 0), rgba(18, 18, 26, 0.95));
     pointer-events: none;
     z-index: 2;
 }
@@ -2180,7 +2180,7 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
    ════════════════════════════════════════════════════════════════ */
 * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 .sidebar { background: rgba(18,18,26,0.96); }
-.top-bar { background: rgba(22,27,34,0.94); }
+.top-bar { background: rgba(18,18,26,0.94); }
 .notes-panel, .note-editor { background: rgba(13,17,23,0.92); }
 .center-tabs { background: rgba(255,255,255,0.08); }
 .modal { background: rgba(0,0,0,0.88); }
