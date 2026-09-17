@@ -971,7 +971,6 @@ body::before {
     z-index: -1;
     transition: opacity 0.4s ease;
 }
-body.light-mode::before { opacity: 0; }
 @keyframes bgMove {
     0% { transform: scale(1); }
     50% { transform: scale(1.05); }
@@ -1031,12 +1030,6 @@ html.embedded:has(#sidebar.hidden) #sbShow { top: 12px; }   /* no top bar when f
     padding: 8px 12px;
 }
 .btn-icon:hover { background: rgba(255,255,255,0.16); box-shadow: none; }
-body.light-mode .btn-icon {
-    background: rgba(0,0,0,0.05);
-    border-color: rgba(0,0,0,0.12);
-    color: #24292f;
-}
-body.light-mode .btn-icon:hover { background: rgba(0,0,0,0.10); }
 .search-box { padding: 8px 16px; }
 .search-box input {
     width: 100%; padding: 8px 12px; border-radius: 20px;
@@ -1300,10 +1293,6 @@ body.light-mode .btn-icon:hover { background: rgba(0,0,0,0.10); }
 }
 .center-tabs .tab-btn:hover { color: #c9d1d9; background: rgba(255,255,255,0.05); }
 .center-tabs .tab-btn.active { background: #1f6feb; color: #fff; box-shadow: 0 2px 8px rgba(31,111,235,0.3); }
-body.light-mode .center-tabs { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.06); }
-body.light-mode .center-tabs .tab-btn { color: #57606a; }
-body.light-mode .center-tabs .tab-btn:hover { background: rgba(0,0,0,0.04); color: #1f6feb; }
-body.light-mode .center-tabs .tab-btn.active { background: #1f6feb; color: #fff; }
 .top-bar .right {
     display: flex;
     align-items: center;
@@ -1423,17 +1412,6 @@ body.light-mode .center-tabs .tab-btn.active { background: #1f6feb; color: #fff;
     font-size: 13px;
     color: #8b949e;
 }
-body.light-mode .sync-popup {
-    background: rgba(255,255,255,0.95);
-    border-color: rgba(0,0,0,0.1);
-}
-body.light-mode .sync-popup h3 { color: #24292f; }
-body.light-mode .sync-popup input {
-    background: rgba(0,0,0,0.04);
-    color: #24292f;
-    border-color: rgba(0,0,0,0.15);
-}
-body.light-mode .sync-popup .actions .cancel-sync { color: #57606a; }
 /* end sync styles */
 
 .weather-toggle-btn {
@@ -1456,67 +1434,8 @@ body.light-mode .sync-popup .actions .cancel-sync { color: #57606a; }
     border-color: #58a6ff;
     background: rgba(88,166,255,0.1);
 }
-body.light-mode .weather-toggle-btn {
-    background: rgba(255,255,255,0.6);
-    border-color: rgba(0,0,0,0.1);
-    color: #57606a;
-}
-body.light-mode .weather-toggle-btn:hover {
-    color: #1f6feb;
-    border-color: #1f6feb;
-    background: rgba(31,111,235,0.05);
-}
-
 /* Theme toggle (unchanged) */
-.theme-toggle-wrapper { display: inline-block; vertical-align: middle; }
-.toggle-outer {
-    position: relative; width: 140px; height: 56px; border-radius: 999px; background: hsl(220 18% 82%);
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.12), -2px -2px 6px rgba(255,255,255,0.5),
-                inset 1px 1px 3px rgba(0,0,0,0.08), inset -1px -1px 3px rgba(255,255,255,0.4);
-    cursor: pointer; user-select: none; flex-shrink:0;
-}
-.toggle-inner { position: absolute; inset: 5px; border-radius: 999px; overflow: hidden; }
-.night-bg { position: absolute; inset: 0; background: hsl(220 35% 18%); opacity:1; transition: opacity 0.3s ease; }
-.stars-layer { position: absolute; inset: 0; opacity:1; transition: opacity 0.3s ease; pointer-events:none; }
-.star { position: absolute; background: white; border-radius:50%; }
-.sparkle { position: absolute; color: white; font-size: 7px; line-height:1; }
-.day-bg { position: absolute; inset: 0; opacity:0; transition: opacity 0.3s ease; pointer-events:none; }
-.sky-layer { position: absolute; inset: 0; background: hsl(205 70% 62%); }
-.sky-mid { position: absolute; bottom:0; left:0; right:0; height:50%; background: hsl(205 60% 72%); border-radius: 40% 40% 0 0 / 30% 30% 0 0; }
-.cloud { position: absolute; background: rgba(255,255,255,0.88); border-radius: 999px; }
-.astronaut, .biplane { position: absolute; z-index: 4; pointer-events: none; transition: opacity 0.3s ease; }
-.astronaut { left: 48px; top: 50%; transform: translateY(-55%); width: 22px; height: 26px; opacity:1; animation: float 3s ease-in-out infinite; }
-.biplane { left: 44px; top: 38%; transform: translateY(-50%); width: 30px; height: 18px; opacity:0; animation: fly 3s ease-in-out infinite; }
-@keyframes float { 0%,100% { transform: translateY(-55%); } 50% { transform: translateY(-65%); } }
-@keyframes fly { 0%,100% { transform: translateY(-50%) rotate(-1deg); } 50% { transform: translateY(-60%) rotate(1deg); } }
-.knob {
-    position: absolute; top: 50%; width: 40px; height: 40px; border-radius: 50%; transform: translateY(-50%);
-    z-index: 10; cursor: grab; transition: left 0.4s cubic-bezier(.34,1.2,.64,1); left: 3px;
-}
-.knob:active { cursor: grabbing; }
-.knob-moon {
-    position: absolute; inset:0; border-radius:50%; background: hsl(220 10% 82%);
-    box-shadow: 2px 2px 4px rgba(255,255,255,0.9) inset, -2px -2px 4px rgba(0,0,0,0.18) inset;
-    transition: opacity 0.3s ease;
-}
-.knob-moon .crater {
-    position: absolute; border-radius:50%; background: hsl(220 8% 67%);
-    box-shadow: 1px 1px 2px rgba(255,255,255,0.4) inset, -1px -1px 2px rgba(0,0,0,0.2) inset;
-}
-.knob-sun {
-    position: absolute; inset:0; border-radius:50%; background: hsl(44 100% 58%);
-    box-shadow: 2px 2px 6px rgba(255,255,180,0.9) inset, -2px -2px 4px rgba(180,100,0,0.3) inset,
-                0 0 12px hsl(44 100% 70% / .5);
-    opacity: 0; transition: opacity 0.3s ease;
-}
-.toggle-outer.day .night-bg { opacity: 0; }
-.toggle-outer.day .stars-layer { opacity: 0; }
-.toggle-outer.day .day-bg { opacity: 1; }
-.toggle-outer.day .knob { left: 93px; }
-.toggle-outer.day .knob-moon { opacity: 0; }
-.toggle-outer.day .knob-sun { opacity: 1; }
-.toggle-outer.day .astronaut { opacity: 0; }
-.toggle-outer.day .biplane { opacity: 1; }
+
 
 /* ── Notes editor & preview ── */
 .notes-panel {
@@ -1606,12 +1525,6 @@ body.light-mode .weather-toggle-btn:hover {
     max-width: 120px;
     display: none;
 }
-body.light-mode .notes-panel .note-editor .editor-header .toolbar select,
-body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="password"] {
-    background: rgba(0,0,0,0.04);
-    color: #24292f;
-}
-
 .notes-panel .note-editor .editor-body {
     display:flex;
     gap: 16px;
@@ -1901,87 +1814,10 @@ body.light-mode .notes-panel .note-editor .editor-header .toolbar input[type="pa
 .notes-panel .note-item .note-actions .delete-note:hover { background: rgba(248,81,73,0.15); border-color: #f85149; }
 
 /* Light mode overrides */
-body.light-mode {
-    background: #ffffff;
-    color: #24292f;
-}
 /* Fullscreen uses the <html> surface — make it light too, otherwise it stays black. */
-html.light-mode {
-    background: #ffffff;
-}
-body.light-mode .sidebar { background: rgba(255, 255, 255, 0.92); border-right-color: rgba(0,0,0,0.08); }
-body.light-mode .sidebar .sidebar-header { border-bottom-color: rgba(0,0,0,0.06); }
-body.light-mode .sidebar .group-heading { color: #57606a; border-bottom-color: rgba(0,0,0,0.06); }
-body.light-mode .note-item-sidebar:hover { background: rgba(0,0,0,0.04); }
-body.light-mode .note-item-sidebar.active { background: rgba(31,111,235,0.12); border-color: rgba(31,111,235,0.3); }
-body.light-mode .note-item-sidebar .title { color: #24292f; }
-body.light-mode .note-item-sidebar .time { color: #57606a; }
-body.light-mode .note-item-sidebar .rename-btn { color: #57606a; }
-body.light-mode .sidebar-footer { color: #57606a; border-top-color: rgba(0,0,0,0.06); }
-body.light-mode .main { background: rgba(255,255,255,0.85); }
-body.light-mode .top-bar { background: rgba(255, 255, 255, 0.9); border-bottom-color: rgba(0,0,0,0.08); box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
-body.light-mode .top-bar .left h1 {
-    background: linear-gradient(135deg, #1f6feb, #a371f7);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
-body.light-mode .clear-btn { background: rgba(0,0,0,0.05); border-color: rgba(248,81,73,0.3); color: #f85149; }
-body.light-mode .clear-btn:hover { background: rgba(248,81,73,0.08); }
-body.light-mode .search-box input { background: rgba(255,255,255,0.8); color: #24292f; border-color: rgba(0,0,0,0.12); }
-body.light-mode .search-box input::placeholder { color: #8b949e; }
-body.light-mode .notes-panel .note-item { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.06); }
-body.light-mode .notes-panel .note-item:hover { background: rgba(255,255,255,0.95); }
-body.light-mode .notes-panel .note-title { color: #24292f; }
-body.light-mode .notes-panel .note-content { color: #57606a; }
-body.light-mode .notes-panel .note-meta { color: #57606a; }
-body.light-mode .notes-panel .note-item .note-meta .tag {
-    background: rgba(31,111,235,0.10);
-    color: #1f6feb;
-}
-body.light-mode .notes-panel .note-editor { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.08); }
-body.light-mode .notes-panel .note-editor input,
-body.light-mode .notes-panel .note-editor textarea,
-body.light-mode .notes-panel .note-editor .editor-body .preview { color: #24292f; }
-body.light-mode .notes-panel .note-editor .editor-body .preview { background: rgba(0,0,0,0.03); }
-body.light-mode .preview h1, body.light-mode .preview h2, body.light-mode .preview h3 { color: #24292f; border-bottom-color: rgba(0,0,0,0.1); }
-body.light-mode .preview code { background: rgba(0,0,0,0.06); color: #b35900; }
-body.light-mode .preview pre { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.08); }
-body.light-mode .preview pre code { background: none; color: #24292f; }
-body.light-mode .preview blockquote { background: rgba(0,0,0,0.03); color: #57606a; }
-body.light-mode .preview table th, body.light-mode .preview table td { border-color: rgba(0,0,0,0.12); }
-body.light-mode .preview table th { background: rgba(0,0,0,0.05); color: #24292f; }
-body.light-mode .preview table tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
-body.light-mode .preview mark, body.light-mode .obsidian-highlight { background: #ffe066; color: #1a1a1a; }
-body.light-mode .notes-panel .note-editor .editor-header .toolbar button { color: #57606a; }
-body.light-mode .notes-panel .note-editor .editor-header .toolbar button:hover { background: rgba(0,0,0,0.06); }
-body.light-mode .notes-panel .note-editor .editor-footer .tags-input { background: rgba(0,0,0,0.04); color: #24292f; }
-body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle { color: #57606a; }
-body.light-mode .notes-panel .note-editor .editor-footer .pin-toggle.active { background: rgba(31,111,235,0.1); color: #1f6feb; }
-body.light-mode .tag-filter .tag-pill { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #57606a !important; }
-body.light-mode .tag-filter .tag-pill.active { background: #1f6feb; color: #fff !important; border-color: #1f6feb; }
-body.light-mode .tag-filter .tag-pill.clear-tag { border-color: rgba(248,81,73,0.3); color: #f85149 !important; }
-body.light-mode .tag-filter .tag-pill.clear-tag:hover { background: rgba(248,81,73,0.08); }
 .search-mode-toggle button { background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 4px 14px; font-size: 12px; color: #8b949e; cursor: pointer; transition: 0.2s; }
 .search-mode-toggle button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 .search-mode-toggle button:hover { background: rgba(255,255,255,0.05); }
-body.light-mode .search-mode-toggle button { color: #57606a; border-color: rgba(0,0,0,0.1); }
-body.light-mode .search-mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-body.light-mode .notes-panel .note-item .note-actions button {
-    background: rgba(0, 0, 0, 0.05);
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    color: #24292f;
-}
-body.light-mode .notes-panel .note-item .note-actions button:hover {
-    background: rgba(0, 0, 0, 0.1);
-    color: #1f6feb;
-    border-color: #1f6feb;
-}
-body.light-mode .notes-panel .note-item .note-actions .delete-note {
-    color: #f85149;
-}
-body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
-    background: rgba(248, 81, 73, 0.1);
-    border-color: #f85149;
-}
 .image-upload-btn {
     background: rgba(88,166,255,0.15);
     border-color: #58a6ff;
@@ -2005,16 +1841,6 @@ body.light-mode .notes-panel .note-item .note-actions .delete-note:hover {
     background:rgba(255,255,255,0.12);
     color:#58a6ff;
 }
-body.light-mode #backlinksContainer .tag-pill {
-    background:rgba(0,0,0,0.04);
-    border-color:rgba(0,0,0,0.08);
-    color:#57606a;
-}
-body.light-mode #backlinksContainer .tag-pill:hover {
-    background:rgba(0,0,0,0.08);
-    color:#1f6feb;
-}
-
 /* ── Graph Modal ── */
 #graphModal {
     display:none;
@@ -2097,10 +1923,6 @@ body.light-mode #backlinksContainer .tag-pill:hover {
     background: linear-gradient(to bottom, rgba(18, 18, 26, 0), rgba(18, 18, 26, 0.95));
     pointer-events: none;
     z-index: 2;
-}
-body.light-mode .weather-widget .toast-scene { background:#e8f0e8; }
-body.light-mode .weather-widget .toast-scene::after {
-    background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.95));
 }
 .weather-widget .toast-content {
     position: relative;
@@ -2188,26 +2010,6 @@ body.light-mode .weather-widget .toast-scene::after {
 }
 .weather-controls select option { background:#1a1a2e; color:#e1e4e8; }
 .weather-controls select:hover { border-color:rgba(255,255,255,0.3); }
-body.light-mode .weather-widget .toast {
-    background:rgba(255,255,255,0.92); border-color:rgba(0,0,0,0.06); color:#24292f;
-}
-body.light-mode .weather-widget .toast-text .main { color:#24292f !important; }
-body.light-mode .weather-widget .toast-text .main .highlight { color:#000 !important; }
-body.light-mode .weather-widget .toast-text .sub { color:rgba(0,0,0,0.65) !important; }
-body.light-mode .weather-widget .toast-text .time-row .clock { color:#000 !important; }
-body.light-mode .weather-widget .toast-text .time-row .date { color:rgba(0,0,0,0.5) !important; }
-body.light-mode .weather-widget .toast-text .weather-row { color:rgba(0,0,0,0.75) !important; }
-body.light-mode .weather-widget .toast-text .weather-row .temp { color:#000 !important; }
-body.light-mode .weather-widget .toast-text .weather-row .condition { color:rgba(0,0,0,0.6) !important; }
-body.light-mode .weather-widget .toast-text .weather-row .weather-emoji { color:inherit !important; }
-body.light-mode .weather-widget .toast-text .fetch-status { color:rgba(0,0,0,0.45) !important; }
-body.light-mode .weather-widget .toast .close-btn { background:rgba(0,0,0,0.08); color:rgba(0,0,0,0.7); }
-body.light-mode .weather-widget .toast .spinner { border-color:rgba(0,0,0,0.15); border-top-color:#24292f; }
-body.light-mode .weather-widget .toast-icon { background:rgba(0,0,0,0.06); }
-body.light-mode .weather-controls select {
-    background:rgba(255,255,255,0.8); color:#1a1a2e; border-color:rgba(0,0,0,0.15);
-}
-body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e; }
 @media (max-width:600px) {
     .weather-widget { top:60px; right:8px; max-width:94vw; }
     .weather-widget .toast-scene { height:70px; }
@@ -2332,72 +2134,7 @@ html.embedded #fsBtn { display: none !important; }</style>
                     <select id="countrySelect" aria-label="Select country"></select>
                 </div>
                 <button class="weather-toggle-btn" id="weatherToggleBtn" onclick="toggleWeather()" title="Show/hide weather">🌤️</button>
-                <div class="theme-toggle-wrapper">
-                    <div class="toggle-outer" id="themeToggleOuter" onclick="handleThemeClick(event)">
-                        <div class="toggle-inner">
-                            <div class="night-bg"></div>
-                            <div class="stars-layer" id="themeStars"></div>
-                            <div class="day-bg">
-                                <div class="sky-layer"></div>
-                                <div class="sky-mid"></div>
-                                <div class="cloud" style="width:36px;height:14px;bottom:3px;right:0px;"></div>
-                                <div class="cloud" style="width:26px;height:10px;bottom:14px;right:22px;opacity:.85;"></div>
-                                <div class="cloud" style="width:20px;height:8px;bottom:22px;left:4px;opacity:.7;"></div>
-                            </div>
-                            <div class="astronaut">
-                                <svg viewBox="0 0 44 54" width="22" height="26" xmlns="http://www.w3.org/2000/svg">
-                                    <ellipse cx="22" cy="36" rx="13" ry="14" fill="#e8e8e8"/>
-                                    <circle cx="22" cy="18" r="13" fill="#d0d8e8"/>
-                                    <circle cx="22" cy="18" r="10" fill="#c8d8f0" opacity="0.4"/>
-                                    <ellipse cx="22" cy="19" rx="7" ry="6" fill="#5a7ab0" opacity="0.85"/>
-                                    <circle cx="22" cy="20" r="5" fill="#c8844a"/>
-                                    <circle cx="20" cy="18.5" r="1.2" fill="#7a3a0a"/>
-                                    <circle cx="24" cy="18.5" r="1.2" fill="#7a3a0a"/>
-                                    <ellipse cx="22" cy="21" rx="2" ry="1.2" fill="#b06030"/>
-                                    <circle cx="10" cy="11" r="3.5" fill="#d0d8e8"/>
-                                    <circle cx="34" cy="11" r="3.5" fill="#d0d8e8"/>
-                                    <text x="22" y="37" text-anchor="middle" font-size="8" fill="#bbb">★</text>
-                                    <ellipse cx="9" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(-10 9 36)"/>
-                                    <ellipse cx="35" cy="36" rx="4" ry="8" fill="#e0e0e0" transform="rotate(10 35 36)"/>
-                                    <ellipse cx="16" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
-                                    <ellipse cx="28" cy="49" rx="5" ry="5" fill="#d0d0d0"/>
-                                    <ellipse cx="16" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
-                                    <ellipse cx="28" cy="52" rx="6" ry="3" fill="#b0b0b8"/>
-                                    <ellipse cx="22" cy="28" rx="9" ry="3" fill="none" stroke="#c0c8d8" stroke-width="2"/>
-                                </svg>
-                            </div>
-                            <div class="biplane">
-                                <svg viewBox="0 0 70 42" width="30" height="18" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="14" y="4" width="42" height="8" rx="4" fill="#d0d8e0"/>
-                                    <ellipse cx="35" cy="22" rx="22" ry="9" fill="#e8e0d8"/>
-                                    <ellipse cx="58" cy="22" rx="8" ry="6" fill="#d0c8c0"/>
-                                    <polygon points="8,14 14,20 8,26" fill="#c8d0d8"/>
-                                    <rect x="4" y="15" width="12" height="5" rx="2" fill="#c0c8d0"/>
-                                    <rect x="18" y="26" width="34" height="6" rx="3" fill="#c8d0d8"/>
-                                    <line x1="22" y1="12" x2="22" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
-                                    <line x1="48" y1="12" x2="48" y2="26" stroke="#aab0b8" stroke-width="1.5"/>
-                                    <ellipse cx="44" cy="17" rx="7" ry="5" fill="#7aaecc" opacity="0.8"/>
-                                    <circle cx="44" cy="15" r="5" fill="#c8844a"/>
-                                    <circle cx="42.5" cy="13.5" r="1" fill="#6b3a1f"/>
-                                    <circle cx="45.5" cy="13.5" r="1" fill="#6b3a1f"/>
-                                    <ellipse cx="44" cy="16" rx="1.5" ry="1" fill="#b06030"/>
-                                    <circle cx="40" cy="11" r="2" fill="#c8844a"/>
-                                    <circle cx="48" cy="11" r="2" fill="#c8844a"/>
-                                    <line x1="66" y1="13" x2="66" y2="31" stroke="#8a7060" stroke-width="3" stroke-linecap="round"/>
-                                    <circle cx="66" cy="22" r="2.5" fill="#6a5040"/>
-                                </svg>
-                            </div>
-                            <div class="knob" id="themeKnob">
-                                <div class="knob-moon">
-                                    <div class="crater" style="width:10px;height:10px;top:8px;left:7px;"></div>
-                                    <div class="crater" style="width:8px;height:8px;top:22px;left:11px;"></div>
-                                    <div class="crater" style="width:5px;height:5px;top:18px;left:25px;"></div>
-                                </div>
-                                <div class="knob-sun"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                
                 <button class="clear-btn" onclick="clearAllNotes()">🗑 Clear All</button>
             </div>
         </div>
@@ -2522,116 +2259,7 @@ html.embedded #fsBtn { display: none !important; }</style>
 
 <script>
     // ─── Theme (unchanged) ───────────────────────────
-    var themeOuter = document.getElementById('themeToggleOuter');
-    var themeKnob = document.getElementById('themeKnob');
-    function currentIsLight() {
-    // The chosen theme is the source of truth. The old 'theme' key is a leftover
-    // and can disagree with it (absent on a fresh profile, or stale after a theme
-    // change), and trusting it here switched the app back to dark on load.
-    if (window.tfIsLight) { return window.tfIsLight(); }
-    return localStorage.getItem('theme') === 'light';
-}
-    function applyTheme(light) {
-        // Light/dark IS a theme choice now, so this toggle moves the theme instead of
-        // setting a second flag: otherwise toggling here would leave the chosen theme
-        // (trio_theme) pointing somewhere else and the pages would disagree.
-        if (window.tfSetLight) {
-            window.tfSetLight(!!light);
-        } else {
-            document.body.classList.toggle('light-mode', light);
-            // Also toggle on <html> so the fullscreen surface follows the theme.
-            document.documentElement.classList.toggle('light-mode', light);
-            localStorage.setItem('theme', light ? 'light' : 'dark');
-        }
-        themeOuter.classList.toggle('day', light);
-    }
-    applyTheme(currentIsLight());
-    var draggedTheme = false;
-    var isDraggingTheme = false;
-    var startXTheme = 0, startLeftTheme = 0;
-    function handleThemeClick(e) {
-        if (draggedTheme) return;
-        var newLight = !document.body.classList.contains('light-mode');
-        applyTheme(newLight);
-    }
-    const MIN_LEFT_THEME = 3;
-    const MAX_LEFT_THEME = 93;
-    themeKnob.addEventListener('mousedown', dragStartTheme);
-    themeKnob.addEventListener('touchstart', dragStartTheme, { passive: true });
-    function dragStartTheme(e) {
-        isDraggingTheme = true;
-        draggedTheme = false;
-        themeKnob.style.transition = 'none';
-        startXTheme = e.touches ? e.touches[0].clientX : e.clientX;
-        startLeftTheme = document.body.classList.contains('light-mode') ? MAX_LEFT_THEME : MIN_LEFT_THEME;
-        e.stopPropagation();
-        window.addEventListener('mousemove', dragMoveTheme);
-        window.addEventListener('mouseup', dragEndTheme);
-        window.addEventListener('touchmove', dragMoveTheme, { passive: true });
-        window.addEventListener('touchend', dragEndTheme);
-    }
-    function dragMoveTheme(e) {
-        if (!isDraggingTheme) return;
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const dx = clientX - startXTheme;
-        if (Math.abs(dx) > 4) draggedTheme = true;
-        let newLeft = Math.min(MAX_LEFT_THEME, Math.max(MIN_LEFT_THEME, startLeftTheme + dx));
-        themeKnob.style.left = newLeft + 'px';
-        const progress = (newLeft - MIN_LEFT_THEME) / (MAX_LEFT_THEME - MIN_LEFT_THEME);
-        document.querySelector('.night-bg').style.opacity = 1 - progress;
-        document.querySelector('.stars-layer').style.opacity = 1 - progress;
-        document.querySelector('.day-bg').style.opacity = progress;
-        document.querySelector('.knob-moon').style.opacity = 1 - progress;
-        document.querySelector('.knob-sun').style.opacity = progress;
-        document.querySelector('.astronaut').style.opacity = progress < 0.5 ? 1 : 0;
-        document.querySelector('.biplane').style.opacity = progress >= 0.5 ? 1 : 0;
-    }
-    function dragEndTheme(e) {
-        if (!isDraggingTheme) return;
-        isDraggingTheme = false;
-        themeKnob.style.transition = '';
-        themeKnob.style.left = '';
-        document.querySelector('.night-bg').style.opacity = '';
-        document.querySelector('.stars-layer').style.opacity = '';
-        document.querySelector('.day-bg').style.opacity = '';
-        document.querySelector('.knob-moon').style.opacity = '';
-        document.querySelector('.knob-sun').style.opacity = '';
-        document.querySelector('.astronaut').style.opacity = '';
-        document.querySelector('.biplane').style.opacity = '';
-        const rect = themeKnob.getBoundingClientRect();
-        const outerRect = themeOuter.getBoundingClientRect();
-        const currentLeft = rect.left - outerRect.left - 5;
-        const midpoint = (MIN_LEFT_THEME + MAX_LEFT_THEME) / 2;
-        const newLight = currentLeft > midpoint;
-        applyTheme(newLight);
-        window.removeEventListener('mousemove', dragMoveTheme);
-        window.removeEventListener('mouseup', dragEndTheme);
-        window.removeEventListener('touchmove', dragMoveTheme);
-        window.removeEventListener('touchend', dragEndTheme);
-    }
-    function makeThemeStars() {
-        const layer = document.getElementById('themeStars');
-        const pts = [
-            {x:26,y:10,s:1},{x:34,y:14,s:0.8},{x:40,y:7,s:1.2},{x:46,y:17,s:0.8},
-            {x:62,y:18,s:0.8},{x:76,y:16,s:0.8},{x:86,y:6,s:1},
-            {x:98,y:13,s:1},{x:112,y:10,s:1},{x:124,y:18,s:0.8},
-        ];
-        pts.forEach(d => {
-            const s = document.createElement('div');
-            s.className = 'star';
-            s.style.cssText = `width:${d.s}px;height:${d.s}px;left:${d.x}px;top:${d.y}px;`;
-            layer.appendChild(s);
-        });
-        [{x:38,y:12},{x:76,y:18},{x:114,y:20}].forEach(p => {
-            const sp = document.createElement('div');
-            sp.className = 'sparkle';
-            sp.style.cssText = `left:${p.x}px;top:${p.y}px;`;
-            sp.innerHTML = '✦';
-            layer.appendChild(sp);
-        });
-    }
-    makeThemeStars();
-
+    
     // ─── Sidebar toggle ────────────────────────────────
     var sidebar = document.getElementById('sidebar');
     var sidebarVisible = localStorage.getItem('notesSidebarVisible') !== 'false';

@@ -27,8 +27,6 @@
 
 /* The one theme that is light needs the opposite, or its dropdowns, fields and
    scrollbars would be drawn in the dark native style on a white page. */
-html[data-theme="paper"] { color-scheme: light; }
-
 :root {
     /* Midnight is the app's original look, so "no choice made" changes nothing. */
     --tf-bg: #0d1117;
@@ -186,22 +184,6 @@ html[data-theme="sakura"] {
    The page and the bars are white; buttons, dropdowns and chips are grey; fields are
    white again so they read as editable against the grey controls next to them. The
    accent stays a clean blue for Send and links. */
-html[data-theme="paper"] {
-    --tf-bg: #ffffff;
-    --tf-bg-art: none;
-    --tf-surface: #ffffff;            /* page, sidebar, top bar, input bar, toolbars */
-    --tf-surface-2: #e9ebef;          /* buttons, dropdowns, chips */
-    --tf-surface-3: #ffffff;          /* text fields, selects, modals */
-    --tf-border: rgba(0,0,0,0.12);
-    --tf-text: #1c1f23;
-    --tf-text-dim: #5c6470;
-    --tf-accent: #2f6fed;
-    --tf-accent-2: #1f57c3;
-    --tf-accent-soft: rgba(47,111,237,0.12);
-    --tf-accent-glow: rgba(47,111,237,0.28);
-    --tf-shadow: 0 6px 18px rgba(20,24,32,0.10);
-    --tf-radius: 12px;
-}
 
 /* ── Custom: the values come from JS as inline custom properties on :root, so the
       user's own accent and background are just another theme as far as this file
@@ -227,7 +209,6 @@ html[data-theme] body {
     background-size: cover !important;
     color: var(--tf-text) !important;
 }
-html[data-theme] body.light-mode { background-color: var(--tf-bg) !important; }
 
 /* Text: the light theme needs this or headings and body copy stay pale-on-pale.
    Only plain text elements are touched - cards and bubbles keep their own rules. */
@@ -377,11 +358,6 @@ html[data-theme] .board {
 /* Light mode: the board is white like the rest of the theme, at the user's request.
    The cork speckle texture is removed too - dark dots on white read as dirt - leaving
    only a whisper of an inset shadow so the board still has some depth. */
-html[data-theme="paper"] .board {
-    background-color: #ffffff !important;
-    background-image: none !important;
-    box-shadow: inset 0 0 60px rgba(0,0,0,0.04) !important;
-}
 html[data-theme] .pin {
     box-shadow: 0 8px 20px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.12) inset !important;
 }
@@ -445,66 +421,5 @@ html[data-theme="premium"] .file-chip {
 html[data-theme="premium"] ::-webkit-scrollbar-thumb { border-radius: 8px; }
 html[data-theme="premium"] ::-webkit-scrollbar { width: 12px; }
 
-/* ── The theme toggle: plain black, no artwork ────────────────────────────────
-   The illustrated pill (moon, astronaut, stars, biplane, clouds) is replaced by a plain
-   black control. The element itself stays, so switching still works and the knob still
-   shows which mode is active - only the decoration is dropped. */
-#themeToggleOuter,
-.toggle-outer {
-    background: #000 !important;
-    border: 1px solid rgba(255,255,255,0.16) !important;
-    border-radius: 999px !important;
-    width: 58px !important;
-    min-width: 58px !important;
-    height: 28px !important;
-    box-shadow: none !important;
-    position: relative !important;
-    overflow: hidden !important;
-}
-#themeToggleOuter > * ,
-.toggle-outer > * {
-    display: none !important;          /* night sky, stars, biplane, clouds, day scene */
-}
-#themeToggleOuter .knob,
-.toggle-outer .knob {
-    display: block !important;
-    position: absolute !important;
-    top: 3px !important;
-    left: 3px !important;
-    width: 20px !important;
-    height: 20px !important;
-    border-radius: 50% !important;
-    background: #ffffff !important;
-    box-shadow: none !important;
-    transition: left .22s ease !important;
-}
-#themeToggleOuter .knob > *,
-.toggle-outer .knob > * {
-    display: none !important;          /* the moon face / sun disc inside the knob */
-}
-#themeToggleOuter.day .knob,
-.toggle-outer.day .knob {
-    left: 33px !important;
-}
-/* ...but the THEME decides the knob's side, so it cannot point the wrong way when the
-   app's own .day class and the chosen theme disagree (which is how the toggle used to
-   show night while the page was light). */
-html[data-theme="paper"] #themeToggleOuter .knob,
-html[data-theme="paper"] .toggle-outer .knob {
-    left: 33px !important;
-}
-html[data-theme] #themeToggleOuter:not([data-x]) .knob,
-html[data-theme]:not([data-theme="paper"]) #themeToggleOuter .knob {
-    left: 3px !important;
-}
 
 
-/* ── Dark only: the theme control is gone ─────────────────────────────────────
-   The app is dark in every theme now, so the moon/sun switch has nothing to switch and
-   is hidden. Hidden rather than deleted: removing the element is what broke these pages
-   the last time, and its machinery can stay harmlessly in place. */
-#themeToggleOuter,
-.toggle-outer,
-.theme-toggle-wrapper {
-    display: none !important;
-}
