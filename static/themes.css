@@ -284,6 +284,15 @@ html[data-theme] .msg.user {
 html[data-theme] .note-item,
 html[data-theme] .note-card,
 html[data-theme] .file-chip,
+/* Small controls that were still hardcoded dark: the sidebar's import/export row and
+   the Setup modal's "Re-check" button (which sets its colour in an INLINE style, so it
+   needs !important to be overridden). Measured as rgb(28,28,38) and rgba(33,38,45,.8) on
+   a white page. */
+html[data-theme] .new-chat-btn,
+html[data-theme] .new-note-btn,
+html[data-theme] .sidebar-io button,
+html[data-theme] button[onclick*="checkSetup"],
+html[data-theme] .sync-btn,
 html[data-theme] details.thinking-block,
 html[data-theme] .thinking-block,
 html[data-theme] .code-block-wrapper,

@@ -243,7 +243,8 @@
                 ['weather', '.weather-row'], ['weathercard', '.weather-card'],
                 ['toolbar', '.toolbar'], ['board', '.board'], ['main', '.main'],
                 ['notespanel', '.notes-panel'], ['editor', '.note-editor'],
-                ['boardwrap', '.board-wrap']
+                ['boardwrap', '.board-wrap'], ['sbtoggle', '.sidebar-toggle'],
+                ['newnote', '.new-note-btn'], ['synctn', '.sync-btn']
             ];
             var out = ['theme=' + (document.documentElement.dataset.tfTheme || 'none')];
             wanted.forEach(function (pair) {
@@ -280,17 +281,33 @@
                     if (!mm) { continue; }
                     if ((mm[4] === undefined ? 1 : parseFloat(mm[4])) < 0.5) { continue; }
                     var lum = (0.299 * +mm[1] + 0.587 * +mm[2] + 0.114 * +mm[3]) / 255;
+                    // A blue-dominant surface is the accent colour: a primary button or an
+                    // active chip. Blue reads as dark but is deliberate on any theme.
+                    if (+mm[3] > +mm[1] + 40 && +mm[3] > +mm[2] + 30) { intentional++; continue; }
                     // Wrong way: light surface in a dark theme, or dark surface in a light one.
                     // Mid-tones (the accent, a coloured pin) are neither.
                     var wrong = wantLight ? (lum < 0.45) : (lum > 0.75);
                     if (!wrong) { continue; }
                     var rc = el2.getBoundingClientRect();
                     var area = rc.width * rc.height;
-                    if (area < 12000) { continue; }
+                    // 12000 was too coarse: every small button sailed under it, which is
+                    // why dark little controls kept showing up in screenshots after the
+                    // inventory reported zero. 2500 still ignores text runs and borders.
+                    if (area < 1500) { continue; }
                     // Deliberate exceptions: media, a modal's dim backdrop, sticky notes
                     // and pins are supposed to be their own colour.
                     var tag2 = el2.tagName.toLowerCase();
-                    if (tag2 === 'img' || tag2 === 'video' || tag2 === 'canvas' ||
+                    // The moon/sun toggle paints its own day and night scenes - a light
+                    // sky on a dark page is correct for it. An active tab or link is
+                    // accent-coloured on purpose. Neither is a theme failure.
+                    if (el2.id === 'themeToggleOuter' || el2.id === 'themeKnob' ||
+                        (el2.className && typeof el2.className === 'string' &&
+                         /(^|\s)(toggle-outer|night-bg|day-bg|stars-layer|tab-btn|cloud|knob|knob-moon|knob-sun|biplane)\b/.test(el2.className)) ||
+                        (el2.classList && el2.classList.contains('active'))) {
+                        intentional++;
+                        continue;
+                    }
+                    if (tag2 === 'a' || tag2 === 'img' || tag2 === 'video' || tag2 === 'canvas' ||
                         el2.id === 'setupModal' || el2.id === 'themeModal' ||
                         el2.id === 'integrityModal' || el2.id === 'logsModal' ||
                         (el2.className && typeof el2.className === 'string' &&
@@ -303,14 +320,22 @@
                     if (el2.className && typeof el2.className === 'string') {
                         path += '.' + el2.className.trim().split(/\s+/).slice(0, 3).join('.');
                     }
-                    islands.push({ s: path, bg: bg2, a: Math.round(area) });
+                    var label = (el2.innerText || el2.textContent || '').trim().slice(0, 18);
+                    var par = el2.parentElement
+                        ? (el2.parentElement.tagName.toLowerCase() +
+                           (el2.parentElement.className && typeof el2.parentElement.className === 'string'
+                            ? '.' + el2.parentElement.className.trim().split(/\s+/).slice(0, 2).join('.') : ''))
+                        : '';
+                    islands.push({ s: path, bg: bg2, a: Math.round(area), t: label, p: par });
                 }
                 islands.sort(function (x, y) { return y.a - x.a; });
                 out.push('wrong_colour_islands=' + islands.length +
                          ' (theme=' + (wantLight ? 'light' : 'dark') +
                          ', ' + intentional + ' deliberate skipped)');
                 islands.slice(0, 14).forEach(function (it) {
-                    out.push('WRONG ' + it.s + ' bg=' + it.bg + ' area=' + it.a);
+                    out.push('WRONG ' + it.s + ' bg=' + it.bg + ' area=' + it.a +
+                             (it.t ? ' text="' + it.t + '"' : '') +
+                             (it.p ? ' in ' + it.p : ''));
                 });
             } catch (e) { out.push('wrong_colour_islands=error ' + e.message); }
             document.documentElement.dataset.tfProbe = out.join(' | ');
