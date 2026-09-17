@@ -365,11 +365,13 @@ html[data-theme] .board {
     background-color: color-mix(in srgb, var(--tf-bg) 72%, var(--tf-accent) 28%) !important;
     box-shadow: inset 0 0 120px rgba(0,0,0,0.45) !important;
 }
-/* Light mode's board keeps its cork tone - a white board would erase the whole point
-   of a pin board. Everything else in this theme is white/grey. */
+/* Light mode: the board is white like the rest of the theme, at the user's request.
+   The cork speckle texture is removed too - dark dots on white read as dirt - leaving
+   only a whisper of an inset shadow so the board still has some depth. */
 html[data-theme="paper"] .board {
-    background-color: #d9cbb4 !important;
-    box-shadow: inset 0 0 90px rgba(120,90,50,0.18) !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.04) !important;
 }
 html[data-theme] .pin {
     box-shadow: 0 8px 20px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.12) inset !important;
