@@ -112,10 +112,18 @@
 
     var stored = read(KEY);
     if (!stored) {
-        // First run on this profile: honour the app's old light/dark choice rather than
-        // ignoring it, so an existing setting carries over instead of snapping back.
-        stored = read(LEGACY_KEY) === 'light' ? 'paper' : 'midnight';
+        // The app injects its saved settings into the page (window.__ui_settings) before
+        // this script runs, but only MIRRORS them into localStorage further down the body.
+        // Reading localStorage alone therefore saw nothing, decided "dark", applied it -
+        // and then the mirror wrote theme=light afterwards. The setting said light while
+        // the page was dark, on every single load: that was the inconsistency. Asking the
+        // injected settings directly closes the gap without waiting for the mirror.
+        var injected = window.__ui_settings || {};
+        stored = injected.trio_theme || injected.theme || '';
+        if (stored === 'light') { stored = 'paper'; }        // the old light/dark key
+        if (stored === 'dark') { stored = 'midnight'; }
     }
+    if (!stored) { stored = read(LEGACY_KEY) === 'light' ? 'paper' : 'midnight'; }
     apply(stored);
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () { applyScheme(stored); });

@@ -25,6 +25,10 @@
    is right for every theme here, including Midnight. */
 :root { color-scheme: dark; }
 
+/* The one theme that is light needs the opposite, or its dropdowns, fields and
+   scrollbars would be drawn in the dark native style on a white page. */
+html[data-theme="paper"] { color-scheme: light; }
+
 :root {
     /* Midnight is the app's original look, so "no choice made" changes nothing. */
     --tf-bg: #0d1117;
