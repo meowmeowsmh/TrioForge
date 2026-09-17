@@ -717,7 +717,44 @@ launcher.py --no-browser           # never open a browser tab (what start.vbs us
 launcher.py --background-update    # start now, check for updates quietly afterwards
 launcher.py --install-shortcut     # BOTH shortcuts, Desktop + Start Menu ("TrioForge" and "TrioForge (window)")
 launcher.py --remove-shortcut      # take them away again
+launcher.py --verify               # has anything changed in this app? exit 1 if it has
+launcher.py --verify-baseline      # accept the current files as trusted, after your own edit
 ```
+
+### 🛡️ Is my copy untouched?
+
+**The 🛡️ button in the top bar** answers that, and so does `launcher.py --verify`. Both
+do the same two things:
+
+1. **Hashes the app's own files** — the Python code, the templates, the vendored
+   JavaScript libraries, the launcher and shortcut scripts — and compares them with
+   **`integrity-manifest.json`**, a baseline committed with the repo. Anything modified,
+   added or removed since stands out. That is what a hijack looks like, and it is why
+   the check exists.
+2. **Scans for the fingerprints of injected code**: `eval()`, `atob()`,
+   `String.fromCharCode`, `new Function`, `document.write`, remote `<script>` tags,
+   `javascript:` URLs, very long base64 blobs, dynamic imports of `os`/`subprocess`,
+   `curl … | sh` one-liners — plus a search **inside the executables it ships** for markup
+   stashed in a binary, which is what a sequence copied out of another HTML file looks
+   like once it is hidden in an `.exe`.
+
+The result is a percentage: **0% means nothing changed and nothing suspicious was found.**
+Anything in between is listed with file and line so you can judge it.
+
+```bash
+python py/tools/launcher.py . --verify          # exit 0 = clean, exit 1 = look at it
+python py/tools/launcher.py . --verify-baseline # you changed something on purpose
+```
+
+> **What it is not.** It is a check you can run, not an antivirus. It reads the files in
+> this folder — it cannot see inside a running process, it says nothing about malware
+> elsewhere on your machine, and a determined edit followed by a re-baseline would pass.
+> It catches the ordinary cases and it never claims more than it checked. Treat 0% as
+> "nothing here looks wrong", not as a guarantee.
+
+After **your own** edits the check will report them as modified — that is correct
+behaviour, not a problem. Press **✅ Record baseline** (or run `--verify-baseline`) once
+you are happy with the change, and it goes back to 0%.
 
 > **A shortcut that repairs itself.** The shortcuts are per-user and carry the app's own logo. Each
 > flavour is checked separately, in every location it belongs, and only what is missing is created —
