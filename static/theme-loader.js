@@ -76,6 +76,25 @@
         applyScheme(name);
     }
 
+    // Changing the theme must write BOTH stores. localStorage is read instantly by every
+    // page on this origin; the server value is what a fresh profile reads and, since it now
+    // takes priority, what the NEXT load reads. Writing only localStorage meant a switch to
+    // dark lasted until you reloaded, which then read the server's 'paper' and put you back
+    // in light - "is this light mode suddenly?". Only called from a user action, so it
+    // cannot loop.
+    function persist(name) {
+        try {
+            fetch('/api/ui_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    trio_theme: name,
+                    theme: isLight(name) ? 'light' : 'dark'
+                })
+            }).catch(function () { });
+        } catch (e) { }
+    }
+
     // Exposed so the picker in the chat page (and any page) can switch instantly.
     window.tfSetTheme = function (name, custom) {
         if (custom) {
@@ -85,6 +104,7 @@
         }
         if (!isLight(name)) { write(LAST_DARK_KEY, name); }
         write(KEY, name);
+        persist(name);
         apply(name);
     };
     window.tfCurrentTheme = function () {
