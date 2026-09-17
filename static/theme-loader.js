@@ -241,7 +241,9 @@
                 ['weather', '.weather-row'], ['weathercard', '.weather-card'],
                 ['toolbar', '.toolbar'], ['board', '.board'], ['main', '.main'],
                 ['notespanel', '.notes-panel'], ['editor', '.note-editor'],
-                ['boardwrap', '.board-wrap'], ['sbtoggle', '.sidebar-toggle'],
+                ['boardwrap', '.board-wrap'], ['pintitle', '.pin-title'],
+                ['pincontent', '.pin-content'], ['pintag', '.pin-tags .tag-label'],
+                ['sbtoggle', '.sidebar-toggle'],
                 ['newnote', '.new-note-btn'], ['synctn', '.sync-btn']
             ];
             var out = ['theme=' + (document.documentElement.dataset.tfTheme || 'none')];

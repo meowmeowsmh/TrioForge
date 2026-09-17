@@ -421,5 +421,23 @@ html[data-theme="premium"] .file-chip {
 html[data-theme="premium"] ::-webkit-scrollbar-thumb { border-radius: 8px; }
 html[data-theme="premium"] ::-webkit-scrollbar { width: 12px; }
 
-
-
+/* ── Sticky notes and pins keep DARK text ─────────────────────────────────────
+   Their paper is drawn by the app itself and is always light (yellow, blue), in every
+   theme. The mapping above paints plain text with the theme's colour, which on a dark
+   theme is near-white - so the note's title and body became invisible on its own paper:
+   readable only by selecting the text, which is exactly what was reported. Inside a pin,
+   the text is dark, always. */
+html[data-theme] .pin,
+html[data-theme] .pin-title,
+html[data-theme] .pin-content,
+html[data-theme] .pin-content *,
+html[data-theme] .pin-timestamp,
+html[data-theme] .pin-tags .tag-label,
+html[data-theme] .pin-content code,
+html[data-theme] .pin-content pre {
+    color: #1f2328 !important;
+}
+html[data-theme] .pin-content code,
+html[data-theme] .pin-content pre {
+    background: rgba(0,0,0,0.08) !important;
+}
