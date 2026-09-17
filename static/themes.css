@@ -283,7 +283,11 @@ html[data-theme] .msg.user {
 }
 html[data-theme] .note-item,
 html[data-theme] .note-card,
-html[data-theme] .file-chip {
+html[data-theme] .file-chip,
+html[data-theme] details.thinking-block,
+html[data-theme] .thinking-block,
+html[data-theme] .code-block-wrapper,
+html[data-theme] .code-header {
     background: var(--tf-surface-2) !important;
     border-color: var(--tf-border) !important;
 }

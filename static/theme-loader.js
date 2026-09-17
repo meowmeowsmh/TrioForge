@@ -179,6 +179,46 @@
                          ' cls=' + (bots[i].className || '') +
                          ' kids=' + bots[i].children.length);
             }
+            // INVENTORY: walk the whole DOM and list every element still painting a DARK
+            // background while a light theme is active. Naming selectors one at a time is
+            // how dark islands kept surviving; this finds all of them at once, measured,
+            // with the selector path and box size so real surfaces stand out from specks.
+            try {
+                var islands = [];
+                var intentional = 0;
+                var all = document.querySelectorAll('body *');
+                for (var k = 0; k < all.length; k++) {
+                    var el2 = all[k];
+                    var bg2 = getComputedStyle(el2).backgroundColor || '';
+                    var mm = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(bg2);
+                    if (!mm) { continue; }
+                    if ((mm[4] === undefined ? 1 : parseFloat(mm[4])) < 0.5) { continue; }
+                    var lum = (0.299 * +mm[1] + 0.587 * +mm[2] + 0.114 * +mm[3]) / 255;
+                    if (lum > 0.45) { continue; }
+                    var rc = el2.getBoundingClientRect();
+                    var area = rc.width * rc.height;
+                    if (area < 12000) { continue; }
+                    // Deliberate dark: a modal's dim backdrop and a video's own black
+                    // letterbox. Everything else dark on a light page is a bug.
+                    var deliberate = (el2.tagName === 'VIDEO') ||
+                        (el2.classList && (el2.classList.contains('modal') ||
+                                           el2.id === 'setupModal')) ||
+                        (el2.style && el2.style.background === 'rgba(0, 0, 0, 0.7)');
+                    if (deliberate) { intentional++; continue; }
+                    var path = el2.tagName.toLowerCase();
+                    if (el2.id) { path += '#' + el2.id; }
+                    if (el2.className && typeof el2.className === 'string') {
+                        path += '.' + el2.className.trim().split(/\s+/).slice(0, 3).join('.');
+                    }
+                    islands.push({ s: path, bg: bg2, a: Math.round(area) });
+                }
+                islands.sort(function (x, y) { return y.a - x.a; });
+                out.push('dark_islands=' + islands.length +
+                         ' (plus ' + intentional + ' deliberate: video letterbox / modal backdrop)');
+                islands.slice(0, 14).forEach(function (it) {
+                    out.push('DARK ' + it.s + ' bg=' + it.bg + ' area=' + it.a);
+                });
+            } catch (e) { out.push('dark_islands=error ' + e.message); }
             document.documentElement.dataset.tfProbe = out.join(' | ');
         }, 3500);
     }
