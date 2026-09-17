@@ -2638,7 +2638,13 @@ function addDroppedFile(file) {
 
 var themeOuter = document.getElementById('themeToggleOuter');
 var themeKnob = document.getElementById('themeKnob');
-var isLight = localStorage.getItem('theme') === 'light';
+function currentIsLight() {
+    // The chosen theme is the source of truth. The old 'theme' key is a leftover
+    // and can disagree with it (absent on a fresh profile, or stale after a theme
+    // change), and trusting it here switched the app back to dark on load.
+    if (window.tfIsLight) { return window.tfIsLight(); }
+    return localStorage.getItem('theme') === 'light';
+}
 function applyTheme(light) {
     // Light/dark is no longer a second, competing setting: it IS a choice of theme, so
     // this toggle and the 🎨 picker cannot disagree any more. Switching to light selects
@@ -2655,7 +2661,7 @@ function applyTheme(light) {
     }
     themeOuter.classList.toggle('day', light);
 }
-applyTheme(isLight);
+applyTheme(currentIsLight());
 var draggedTheme = false;
 var isDraggingTheme = false;
 var startXTheme = 0, startLeftTheme = 0;

@@ -98,7 +98,15 @@
     // Used by the app's existing moon/sun toggle, so it moves the theme instead of
     // setting a second, competing flag.
     window.tfSetLight = function (light) {
-        if (light === window.tfIsLight()) { apply(read(KEY) || 'midnight'); return; }
+        // Already in the requested state: re-assert the theme that is ACTUALLY in force,
+        // read back from the DOM. This used to fall back to localStorage, which is empty
+        // on a fresh profile - so a page that had correctly resolved 'paper' was flipped
+        // back to 'midnight' by its own load-time sync. That is why notes and corkboard
+        // came up dark while the chat was light.
+        if (light === window.tfIsLight()) {
+            apply(document.documentElement.dataset.tfTheme || read(KEY) || 'midnight');
+            return;
+        }
         if (light) {
             var current = document.documentElement.dataset.theme;
             if (current && !isLight(current)) { write(LAST_DARK_KEY, current); }

@@ -594,9 +594,40 @@ def export_to_obsidian(vault_path=None):
 notes_bp = Blueprint('notes', __name__, url_prefix='/notes')
 
 # Serve the notes HTML page
+def _theme_script():
+    """<script> carrying the saved appearance, placed before theme-loader.js.
+
+    The chat page is given these settings by the app; the notes and corkboard pages are
+    separate Blueprints that never were, so their loader had nothing to read, defaulted to
+    midnight, and those pages stayed dark while the chat was light.
+    """
+    try:
+        import json as _json
+        import os as _os
+        root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        with open(_os.path.join(root, "json_configuration", "ui_settings.json"),
+                  encoding="utf-8") as _fh:
+            data = _json.load(_fh)
+    except Exception:
+        data = {}
+    keep = {k: v for k, v in (data or {}).items()
+            if k in ("theme", "trio_theme", "trio_theme_accent",
+                     "trio_theme_accent2", "trio_theme_bg")}
+    return ("<script>window.__ui_settings = "
+            + _json.dumps(keep).replace("</", "<\\/") + ";</script>")
+
+
+def _page_html(html):
+    """The page HTML with the appearance settings injected before the theme loader."""
+    marker = '<script src="/static/theme-loader.js"></script>'
+    if marker in html:
+        return html.replace(marker, _theme_script() + marker, 1)
+    return html
+
+
 @notes_bp.route('')
 def notes_page():
-    return render_template_string(NOTES_HTML)
+    return render_template_string(_page_html(NOTES_HTML))
 
 # ---------- API routes ----------
 @notes_bp.route('/api', methods=['GET'])
@@ -2475,7 +2506,13 @@ html.embedded #fsBtn { display: none !important; }</style>
     // ─── Theme (unchanged) ───────────────────────────
     var themeOuter = document.getElementById('themeToggleOuter');
     var themeKnob = document.getElementById('themeKnob');
-    var isLight = localStorage.getItem('theme') === 'light';
+    function currentIsLight() {
+    // The chosen theme is the source of truth. The old 'theme' key is a leftover
+    // and can disagree with it (absent on a fresh profile, or stale after a theme
+    // change), and trusting it here switched the app back to dark on load.
+    if (window.tfIsLight) { return window.tfIsLight(); }
+    return localStorage.getItem('theme') === 'light';
+}
     function applyTheme(light) {
         // Light/dark IS a theme choice now, so this toggle moves the theme instead of
         // setting a second flag: otherwise toggling here would leave the chosen theme
@@ -2490,7 +2527,7 @@ html.embedded #fsBtn { display: none !important; }</style>
         }
         themeOuter.classList.toggle('day', light);
     }
-    applyTheme(isLight);
+    applyTheme(currentIsLight());
     var draggedTheme = false;
     var isDraggingTheme = false;
     var startXTheme = 0, startLeftTheme = 0;
