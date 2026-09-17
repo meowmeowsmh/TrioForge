@@ -1759,10 +1759,14 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
 .tf-audio.tf-compact { padding: 10px 14px; gap: 11px; }
 .tf-audio.tf-compact button.tf-play { width: 42px; height: 42px; font-size: 15px; }
 
-/* Video: use the width you have and never squeeze it into a stamp. */
+/* Video: a normal message-sized clip, not a wall. width:auto plus a max-width cap
+   means the element keeps its own size but never exceeds the cap - so a 1920px
+   recording lands at roughly the footprint of an image message (240px) instead of
+   stretching the bubble across the whole chat. THIS ONE NUMBER is the size knob;
+   the ⛶ button still gives full screen. */
 video.tf-video {
-    width: 100%; max-height: 70vh; background: #000;
-    border-radius: 12px; border: 1px solid #333; display: block;
+    width: auto; max-width: 260px; max-height: 50vh;
+    background: #000; border-radius: 12px; border: 1px solid #333; display: block;
 }
 </style>
 </head>
