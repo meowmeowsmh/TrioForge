@@ -2233,16 +2233,30 @@ if (!sidebarVisible) sidebar.classList.add('hidden');
 
 var scrollBtn = document.getElementById('scrollBottomBtn');
 var _scrollRaf = false;
+// Recomputed from the CURRENT geometry, not only when a scroll event fires. It used to be
+// updated exclusively on scroll, so scrolling up and then switching conversation (or
+// landing on a chat that no longer overflows) left the arrow stranded on the right with
+// nothing below it to scroll to.
+function updateScrollBtn() {
+    if (!scrollBtn || !chatArea) return;
+    var below = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight;
+    var overflows = chatArea.scrollHeight - chatArea.clientHeight > 4;
+    scrollBtn.style.display = (overflows && below >= 80) ? 'block' : 'none';
+}
 chatArea.addEventListener('scroll', function() {
     if (_scrollRaf) return;
     _scrollRaf = true;
-    requestAnimationFrame(function() {
-        _scrollRaf = false;
-        var threshold = 80;
-        var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
-        scrollBtn.style.display = atBottom ? 'none' : 'block';
-    });
+    requestAnimationFrame(function() { _scrollRaf = false; updateScrollBtn(); });
 });
+window.addEventListener('resize', updateScrollBtn);
+if (window.MutationObserver) {
+    // Any change inside the conversation - a new message, a switch, an image finishing -
+    // recomputes it, so it cannot be left over from an earlier scroll position.
+    new MutationObserver(function() {
+        requestAnimationFrame(updateScrollBtn);
+    }).observe(chatArea, { childList: true, subtree: true });
+}
+updateScrollBtn();
 scrollBtn.addEventListener('click', function() {
     chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
 });
