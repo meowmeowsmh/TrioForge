@@ -1653,45 +1653,111 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     #searchInput { font-size: 13px; }
 }
 
-/* ── Media players ────────────────────────────────────────────────────────────
-   The browser's built-in audio control is ~54px tall with a hair-thin seek bar,
-   which is hard to see and hard to grab - "I can't adjust it, it's small". These
-   are deliberately large: a full-width track, a 20px thumb, big hit areas, and a
-   clear time readout. */
+/* ── Media players: the galaxy theme ──────────────────────────────────────────
+   The browser's built-in <audio controls> is ~54px tall with a hairline seek bar.
+   This is the app's own player: a deep-space card with a starfield, a glowing
+   nebula play button, a seek bar that fills as it plays, and a speaker button so
+   the volume can never be mistaken for a second progress bar. */
 .tf-audio {
+    position: relative; overflow: hidden;
     display: flex; align-items: center; gap: 14px;
     width: 100%; box-sizing: border-box;
-    padding: 12px 16px; margin-top: 8px;
-    background: #0d1117; border: 1px solid #30363d; border-radius: 12px;
+    padding: 14px 18px; margin-top: 8px;
+    border-radius: 16px;
+    border: 1px solid rgba(150,120,255,0.35);
+    background:
+        radial-gradient(circle at 12% 18%, rgba(122,86,255,0.40), transparent 46%),
+        radial-gradient(circle at 88% 84%, rgba(255,86,190,0.30), transparent 46%),
+        radial-gradient(circle at 62% 6%,  rgba(80,200,255,0.22), transparent 42%),
+        linear-gradient(145deg, #0a0620, #0d0a2e 55%, #060415);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03),
+                0 8px 30px rgba(70,30,180,0.28);
 }
+/* The starfield. Two layers of dots at different sizes so it reads as depth. */
+.tf-audio::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .85;
+    background-image:
+        radial-gradient(1.6px 1.6px at 8% 26%,  #ffffff, transparent),
+        radial-gradient(1.2px 1.2px at 21% 72%, rgba(255,255,255,.85), transparent),
+        radial-gradient(1.8px 1.8px at 34% 18%, #cfe4ff, transparent),
+        radial-gradient(1.1px 1.1px at 47% 82%, rgba(255,255,255,.7), transparent),
+        radial-gradient(1.5px 1.5px at 58% 34%, #ffe6ff, transparent),
+        radial-gradient(1.2px 1.2px at 71% 66%, rgba(255,255,255,.8), transparent),
+        radial-gradient(1.7px 1.7px at 83% 22%, #d8ecff, transparent),
+        radial-gradient(1.2px 1.2px at 92% 58%, rgba(255,255,255,.75), transparent),
+        radial-gradient(1.1px 1.1px at 15% 48%, rgba(255,255,255,.6), transparent),
+        radial-gradient(1.4px 1.4px at 66% 90%, rgba(255,255,255,.65), transparent);
+}
+.tf-audio > * { position: relative; z-index: 1; }
+
+/* A nebula in a button. */
 .tf-audio button.tf-play {
-    flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
-    border: none; cursor: pointer; font-size: 17px; line-height: 1;
-    background: linear-gradient(135deg, #ff7a2f, #ff9a4d); color: #1a0e05;
+    flex: 0 0 auto; width: 50px; height: 50px; border-radius: 50%;
+    border: 1px solid rgba(200,180,255,0.5); cursor: pointer;
+    font-size: 17px; line-height: 1; color: #fff; padding: 0;
+    background: radial-gradient(circle at 32% 28%, #c9a8ff, #7a45ff 48%, #3a1a9e);
+    box-shadow: 0 0 16px rgba(150,100,255,.7), 0 0 38px rgba(255,90,200,.3);
+    transition: transform .12s ease, box-shadow .12s ease;
 }
+.tf-audio button.tf-play:hover { transform: scale(1.06); box-shadow: 0 0 22px rgba(170,120,255,.9), 0 0 50px rgba(255,90,200,.45); }
+.tf-audio button.tf-play:active { transform: scale(0.97); }
+
 .tf-audio .tf-mid { flex: 1 1 auto; min-width: 0; }
 .tf-audio .tf-times {
-    display: flex; justify-content: space-between;
-    font-size: 12px; color: #8b949e; margin-bottom: 4px;
-    font-variant-numeric: tabular-nums;
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12.5px; margin-bottom: 5px;
+    font-variant-numeric: tabular-nums; letter-spacing: .3px;
 }
-/* The track itself: 10px tall everywhere, 20px thumb. */
+.tf-audio .tf-times .tf-cur { color: #e8ddff; text-shadow: 0 0 10px rgba(160,120,255,.8); }
+.tf-audio .tf-times .tf-dur { color: #8f86b8; }
+
+/* Track and handle. The fill is drawn by JS as a gradient stop, so progress is
+   obvious instead of one uniform grey bar. */
 .tf-audio input[type=range] {
     -webkit-appearance: none; appearance: none;
     width: 100%; height: 10px; border-radius: 6px; outline: none;
-    background: #21262d; cursor: pointer;
+    background: rgba(255,255,255,0.10); cursor: pointer; margin: 0;
 }
 .tf-audio input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
     width: 20px; height: 20px; border-radius: 50%;
-    background: #ff7a2f; border: 2px solid #0d1117; cursor: grab;
+    background: radial-gradient(circle at 35% 30%, #fff, #b28cff 45%, #6d3bff);
+    border: 2px solid rgba(10,6,32,0.9);
+    box-shadow: 0 0 12px rgba(160,110,255,.95);
+    cursor: grab;
 }
 .tf-audio input[type=range]::-moz-range-thumb {
     width: 20px; height: 20px; border-radius: 50%;
-    background: #ff7a2f; border: 2px solid #0d1117; cursor: grab;
+    background: radial-gradient(circle at 35% 30%, #fff, #b28cff 45%, #6d3bff);
+    border: 2px solid rgba(10,6,32,0.9);
+    box-shadow: 0 0 12px rgba(160,110,255,.95);
+    cursor: grab;
 }
-.tf-audio .tf-vol { flex: 0 0 96px; }
-.tf-audio.tf-compact { padding: 10px 12px; gap: 10px; }
+/* Volume: quieter colour, and a speaker you can click - so it never reads as a
+   second seek bar. */
+.tf-audio .tf-volwrap { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.tf-audio button.tf-speaker {
+    background: none; border: none; cursor: pointer; padding: 2px;
+    font-size: 18px; line-height: 1; color: #9ad9ff;
+    filter: drop-shadow(0 0 8px rgba(90,200,255,.7));
+}
+.tf-audio button.tf-speaker:hover { color: #d6f0ff; }
+.tf-audio .tf-vol {
+    flex: 0 0 84px; width: 84px;
+    background: linear-gradient(90deg, #1b3f6b, #2a6fa8);
+}
+.tf-audio .tf-vol::-webkit-slider-thumb {
+    width: 16px; height: 16px;
+    background: radial-gradient(circle at 35% 30%, #eaf7ff, #6fc3ff 55%, #1a6fc4);
+    box-shadow: 0 0 10px rgba(90,200,255,.9);
+}
+.tf-audio .tf-vol::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: radial-gradient(circle at 35% 30%, #eaf7ff, #6fc3ff 55%, #1a6fc4);
+    box-shadow: 0 0 10px rgba(90,200,255,.9);
+}
+.tf-audio.tf-compact { padding: 10px 14px; gap: 11px; }
+.tf-audio.tf-compact button.tf-play { width: 42px; height: 42px; font-size: 15px; }
 
 /* Video: use the width you have and never squeeze it into a stamp. */
 video.tf-video {
@@ -3874,47 +3940,83 @@ function tfAudioPlayer(src, compact) {
     mid.className = 'tf-mid';
     var times = document.createElement('div');
     times.className = 'tf-times';
-    var cur = document.createElement('span'); cur.textContent = '0:00';
-    var dur = document.createElement('span'); dur.textContent = '0:00';
+    var cur = document.createElement('span'); cur.className = 'tf-cur'; cur.textContent = '0:00';
+    var dur = document.createElement('span'); dur.className = 'tf-dur'; dur.textContent = '0:00';
     times.appendChild(cur); times.appendChild(dur);
     var seek = document.createElement('input');
-    seek.type = 'range'; seek.min = '0'; seek.max = '1000'; seek.value = '0'; seek.step = '1';
+    seek.type = 'range'; seek.className = 'tf-seek';
+    seek.min = '0'; seek.max = '1000'; seek.value = '0'; seek.step = '1';
     seek.title = 'Drag to seek';
     mid.appendChild(times); mid.appendChild(seek);
     wrap.appendChild(mid);
 
+    // Volume: a speaker you can click (mute) plus its slider. The icon follows the
+    // level, so the control explains itself instead of being a second grey bar.
+    var volwrap = document.createElement('div');
+    volwrap.className = 'tf-volwrap';
+    var speaker = document.createElement('button');
+    speaker.className = 'tf-speaker';
+    speaker.type = 'button';
+    speaker.textContent = '\ud83d\udd0a';
+    speaker.title = 'Mute / unmute';
     var vol = document.createElement('input');
     vol.type = 'range'; vol.className = 'tf-vol'; vol.min = '0'; vol.max = '1';
     vol.step = '0.05'; vol.value = '1'; vol.title = 'Volume';
-    wrap.appendChild(vol);
+    volwrap.appendChild(speaker); volwrap.appendChild(vol);
+    wrap.appendChild(volwrap);
 
     function fmt(t) {
         if (!isFinite(t) || t < 0) { return '0:00'; }
         var m = Math.floor(t / 60), s = Math.floor(t % 60);
         return m + ':' + (s < 10 ? '0' : '') + s;
     }
+    function paintSpeaker() {
+        var v = audio.muted ? 0 : audio.volume;
+        speaker.textContent = v === 0 ? '\ud83d\udd07' : (v < 0.5 ? '\ud83d\udd08' : '\ud83d\udd0a');
+    }
+    // The seek bar fills with a galaxy gradient up to the playhead, so progress is
+    // unmistakable.
+    function paintSeek(frac) {
+        var pct = Math.max(0, Math.min(100, frac * 100));
+        seek.style.background =
+            'linear-gradient(90deg, #7a45ff 0%, #b06bff ' + (pct * 0.6) + '%, ' +
+            '#ff5fd2 ' + (pct * 0.85) + '%, #4be1ff ' + pct + '%, ' +
+            'rgba(255,255,255,0.10) ' + pct + '%, rgba(255,255,255,0.10) 100%)';
+    }
+    paintSeek(0);
+    paintSpeaker();
+
     btn.onclick = function () {
         if (audio.paused) { var p = audio.play(); if (p && p.catch) { p.catch(function () {}); } }
         else { audio.pause(); }
     };
+    speaker.onclick = function () { audio.muted = !audio.muted; paintSpeaker(); };
     audio.addEventListener('play', function () { btn.textContent = '\u23f8'; });
     audio.addEventListener('pause', function () { btn.textContent = '\u25b6'; });
     audio.addEventListener('ended', function () { btn.textContent = '\u25b6'; });
     audio.addEventListener('loadedmetadata', function () { dur.textContent = fmt(audio.duration); });
     audio.addEventListener('timeupdate', function () {
-        if (!seek.dataset.dragging && audio.duration) {
-            seek.value = String(Math.round(audio.currentTime / audio.duration * 1000));
-        }
+        var frac = audio.duration ? (audio.currentTime / audio.duration) : 0;
+        if (!seek.dataset.dragging) { seek.value = String(Math.round(frac * 1000)); }
+        paintSeek(seek.dataset.dragging ? (seek.value / 1000) : frac);
         cur.textContent = fmt(audio.currentTime);
         if (audio.duration) { dur.textContent = fmt(audio.duration); }
     });
     // Keep the handle under the finger while dragging, then jump once released.
-    seek.addEventListener('input', function () { seek.dataset.dragging = '1'; });
+    seek.addEventListener('input', function () {
+        seek.dataset.dragging = '1';
+        paintSeek(seek.value / 1000);
+        if (audio.duration) { cur.textContent = fmt(seek.value / 1000 * audio.duration); }
+    });
     seek.addEventListener('change', function () {
         if (audio.duration) { audio.currentTime = seek.value / 1000 * audio.duration; }
         delete seek.dataset.dragging;
     });
-    vol.addEventListener('input', function () { audio.volume = parseFloat(vol.value); });
+    vol.addEventListener('input', function () {
+        audio.volume = parseFloat(vol.value);
+        if (audio.volume > 0 && audio.muted) { audio.muted = false; }
+        paintSpeaker();
+    });
     return wrap;
 }
 
