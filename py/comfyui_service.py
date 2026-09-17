@@ -789,11 +789,13 @@ def generate_video(prompt, output_path, workflow=None, width=None, height=None,
     return wf, media_name
 
 
-def generate_audio(prompt, output_path, workflow=None, seed=None, timeout=1800):
+def generate_audio(prompt, output_path, workflow=None, seed=None, duration=None, timeout=1800):
     """Detect ComfyUI, discover + convert an audio workflow, run it, save the audio.
 
     Returns (workflow_entry, media_filename). Auto-detects which audio workflow is
     available (Stable Audio, ACE-Step, MiniMax Music, TTS, ...); nothing hard-coded.
+    `duration` is the requested length in seconds and is set on the workflow's
+    audio-latent node (the one field every audio workflow expresses length with).
     """
     if not is_comfyui_running():
         raise RuntimeError("ComfyUI is not running. Start Comfy Desktop first.")
@@ -813,8 +815,8 @@ def generate_audio(prompt, output_path, workflow=None, seed=None, timeout=1800):
     prompt_graph = workflow_to_prompt(graph)
     # Inject the text prompt into the first text-encoding node (audio blueprints
     # use CLIPTextEncode / MiniMax Music's text encode). Uses the same text-node
-    # logic as image, but audio has no width/height — only prompt + seed.
-    _inject_audio(prompt_graph, prompt_text=prompt, seed=seed)
+    # logic as image, but audio has no width/height — only prompt + seed + length.
+    _inject_audio(prompt_graph, prompt_text=prompt, seed=seed, duration=duration)
     media_name = run_prompt(prompt_graph, output_path, timeout=timeout)
     return wf, media_name
 
@@ -858,18 +860,26 @@ def _inject_audio(prompt, prompt_text=None, seed=None, duration=None):
             if "noise_seed" in d.get("inputs", {}) and seed is not None:
                 d["inputs"]["noise_seed"] = int(seed)
 
-    # 3) Optional duration (seconds) on audio latent / seconds nodes.
+    # 3) Optional duration (seconds) on the audio-latent node, which is the one
+    #    field every audio workflow expresses length with. Only ever set it when it
+    #    is a plain numeric widget - if it is a link (list) it is wired to a
+    #    primitive elsewhere and must be left alone. Never touch generic `value`
+    #    inputs: doing that used to stamp the duration onto Steps and CFG primitives
+    #    too, which is exactly how a "song" came out as a few seconds of garbled
+    #    noise.
+    if duration:
+        try:
+            duration = float(duration)
+        except (TypeError, ValueError):
+            duration = None
     if duration:
         for n, d in prompt.items():
-            ins = d.get("inputs", {})
             ct = d.get("class_type")
             if ct in ("EmptyLatentAudio", "EmptyAceStep1.5LatentAudio",
                       "EmptyMiniMaxMusic3LatentAudio"):
-                if "seconds" in ins:
-                    ins["seconds"] = float(duration)
-            if "value" in ins and isinstance(ins.get("value"), (int, float)):
-                # PrimitiveFloat "Song Duration" style node.
-                ins["value"] = float(duration)
+                ins = d.get("inputs", {})
+                if "seconds" in ins and isinstance(ins.get("seconds"), (int, float)):
+                    ins["seconds"] = duration
 
 
 # --------------------------------------------------------------------------- #

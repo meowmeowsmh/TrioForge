@@ -2335,7 +2335,9 @@ def generate_audio():
             workflow = workflow[len("comfyui::"):]
         _, media_name = comfyui_service.generate_audio(
             prompt, tmp, workflow=workflow or None,
-            seed=data.get('seed') or None, timeout=1800,
+            seed=data.get('seed') or None,
+            duration=data.get('duration') or None,
+            timeout=1800,
         )
         ext = _safe_media_ext(os.path.splitext(media_name)[1], ".mp3")
         final = base + ext

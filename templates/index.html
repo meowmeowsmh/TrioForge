@@ -1937,6 +1937,8 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
       <select id="audioWorkflowSelect" title="ComfyUI audio workflow (auto-detected)" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
         <option value="">🔄 Auto-detect audio workflow…</option>
       </select>
+      <span style="font-size:12px; color:#8b949e;">Length</span>
+      <input id="audioDuration" type="number" value="30" min="3" max="120" title="Audio length in seconds" style="width:60px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"> s
       <button id="audioRefreshBtn" title="Re-scan ComfyUI audio workflows" onclick="loadAudioWorkflows()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">↻</button>
       <span id="audioStatus" style="font-size:11px; color:#8b949e;">Text-to-audio via ComfyUI (Stable Audio / ACE-Step / MiniMax Music…). Type your prompt below and press Enter.</span>
     </div>
@@ -3814,6 +3816,7 @@ function generateAudioChat(text) {
         var req = {
             prompt: text.trim(),
             workflow: document.getElementById('audioWorkflowSelect').value,
+            duration: parseInt(document.getElementById('audioDuration').value) || 30,
             conversation_id: currentConv || ''
         };
         fetch('/api/generate_audio', {
