@@ -497,3 +497,14 @@ html[data-theme] #themeToggleOuter:not([data-x]) .knob,
 html[data-theme]:not([data-theme="paper"]) #themeToggleOuter .knob {
     left: 3px !important;
 }
+
+
+/* ── Dark only: the theme control is gone ─────────────────────────────────────
+   The app is dark in every theme now, so the moon/sun switch has nothing to switch and
+   is hidden. Hidden rather than deleted: removing the element is what broke these pages
+   the last time, and its machinery can stay harmlessly in place. */
+#themeToggleOuter,
+.toggle-outer,
+.theme-toggle-wrapper {
+    display: none !important;
+}

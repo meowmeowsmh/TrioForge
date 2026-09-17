@@ -9,12 +9,12 @@
    later if localStorage is empty.
 */
 (function () {
-    var THEMES = ['midnight', 'premium', 'galaxy', 'odyssey', 'ember', 'forest', 'sakura', 'paper', 'custom'];
+    var THEMES = ['midnight', 'premium', 'galaxy', 'odyssey', 'ember', 'forest', 'sakura', 'custom'];
     // Which themes are LIGHT. The app has its own light-mode stylesheet (body.light-mode
     // with ~170 rules across the three pages), so a light theme has to switch that on as
     // well - otherwise half the page keeps dark colours and the result looks like a
     // patchwork, which is exactly how the light/dark inconsistency showed up.
-    var LIGHT = ['paper'];
+    var LIGHT = [];   // dark only: nothing is light any more
     var KEY = 'trio_theme';
     var LAST_DARK_KEY = 'trio_theme_last_dark';
     // The app's pre-existing key. Kept in sync so the top-bar toggle's knob, and the
@@ -124,7 +124,7 @@
         }
         return document.documentElement.dataset.theme || 'midnight';
     };
-    window.tfIsLight = function () { return document.documentElement.classList.contains('light-mode'); };
+    window.tfIsLight = function () { return false; };   // dark only
     // Used by the app's existing moon/sun toggle, so it moves the theme instead of
     // setting a second, competing flag.
     window.tfSetLight = function (light) {
@@ -137,13 +137,9 @@
             apply(document.documentElement.dataset.tfTheme || read(KEY) || 'midnight');
             return;
         }
-        if (light) {
-            var current = document.documentElement.dataset.theme;
-            if (current && !isLight(current)) { write(LAST_DARK_KEY, current); }
-            setTheme('paper', false);
-        } else {
-            setTheme(read(LAST_DARK_KEY) || 'midnight', false);
-        }
+        // Dark only now: asking for light keeps the dark theme rather than switching.
+        setTheme(document.documentElement.dataset.tfTheme ||
+                  read(LAST_DARK_KEY) || 'midnight', false);
     };
     window.tfCustomColors = function () {
         return { accent: read(KEYS.accent) || '#7c5cff',
@@ -165,9 +161,12 @@
         var legacy = injected.theme || read(LEGACY_KEY);
         stored = legacy === 'light' ? 'paper' : (legacy === 'dark' ? 'midnight' : '');
     }
-    if (stored === 'light') { stored = 'paper'; }
+    if (stored === 'light') { stored = 'dark'; }
     if (stored === 'dark') { stored = 'midnight'; }
-    if (!stored) { stored = 'midnight'; }
+    // 'paper' was the light theme. A profile that still has it selected gets the last
+    // dark theme it used, so removing light mode does not silently reset the look.
+    if (stored === 'paper') { stored = read(LAST_DARK_KEY) || 'midnight'; }
+    if (!stored) { stored = read(LAST_DARK_KEY) || 'midnight'; }
     // Deliberately does NOT write back to localStorage: the page mirrors localStorage to
     // the server as a partial snapshot, so a write here fed a value straight back into the
     // settings file. (That endpoint also used to overwrite rather than merge, so the write
@@ -220,9 +219,8 @@
             if (hit) {
                 ev.preventDefault();
                 ev.stopImmediatePropagation();       // the app's own handler must not run
-                var goingLight = !window.tfIsLight();
-                setTheme(goingLight ? 'paper' : (read(LAST_DARK_KEY) || 'midnight'), true);
-                knob(goingLight);
+                setTheme(read(LAST_DARK_KEY) || document.documentElement.dataset.tfTheme || 'midnight', true);
+                knob(false);
                 return;
             }
             t = t.parentNode;
