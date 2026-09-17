@@ -201,6 +201,35 @@
         setTimeout(setIt, 1500);
     })();
 
+    // TAKE OVER the moon/sun toggle. The app has its own handler that flips only its
+    // light-mode class, leaving the theme attribute alone - which is why toggling changed
+    // the top bar and nothing else, and why the page kept ending up half light and half
+    // dark. Catching the click first and routing it through setTheme() means the theme,
+    // the light-mode class, the knob and both stores always move together.
+    function knob(light) {
+        var outer = document.getElementById('themeToggleOuter');
+        if (outer) { outer.classList.toggle('day', light); }
+    }
+    document.addEventListener('click', function (ev) {
+        var t = ev.target;
+        while (t && t !== document.body) {
+            var hit = (t.id === 'themeToggleOuter') ||
+                      (t.id === 'themeKnob') ||
+                      (t.classList && (t.classList.contains('toggle-outer') ||
+                                       t.classList.contains('theme-toggle-wrapper')));
+            if (hit) {
+                ev.preventDefault();
+                ev.stopImmediatePropagation();       // the app's own handler must not run
+                var goingLight = !window.tfIsLight();
+                setTheme(goingLight ? 'paper' : (read(LAST_DARK_KEY) || 'midnight'), true);
+                knob(goingLight);
+                return;
+            }
+            t = t.parentNode;
+        }
+    }, true);
+    knob(window.tfIsLight());
+
     // Add ?tfdebug=1 to any page and it records what the browser ACTUALLY computed for
     // the surfaces that matter, in <html data-tf-probe="...">. Reading the source only
     // tells you what should happen; this says what did. Costs nothing when the flag is
