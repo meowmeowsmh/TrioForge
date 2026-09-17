@@ -2188,6 +2188,11 @@ body.light-mode .weather-controls select option { background:#fff; color:#1a1a2e
 .note-item, .note-editor { will-change: auto; }
 .notes-panel { -webkit-overflow-scrolling: touch; }
 </style>
+<!-- Theme layer, loaded last so it wins over the rules above. The loader runs in the
+     head, before the first paint, so this page never flashes the default palette
+     before switching to the theme chosen in the app. -->
+<link rel="stylesheet" href="/static/themes.css">
+<script src="/static/theme-loader.js"></script>
 </head>
 <body>
 <script>

@@ -1,0 +1,333 @@
+/* ── TrioForge themes ─────────────────────────────────────────────────────────
+   One place that defines every look, so the chat page, the notes page and the
+   corkboard all change together instead of each having its own palette baked in.
+
+   How it works: each theme only sets custom properties. The "mapping" layer at the
+   bottom then points the surfaces every page already has (body, sidebars, toolbars,
+   input bars, cards, buttons, the user's own chat bubble) at those properties. That
+   is why a new theme is about twelve lines and touches no page markup.
+
+   Pages load this stylesheet and set  document.documentElement.dataset.theme  from
+   localStorage BEFORE the first paint, so there is no flash of the wrong theme.
+
+   A theme is chosen in the app (🎨 in the top bar) and stored both in localStorage
+   (instant, shared by every page on this origin) and in the app's saved settings, so
+   it survives a cleared browser profile.
+*/
+
+:root {
+    /* Midnight is the app's original look, so "no choice made" changes nothing. */
+    --tf-bg: #0d1117;
+    --tf-bg-art: radial-gradient(circle at 18% 12%, rgba(56,139,253,0.10), transparent 45%),
+                 radial-gradient(circle at 82% 78%, rgba(88,166,255,0.07), transparent 50%);
+    --tf-surface: rgba(18,18,26,0.96);
+    --tf-surface-2: rgba(28,35,51,0.85);
+    --tf-surface-3: rgba(13,17,23,0.92);
+    --tf-border: rgba(255,255,255,0.10);
+    --tf-text: #e6edf3;
+    --tf-text-dim: #8b949e;
+    --tf-accent: #58a6ff;
+    --tf-accent-2: #1f6feb;
+    --tf-accent-soft: rgba(88,166,255,0.16);
+    --tf-accent-glow: rgba(88,166,255,0.45);
+    --tf-radius: 14px;
+    --tf-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    --tf-art-opacity: 1;
+}
+
+/* ── Galaxy: deep space, aurora, starfield (the player's palette) ───────────── */
+html[data-theme="galaxy"] {
+    --tf-bg: #06040f;
+    --tf-bg-art:
+        radial-gradient(1.6px 1.6px at 12% 22%, #ffffff, transparent),
+        radial-gradient(1.2px 1.2px at 27% 68%, rgba(255,255,255,.8), transparent),
+        radial-gradient(1.8px 1.8px at 41% 15%, #cfe4ff, transparent),
+        radial-gradient(1.1px 1.1px at 58% 81%, rgba(255,255,255,.7), transparent),
+        radial-gradient(1.5px 1.5px at 71% 33%, #ffe6ff, transparent),
+        radial-gradient(1.3px 1.3px at 86% 62%, rgba(255,255,255,.8), transparent),
+        radial-gradient(1.2px 1.2px at 93% 18%, #d8ecff, transparent),
+        radial-gradient(circle at 14% 16%, rgba(122,86,255,0.42), transparent 42%),
+        radial-gradient(circle at 86% 82%, rgba(255,86,190,0.30), transparent 45%),
+        radial-gradient(circle at 60% 4%, rgba(80,200,255,0.22), transparent 40%),
+        linear-gradient(150deg, #0a0620, #0d0a2e 55%, #060415);
+    --tf-surface: rgba(14,10,44,0.86);
+    --tf-surface-2: rgba(30,20,72,0.78);
+    --tf-surface-3: rgba(10,7,32,0.90);
+    --tf-border: rgba(160,130,255,0.28);
+    --tf-text: #efe9ff;
+    --tf-text-dim: #a99cd0;
+    --tf-accent: #b06bff;
+    --tf-accent-2: #ff5fd2;
+    --tf-accent-soft: rgba(176,107,255,0.18);
+    --tf-accent-glow: rgba(176,107,255,0.55);
+    --tf-shadow: 0 10px 34px rgba(60,20,140,0.42);
+}
+
+/* ── Odyssey: charcoal, deep crimson and gold. The dark, classical, hand-made
+      feel — inspired by that aesthetic rather than copying anyone's branding. ── */
+html[data-theme="odyssey"] {
+    --tf-bg: #0b0908;
+    --tf-bg-art:
+        radial-gradient(circle at 50% -10%, rgba(150,26,32,0.55), transparent 55%),
+        radial-gradient(circle at 12% 88%, rgba(120,20,26,0.35), transparent 50%),
+        radial-gradient(circle at 88% 12%, rgba(198,160,80,0.14), transparent 45%),
+        repeating-linear-gradient(135deg, rgba(255,255,255,0.014) 0 2px, transparent 2px 5px),
+        linear-gradient(170deg, #120e0c, #0a0807 60%, #070605);
+    --tf-surface: rgba(24,18,16,0.94);
+    --tf-surface-2: rgba(38,28,24,0.88);
+    --tf-surface-3: rgba(16,12,11,0.94);
+    --tf-border: rgba(198,160,80,0.26);
+    --tf-text: #f2e9db;
+    --tf-text-dim: #b09a7c;
+    --tf-accent: #c8102e;
+    --tf-accent-2: #c6a050;
+    --tf-accent-soft: rgba(200,16,46,0.20);
+    --tf-accent-glow: rgba(200,16,46,0.50);
+    --tf-shadow: 0 12px 34px rgba(0,0,0,0.55);
+}
+
+/* ── Ember: near-black with warm amber ─────────────────────────────────────── */
+html[data-theme="ember"] {
+    --tf-bg: #0c0906;
+    --tf-bg-art:
+        radial-gradient(circle at 20% 18%, rgba(255,122,47,0.22), transparent 45%),
+        radial-gradient(circle at 84% 80%, rgba(255,180,80,0.14), transparent 48%),
+        linear-gradient(160deg, #140d07, #0a0705);
+    --tf-surface: rgba(26,19,13,0.94);
+    --tf-surface-2: rgba(40,29,19,0.88);
+    --tf-surface-3: rgba(18,13,9,0.94);
+    --tf-border: rgba(255,160,90,0.22);
+    --tf-text: #f6ece1;
+    --tf-text-dim: #b99a7d;
+    --tf-accent: #ff7a2f;
+    --tf-accent-2: #ffb347;
+    --tf-accent-soft: rgba(255,122,47,0.18);
+    --tf-accent-glow: rgba(255,122,47,0.50);
+}
+
+/* ── Forest: moss, deep green, soft gold ───────────────────────────────────── */
+html[data-theme="forest"] {
+    --tf-bg: #07100c;
+    --tf-bg-art:
+        radial-gradient(circle at 16% 20%, rgba(46,160,110,0.22), transparent 46%),
+        radial-gradient(circle at 86% 76%, rgba(190,170,80,0.14), transparent 48%),
+        linear-gradient(160deg, #0a1710, #060d0a);
+    --tf-surface: rgba(13,26,20,0.94);
+    --tf-surface-2: rgba(20,38,29,0.88);
+    --tf-surface-3: rgba(9,18,14,0.94);
+    --tf-border: rgba(120,200,160,0.20);
+    --tf-text: #e6f2ea;
+    --tf-text-dim: #8fb3a2;
+    --tf-accent: #35c07a;
+    --tf-accent-2: #d8c168;
+    --tf-accent-soft: rgba(53,192,122,0.18);
+    --tf-accent-glow: rgba(53,192,122,0.45);
+}
+
+/* ── Sakura: dark plum with pink ───────────────────────────────────────────── */
+html[data-theme="sakura"] {
+    --tf-bg: #120a12;
+    --tf-bg-art:
+        radial-gradient(circle at 22% 16%, rgba(255,120,180,0.20), transparent 46%),
+        radial-gradient(circle at 82% 82%, rgba(170,120,255,0.16), transparent 48%),
+        linear-gradient(160deg, #1a0f1a, #0d070d);
+    --tf-surface: rgba(30,16,28,0.94);
+    --tf-surface-2: rgba(48,26,44,0.88);
+    --tf-surface-3: rgba(20,11,19,0.94);
+    --tf-border: rgba(255,150,200,0.22);
+    --tf-text: #f9e9f3;
+    --tf-text-dim: #c39cb4;
+    --tf-accent: #ff6fb0;
+    --tf-accent-2: #b06bff;
+    --tf-accent-soft: rgba(255,111,176,0.18);
+    --tf-accent-glow: rgba(255,111,176,0.48);
+}
+
+/* ── Paper: a light theme for people who do not want dark ──────────────────── */
+html[data-theme="paper"] {
+    --tf-bg: #f4efe6;
+    --tf-bg-art:
+        radial-gradient(circle at 12% 10%, rgba(255,255,255,0.9), transparent 40%),
+        radial-gradient(circle at 88% 88%, rgba(214,198,168,0.35), transparent 45%),
+        repeating-linear-gradient(0deg, rgba(0,0,0,0.012) 0 1px, transparent 1px 3px);
+    --tf-surface: rgba(255,253,248,0.96);
+    --tf-surface-2: rgba(255,255,255,0.98);
+    --tf-surface-3: rgba(248,244,236,0.96);
+    --tf-border: rgba(60,50,35,0.16);
+    --tf-text: #241f18;
+    --tf-text-dim: #6b6153;
+    --tf-accent: #a0522d;
+    --tf-accent-2: #7a6a3a;
+    --tf-accent-soft: rgba(160,82,45,0.12);
+    --tf-accent-glow: rgba(160,82,45,0.30);
+    --tf-shadow: 0 8px 22px rgba(80,60,30,0.14);
+}
+
+/* ── Custom: the values come from JS as inline custom properties on :root, so the
+      user's own accent and background are just another theme as far as this file
+      is concerned. ──────────────────────────────────────────────────────────── */
+html[data-theme="custom"] {
+    --tf-surface: rgba(20,20,26,0.94);
+    --tf-surface-2: rgba(32,32,42,0.88);
+    --tf-surface-3: rgba(14,14,18,0.94);
+    --tf-border: rgba(255,255,255,0.12);
+    --tf-text: #f2f4f8;
+    --tf-text-dim: #9aa2b1;
+    --tf-accent-soft: rgba(255,255,255,0.10);
+}
+
+/* ── The mapping layer ────────────────────────────────────────────────────────
+   Every selector here already exists on the chat, notes and corkboard pages. This
+   is the only place that decides which surface uses which variable, so the three
+   pages stay consistent without editing their own rules. */
+html[data-theme] body {
+    background-color: var(--tf-bg) !important;
+    background-image: var(--tf-bg-art) !important;
+    background-attachment: fixed !important;
+    background-size: cover !important;
+    color: var(--tf-text) !important;
+}
+html[data-theme] body.light-mode { background-color: var(--tf-bg) !important; }
+
+/* Text: the light theme needs this or headings and body copy stay pale-on-pale.
+   Only plain text elements are touched - cards and bubbles keep their own rules. */
+html[data-theme] h1, html[data-theme] h2, html[data-theme] h3,
+html[data-theme] h4, html[data-theme] h5, html[data-theme] h6,
+html[data-theme] p, html[data-theme] li, html[data-theme] label,
+html[data-theme] .note-content, html[data-theme] .note-title,
+html[data-theme] .msg .body, html[data-theme] .editor-body {
+    color: var(--tf-text) !important;
+}
+html[data-theme] .muted, html[data-theme] .hint, html[data-theme] small {
+    color: var(--tf-text-dim) !important;
+}
+
+/* Panels, sidebars, bars and modals */
+html[data-theme] .sidebar,
+html[data-theme] .sidebar-header,
+html[data-theme] .sidebar-footer,
+html[data-theme] .input-bar,
+html[data-theme] .toolbar,
+html[data-theme] .top-bar,
+html[data-theme] .panel {
+    background: var(--tf-surface) !important;
+    border-color: var(--tf-border) !important;
+    color: var(--tf-text);
+}
+html[data-theme] .modal > div,
+html[data-theme] #setupModal > div,
+html[data-theme] #logsModal > div,
+html[data-theme] #integrityModal > div {
+    background: var(--tf-surface-3) !important;
+    border-color: var(--tf-border) !important;
+    color: var(--tf-text) !important;
+}
+
+/* Cards and chat bubbles */
+html[data-theme] .msg.bot {
+    background: var(--tf-surface-2) !important;
+    border-color: var(--tf-border) !important;
+    color: var(--tf-text) !important;
+}
+html[data-theme] .msg.user {
+    background: linear-gradient(135deg, var(--tf-accent), var(--tf-accent-2)) !important;
+    box-shadow: 0 6px 20px var(--tf-accent-glow) !important;
+}
+html[data-theme] .note-item,
+html[data-theme] .note-card,
+html[data-theme] .file-chip {
+    background: var(--tf-surface-2) !important;
+    border-color: var(--tf-border) !important;
+}
+html[data-theme] .note-item:hover,
+html[data-theme] .note-card:hover {
+    background: var(--tf-accent-soft) !important;
+}
+
+/* Buttons: quiet by default, accent on hover — the same shape on every page */
+html[data-theme] .clear-btn,
+html[data-theme] .unload-btn,
+html[data-theme] .top-btn,
+html[data-theme] .sidebar-toggle,
+html[data-theme] button.btn,
+html[data-theme] .toolbar button {
+    background: var(--tf-surface-2) !important;
+    border-color: var(--tf-border) !important;
+    color: var(--tf-text) !important;
+}
+html[data-theme] .clear-btn:hover,
+html[data-theme] .unload-btn:hover,
+html[data-theme] .top-btn:hover,
+html[data-theme] .sidebar-toggle:hover,
+html[data-theme] button.btn:hover,
+html[data-theme] .toolbar button:hover {
+    background: var(--tf-accent-soft) !important;
+    border-color: var(--tf-accent) !important;
+    color: var(--tf-text) !important;
+}
+html[data-theme] .top-btn.linking,
+html[data-theme] button.primary,
+html[data-theme] .btn-primary {
+    background: var(--tf-accent) !important;
+    border-color: var(--tf-accent) !important;
+    color: #fff !important;
+}
+
+/* Fields */
+html[data-theme] input,
+html[data-theme] textarea,
+html[data-theme] select,
+html[data-theme] .search-input {
+    background: var(--tf-surface-3) !important;
+    border-color: var(--tf-border) !important;
+    color: var(--tf-text) !important;
+}
+html[data-theme] input::placeholder,
+html[data-theme] textarea::placeholder { color: var(--tf-text-dim) !important; }
+html[data-theme] input:focus,
+html[data-theme] textarea:focus,
+html[data-theme] select:focus,
+html[data-theme] .search-input:focus {
+    border-color: var(--tf-accent) !important;
+    box-shadow: 0 0 0 2px var(--tf-accent-soft) !important;
+}
+
+/* Accents: links, active rows, badges, the thinking block */
+html[data-theme] a,
+html[data-theme] .accent,
+html[data-theme] .note-item.active,
+html[data-theme] .note-item-sidebar.active {
+    color: var(--tf-accent) !important;
+}
+html[data-theme] .note-item.active,
+html[data-theme] .note-item-sidebar.active,
+html[data-theme] .conv-item.active {
+    background: var(--tf-accent-soft) !important;
+    border-left-color: var(--tf-accent) !important;
+}
+html[data-theme] .msg-name { color: var(--tf-accent) !important; }
+html[data-theme] .ts, html[data-theme] .msg .ts { color: var(--tf-text-dim) !important; }
+
+/* The corkboard: keep it tactile, but tint it to the theme */
+html[data-theme] .board {
+    background-color: color-mix(in srgb, var(--tf-bg) 72%, var(--tf-accent) 28%) !important;
+    box-shadow: inset 0 0 120px rgba(0,0,0,0.45) !important;
+}
+html[data-theme="paper"] .board {
+    background-color: color-mix(in srgb, var(--tf-bg) 82%, var(--tf-accent) 18%) !important;
+    box-shadow: inset 0 0 90px rgba(120,90,50,0.18) !important;
+}
+html[data-theme] .pin {
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.12) inset !important;
+}
+
+/* Scrollbars follow the theme too - they are a big part of "is this page plain?" */
+html[data-theme] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-theme] ::-webkit-scrollbar-track { background: transparent; }
+html[data-theme] ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--tf-accent) 45%, transparent);
+    border-radius: 6px;
+}
+html[data-theme] ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--tf-accent) 70%, transparent);
+}

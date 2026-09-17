@@ -1902,6 +1902,11 @@ body.light-mode .weather-controls select option {
 .board { will-change: auto; contain: layout; }
 .board-wrap { -webkit-overflow-scrolling: touch; }
 </style>
+<!-- Theme layer, loaded last so it wins over the rules above (including the cork
+     texture, which it tints to the chosen theme). The loader runs in the head, before
+     the first paint, so the board never flashes the default palette. -->
+<link rel="stylesheet" href="/static/themes.css">
+<script src="/static/theme-loader.js"></script>
 </head>
 <body>
 <script>
