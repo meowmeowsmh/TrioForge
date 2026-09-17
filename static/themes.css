@@ -444,3 +444,56 @@ html[data-theme="premium"] .file-chip {
 }
 html[data-theme="premium"] ::-webkit-scrollbar-thumb { border-radius: 8px; }
 html[data-theme="premium"] ::-webkit-scrollbar { width: 12px; }
+
+/* ── The theme toggle: plain black, no artwork ────────────────────────────────
+   The illustrated pill (moon, astronaut, stars, biplane, clouds) is replaced by a plain
+   black control. The element itself stays, so switching still works and the knob still
+   shows which mode is active - only the decoration is dropped. */
+#themeToggleOuter,
+.toggle-outer {
+    background: #000 !important;
+    border: 1px solid rgba(255,255,255,0.16) !important;
+    border-radius: 999px !important;
+    width: 58px !important;
+    min-width: 58px !important;
+    height: 28px !important;
+    box-shadow: none !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+#themeToggleOuter > * ,
+.toggle-outer > * {
+    display: none !important;          /* night sky, stars, biplane, clouds, day scene */
+}
+#themeToggleOuter .knob,
+.toggle-outer .knob {
+    display: block !important;
+    position: absolute !important;
+    top: 3px !important;
+    left: 3px !important;
+    width: 20px !important;
+    height: 20px !important;
+    border-radius: 50% !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    transition: left .22s ease !important;
+}
+#themeToggleOuter .knob > *,
+.toggle-outer .knob > * {
+    display: none !important;          /* the moon face / sun disc inside the knob */
+}
+#themeToggleOuter.day .knob,
+.toggle-outer.day .knob {
+    left: 33px !important;
+}
+/* ...but the THEME decides the knob's side, so it cannot point the wrong way when the
+   app's own .day class and the chosen theme disagree (which is how the toggle used to
+   show night while the page was light). */
+html[data-theme="paper"] #themeToggleOuter .knob,
+html[data-theme="paper"] .toggle-outer .knob {
+    left: 33px !important;
+}
+html[data-theme] #themeToggleOuter:not([data-x]) .knob,
+html[data-theme]:not([data-theme="paper"]) #themeToggleOuter .knob {
+    left: 3px !important;
+}
