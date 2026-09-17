@@ -249,7 +249,15 @@ html[data-theme] .sidebar-footer,
 html[data-theme] .input-bar,
 html[data-theme] .toolbar,
 html[data-theme] .top-bar,
-html[data-theme] .panel {
+html[data-theme] .panel,
+/* The content areas of the notes and corkboard pages. These were the dark rectangle
+   under a white header: the mapping never named them, so they kept their dark value. */
+html[data-theme] .main,
+html[data-theme] .notes-panel,
+html[data-theme] .note-editor,
+html[data-theme] .editor,
+html[data-theme] .content,
+html[data-theme] .board-wrap {
     background: var(--tf-surface) !important;
     border-color: var(--tf-border) !important;
     color: var(--tf-text);

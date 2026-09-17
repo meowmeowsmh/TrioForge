@@ -158,7 +158,9 @@
                 ['sidebar', '.sidebar'], ['inputbar', '.input-bar'], ['msginput', '#msgInput'],
                 ['status', '#statusBar'], ['bot', '.msg.bot'], ['audio', '.tf-audio'],
                 ['weather', '.weather-row'], ['weathercard', '.weather-card'],
-                ['toolbar', '.toolbar'], ['board', '.board']
+                ['toolbar', '.toolbar'], ['board', '.board'], ['main', '.main'],
+                ['notespanel', '.notes-panel'], ['editor', '.note-editor'],
+                ['boardwrap', '.board-wrap']
             ];
             var out = ['theme=' + (document.documentElement.dataset.tfTheme || 'none')];
             wanted.forEach(function (pair) {
