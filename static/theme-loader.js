@@ -10,12 +10,26 @@
 */
 (function () {
     var THEMES = ['midnight', 'galaxy', 'odyssey', 'ember', 'forest', 'sakura', 'paper', 'custom'];
+    // Which themes are LIGHT. The app has its own light-mode stylesheet (body.light-mode
+    // with ~170 rules across the three pages), so a light theme has to switch that on as
+    // well - otherwise half the page keeps dark colours and the result looks like a
+    // patchwork, which is exactly how the light/dark inconsistency showed up.
+    var LIGHT = ['paper'];
     var KEY = 'trio_theme';
+    var LAST_DARK_KEY = 'trio_theme_last_dark';
+    // The app's pre-existing key. Kept in sync so the top-bar toggle's knob, and the
+    // notes and corkboard pages, all agree with whatever theme is chosen.
+    var LEGACY_KEY = 'theme';
     var KEYS = { accent: 'trio_theme_accent', bg: 'trio_theme_bg', accent2: 'trio_theme_accent2' };
 
     function read(key) {
         try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
     }
+    function write(key, value) {
+        try { localStorage.setItem(key, value); } catch (e) {}
+    }
+
+    function isLight(name) { return LIGHT.indexOf(name) !== -1; }
 
     function applyCustom() {
         var root = document.documentElement;
@@ -33,6 +47,17 @@
             'linear-gradient(160deg, ' + bg + ', #07070b)');
     }
 
+    // The single place light/dark is decided. Both the theme attribute (this file's
+    // rules) and the app's own light-mode class follow from it, so the two systems can
+    // no longer disagree.
+    function applyScheme(name) {
+        var light = isLight(name);
+        var add = function (el) { if (el) { el.classList.toggle('light-mode', light); } };
+        add(document.documentElement);
+        add(document.body);
+        write(LEGACY_KEY, light ? 'light' : 'dark');
+    }
+
     function apply(name) {
         if (THEMES.indexOf(name) === -1) { name = 'midnight'; }
         if (name === 'midnight') {
@@ -41,30 +66,58 @@
             // original stylesheets apply untouched. Choosing the default can therefore
             // never change how the app already looked.
             delete document.documentElement.dataset.theme;
-            return;
+        } else {
+            document.documentElement.dataset.theme = name;
+            if (name === 'custom') { applyCustom(); }
         }
-        document.documentElement.dataset.theme = name;
-        if (name === 'custom') { applyCustom(); }
+        applyScheme(name);
     }
 
     // Exposed so the picker in the chat page (and any page) can switch instantly.
     window.tfSetTheme = function (name, custom) {
         if (custom) {
-            try {
-                if (custom.accent) { localStorage.setItem(KEYS.accent, custom.accent); }
-                if (custom.accent2) { localStorage.setItem(KEYS.accent2, custom.accent2); }
-                if (custom.bg) { localStorage.setItem(KEYS.bg, custom.bg); }
-            } catch (e) {}
+            if (custom.accent) { write(KEYS.accent, custom.accent); }
+            if (custom.accent2) { write(KEYS.accent2, custom.accent2); }
+            if (custom.bg) { write(KEYS.bg, custom.bg); }
         }
-        try { localStorage.setItem(KEY, name); } catch (e) {}
+        if (!isLight(name)) { write(LAST_DARK_KEY, name); }
+        write(KEY, name);
         apply(name);
     };
-    window.tfCurrentTheme = function () { return document.documentElement.dataset.theme || 'midnight'; };
+    window.tfCurrentTheme = function () {
+        if (document.documentElement.classList.contains('light-mode')) {
+            // The app's own toggle may have set light-mode before this file ran.
+            return read(KEY) && isLight(read(KEY)) ? read(KEY) : 'paper';
+        }
+        return document.documentElement.dataset.theme || 'midnight';
+    };
+    window.tfIsLight = function () { return document.documentElement.classList.contains('light-mode'); };
+    // Used by the app's existing moon/sun toggle, so it moves the theme instead of
+    // setting a second, competing flag.
+    window.tfSetLight = function (light) {
+        if (light === window.tfIsLight()) { apply(read(KEY) || 'midnight'); return; }
+        if (light) {
+            var current = document.documentElement.dataset.theme;
+            if (current && !isLight(current)) { write(LAST_DARK_KEY, current); }
+            window.tfSetTheme('paper');
+        } else {
+            window.tfSetTheme(read(LAST_DARK_KEY) || 'midnight');
+        }
+    };
     window.tfCustomColors = function () {
         return { accent: read(KEYS.accent) || '#7c5cff',
                  accent2: read(KEYS.accent2) || read(KEYS.accent) || '#7c5cff',
                  bg: read(KEYS.bg) || '#0f0f16' };
     };
 
-    apply(read(KEY) || 'midnight');
+    var stored = read(KEY);
+    if (!stored) {
+        // First run on this profile: honour the app's old light/dark choice rather than
+        // ignoring it, so an existing setting carries over instead of snapping back.
+        stored = read(LEGACY_KEY) === 'light' ? 'paper' : 'midnight';
+    }
+    apply(stored);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { applyScheme(stored); });
+    }
 })();
