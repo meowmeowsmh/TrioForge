@@ -1690,6 +1690,30 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     #searchInput { font-size: 13px; }
 }
 
+/* The player's colours. Dark themes get the deep-space look; the light theme gets a
+   quiet grey card. Everything below reads these, so the player can never be a dark
+   island on a light page again. */
+:root {
+    --tfa-bg:
+        radial-gradient(circle at 12% 18%, rgba(122,86,255,0.40), transparent 46%),
+        radial-gradient(circle at 88% 84%, rgba(255,86,190,0.30), transparent 46%),
+        radial-gradient(circle at 62% 6%,  rgba(80,200,255,0.22), transparent 42%),
+        linear-gradient(145deg, #0a0620, #0d0a2e 55%, #060415);
+    --tfa-border: rgba(150,120,255,0.35);
+    --tfa-track: rgba(255,255,255,0.10);
+    --tfa-text: #e8ddff;
+    --tfa-dim: #8f86b8;
+    --tfa-glow: 0 0 10px rgba(160,120,255,.8);
+}
+html[data-theme="paper"] {
+    --tfa-bg: #f4f5f7;
+    --tfa-border: rgba(0,0,0,0.12);
+    --tfa-track: rgba(0,0,0,0.10);
+    --tfa-text: #1c1f23;
+    --tfa-dim: #5c6470;
+    --tfa-glow: none;
+}
+
 /* ── Media players: the galaxy theme ──────────────────────────────────────────
    The browser's built-in <audio controls> is ~54px tall with a hairline seek bar.
    This is the app's own player: a deep-space card with a starfield, a glowing
@@ -1701,12 +1725,8 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     width: 100%; box-sizing: border-box;
     padding: 14px 18px; margin-top: 8px;
     border-radius: 16px;
-    border: 1px solid rgba(150,120,255,0.35);
-    background:
-        radial-gradient(circle at 12% 18%, rgba(122,86,255,0.40), transparent 46%),
-        radial-gradient(circle at 88% 84%, rgba(255,86,190,0.30), transparent 46%),
-        radial-gradient(circle at 62% 6%,  rgba(80,200,255,0.22), transparent 42%),
-        linear-gradient(145deg, #0a0620, #0d0a2e 55%, #060415);
+    border: 1px solid var(--tfa-border);
+    background: var(--tfa-bg);
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03),
                 0 8px 30px rgba(70,30,180,0.28);
 }
@@ -1745,15 +1765,15 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     font-size: 12.5px; margin-bottom: 5px;
     font-variant-numeric: tabular-nums; letter-spacing: .3px;
 }
-.tf-audio .tf-times .tf-cur { color: #e8ddff; text-shadow: 0 0 10px rgba(160,120,255,.8); }
-.tf-audio .tf-times .tf-dur { color: #8f86b8; }
+.tf-audio .tf-times .tf-cur { color: var(--tfa-text); text-shadow: var(--tfa-glow); }
+.tf-audio .tf-times .tf-dur { color: var(--tfa-dim); }
 
 /* Track and handle. The fill is drawn by JS as a gradient stop, so progress is
    obvious instead of one uniform grey bar. */
 .tf-audio input[type=range] {
     -webkit-appearance: none; appearance: none;
     width: 100%; height: 10px; border-radius: 6px; outline: none;
-    background: rgba(255,255,255,0.10); cursor: pointer; margin: 0;
+    background: var(--tfa-track); cursor: pointer; margin: 0;
 }
 .tf-audio input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
@@ -4036,10 +4056,12 @@ function tfAudioPlayer(src, compact) {
     // unmistakable.
     function paintSeek(frac) {
         var pct = Math.max(0, Math.min(100, frac * 100));
+        var track = (getComputedStyle(seek).getPropertyValue('--tfa-track') || '').trim()
+            || 'rgba(255,255,255,0.10)';
         seek.style.background =
             'linear-gradient(90deg, #7a45ff 0%, #b06bff ' + (pct * 0.6) + '%, ' +
             '#ff5fd2 ' + (pct * 0.85) + '%, #4be1ff ' + pct + '%, ' +
-            'rgba(255,255,255,0.10) ' + pct + '%, rgba(255,255,255,0.10) 100%)';
+            track + ' ' + pct + '%, ' + track + ' 100%)';
     }
     paintSeek(0);
     paintSpeaker();

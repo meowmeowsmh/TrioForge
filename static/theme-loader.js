@@ -60,6 +60,9 @@
 
     function apply(name) {
         if (THEMES.indexOf(name) === -1) { name = 'midnight'; }
+        // Record what was resolved, so the state can be read back instead of guessed
+        // (`data-tf-theme` in the served DOM tells you which theme actually applied).
+        document.documentElement.dataset.tfTheme = name;
         if (name === 'midnight') {
             // Midnight IS the app's own design, so the theme layer steps aside for it:
             // no data-theme attribute means none of the override rules match and the
@@ -110,20 +113,24 @@
                  bg: read(KEYS.bg) || '#0f0f16' };
     };
 
-    var stored = read(KEY);
+    // The SERVER's setting wins over localStorage. They are two stores of the same
+    // choice and they can disagree - localStorage is written the instant the picker is
+    // used, while the server value is the one that survives a cleared profile. Trusting
+    // localStorage first produced a genuinely MIXED state: the app's own light-mode class
+    // came on from the old 'light' key while the theme itself resolved to Midnight, so
+    // the page went white but every component on it stayed dark. Rendering the page
+    // headlessly is what exposed that, and this ordering is what fixes it.
+    var injected = window.__ui_settings || {};
+    var stored = injected.trio_theme || '';
+    if (!stored) { stored = read(KEY); }
     if (!stored) {
-        // The app injects its saved settings into the page (window.__ui_settings) before
-        // this script runs, but only MIRRORS them into localStorage further down the body.
-        // Reading localStorage alone therefore saw nothing, decided "dark", applied it -
-        // and then the mirror wrote theme=light afterwards. The setting said light while
-        // the page was dark, on every single load: that was the inconsistency. Asking the
-        // injected settings directly closes the gap without waiting for the mirror.
-        var injected = window.__ui_settings || {};
-        stored = injected.trio_theme || injected.theme || '';
-        if (stored === 'light') { stored = 'paper'; }        // the old light/dark key
-        if (stored === 'dark') { stored = 'midnight'; }
+        var legacy = injected.theme || read(LEGACY_KEY);
+        stored = legacy === 'light' ? 'paper' : (legacy === 'dark' ? 'midnight' : '');
     }
-    if (!stored) { stored = read(LEGACY_KEY) === 'light' ? 'paper' : 'midnight'; }
+    if (stored === 'light') { stored = 'paper'; }
+    if (stored === 'dark') { stored = 'midnight'; }
+    if (!stored) { stored = 'midnight'; }
+    write(KEY, stored);           // keep both stores agreeing from here on
     apply(stored);
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () { applyScheme(stored); });
