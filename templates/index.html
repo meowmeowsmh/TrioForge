@@ -1652,6 +1652,52 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
     .msg-hit-meta { font-size: 10px; }
     #searchInput { font-size: 13px; }
 }
+
+/* ── Media players ────────────────────────────────────────────────────────────
+   The browser's built-in audio control is ~54px tall with a hair-thin seek bar,
+   which is hard to see and hard to grab - "I can't adjust it, it's small". These
+   are deliberately large: a full-width track, a 20px thumb, big hit areas, and a
+   clear time readout. */
+.tf-audio {
+    display: flex; align-items: center; gap: 14px;
+    width: 100%; box-sizing: border-box;
+    padding: 12px 16px; margin-top: 8px;
+    background: #0d1117; border: 1px solid #30363d; border-radius: 12px;
+}
+.tf-audio button.tf-play {
+    flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
+    border: none; cursor: pointer; font-size: 17px; line-height: 1;
+    background: linear-gradient(135deg, #ff7a2f, #ff9a4d); color: #1a0e05;
+}
+.tf-audio .tf-mid { flex: 1 1 auto; min-width: 0; }
+.tf-audio .tf-times {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: #8b949e; margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+}
+/* The track itself: 10px tall everywhere, 20px thumb. */
+.tf-audio input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 10px; border-radius: 6px; outline: none;
+    background: #21262d; cursor: pointer;
+}
+.tf-audio input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #ff7a2f; border: 2px solid #0d1117; cursor: grab;
+}
+.tf-audio input[type=range]::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #ff7a2f; border: 2px solid #0d1117; cursor: grab;
+}
+.tf-audio .tf-vol { flex: 0 0 96px; }
+.tf-audio.tf-compact { padding: 10px 12px; gap: 10px; }
+
+/* Video: use the width you have and never squeeze it into a stamp. */
+video.tf-video {
+    width: 100%; max-height: 70vh; background: #000;
+    border-radius: 12px; border: 1px solid #333; display: block;
+}
 </style>
 </head>
 <body>
@@ -1937,8 +1983,14 @@ body.light-mode .msg-hit-snip mark, body.light-mode mark {
       <select id="audioWorkflowSelect" title="ComfyUI audio workflow (auto-detected)" style="padding:6px 10px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
         <option value="">🔄 Auto-detect audio workflow…</option>
       </select>
-      <span style="font-size:12px; color:#8b949e;">Length</span>
-      <input id="audioDuration" type="number" value="30" min="3" max="120" title="Audio length in seconds" style="width:60px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;"> s
+      <span style="font-size:13px; font-weight:600; color:#8b949e;">Length</span>
+      <input id="audioDuration" type="number" value="30" min="3" max="180" step="1" title="Audio length in seconds" style="width:96px; padding:8px 10px; font-size:14px; background:#0a0a0f; color:#e1e4e8; border:1px solid #444; border-radius:6px;"> <span style="font-size:13px; color:#8b949e;">seconds</span>
+      <span style="display:inline-flex; gap:4px;">
+        <button type="button" onclick="document.getElementById('audioDuration').value=15" title="15 seconds" style="background:#1c1c26; border:1px solid #333; color:#8b949e; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">15s</button>
+        <button type="button" onclick="document.getElementById('audioDuration').value=30" title="30 seconds" style="background:#1c1c26; border:1px solid #333; color:#8b949e; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">30s</button>
+        <button type="button" onclick="document.getElementById('audioDuration').value=60" title="60 seconds" style="background:#1c1c26; border:1px solid #333; color:#8b949e; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">60s</button>
+        <button type="button" onclick="document.getElementById('audioDuration').value=120" title="120 seconds" style="background:#1c1c26; border:1px solid #333; color:#8b949e; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">120s</button>
+      </span>
       <button id="audioRefreshBtn" title="Re-scan ComfyUI audio workflows" onclick="loadAudioWorkflows()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">↻</button>
       <span id="audioStatus" style="font-size:11px; color:#8b949e;">Text-to-audio via ComfyUI (Stable Audio / ACE-Step / MiniMax Music…). Type your prompt below and press Enter.</span>
     </div>
@@ -3748,7 +3800,7 @@ function generateVideoChat(text) {
             busy = false;
             if (d.error) { bodyEl.textContent = '❌ ' + formatAiError(backend, d.error); smoothScrollToBottom(); return; }
             if (d.conversation_id) currentConv = d.conversation_id;
-            bodyEl.innerHTML = '<video src="' + d.url + '" controls style="max-width:100%; border-radius:12px; border:1px solid #333;"></video>';
+            bodyEl.innerHTML = '<video class="tf-video" src="' + d.url + '" controls></video>';
             var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
             smoothScrollToBottom();
             if (typeof loadConversations === 'function') loadConversations();
@@ -3799,6 +3851,73 @@ function loadAudioWorkflows() {
             if (st) st.textContent = '⚠️ Could not load audio workflows (is ComfyUI running?).';
         });
 }
+// Build the app's own audio player: a big round play button, a full-width
+// scrubbable track with a 20px grab handle, and a clear current/total readout.
+// The native <audio controls> is only ~54px tall with a hairline seek bar, which
+// is what made seeking feel impossible.
+function tfAudioPlayer(src, compact) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tf-audio' + (compact ? ' tf-compact' : '');
+    var audio = document.createElement('audio');
+    audio.preload = 'metadata';
+    if (src) { audio.src = src; }
+    wrap.appendChild(audio);
+
+    var btn = document.createElement('button');
+    btn.className = 'tf-play';
+    btn.type = 'button';
+    btn.textContent = '\u25b6';
+    btn.title = 'Play / pause';
+    wrap.appendChild(btn);
+
+    var mid = document.createElement('div');
+    mid.className = 'tf-mid';
+    var times = document.createElement('div');
+    times.className = 'tf-times';
+    var cur = document.createElement('span'); cur.textContent = '0:00';
+    var dur = document.createElement('span'); dur.textContent = '0:00';
+    times.appendChild(cur); times.appendChild(dur);
+    var seek = document.createElement('input');
+    seek.type = 'range'; seek.min = '0'; seek.max = '1000'; seek.value = '0'; seek.step = '1';
+    seek.title = 'Drag to seek';
+    mid.appendChild(times); mid.appendChild(seek);
+    wrap.appendChild(mid);
+
+    var vol = document.createElement('input');
+    vol.type = 'range'; vol.className = 'tf-vol'; vol.min = '0'; vol.max = '1';
+    vol.step = '0.05'; vol.value = '1'; vol.title = 'Volume';
+    wrap.appendChild(vol);
+
+    function fmt(t) {
+        if (!isFinite(t) || t < 0) { return '0:00'; }
+        var m = Math.floor(t / 60), s = Math.floor(t % 60);
+        return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+    btn.onclick = function () {
+        if (audio.paused) { var p = audio.play(); if (p && p.catch) { p.catch(function () {}); } }
+        else { audio.pause(); }
+    };
+    audio.addEventListener('play', function () { btn.textContent = '\u23f8'; });
+    audio.addEventListener('pause', function () { btn.textContent = '\u25b6'; });
+    audio.addEventListener('ended', function () { btn.textContent = '\u25b6'; });
+    audio.addEventListener('loadedmetadata', function () { dur.textContent = fmt(audio.duration); });
+    audio.addEventListener('timeupdate', function () {
+        if (!seek.dataset.dragging && audio.duration) {
+            seek.value = String(Math.round(audio.currentTime / audio.duration * 1000));
+        }
+        cur.textContent = fmt(audio.currentTime);
+        if (audio.duration) { dur.textContent = fmt(audio.duration); }
+    });
+    // Keep the handle under the finger while dragging, then jump once released.
+    seek.addEventListener('input', function () { seek.dataset.dragging = '1'; });
+    seek.addEventListener('change', function () {
+        if (audio.duration) { audio.currentTime = seek.value / 1000 * audio.duration; }
+        delete seek.dataset.dragging;
+    });
+    vol.addEventListener('input', function () { audio.volume = parseFloat(vol.value); });
+    return wrap;
+}
+
 function generateAudioChat(text) {
     if (!text || !text.trim()) return;
     if (busy) return;
@@ -3827,13 +3946,13 @@ function generateAudioChat(text) {
             busy = false;
             if (d.error) { bodyEl.textContent = '❌ ' + formatAiError('comfyui', d.error); smoothScrollToBottom(); return; }
             if (d.conversation_id) currentConv = d.conversation_id;
-            // No `type` attribute on purpose: ComfyUI decides the format (.flac, .wav,
-            // .mp3 …) and the file is saved exactly as it produced it. Declaring
-            // "audio/mpeg" made the browser decode a FLAC as MP3 - the song came out
-            // as garbled noise, or would not play at all. Left alone, the browser
-            // reads the real format from the file itself.
-            bodyEl.innerHTML = '<audio controls preload="metadata" style="max-width:100%; width:100%; border-radius:12px;">' +
-                '<source src="' + d.url + '">Your browser does not support audio.</audio>';
+            // The app's own player, not <audio controls>: the browser's built-in one
+            // is ~54px tall with a hairline seek bar, which is what made the song
+            // impossible to scrub. No `type` attribute either - ComfyUI decides the
+            // format (.flac, .wav, .mp3) and declaring "audio/mpeg" made the browser
+            // decode a FLAC as MP3.
+            bodyEl.innerHTML = '';
+            bodyEl.appendChild(tfAudioPlayer(d.url, false));
             var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
             smoothScrollToBottom();
             if (typeof loadConversations === 'function') loadConversations();
@@ -4211,24 +4330,18 @@ function renderMsg(role, entry, msgIndex) {
             if (mime.indexOf('video') === 0) {
                 var vid = document.createElement('video');
                 vid.controls = true;
-                vid.style.maxWidth = '100%';
-                vid.style.borderRadius = '12px';
-                vid.style.border = '1px solid #333';
+                vid.className = 'tf-video';          // full width, capped at 70vh
                 if (f.b64) { vid.src = 'data:' + (f.mime || 'video/mp4') + ';base64,' + f.b64; }
                 else if (f.file) { vid.src = '/json_configuration/attachments/' + f.file; }
                 div.appendChild(vid);
                 return;
             }
             if (mime.indexOf('audio') === 0) {
-                var aud = document.createElement('audio');
-                aud.controls = true;
-                aud.style.maxWidth = '100%';
-                aud.style.width = '100%';
-                aud.style.borderRadius = '12px';
-                aud.style.border = '1px solid #333';
-                if (f.b64) { aud.src = 'data:' + (f.mime || 'audio/mpeg') + ';base64,' + f.b64; }
-                else if (f.file) { aud.src = '/json_configuration/attachments/' + f.file; }
-                div.appendChild(aud);
+                // The app's own big player, so a stored clip is as easy to scrub as a
+                // freshly generated one.
+                var src = f.b64 ? ('data:' + (f.mime || 'audio/mpeg') + ';base64,' + f.b64)
+                                : (f.file ? '/json_configuration/attachments/' + f.file : '');
+                div.appendChild(tfAudioPlayer(src, true));
                 return;
             }
             var chip = document.createElement('div');
@@ -4241,19 +4354,12 @@ function renderMsg(role, entry, msgIndex) {
         var vid = document.createElement('video');
         vid.src = entry.meta.video;
         vid.controls = true;
-        vid.style.maxWidth = '100%';
-        vid.style.borderRadius = '12px';
-        vid.style.border = '1px solid #333';
+        vid.className = 'tf-video';              // full width, capped at 70vh
         div.appendChild(vid);
     }
     if (entry.meta && entry.meta.audio) {
-        var aud = document.createElement('audio');
-        aud.src = entry.meta.audio;
-        aud.controls = true;
-        aud.style.maxWidth = '100%';
-        aud.style.width = '100%';
-        aud.style.borderRadius = '12px';
-        div.appendChild(aud);
+        // Same big player as everywhere else, so old clips scrub as easily as new.
+        div.appendChild(tfAudioPlayer(entry.meta.audio, true));
     }
     if (entry.meta && entry.meta.reasoning) {
         renderThinkingBlock(div, entry.meta.reasoning);
