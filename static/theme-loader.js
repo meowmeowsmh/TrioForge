@@ -9,7 +9,7 @@
    later if localStorage is empty.
 */
 (function () {
-    var THEMES = ['midnight', 'galaxy', 'odyssey', 'ember', 'forest', 'sakura', 'paper', 'custom'];
+    var THEMES = ['midnight', 'premium', 'galaxy', 'odyssey', 'ember', 'forest', 'sakura', 'paper', 'custom'];
     // Which themes are LIGHT. The app has its own light-mode stylesheet (body.light-mode
     // with ~170 rules across the three pages), so a light theme has to switch that on as
     // well - otherwise half the page keeps dark colours and the result looks like a

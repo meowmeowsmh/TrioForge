@@ -77,6 +77,31 @@ html[data-theme="galaxy"] {
     --tf-shadow: 0 10px 34px rgba(60,20,140,0.42);
 }
 
+/* ── Premium: the polished-product look ──────────────────────────────────────
+   Softer near-black instead of pure black, elevated greys for panels, a refined
+   indigo/violet accent, deeper shadows, bigger radii and roomier text. The extra
+   flourish rules are scoped to this theme (see the bottom of the file) so nothing
+   here changes any other theme. */
+html[data-theme="premium"] {
+    --tf-bg: #14151a;
+    --tf-bg-art:
+        radial-gradient(ellipse at 50% -20%, rgba(139,124,246,0.16), transparent 55%),
+        radial-gradient(circle at 88% 92%, rgba(74,222,255,0.06), transparent 45%),
+        linear-gradient(180deg, #16171d, #101116);
+    --tf-surface: rgba(24,26,32,0.92);
+    --tf-surface-2: rgba(32,35,43,0.90);
+    --tf-surface-3: rgba(20,21,26,0.96);
+    --tf-border: rgba(255,255,255,0.09);
+    --tf-text: #eef0f4;
+    --tf-text-dim: #9aa1ae;
+    --tf-accent: #8b7cf6;
+    --tf-accent-2: #6d5ef0;
+    --tf-accent-soft: rgba(139,124,246,0.15);
+    --tf-accent-glow: rgba(139,124,246,0.38);
+    --tf-shadow: 0 14px 38px rgba(0,0,0,0.48);
+    --tf-radius: 18px;
+}
+
 /* ── Odyssey: charcoal, deep crimson and gold. The dark, classical, hand-made
       feel — inspired by that aesthetic rather than copying anyone's branding. ── */
 html[data-theme="odyssey"] {
@@ -345,3 +370,51 @@ html[data-theme] ::-webkit-scrollbar-thumb {
 html[data-theme] ::-webkit-scrollbar-thumb:hover {
     background: color-mix(in srgb, var(--tf-accent) 70%, transparent);
 }
+
+/* ── Premium's flourish ───────────────────────────────────────────────────────
+   Scoped to the premium theme alone, so no other theme's layout or spacing moves:
+   roomier messages, larger radii, softer elevation, glassy bars and a deeper glow
+   than the shared mapping gives. */
+html[data-theme="premium"] .msg {
+    padding: 18px 24px;
+    line-height: 1.75;
+    border-radius: 18px;
+}
+html[data-theme="premium"] .msg.bot {
+    box-shadow: 0 10px 32px rgba(0,0,0,0.38);
+    backdrop-filter: blur(10px);
+}
+html[data-theme="premium"] .msg.user {
+    box-shadow: 0 12px 30px var(--tf-accent-glow);
+}
+html[data-theme="premium"] .sidebar,
+html[data-theme="premium"] .top-bar,
+html[data-theme="premium"] .input-bar,
+html[data-theme="premium"] .toolbar {
+    backdrop-filter: blur(16px);
+}
+html[data-theme="premium"] .modal > div,
+html[data-theme="premium"] #setupModal > div,
+html[data-theme="premium"] #integrityModal > div,
+html[data-theme="premium"] #themeModal > div,
+html[data-theme="premium"] #logsModal > div {
+    border-radius: 20px;
+    box-shadow: var(--tf-shadow);
+}
+html[data-theme="premium"] .clear-btn,
+html[data-theme="premium"] .unload-btn,
+html[data-theme="premium"] .top-btn,
+html[data-theme="premium"] button.btn,
+html[data-theme="premium"] .toolbar button,
+html[data-theme="premium"] input,
+html[data-theme="premium"] select,
+html[data-theme="premium"] textarea {
+    border-radius: 10px;
+}
+html[data-theme="premium"] .note-item,
+html[data-theme="premium"] .note-card,
+html[data-theme="premium"] .file-chip {
+    border-radius: 14px;
+}
+html[data-theme="premium"] ::-webkit-scrollbar-thumb { border-radius: 8px; }
+html[data-theme="premium"] ::-webkit-scrollbar { width: 12px; }
