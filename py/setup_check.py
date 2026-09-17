@@ -135,6 +135,20 @@ def _comfyui_running():
         return False
 
 
+def _comfyui_installed():
+    """Path of the ComfyUI install, if it is present even when it is not running.
+
+    Uses the same discovery the image/video panels use, so the Setup panel and the
+    generators can never disagree about whether ComfyUI exists.
+    """
+    try:
+        import comfyui_service
+        found = comfyui_service.find_comfyui_install()
+        return found or None
+    except Exception:
+        return None
+
+
 def _gpu_backend():
     """Detect the local GPU acceleration backend without heavy imports.
 
@@ -300,14 +314,30 @@ def check_all():
     })
 
     # 4. ComfyUI (optional — image/video)
+    # "Not running" is NOT "not installed": the panel used to tell anyone who had
+    # ComfyUI Desktop installed but closed to go and download it. Three states now -
+    # running, installed-but-closed, and genuinely absent.
+    comfy_running = _comfyui_running()
+    comfy_dir = None if comfy_running else _comfyui_installed()
+    if comfy_running:
+        comfy_status, comfy_detail, comfy_hint = "ok", "Running", ""
+    elif comfy_dir:
+        comfy_status = "offline"
+        comfy_detail = "Installed, not running — found at {}".format(comfy_dir)
+        comfy_hint = ("ComfyUI is already installed. Open ComfyUI Desktop (or start it) and "
+                      "press 🔄 Re-check — nothing to download.")
+    else:
+        comfy_status = "offline"
+        comfy_detail = "Optional — backend: {}".format(gpu["label"])
+        comfy_hint = _comfyui_install_hint(gpu)
     items.append({
         "id": "comfyui",
         "name": "ComfyUI (image & video)",
-        "status": "ok" if _comfyui_running() else "offline",
-        "detail": "Running" if _comfyui_running() else "Optional — backend: {}".format(gpu["label"]),
-        "url": "https://www.comfy.org/download",
+        "status": comfy_status,
+        "detail": comfy_detail,
+        "url": "" if comfy_dir else "https://www.comfy.org/download",
         "required": False,
-        "hint": _comfyui_install_hint(gpu),
+        "hint": comfy_hint,
     })
 
     # 5. Voice-to-voice (REQUIRED — always installed alongside llama.cpp)

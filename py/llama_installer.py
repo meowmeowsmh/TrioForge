@@ -57,9 +57,19 @@ def _fetch_releases():
 def _pick_asset(names, backend):
     """Pick the prebuilt asset best matching OS + arch + backend. Returns name or None.
 
-    NOTE: llama.cpp ships no prebuilt CUDA build for Linux, so NVIDIA-on-Linux
-    falls back to the Vulkan build (runs on NVIDIA via their Vulkan driver), then
-    to the CPU build.
+    What each platform gets:
+      macOS            - the macos build (Metal accelerated on Apple Silicon)
+      Windows + NVIDIA - the CUDA build, CPU build if no CUDA asset is published
+      Windows + AMD    - the ROCm build, else Vulkan, else CPU
+      Linux + AMD      - the ROCm build, else CPU
+      Linux + NVIDIA   - the VULKAN build: llama.cpp publishes no prebuilt CUDA for
+                         Linux, and Vulkan drives NVIDIA fine through its driver
+      anything else    - the CPU build
+
+    The backend-specific match is a PREFIX match, not a fixed version list: llama.cpp
+    renames these every few weeks (cuda-12.4, cuda-13.3, cuda-13.4, ...), and hard-coding
+    the versions meant a rename would silently drop the user to a CPU build - the
+    slowest possible outcome nobody asked for. The highest-sorting matching name wins.
     """
     os_name, x = _platform_key()
     b = backend if backend in ("cuda", "rocm", "vulkan") else "cpu"
@@ -71,23 +81,34 @@ def _pick_asset(names, backend):
                     return n
         return None
 
+    def find_prefix(*prefixes):
+        """Newest asset whose name contains one of these prefixes (e.g. cuda-13.4)."""
+        for pre in prefixes:
+            hits = sorted(n for n in names if pre in n and n.endswith((".zip", ".tar.gz")))
+            if hits:
+                return hits[-1]
+        return None
+
     if os_name == "Darwin":
         return find("-bin-macos-{}.tar.gz".format(x)) or find("-bin-macos-arm64.tar.gz", "-bin-macos-x64.tar.gz")
     if os_name == "Windows":
         if b == "cuda":
-            return find("-bin-win-cuda-12.4-{}.zip".format(x),
-                        "-bin-win-cuda-13.4-{}.zip".format(x),
-                        "-bin-win-cuda-13.3-{}.zip".format(x)) or find("-bin-win-cpu-{}.zip".format(x))
+            return (find("-bin-win-cuda-12.4-{}.zip".format(x)) or
+                    find_prefix("-bin-win-cuda-") or
+                    find("-bin-win-cpu-{}.zip".format(x)))
         if b == "rocm":
-            return find("-bin-win-rocm-10.0-x64.zip") or find("-bin-win-cpu-{}.zip".format(x))
+            return (find("-bin-win-rocm-10.0-x64.zip") or find_prefix("-bin-win-rocm-") or
+                    find("-bin-win-vulkan-{}.zip".format(x)) or find("-bin-win-cpu-{}.zip".format(x)))
         if b == "vulkan":
             return find("-bin-win-vulkan-{}.zip".format(x)) or find("-bin-win-cpu-{}.zip".format(x))
         return find("-bin-win-cpu-{}.zip".format(x))
     # Linux
     if b == "rocm":
-        return find("-bin-ubuntu-rocm-10.0-{}.tar.gz".format(x)) or find("-bin-ubuntu-{}.tar.gz".format(x))
+        return (find("-bin-ubuntu-rocm-10.0-{}.tar.gz".format(x)) or find_prefix("-bin-ubuntu-rocm-") or
+                find("-bin-ubuntu-{}.tar.gz".format(x)))
     if b in ("cuda", "vulkan"):
-        return find("-bin-ubuntu-vulkan-{}.tar.gz".format(x)) or find("-bin-ubuntu-{}.tar.gz".format(x))
+        return (find("-bin-ubuntu-vulkan-{}.tar.gz".format(x)) or find_prefix("-bin-ubuntu-vulkan-") or
+                find("-bin-ubuntu-{}.tar.gz".format(x)))
     return find("-bin-ubuntu-{}.tar.gz".format(x))
 
 
