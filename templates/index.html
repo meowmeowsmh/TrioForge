@@ -922,6 +922,11 @@ html.view-embed #liveCodePanel {
     transition: transform 0.2s;
 }
 #scrollBottomBtn:hover { transform: scale(1.05); }
+/* The Notes and Cork Board tabs open as an embedded view (an iframe over the chat), not a
+   new page. The arrow is fixed to the viewport, so it floated on top of that iframe.
+   view-embed is set on <html> exactly while an embedded view is showing - hide the arrow
+   then, so it can never sit over the notes or corkboard. */
+html.view-embed #scrollBottomBtn { display: none !important; }
 #dropOverlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -7361,6 +7366,7 @@ function openEmbeddedView(url, view) {
     host.style.display = 'block';
     chat.style.display = 'none';
     document.documentElement.classList.add('view-embed');   // hides chat-only chrome
+    if (typeof hideScrollBtn === 'function') { hideScrollBtn(); }
     setActiveTab(view);
     try { localStorage.setItem('trio_last_view', view); } catch (err) {}
     return false;                          // stay in this document
@@ -7372,6 +7378,7 @@ function showChatView() {
     if (host) host.style.display = 'none';
     if (chat) chat.style.display = 'flex';
     document.documentElement.classList.remove('view-embed');   // chat chrome back
+    if (typeof updateScrollBtn === 'function') { updateScrollBtn(); }
     setActiveTab('chat');
     try { localStorage.setItem('trio_last_view', 'chat'); } catch (err) {}
     if (typeof scrollToBottom === 'function') { try { scrollToBottom(); } catch (err) {} }
