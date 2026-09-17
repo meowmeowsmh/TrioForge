@@ -1914,7 +1914,69 @@ def serve_attachment(name):
                          download_name=os.path.basename(path),
                          mimetype="application/octet-stream")
     return send_file(path, conditional=True, mimetype=mime)
-    return send_file(path, conditional=True)
+
+
+def _integrity_module():
+    """Import the integrity checker regardless of how sys.path is arranged.
+
+    app.py lives in py/ and imports its siblings as top-level modules, while
+    py/tools/ is normally reached by putting that directory itself on the path. Try
+    both, then fall back to loading the file directly, so the check is never simply
+    "unavailable" because of an import path.
+    """
+    try:
+        from tools import integrity as mod
+        return mod
+    except Exception:
+        pass
+    try:
+        import integrity as mod            # when py/tools is already on sys.path
+        return mod
+    except Exception:
+        pass
+    import importlib.util
+    path = root_path("py", "tools", "integrity.py")
+    spec = importlib.util.spec_from_file_location("tf_integrity", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@app.route('/api/integrity/check', methods=['GET'])
+def integrity_check():
+    """Check this app against its own baseline, and scan for injected code.
+
+    Read-only: it hashes the app's files, compares them with the committed
+    integrity-manifest.json, and scans for the fingerprints of injected code (plus
+    markup stashed inside the executables it ships). It is a check you can run, not an
+    antivirus - the report says so, so a clean result is not mistaken for a guarantee.
+    """
+    try:
+        mod = _integrity_module()
+        report = mod.check(root_path())
+    except Exception as exc:
+        logger.warning("Integrity check failed: %s", exc)
+        return jsonify({"error": "integrity check failed: {}".format(exc)}), 500
+    return jsonify(report)
+
+
+@app.route('/api/integrity/baseline', methods=['POST'])
+def integrity_baseline():
+    """Record the CURRENT files as the trusted baseline.
+
+    Needed after a deliberate edit (yours, or an update), otherwise every future check
+    reports those files as modified. Deliberately a separate, explicit action: silently
+    re-baselining is exactly what would hide real tampering.
+    """
+    try:
+        mod = _integrity_module()
+        manifest = mod.write_baseline(root_path(), note="baseline set from the app")
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    count = len(manifest.get("files") or {})
+    logger.warning("Integrity baseline rewritten on request: %d file(s)", count)
+    return jsonify({"ok": True, "files": count,
+                    "generated": manifest.get("generated", "")})
 
 
 @app.route('/api/attach/upload', methods=['POST'])

@@ -1961,6 +1961,7 @@ video.tf-video {
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
         <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup — install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🚀</button>
+        <button class="clear-btn" id="integrityBtn" onclick="openIntegrity()" title="Integrity check — compare this app's files with its recorded baseline and scan for injected code" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🛡️</button>
         <button class="clear-btn" id="fullscreenBtn" onclick="toggleFullscreen()"
                 title="Full screen — stays on as you switch Chat, Notes and Cork Board"
                 aria-label="Toggle full screen" style="display:flex; align-items:center; justify-content:center;">
@@ -7938,6 +7939,122 @@ function toggleService(which) {
 }
 
 // ─── First-run setup checker ──────────────────────────────
+// ── Integrity radar ──────────────────────────────────────────────────────────
+// Runs the app's own integrity check and shows it as a percentage: 0% means nothing
+// changed and nothing suspicious was found. Percentages in between are findings you
+// can click through below.
+function openIntegrity() {
+    document.getElementById('integrityModal').style.display = 'flex';
+    runIntegrity();
+}
+function closeIntegrity() {
+    document.getElementById('integrityModal').style.display = 'none';
+}
+function integrityGauge(pct, col) {
+    var g = document.getElementById('integrityGauge');
+    var frac = Math.max(0, Math.min(100, pct)) / 100;
+    g.style.background = 'conic-gradient(' + col + ' 0turn ' + frac + 'turn, #30363d ' +
+                         frac + 'turn 1turn)';
+    var box = document.getElementById('integrityPct');
+    box.textContent = pct + '%';
+    box.style.color = col;
+}
+function integrityList(title, items, prefix, colour) {
+    if (!items || !items.length) { return ''; }
+    var html = '<div style="margin-top:10px;"><strong style="color:' + colour + ';">' + title +
+               ' (' + items.length + ')</strong>';
+    items.slice(0, 25).forEach(function (it) {
+        var text = (typeof it === 'string') ? it : (it.file + ':' + it.line + '  ' + it.why +
+                   '  — ' + (it.text || ''));
+        html += '<div style="font-family:ui-monospace,Consolas,monospace; font-size:11.5px; ' +
+                'color:#8b949e; margin:3px 0 0 6px; word-break:break-all;">' + prefix +
+                escapeChatText(text) + '</div>';
+    });
+    return html + '</div>';
+}
+function escapeChatText(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function runIntegrity() {
+    var btn = document.getElementById('integrityRunBtn');
+    var summary = document.getElementById('integritySummary');
+    var details = document.getElementById('integrityDetails');
+    btn.disabled = true;
+    btn.textContent = '⏳ Checking…';
+    summary.textContent = 'Hashing this app’s files…';
+    details.innerHTML = '';
+    fetch('/api/integrity/check')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            btn.disabled = false;
+            btn.textContent = '🔍 Scan now';
+            if (d.error) {
+                integrityGauge(100, '#f85149');
+                summary.textContent = '❌ ' + d.error;
+                return;
+            }
+            var pct = d.risk_pct || 0;
+            var col = pct === 0 ? '#3fb950' : (pct < 40 ? '#d29922' : '#f85149');
+            integrityGauge(pct, col);
+            var lines = [];
+            lines.push('<strong>' + d.files_checked + '</strong> files checked, <strong>' +
+                       (d.clean_files || 0) + '</strong> unchanged.');
+            lines.push(d.has_baseline
+                ? 'Baseline recorded ' + (d.baseline_generated || 'earlier') + '.'
+                : '⚠️ No baseline recorded yet — nothing can be judged "modified" until you record one.');
+            lines.push(pct === 0
+                ? '✅ Nothing changed and nothing suspicious found.'
+                : '⚠️ ' + pct + '% — look at the findings below.');
+            summary.innerHTML = lines.join('<br>');
+            var html = '';
+            html += integrityList('Changed since the baseline', d.modified, '~ ', '#d29922');
+            html += integrityList('Missing (present in the baseline)', d.missing, '- ', '#f85149');
+            html += integrityList('New files', d.added, '+ ', '#58a6ff');
+            html += integrityList('Suspicious code patterns', d.patterns, '! ', '#f85149');
+            html += integrityList('Markup found inside an executable', d.binaries_with_markers, '! ', '#f85149');
+            if (d.binaries && d.binaries.length) {
+                html += '<div style="margin-top:10px; color:#8b949e;">' +
+                        d.binaries.length + ' executable(s) hashed and searched for embedded markup.</div>';
+            }
+            if (pct !== 0) {
+                html += '<div style="margin-top:12px; padding:10px; border:1px solid #333; ' +
+                        'border-radius:8px; color:#8b949e;">Changed those files yourself? Press ' +
+                        '<strong>✅ Record baseline</strong> to accept the current state. ' +
+                        'If you did not, treat it seriously before using the app.</div>';
+            }
+            details.innerHTML = html;
+            if (typeof d.has_baseline !== 'undefined') {
+                document.getElementById('integrityBaselineBtn').style.display = 'inline-block';
+            }
+        })
+        .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = '🔍 Scan now';
+            integrityGauge(100, '#f85149');
+            summary.textContent = '❌ ' + (e.message || 'check failed');
+        });
+}
+function setIntegrityBaseline() {
+    if (!confirm('Record the current files as trusted?\n\nOnly do this if you know why they ' +
+                 'changed. Silently re-baselining is what would hide real tampering.')) { return; }
+    var btn = document.getElementById('integrityBaselineBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Recording…';
+    fetch('/api/integrity/baseline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            btn.disabled = false;
+            btn.textContent = '✅ Record baseline';
+            if (!d.ok) { alert('Could not record the baseline: ' + (d.error || 'unknown')); return; }
+            runIntegrity();
+        })
+        .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = '✅ Record baseline';
+            alert('Could not record the baseline: ' + e.message);
+        });
+}
+
 function closeSetupModal() {
     document.getElementById('setupModal').style.display = 'none';
     try { localStorage.setItem('trio_setup_dismissed', '1'); } catch(e) {}
@@ -8197,6 +8314,35 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <!-- First-run setup / downloads -->
+<div id="integrityModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10006; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(620px, 94vw); max-height:88vh; overflow:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:16px;">🛡️ Integrity — has anything changed?</strong>
+      <button onclick="closeIntegrity()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">
+      Hashes this app's own files (code, templates, the vendored libraries, the launcher
+      scripts) and compares them with the recorded baseline, then scans for the fingerprints
+      of injected code — including markup stashed inside the executables it ships.
+      A check you can run on demand; not an antivirus, and it only sees this folder.
+    </p>
+
+    <div style="display:flex; gap:18px; align-items:center;">
+      <div id="integrityGauge" style="position:relative; width:104px; height:104px; border-radius:50%; flex:0 0 auto; background:conic-gradient(#30363d 0turn 1turn); display:flex; align-items:center; justify-content:center;">
+        <div style="position:absolute; inset:10px; border-radius:50%; background:#14141c;"></div>
+        <div id="integrityPct" style="position:relative; font-size:22px; font-weight:700; color:#8b949e;">–</div>
+      </div>
+      <div id="integritySummary" style="flex:1; font-size:13px; line-height:1.7; color:#c9d1d9;">Not run yet — press 🔍 Scan now.</div>
+    </div>
+
+    <div id="integrityDetails" style="margin-top:14px; font-size:12.5px; color:#c9d1d9;"></div>
+
+    <div style="margin-top:16px; display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;">
+      <button id="integrityBaselineBtn" onclick="setIntegrityBaseline()" title="Record the current files as trusted — do this after a change you made yourself" style="padding:8px 14px; background:#1c1c26; border:1px solid #333; border-radius:6px; color:#e1e4e8; cursor:pointer;">✅ Record baseline</button>
+      <button id="integrityRunBtn" onclick="runIntegrity()" style="padding:8px 18px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-weight:600; cursor:pointer;">🔍 Scan now</button>
+    </div>
+  </div>
+</div>
 <div id="setupModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10005; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:20px; width:min(560px, 94vw); max-height:88vh; overflow:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">

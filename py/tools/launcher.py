@@ -552,6 +552,63 @@ def do_update(project: Path, force: bool = False) -> int:
     return 0 if result.get("ok") else 1
 
 
+def show_integrity(project: Path, write_baseline: bool = False) -> int:
+    """`--verify` / `--verify-baseline`: check the app's own files for tampering.
+
+    Exits 0 when nothing is off, 1 when something is - so it can be used in a script
+    or a cron/Startup job and still mean something.
+    """
+    try:
+        import integrity as mod
+    except Exception as exc:
+        print("Integrity module unavailable: {}".format(exc))
+        return 1
+
+    if write_baseline:
+        manifest = mod.write_baseline(project, note="baseline set from --verify-baseline")
+        print("Baseline written: {} file(s) recorded in {}.".format(
+            len(manifest.get("files") or {}), mod.MANIFEST_NAME))
+        print("Everything as it is right now is now considered trusted.")
+        return 0
+
+    report = mod.check(project)
+    print("TrioForge integrity check")
+    print("  files checked    : {}".format(report["files_checked"]))
+    print("  baseline         : {}".format(
+        "yes, from {}".format(report["baseline_generated"]) if report["has_baseline"]
+        else "NONE yet - run --verify-baseline to record one"))
+    print("  modified         : {}".format(len(report["modified"])))
+    for rel in report["modified"][:20]:
+        print("      ~ {}".format(rel))
+    print("  missing          : {}".format(len(report["missing"])))
+    for rel in report["missing"][:20]:
+        print("      - {}".format(rel))
+    print("  added            : {}".format(len(report["added"])))
+    for rel in report["added"][:20]:
+        print("      + {}".format(rel))
+    print("  suspicious code  : {}".format(len(report["patterns"])))
+    for hit in report["patterns"][:20]:
+        print("      {}:{}  {}  |  {}".format(hit["file"], hit["line"], hit["why"],
+                                              hit["text"][:70]))
+    print("  executables      : {} checked".format(len(report["binaries"])))
+    for name in report["binaries_with_markers"]:
+        print("      ! markup found inside {}".format(name))
+    print()
+    print("  RISK             : {}%".format(report["risk_pct"]))
+    if report["risk_pct"] == 0 and report["has_baseline"]:
+        print("  Nothing changed and nothing suspicious was found.")
+    elif not report["has_baseline"]:
+        print("  No baseline yet, so 'modified' cannot be judged. Record one with")
+        print("  --verify-baseline once you are happy with the current files.")
+    else:
+        print("  Look at the lines above. If you made those changes yourself, record")
+        print("  them with --verify-baseline; if you did not, treat it seriously.")
+    print()
+    print("  This is a check, not an antivirus: it sees the files in this folder,")
+    print("  not a running process or anything outside it.")
+    return 0 if report["risk_pct"] == 0 else 1
+
+
 def show_status(project: Path) -> int:
     """`--status`: everything support needs to know, in one screen."""
     info = updater.status(project)
@@ -1587,6 +1644,12 @@ def main() -> int:
                         help="Don't open a browser tab when starting.")
     parser.add_argument("--status", action="store_true",
                         help="Print version, git state, deps and auto-start state.")
+    parser.add_argument("--verify", action="store_true",
+                        help="Check the app's own files against integrity-manifest.json "
+                             "and scan for injected code. Exits 1 if anything looks off.")
+    parser.add_argument("--verify-baseline", action="store_true",
+                        help="Rewrite integrity-manifest.json from the current files, "
+                             "after a deliberate change.")
     # ── host it for other people ──
     parser.add_argument("--host", action="store_true",
                         help="Host mode: ask for a password before anything is served, "
@@ -1645,6 +1708,12 @@ def main() -> int:
                 print("Could not locate the TrioForge project.")
                 return 1
             return show_status(project)
+        if args.verify or args.verify_baseline:
+            project = find_project(args.path)
+            if project is None:
+                print("Could not locate the TrioForge project.")
+                return 1
+            return show_integrity(project, write_baseline=args.verify_baseline)
         if args.update:
             project = find_project(args.path)
             if project is None:
