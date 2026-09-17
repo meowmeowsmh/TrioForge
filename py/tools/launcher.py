@@ -614,21 +614,45 @@ def prepare_and_run(project: Path, args) -> int:
     # So launching one never overwrites the other, and a deleted icon comes back the
     # next time that entry point is used. Skippable with TRIOFORGE_NO_SHORTCUT=1.
     if os.environ.get("TRIOFORGE_NO_SHORTCUT", "").strip() not in ("1", "true", "on"):
+        # Written to logs/ so a failure is diagnosable even under pythonw + --detach,
+        # where print() has nowhere to go. "My friend's laptop didn't make a shortcut"
+        # was un-debuggable before because the error vanished with the console.
+        try:
+            (project / "logs").mkdir(exist_ok=True)
+            _sc_log = open(str(project / "logs" / "shortcuts.log"), "a", encoding="utf-8")
+        except Exception:
+            _sc_log = None
+
+        def _sc_report(msg):
+            print(msg)
+            if _sc_log is not None:
+                try:
+                    _sc_log.write(msg + "\n")
+                    _sc_log.flush()
+                except Exception:
+                    pass
+
         try:
             from shortcuts import (install as shortcut_install, missing as shortcut_missing,
                                    FLAVORS)
             flavor = "window" if getattr(args, "window", False) else "web"
             gone = shortcut_missing(project, flavor)
             if gone:
-                print("Adding the {} shortcut ({}) in {} - so you can double-click it "
-                      "next time:".format(flavor, FLAVORS[flavor]["script"],
-                                          ", ".join(gone)))
+                _sc_report("Adding the {} shortcut ({}) in {} - so you can double-click it "
+                           "next time:".format(flavor, FLAVORS[flavor]["script"],
+                                               ", ".join(gone)))
                 for label in gone:
                     for line in shortcut_install(
                             project, where=label.lower().replace(" ", ""), flavor=flavor):
-                        print("  " + line)
+                        _sc_report("  " + line)
         except Exception as exc:
-            print("[shortcut] not created: {}".format(exc))
+            _sc_report("[shortcut] not created: {}".format(exc))
+        finally:
+            if _sc_log is not None:
+                try:
+                    _sc_log.close()
+                except Exception:
+                    pass
 
     # --detach: start the server in the background with no console and return. The
     # window (above) waits for it; the .bat that calls this returns immediately.

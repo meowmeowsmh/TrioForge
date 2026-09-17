@@ -15,6 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
+from uuid import uuid4
 
 APP_NAME = "TrioForge"
 
@@ -62,16 +63,41 @@ def _icon(project: Path) -> Path:
     return project / "static" / "logo" / "triorforge.ico"
 
 
+def _desktop_dir() -> Path:
+    r"""The user's real Desktop folder, from the registry.
+
+    `USERPROFILE\Desktop` is wrong on machines where the Desktop has been redirected
+    (OneDrive, a moved folder, or a localised system) - and that is exactly the kind
+    of machine where a shortcut written to the wrong place silently disappears. The
+    registry entry is where Windows itself records where the Desktop really lives.
+    """
+    try:
+        import winreg
+    except Exception:
+        winreg = None
+    if winreg is not None:
+        for key in (r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"):
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as k:
+                    val, _ = winreg.QueryValueEx(k, "Desktop")
+                val = os.path.expandvars(val or "")
+                if val and os.path.isdir(val):
+                    return Path(val)
+            except Exception:
+                continue
+    for candidate in (Path(os.environ.get("OneDrive", "")) / "Desktop",
+                      Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"):
+        if candidate.is_dir():
+            return candidate
+    return Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
+
+
 def _windows_targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path]]:
     """(label, .lnk path) for the places a user expects to find the app."""
     name = APP_NAME + ((FLAVORS.get(flavor) or FLAVORS["web"])["suffix"])
     out = []
-    desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
-    if not desktop.is_dir():                        # OneDrive-redirected Desktop
-        alt = Path(os.environ.get("OneDrive", "")) / "Desktop"
-        if alt.is_dir():
-            desktop = alt
-    out.append(("Desktop", desktop / (name + ".lnk")))
+    out.append(("Desktop", _desktop_dir() / (name + ".lnk")))
     appdata = os.environ.get("APPDATA")
     if appdata:
         out.append(("Start Menu",
@@ -82,38 +108,52 @@ def _windows_targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path
 
 def _make_lnk(lnk: Path, target: Path, icon: Path, workdir: Path,
               desc: str = "") -> Tuple[bool, str]:
-    """Create one Windows shortcut through PowerShell (no pywin32 needed)."""
+    r"""Create one Windows shortcut with the built-in WScript.Shell.
+
+    Written as a throwaway .vbs and run with cscript, NOT through PowerShell
+    `-Command` with string interpolation: passing the script on the command line
+    broke on paths containing spaces, `&`, `$`, `%` or quotes (a friend's
+    `C:\Users\John & Jane\...` clone path), and it silently failed under pythonw
+    where nothing prints. WScript.Shell is present on every Windows install and a
+    .vbs file has no command-line quoting problem - only double-quotes in paths,
+    which Windows forbids anyway - so this is the path that "just works".
+    """
     try:
         lnk.parent.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         return False, "cannot create {}: {}".format(lnk.parent, exc)
 
-    ps = (
-        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}');"
-        "$s.TargetPath = '{target}';"
-        "$s.WorkingDirectory = '{workdir}';"
-        "$s.Description = '{desc}';"
-        "{icon}"
-        "$s.WindowStyle = 7;"
-        "$s.Save()"
-    ).format(
-        lnk=str(lnk).replace("'", "''"),
-        target=str(target).replace("'", "''"),
-        workdir=str(workdir).replace("'", "''"),
-        desc=(desc or APP_NAME).replace("'", "''"),
-        icon=("$s.IconLocation = '{}';".format(str(icon).replace("'", "''"))
-              if icon.is_file() else ""),
-    )
+    def q(value):
+        return '"' + str(value).replace('"', '""') + '"'
+
+    lines = [
+        'Set sh = CreateObject("WScript.Shell")',
+        "Set s = sh.CreateShortcut({})".format(q(lnk)),
+        "s.TargetPath = {}".format(q(target)),
+        "s.WorkingDirectory = {}".format(q(workdir)),
+        "s.Description = {}".format(q(desc or APP_NAME)),
+        "s.WindowStyle = 7",
+    ]
+    if icon and icon.is_file():
+        lines.append("s.IconLocation = {}".format(q(icon)))
+    lines.append("s.Save")
+    script = lnk.parent / ".triorforge_{}.vbs".format(uuid4().hex)
     try:
+        script.write_text("\r\n".join(lines) + "\r\n", encoding="ascii",
+                          errors="replace")
         done = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-             "-Command", ps],
+            ["cscript.exe", "//nologo", str(script)],
             capture_output=True, text=True, timeout=60,
             creationflags=no_window_flags())
         if done.returncode != 0:
-            return False, (done.stderr or done.stdout or "powershell failed").strip()[:200]
+            return False, (done.stderr or done.stdout or "cscript failed").strip()[:200]
     except Exception as exc:
         return False, "{}: {}".format(type(exc).__name__, exc)
+    finally:
+        try:
+            script.unlink()
+        except Exception:
+            pass
     return (lnk.is_file(), "created" if lnk.is_file() else "not created")
 
 
