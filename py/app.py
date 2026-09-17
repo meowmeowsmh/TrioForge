@@ -1875,6 +1875,22 @@ def ui_settings_save():
     return jsonify({"ok": True})
 
 
+# Extensions served INLINE, with their real type. Anything else - .html, .svg, .js,
+# .py, .exe, an unknown extension - is sent as an opaque download instead, because an
+# attachment is user content and serving it as markup on the app's own origin would
+# run it with the app's privileges.
+_ATTACHMENT_INLINE_TYPES = {
+    ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska", ".avi": "video/x-msvideo",
+    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".flac": "audio/flac",
+    ".ogg": "audio/ogg", ".oga": "audio/ogg", ".m4a": "audio/mp4",
+    ".opus": "audio/ogg", ".aac": "audio/aac", ".wma": "audio/x-ms-wma",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".pdf": "application/pdf", ".txt": "text/plain",
+}
+
+
 @app.route('/json_configuration/attachments/<name>')
 def serve_attachment(name):
     """Serve a stored attachment - the video/audio a message points at.
@@ -1892,6 +1908,12 @@ def serve_attachment(name):
     path = _attachment_path({"id": name})
     if not path:
         return jsonify({"error": "not found"}), 404
+    mime = _ATTACHMENT_INLINE_TYPES.get(os.path.splitext(path)[1].lower())
+    if mime is None:
+        return send_file(path, conditional=True, as_attachment=True,
+                         download_name=os.path.basename(path),
+                         mimetype="application/octet-stream")
+    return send_file(path, conditional=True, mimetype=mime)
     return send_file(path, conditional=True)
 
 
