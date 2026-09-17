@@ -14,11 +14,46 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TrioForge">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" defer></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
+<!-- These are served from the app itself, NOT a CDN.
+
+     They used to come from jsdelivr/cloudflarejs, which meant that with no internet -
+     or a blocked/down CDN - `marked` never loaded, renderMarkdown fell back to raw
+     text, and every answer showed its ** markdown literally with no diagrams, tables
+     or code highlighting. The notes and corkboard pages already used the local copies
+     under /static/vendor, so the chat was the one page that broke when offline.
+
+     The loader at the bottom of the page falls back to the CDN if a vendored file is
+     ever missing (an old checkout, a partial download), so a missing file degrades
+     instead of breaking. -->
+<script src="/static/vendor/marked.min.js" defer></script>
+<script src="/static/vendor/purify.min.js" defer></script>
+<script src="/static/vendor/mermaid.min.js" defer></script>
+<link rel="stylesheet" href="/static/vendor/atom-one-dark.min.css">
+<script src="/static/vendor/highlight.min.js" defer></script>
+<script>
+/* ── Fallback loader ───────────────────────────────────────────────────────────
+   The markdown / diagram / highlight libraries are served from /static/vendor above,
+   so the app works with no internet at all. If one is ever missing (an old checkout,
+   a partial download), pull it from the CDN instead of silently losing markdown
+   rendering - which is what used to happen, quietly, to every answer. */
+window.addEventListener('load', function () {
+    var missing = [
+        [typeof marked === 'undefined', 'https://cdn.jsdelivr.net/npm/marked/marked.min.js'],
+        [typeof DOMPurify === 'undefined', 'https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js'],
+        [typeof mermaid === 'undefined', 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js'],
+        [typeof hljs === 'undefined', 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js']
+    ];
+    if (!missing.some(function (m) { return m[0]; })) { return; }
+    console.warn('TrioForge: a vendored asset is missing; falling back to the CDN.');
+    missing.forEach(function (m) {
+        if (!m[0]) { return; }
+        var s = document.createElement('script');
+        s.src = m[1];
+        s.defer = true;
+        document.head.appendChild(s);
+    });
+});
+</script>
 <style>
 /* ===== all styles (without notes-panel styles) ===== */
 * { margin:0; padding:0; box-sizing:border-box; }
