@@ -2477,10 +2477,17 @@ html.embedded #fsBtn { display: none !important; }</style>
     var themeKnob = document.getElementById('themeKnob');
     var isLight = localStorage.getItem('theme') === 'light';
     function applyTheme(light) {
-        document.body.classList.toggle('light-mode', light);
-        // Also toggle on <html> so the fullscreen surface follows the theme.
-        document.documentElement.classList.toggle('light-mode', light);
-        localStorage.setItem('theme', light ? 'light' : 'dark');
+        // Light/dark IS a theme choice now, so this toggle moves the theme instead of
+        // setting a second flag: otherwise toggling here would leave the chosen theme
+        // (trio_theme) pointing somewhere else and the pages would disagree.
+        if (window.tfSetLight) {
+            window.tfSetLight(!!light);
+        } else {
+            document.body.classList.toggle('light-mode', light);
+            // Also toggle on <html> so the fullscreen surface follows the theme.
+            document.documentElement.classList.toggle('light-mode', light);
+            localStorage.setItem('theme', light ? 'light' : 'dark');
+        }
         themeOuter.classList.toggle('day', light);
     }
     applyTheme(isLight);
