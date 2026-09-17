@@ -1384,10 +1384,20 @@ def _load_ui_settings():
 
 
 def _save_ui_settings(data):
+    """Merge the posted settings into the saved ones.
+
+    This used to overwrite the whole file with whatever arrived. The page mirrors
+    localStorage to this endpoint as a partial snapshot, so every save DELETED the keys
+    the snapshot did not carry - which is how a chosen theme disappeared and the app fell
+    back to dark on the next load. Posting {} must never erase anything.
+    """
     try:
         os.makedirs(os.path.dirname(UI_SETTINGS_PATH), exist_ok=True)
+        merged = _load_ui_settings()
+        if isinstance(data, dict):
+            merged.update(data)
         with open(UI_SETTINGS_PATH, "w", encoding="utf-8") as f:
-            f.write(json_dumps(data))
+            f.write(json_dumps(merged))
     except Exception:
         pass
 

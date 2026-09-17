@@ -130,9 +130,46 @@
     if (stored === 'light') { stored = 'paper'; }
     if (stored === 'dark') { stored = 'midnight'; }
     if (!stored) { stored = 'midnight'; }
-    write(KEY, stored);           // keep both stores agreeing from here on
+    // Deliberately does NOT write back to localStorage: the page mirrors localStorage to
+    // the server as a partial snapshot, so a write here fed a value straight back into the
+    // settings file. (That endpoint also used to overwrite rather than merge, so the write
+    // erased the very setting it came from. Fixed there; this stays read-only regardless.)
     apply(stored);
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () { applyScheme(stored); });
+    }
+
+    // Add ?tfdebug=1 to any page and it records what the browser ACTUALLY computed for
+    // the surfaces that matter, in <html data-tf-probe="...">. Reading the source only
+    // tells you what should happen; this says what did. Costs nothing when the flag is
+    // absent, and makes "it is still dark for me" answerable with evidence.
+    if (String(location.search || '').indexOf('tfdebug') !== -1) {
+        setTimeout(function () {
+            var wanted = [
+                ['body', 'body'], ['topbar', '.top-bar'], ['chat', '.chat-area'],
+                ['sidebar', '.sidebar'], ['inputbar', '.input-bar'], ['msginput', '#msgInput'],
+                ['status', '#statusBar'], ['bot', '.msg.bot'], ['audio', '.tf-audio'],
+                ['weather', '.weather-row'], ['weathercard', '.weather-card'],
+                ['toolbar', '.toolbar'], ['board', '.board']
+            ];
+            var out = ['theme=' + (document.documentElement.dataset.tfTheme || 'none')];
+            wanted.forEach(function (pair) {
+                var el = document.querySelector(pair[1]);
+                if (!el) { out.push(pair[0] + '=absent'); return; }
+                var cs = getComputedStyle(el);
+                out.push(pair[0] + '=' + cs.backgroundColor + ' text ' + cs.color);
+            });
+            // Every bot bubble on its own: one of them looking dark while the first one
+            // measures light is the difference between "the theme is broken" and "this
+            // one element has a class of its own".
+            var bots = document.querySelectorAll('.msg.bot');
+            for (var i = 0; i < bots.length && i < 6; i++) {
+                var cs2 = getComputedStyle(bots[i]);
+                out.push('bot[' + i + ']=' + cs2.backgroundColor +
+                         ' cls=' + (bots[i].className || '') +
+                         ' kids=' + bots[i].children.length);
+            }
+            document.documentElement.dataset.tfProbe = out.join(' | ');
+        }, 3500);
     }
 })();
