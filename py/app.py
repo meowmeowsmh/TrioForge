@@ -1,5 +1,5 @@
 # app.py â€“ chat + notes + cork board + integrated weather toast (performance-optimized)
-from flask import Flask, request, jsonify, Response, redirect, session
+from flask import Flask, request, jsonify, Response, redirect, session, send_file
 import secrets
 from flask_compress import Compress
 import requests
@@ -254,7 +254,10 @@ _HOST_OPEN_PATHS = ("/login", "/logout", "/api/ping", "/manifest.webmanifest",
 # Routes that return data rather than a page: answer them with 401 + JSON instead
 # of handing back the login HTML, so a client never tries to parse it as data.
 _HOST_JSON_PREFIXES = ("/api/", "/conversations", "/messages", "/providers",
-                       "/resources", "/deepseek", "/check_vision")
+                       "/resources", "/deepseek", "/check_vision",
+                       # Media: without this a password-gated instance answered a
+                       # video request with the login PAGE, so the player got HTML.
+                       "/json_configuration/attachments/")
 
 
 def _host_gate_on() -> bool:
@@ -1026,8 +1029,12 @@ def add_message(cid: str, role: str, text: str, images: Optional[List[dict]] = N
         })
     stored_files = []
     for f in files:
+        # An attachment uploaded by id is ALREADY on disk and carries no base64, so
+        # re-saving it from b64 wrote an empty name and left the message pointing at
+        # nothing - which is why a big video rendered as a dead player even once the
+        # serving route existed. Keep the stored name when there is nothing to save.
         b64 = f.get("b64", "")
-        fname = _save_attachment_to_disk_async(b64, f.get("name", "file.bin"))
+        fname = f.get("file") or _save_attachment_to_disk_async(b64, f.get("name", "file.bin"))
         stored_files.append({
             "name": f.get("name", "file"),
             "file": fname,
@@ -1866,6 +1873,26 @@ def ui_settings_save():
         return jsonify({"ok": False, "error": "expected an object"}), 400
     _save_ui_settings(data)
     return jsonify({"ok": True})
+
+
+@app.route('/json_configuration/attachments/<name>')
+def serve_attachment(name):
+    """Serve a stored attachment - the video/audio a message points at.
+
+    Large media cannot travel inline (base64 in the message body was capped at
+    25 MB), so an uploaded video or recording is referenced by name and fetched from
+    here. This route did not exist, so every large attachment rendered as a dead
+    player showing 0:00 - the message pointed at a 404.
+
+    The name must be one this app generated (a 32-hex id with an optional extension
+    and nothing that looks like a path), so a request can never reach outside the
+    store. conditional=True is what gives Range support, so a long video can be
+    scrubbed and resumed instead of only played from the beginning.
+    """
+    path = _attachment_path({"id": name})
+    if not path:
+        return jsonify({"error": "not found"}), 404
+    return send_file(path, conditional=True)
 
 
 @app.route('/api/attach/upload', methods=['POST'])
