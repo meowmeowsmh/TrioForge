@@ -371,6 +371,42 @@ def _request_hostname():
 
 
 @app.before_request
+def _canonicalise_loopback_host():
+    """Send localhost to 127.0.0.1, so there is only ever ONE origin.
+
+    A browser treats https://localhost:5003 and https://127.0.0.1:5003 as different
+    origins: separate localStorage, separate service worker registration, separate HTTP
+    cache. A stylesheet or theme loader cached under one of them keeps being served under
+    the other, which is exactly how one URL behaved correctly while the other kept showing
+    an old, half-switched theme - "this link is doing it correct but this one is not".
+
+    Only navigation is redirected - never /api/, /static/ or media - so nothing a script
+    fetches is silently re-routed.
+    """
+    try:
+        if request.method != "GET":
+            return None
+        if "text/html" not in (request.headers.get("Accept") or ""):
+            return None
+        for skip in ("/api/", "/static/", "/json_configuration/", "/conversations/",
+                     "/messages/", "/providers/"):
+            if request.path.startswith(skip):
+                return None
+        if _host_gate_on():
+            return None                     # exposed instance: whichever name works, works
+        if (os.environ.get("TRIOFORGE_HOST") or "").strip() not in ("", "127.0.0.1", "localhost", "::1"):
+            return None                     # deliberately bound to the network
+        if (request.host or "").strip().lower().split(":")[0] != "localhost":
+            return None
+        target = request.host_url.replace("localhost", "127.0.0.1", 1) + request.path.lstrip("/")
+        if request.query_string:
+            target += "?" + request.query_string.decode("utf-8", "replace")
+        return redirect(target, code=302)
+    except Exception:
+        return None
+
+
+@app.before_request
 def _validate_request_host():
     """Only answer to the host names this instance is legitimately reached by.
 
