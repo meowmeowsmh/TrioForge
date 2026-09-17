@@ -2241,8 +2241,26 @@ function updateScrollBtn() {
     if (!scrollBtn || !chatArea) return;
     var below = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight;
     var overflows = chatArea.scrollHeight - chatArea.clientHeight > 4;
-    scrollBtn.style.display = (overflows && below >= 80) ? 'block' : 'none';
+    // Only on the chat view, and only while the conversation is actually on screen. The
+    // arrow belongs to the conversation, so it must not show on the notes or corkboard
+    // pages, however the page got there.
+    var onChat = (location.pathname === '/' || location.pathname === '');
+    var chatVisible = chatArea.offsetParent !== null &&
+                      chatArea.getBoundingClientRect().height > 0;
+    scrollBtn.style.display = (onChat && chatVisible && overflows && below >= 80)
+        ? 'block' : 'none';
 }
+// Leaving the page hides it immediately. Reported flow: scroll up (arrow appears), click
+// Notes - and the arrow was still sitting there while the next page loaded. Hiding on
+// pagehide means it cannot be carried over, even for the moment before the new page paints.
+function hideScrollBtn() {
+    if (scrollBtn) { scrollBtn.style.display = 'none'; }
+}
+window.addEventListener('pagehide', hideScrollBtn);
+window.addEventListener('beforeunload', hideScrollBtn);
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') { hideScrollBtn(); }
+});
 chatArea.addEventListener('scroll', function() {
     if (_scrollRaf) return;
     _scrollRaf = true;
