@@ -390,10 +390,12 @@ def _page_html(html):
         except Exception:
             continue
         html = html.replace("/" + rel, "/" + rel + "?v=" + str(stamp))
-    marker = '<script src="/static/theme-loader.js"></script>'
-    if marker in html:
-        return html.replace(marker, _theme_script() + marker, 1)
-    return html
+    # Match the tag WITH an optional ?v=... stamp: stamping happens first, so demanding the
+    # bare string silently stopped inserting the settings - which made these two pages fall
+    # back to midnight while the chat page stayed correct.
+    import re as _re
+    return _re.sub(r'(<script src="/static/theme-loader\.js[^"]*"></script>)',
+                   lambda m: _theme_script() + m.group(1), html, count=1)
 
 
 @corkboard_bp.route('')

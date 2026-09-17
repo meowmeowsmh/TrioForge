@@ -177,6 +177,30 @@
         document.addEventListener('DOMContentLoaded', function () { applyScheme(stored); });
     }
 
+    // ENFORCE the theme's polarity on both <html> and <body>, after the page's own scripts
+    // have run. The app has its own light-mode class, set from an old localStorage key; when
+    // that class and the theme attribute disagree you get the mix that has been showing up
+    // as a white top bar above a black toolbar and a dark board - two halves of one page
+    // styled by different modes. Whatever those scripts decide, this re-asserts the single
+    // truth once the page has settled.
+    (function enforce() {
+        var theme = document.documentElement.dataset.tfTheme || stored;
+        var light = isLight(theme);
+        var setIt = function () {
+            var els = [document.documentElement, document.body];
+            for (var i = 0; i < els.length; i++) {
+                if (els[i]) { els[i].classList.toggle('light-mode', light); }
+            }
+        };
+        setIt();
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setIt);
+        }
+        window.addEventListener('load', setIt);
+        setTimeout(setIt, 400);
+        setTimeout(setIt, 1500);
+    })();
+
     // Add ?tfdebug=1 to any page and it records what the browser ACTUALLY computed for
     // the surfaces that matter, in <html data-tf-probe="...">. Reading the source only
     // tells you what should happen; this says what did. Costs nothing when the flag is
