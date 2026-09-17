@@ -15,6 +15,16 @@
    it survives a cleared browser profile.
 */
 
+/* ── Tell the BROWSER this app is dark ────────────────────────────────────────
+   Without this the browser follows the OPERATING SYSTEM's app theme for every control
+   it draws itself: <select> dropdowns, <input> fields, buttons with no background of
+   their own, scrollbars, checkboxes, date pickers. On a Windows machine set to light
+   mode that painted the model/persona/country selects, the API-key field, the
+   scrollbars and several buttons in the LIGHT style on top of a dark page - controls
+   that looked like light mode while everything around them was dark. One line, and it
+   is right for every theme here, including Midnight. */
+:root { color-scheme: dark; }
+
 :root {
     /* Midnight is the app's original look, so "no choice made" changes nothing. */
     --tf-bg: #0d1117;
