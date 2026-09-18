@@ -7828,25 +7828,40 @@ function autoInstallVoice(btn) {
 function openSettingsModal() {
     var m = document.getElementById('settingsModal');
     m.style.display = 'flex';
-    var nc = document.getElementById('setNoteColor');
-    var pc = document.getElementById('setPinColor');
-    if (nc) nc.value = localStorage.getItem('note_default_color') || '#fdec8f';
-    if (pc) pc.value = localStorage.getItem('pin_default_color') || '#fdec8f';
+    renderCtxButtons();
 }
 
 function closeSettingsModal() {
     document.getElementById('settingsModal').style.display = 'none';
 }
 
-// Persist note/pin default colours so the Notes & Corkboard pages pick them up.
-document.addEventListener('input', function(e) {
-    if (e.target && e.target.id === 'setNoteColor') {
-        localStorage.setItem('note_default_color', e.target.value);
-    }
-    if (e.target && e.target.id === 'setPinColor') {
-        localStorage.setItem('pin_default_color', e.target.value);
-    }
-});
+// Context length as buttons, in the Colours dialog. They drive the SAME <select> the input
+// bar uses, by setting its value and firing its change event, so the existing handler does
+// the persisting and the llama-server restart - one implementation, and the two controls
+// can never disagree about what is selected.
+function renderCtxButtons() {
+    var grid = document.getElementById('ctxBtnGrid');
+    var sel = document.getElementById('ctxSelect');
+    if (!grid || !sel) return;
+    grid.innerHTML = '';
+    Array.prototype.forEach.call(sel.options, function (o) {
+        var b = document.createElement('button');
+        var active = (o.value === sel.value);
+        b.type = 'button';
+        b.textContent = o.textContent.replace('Context:', '').trim();
+        b.title = o.value + ' tokens';
+        b.style.cssText = 'padding:7px 4px; font-size:12px; cursor:pointer; border-radius:6px;' +
+            ' border:1px solid ' + (active ? '#1f6feb' : '#333') +
+            '; background:' + (active ? '#1f6feb' : '#1c1c26') +
+            '; color:' + (active ? '#fff' : '#c9d1d9') + ';';
+        b.onclick = function () {
+            sel.value = o.value;
+            sel.dispatchEvent(new Event('change'));
+            renderCtxButtons();
+        };
+        grid.appendChild(b);
+    });
+}
 
 // ── PWA: register the service worker (enables "Add to Home Screen") ──
 // The worker intentionally does NOT cache "/" or the API — only /static/ assets —
@@ -8057,13 +8072,12 @@ if ('serviceWorker' in navigator) {
       <button onclick="closeSettingsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
 
-    <div style="font-size:13px; font-weight:bold; color:#3fb950; margin-bottom:6px;">📝 Notes</div>
-    <label style="display:block; font-size:12px; margin-bottom:4px;">Default note colour</label>
-    <input type="color" id="setNoteColor" style="width:100%; height:36px; background:#0a0a0f; border:1px solid #333; border-radius:6px; margin-bottom:12px; cursor:pointer;">
-
-    <div style="font-size:13px; font-weight:bold; color:#a371f7; margin-bottom:6px;">📌 Corkboard</div>
-    <label style="display:block; font-size:12px; margin-bottom:4px;">Default pin colour</label>
-    <input type="color" id="setPinColor" style="width:100%; height:36px; background:#0a0a0f; border:1px solid #333; border-radius:6px; margin-bottom:12px; cursor:pointer;">
+    <div style="font-size:13px; font-weight:bold; color:#58a6ff; margin-bottom:6px;">⚙️ Context length</div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 10px;">
+      How many tokens a llama.cpp model can remember. It is a server startup flag, so
+      changing it restarts llama-server. Ignored by the other providers.
+    </p>
+    <div id="ctxBtnGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:6px;"></div>
   </div>
 </div>
 
