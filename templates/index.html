@@ -1582,7 +1582,7 @@ video.tf-video {
             <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
           </svg>
         </button>
-        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Colour & context length">✏️</button>
+        <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Context length for llama.cpp">✏️</button>
         <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">⌨️</button>
         <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
         <button class="clear-btn" id="compareBtn" onclick="toggleComparePanel()" title="A/B compare — run two models side-by-side" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">⚔️</button>
@@ -7835,7 +7835,7 @@ function closeSettingsModal() {
     document.getElementById('settingsModal').style.display = 'none';
 }
 
-// Context length as buttons, in the Colours dialog. They drive the SAME <select> the input
+// Context length as buttons, in its own dialog. They drive the SAME <select> the input
 // bar uses, by setting its value and firing its change event, so the existing handler does
 // the persisting and the llama-server restart - one implementation, and the two controls
 // can never disagree about what is selected.
@@ -8068,11 +8068,10 @@ if ('serviceWorker' in navigator) {
 <div id="settingsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10002; align-items:center; justify-content:center;">
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(420px, 94vw);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <strong style="font-size:16px;">✏️ Colours</strong>
+      <strong style="font-size:16px;">✏️ Context length</strong>
       <button onclick="closeSettingsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
     </div>
 
-    <div style="font-size:13px; font-weight:bold; color:#58a6ff; margin-bottom:6px;">⚙️ Context length</div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 10px;">
       How many tokens a llama.cpp model can remember. It is a server startup flag, so
       changing it restarts llama-server. Ignored by the other providers.
