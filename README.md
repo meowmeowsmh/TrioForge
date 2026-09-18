@@ -254,6 +254,35 @@ cd TrioForge
 
 That single command finds/installs **Python**, creates the project venv and installs all core dependencies into it (flask, flask-compress, psutil, frontmatter, providers… — no manual `pip`), creates the model folders, and starts the app.
 
+<details>
+<summary><strong>Prefer to do it by hand?</strong> The clean manual install</summary>
+
+```bash
+# 1. a virtual environment, so nothing touches your system Python
+python -m venv .venv
+
+# 2. activate it
+.venv\Scripts\activate            # Windows (cmd / PowerShell)
+source .venv/bin/activate         # Linux / macOS
+
+# 3. install INTO that environment - "python -m pip", never a bare "pip",
+#    which on Windows can belong to a different Python than the one you activated
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+# 4. optional: semantic RAG. Skips the keyword fallback, pulls in torch (~2 GB)
+python -m pip install -r requirements-ml.txt
+
+# 5. run it
+python py/app.py
+```
+
+`python -m pip` is not a style preference: a bare `pip` resolves through `PATH`, so on a
+machine with several Pythons it can install into the wrong one — and then the app reports a
+missing dependency that is in fact installed somewhere else. Running `python -m pip` always
+targets the interpreter you activated.
+</details>
+
 Then, inside the app:
 
 1. **🚀 Setup panel** → **⚡ Auto-install** (llama.cpp for your GPU) and **⚡ Install** (voice-to-voice).
@@ -438,7 +467,7 @@ API keys can also be entered directly in the web UI. Keys are never written to d
 | **⚔️ Compare** | Run two models side-by-side on the same prompt. Pick a provider + model for side **A** and **B** (they can differ by provider, model or both), type a prompt, click **⚔️ Compare**. Both run in parallel (threaded) and render with their provider, model and generation time. Works across Ollama, llama.cpp, Groq, DeepSeek, Claude, OpenRouter, Gemini and HF. |
 | **🤝 Multi-agent** | Run up to **6** models in parallel on one task. Add agents (+ Add agent), each with a provider + model + optional role (*"code reviewer"*, *"security auditor"*), then **🤝 Run**. Each answers independently in its own card — a parallel "council" for cross-checking an answer or getting several code solutions. (For a single-prompt head-to-head, use ⚔️ instead.) |
 | **📝 Live coding** | A real-time right-side view of everything the AI produces **as code** — agent file edits (`write_file`/`edit_file` with a `readwrite` folder) **and** code printed in chat (fenced blocks, indented/pasted code, code-heavy replies), captured by **both** the backend and the browser so no provider or route is missed. Each entry shows the file, the tool and a colored `-`/`+` unified diff. Persisted in **`sqlite_data/edits.db`**, so it survives restarts and rebuilds from disk on launch (**Clear** wipes memory + DB). The 📝 button shows a green dot; a genuine burst of edits auto-opens the panel and an idle timeout auto-closes it. |
-| **📚 Documents (RAG)** | **⬆ Upload docs** (PDF, `.docx`, Markdown, `.txt`, code, CSV, HTML…) → chunked with overlap into **`sqlite_data/rag.db`** (survives restarts). Toggle **📚** in the input bar **ON**, then ask. The top ~6 matching chunks are injected with a `[Reference documents]` header. **Out of the box**: fast keyword-overlap scoring. **With the optional ML stack** (`pip install -r requirements-ml.txt`): semantic search via `all-MiniLM-L6-v2`. Re-uploading a file replaces its old chunks. |
+| **📚 Documents (RAG)** | **⬆ Upload docs** (PDF, `.docx`, Markdown, `.txt`, code, CSV, HTML…) → chunked with overlap into **`sqlite_data/rag.db`** (survives restarts). Toggle **📚** in the input bar **ON**, then ask. The top ~6 matching chunks are injected with a `[Reference documents]` header. **Out of the box**: fast keyword-overlap scoring. **With the optional ML stack** (`python -m pip install -r requirements-ml.txt`): semantic search via `all-MiniLM-L6-v2`. Re-uploading a file replaces its old chunks. |
 | **🧠 Thinking** | With a reasoning model (DeepSeek R1/V3, Qwen3.5 via Ollama or llama.cpp, Groq, OpenRouter), the chain-of-thought is captured **live as it streams** and shown in a collapsible **"🧠 Thinking"** block above the answer. No toggle needed — **Ollama** streams its `thinking` field, **llama.cpp / DeepSeek / Groq / OpenRouter / Hugging Face** stream `reasoning_content`/`reasoning` deltas. The ⏱️ readout shows live token speed, elapsed time, and the final duration. |
 | **🗣️ Voice** | Local **speech-to-speech** (`py/tools/voice_agent.py` — STT + llama.cpp + TTS, all on-device) plus browser speech input (🎤) and text-to-speech (🔊). For system control by voice, use the voice chat's `/open` command (needs full access):<br>`/open https://github.com` · `/open notepad` · `/bye` `/clear` `/help` |
 | **📺 Video & audio → text** | Upload a video or an audio clip and ask about it. Two paths, chosen by your model's folder: a `models/` model gets **sampled frames** (the vision path), while a `universal_models_to_text/` model gets the **audio track transcribed** — a 72-minute recording is split into 30-second chunks and transcribed **4 at a time** (~12 min for an hour and a quarter). Attach **images *and* audio together** and the answer covers both. Large files (up to hundreds of MB) upload in the background, and `POST /api/video/frames` returns sampled JPEGs on its own. ffmpeg is auto-detected *and* installable in-app; without it you get a clear note, never a crash. |
@@ -492,7 +521,7 @@ The agent can control your whole machine — **only after you explicitly enable 
 | `press_keys` | Press a key combo (`ctrl+c`, `alt+tab`…) | full access + `pyautogui` |
 | `screenshot` | Capture the screen to `static/uploads/screenshots/` | full access + `pyautogui` |
 
-> ⚠️ **This gives the AI control of your entire machine** (browser, apps, keyboard). Only enable it for a workspace/task you trust, and keep an eye on the live coding panel. `pyautogui` is optional and needed only for typing/keys/screenshots — install it with `pip install pyautogui`.
+> ⚠️ **This gives the AI control of your entire machine** (browser, apps, keyboard). Only enable it for a workspace/task you trust, and keep an eye on the live coding panel. `pyautogui` is optional and needed only for typing/keys/screenshots — install it with `python -m pip install pyautogui`.
 
 ---
 
@@ -553,13 +582,13 @@ Pick a backend in each panel, type a prompt, generate — results are saved into
 ```bash
 git clone https://github.com/comfyanonymous/ComfyUI && cd ComfyUI
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt     # PyPI torch picks the right GPU backend by OS
+python -m pip install -r requirements.txt   # PyPI torch picks the right GPU backend by OS
 python main.py                      # serves on http://127.0.0.1:8188
 ```
 
 | Platform | GPU acceleration | What to do |
 |---|---|---|
-| 🍎 **macOS (Apple Silicon)** | **Metal / MPS** | Nothing — `pip install torch` uses MPS automatically |
+| 🍎 **macOS (Apple Silicon)** | **Metal / MPS** | Nothing — `python -m pip install torch` uses MPS automatically |
 | 🐧 **Linux + NVIDIA** | **CUDA** | The default PyPI `torch` already includes CUDA |
 | 🐧 **Linux + AMD** | **ROCm** | Install the ROCm PyTorch build, then `python main.py` |
 | 🪟 **Windows** | CUDA / CPU | ComfyUI Desktop handles it |

@@ -28,6 +28,16 @@ from urllib.parse import quote
 
 import requests
 
+# Raised for every provider failure, so callers have one exception to catch. This module
+# used ProviderError at lines below without ever importing or defining it, which is the
+# "ProviderError is not defined" error an editor reports. Imported defensively: if the
+# provider SDKs are missing, this module must still import and the error must still exist.
+try:
+    from providers.llm_providers import ProviderError
+except Exception:                                    # pragma: no cover
+    class ProviderError(Exception):
+        """Fallback used when providers.llm_providers cannot be imported."""
+
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")
 
 # Optional explicit path to the ComfyUI root (the folder that contains

@@ -39,7 +39,7 @@ duckduckgo-search>=6.0.0 # optional web search
 # default. If you want semantic RAG (meaning-based search instead of keywords),
 # install them explicitly:
 #
-#     pip install -r requirements-ml.txt
+#     python -m pip install -r requirements-ml.txt
 #
 # The app auto-detects them; without them, document chat uses a fast keyword
 # fallback. See also requirements-ml.txt.

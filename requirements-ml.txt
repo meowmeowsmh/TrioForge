@@ -8,9 +8,9 @@
 #
 # torch picks the right accelerator per OS automatically — CUDA on NVIDIA,
 # Metal/MPS on Apple Silicon, CPU otherwise — and no CUDA-specific index URL is
-# pinned here, so this same `pip install` works on Windows, macOS and Linux.
+# pinned here, so this same `python -m pip install` works on Windows, macOS and Linux.
 #
-#     pip install -r requirements-ml.txt
+#     python -m pip install -r requirements-ml.txt
 
 numpy>=1.24.0
 scikit-learn>=1.3.0
