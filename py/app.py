@@ -1869,7 +1869,8 @@ def llamacpp_status():
 def llamacpp_start():
     data = request.get_json(silent=True) or {}
     model = data.get('model')
-    return jsonify(llamacpp_service.start(model=model))
+    ctx_size = data.get('ctx_size')
+    return jsonify(llamacpp_service.start(model=model, ctx_size=ctx_size))
 
 
 @app.route('/api/llamacpp/stop', methods=['POST'])
@@ -4505,6 +4506,7 @@ def chat():
         else:
             audio_files, non_audio_files = [], list(files)
         model = data.get('model', None)
+        ctx_size = data.get('ctx_size')
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
@@ -4585,7 +4587,7 @@ def chat():
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
         # so the user never has to launch it manually.
         if provider_name == 'llamacpp':
-            st = llamacpp_service.start(model=model)
+            st = llamacpp_service.start(model=model, ctx_size=ctx_size)
             if st.get('error'):
                 return jsonify({'error': 'llama.cpp failed to start: ' + st['error']}), 500
 
@@ -4753,6 +4755,7 @@ def chat_stream():
         search_enabled = data.get('search', False)
         rag_enabled = data.get('rag', False)
         model = data.get('model', current_model)
+        ctx_size = data.get('ctx_size')
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
@@ -4849,7 +4852,7 @@ def chat_stream():
         # streaming path too â€” without it the model list shows, but every send
         # fails with a connection refused.
         if provider_name == 'llamacpp':
-            st = llamacpp_service.start(model=model)
+            st = llamacpp_service.start(model=model, ctx_size=ctx_size)
             if st.get('error') and not st.get('running'):
                 yield_error = f"data: {json_dumps({'error': 'llama.cpp failed to start: ' + st['error']})}\n\n"
                 return Response(yield_error, mimetype='text/event-stream')

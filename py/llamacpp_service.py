@@ -21,6 +21,7 @@ CONFIG_PATH = root_path("voiceguide_llama.cpp_guide", "config.json")
 
 _process = None
 _running_model = None
+_running_ctx = None
 _lock = threading.Lock()
 # Anti-storm: the timestamp of the last spawn we did. While a server is still
 # loading, a new request must reuse it instead of starting a second copy.
@@ -480,7 +481,7 @@ def server_url():
     return "http://{}:{}/v1".format(host, port)
 
 
-def _default_server_args(model_path=None):
+def _default_server_args(model_path=None, ctx_size=None):
     """Stable llama-server defaults for an 8 GB GPU.
 
     -ngl is intentionally NOT forced to 999: leaving it unset lets llama-server
@@ -500,7 +501,7 @@ def _default_server_args(model_path=None):
     # on KV-cache memory, so it is overridable: TRIOFORGE_CTX_SIZE=4096 on a small
     # machine, or 32768 if you have the room.
     try:
-        ctx = int(os.environ.get("TRIOFORGE_CTX_SIZE", "16384") or 16384)
+        ctx = int(ctx_size) if ctx_size else int(os.environ.get("TRIOFORGE_CTX_SIZE", "16384") or 16384)
     except Exception:
         ctx = 16384
     args = [
@@ -616,8 +617,20 @@ def _log(message: str) -> None:
         pass
 
 
-def start(model=None):
-    global _process, _running_model, _last_spawn, _last_used
+def start(model=None, ctx_size=None):
+    global _process, _running_model, _last_spawn, _last_used, _running_ctx
+    # Resolve the requested context length to a concrete int (the UI's token
+    # dropdown passes a value; a missing/invalid one falls back to the env var,
+    # then the stable 16k default).
+    try:
+        if ctx_size is not None and str(ctx_size).strip() not in ("", "None"):
+            ctx = int(ctx_size)
+        else:
+            ctx = int(os.environ.get("TRIOFORGE_CTX_SIZE", "16384") or 16384)
+    except (TypeError, ValueError):
+        ctx = 16384
+    if ctx < 1:
+        ctx = 16384
     # Every request (a chat, the UI asking to start it) counts as use, so the idle
     # unload can never take the model away from a session in progress.
     _last_used = time.time()
@@ -653,14 +666,21 @@ def start(model=None):
         # Pair a vision-projector (mmproj) so the model can read images too.
         mmproj = find_mmproj(model_path)
 
-        # Already running with the requested model → nothing to do.
-        if _process is not None and _process.poll() is None and _same_model(_running_model, model_path):
-            return {"running": True, "model": os.path.basename(model_path), "message": "already running"}
+        # Already running with the requested model AND context → nothing to do.
+        if (_process is not None and _process.poll() is None
+                and _same_model(_running_model, model_path)
+                and _running_ctx == ctx):
+            return {"running": True, "model": os.path.basename(model_path),
+                    "ctx_size": _running_ctx, "message": "already running"}
 
-        # Stop a previous (different-model) instance we own.
+        # Stop a previous instance we own (different model, OR same model but a
+        # different requested context length — llama-server takes --ctx-size only at
+        # startup, so a context change means a restart).
+        terminated_ours = False
         if _process is not None and _process.poll() is None:
             try:
                 _process.terminate()
+                terminated_ours = True
             except Exception:
                 pass
             _process = None
@@ -670,35 +690,50 @@ def start(model=None):
         # earlier with a different model) must be restarted — otherwise the user
         # selects model X but keeps getting answers from a stale model Y.
         if _port_in_use(host, port):
-            # Anti-storm: if something is listening and we spawned it moments ago,
-            # it is still loading. Starting another one would load a second copy of
-            # the model into RAM.
-            if (time.time() - _last_spawn) < _SPAWN_COOLDOWN:
-                _running_model = model_path
-                return {"running": True, "model": os.path.basename(model_path),
-                        "message": "llama-server is starting (reusing it)"}
+            if terminated_ours:
+                # We just stopped OUR server for a model/context change. The port
+                # may still be held by the dying process for a moment — wait for it
+                # to free, then fall through to a fresh start (reusing it would
+                # silently ignore the requested change).
+                for _ in range(15):
+                    if not _port_in_use(host, port):
+                        break
+                    time.sleep(1)
+                if _port_in_use(host, port):
+                    _kill_stale_llama_server(host, port)
+                    time.sleep(1)
+            else:
+                # Anti-storm: if something is listening and we spawned it moments ago,
+                # it is still loading. Starting another one would load a second copy of
+                # the model into RAM.
+                if (time.time() - _last_spawn) < _SPAWN_COOLDOWN:
+                    _running_model = model_path
+                    _running_ctx = ctx
+                    return {"running": True, "model": os.path.basename(model_path),
+                            "message": "llama-server is starting (reusing it)"}
 
-            running_model = _server_model(host, port)
-            if running_model is None or _same_model(running_model, model_path):
-                # Either it is the model we want, or we cannot tell which model it
-                # is. Reuse it. Only a POSITIVE mismatch justifies killing a server
-                # that may hold gigabytes of loaded model.
-                _running_model = model_path
-                return {"running": True, "model": os.path.basename(model_path),
-                        "message": "llama-server already running with the requested model"}
-            # Wrong model on the port → stop the stale llama-server so we can start
-            # the requested one. The stale process is a llama-server.exe (same
-            # executable we manage), so we can terminate it directly by name.
-            _kill_stale_llama_server(host, port)
-            # Give the port a moment to free up.
-            for _ in range(15):
-                if not _port_in_use(host, port):
-                    break
-                time.sleep(1)
-            if _port_in_use(host, port):
-                return {"running": False,
-                        "error": "port {} is busy with a different model ({}); stop the other llama-server manually".format(
-                            port, os.path.basename(running_model) if running_model else "unknown")}
+                running_model = _server_model(host, port)
+                if running_model is None or _same_model(running_model, model_path):
+                    # Either it is the model we want, or we cannot tell which model it
+                    # is. Reuse it. Only a POSITIVE mismatch justifies killing a server
+                    # that may hold gigabytes of loaded model.
+                    _running_model = model_path
+                    _running_ctx = ctx
+                    return {"running": True, "model": os.path.basename(model_path),
+                            "message": "llama-server already running with the requested model"}
+                # Wrong model on the port → stop the stale llama-server so we can start
+                # the requested one. The stale process is a llama-server.exe (same
+                # executable we manage), so we can terminate it directly by name.
+                _kill_stale_llama_server(host, port)
+                # Give the port a moment to free up.
+                for _ in range(15):
+                    if not _port_in_use(host, port):
+                        break
+                    time.sleep(1)
+                if _port_in_use(host, port):
+                    return {"running": False,
+                            "error": "port {} is busy with a different model ({}); stop the other llama-server manually".format(
+                                port, os.path.basename(running_model) if running_model else "unknown")}
 
         # Only need the local executable if we actually have to START a server
         # (an already-running one, e.g. on the host for Docker via host.docker.internal,
@@ -763,7 +798,7 @@ def start(model=None):
         if mmproj:
             cmd += ["--mmproj", mmproj]
         # Peak GPU/performance defaults (config llama_args may override).
-        cmd += _default_server_args(model_path)
+        cmd += _default_server_args(model_path, ctx)
         forced = _gpu_layers_override
         if forced >= 0:
             # Stepped down after a GPU out-of-memory. This WINS over the VRAM
@@ -821,6 +856,7 @@ def start(model=None):
         except Exception as e:
             return {"running": False, "error": str(e)}
         _running_model = model_path
+        _running_ctx = ctx
         _last_spawn = time.time()
         _last_used = time.time()
         ensure_idle_watchdog()
@@ -829,7 +865,7 @@ def start(model=None):
 
 
 def stop():
-    global _process, _running_model
+    global _process, _running_model, _running_ctx
     with _lock:
         if _process is not None and _process.poll() is None:
             try:
@@ -838,6 +874,7 @@ def stop():
                 pass
         _process = None
         _running_model = None
+        _running_ctx = None
     return {"running": False, "message": "stopped"}
 
 

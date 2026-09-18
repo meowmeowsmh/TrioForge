@@ -1624,6 +1624,18 @@ video.tf-video {
         <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
         <input id="modelSearchInput" type="text" placeholder="🔍 filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
         <select id="modelSelect" class="model-select" title="Select model"></select>
+        <select id="ctxSelect" class="model-select" title="llama.cpp context length — the number of tokens the model can remember (restarts llama-server when changed)" style="display:none;">
+          <option value="2048">Context: 2K</option>
+          <option value="4096">Context: 4K</option>
+          <option value="8192">Context: 8K</option>
+          <option value="16384" selected>Context: 16K</option>
+          <option value="32768">Context: 32K</option>
+          <option value="65536">Context: 64K</option>
+          <option value="131072">Context: 128K</option>
+          <option value="262144">Context: 256K</option>
+          <option value="524288">Context: 512K</option>
+          <option value="1048576">Context: 1M</option>
+        </select>
         <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
         <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
         <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
@@ -1824,7 +1836,7 @@ video.tf-video {
     var KEYS = ['theme', 'sidebarVisible', 'provider', 'notes_ai_provider',
                 'corkboard_ai_provider', 'trio_ai_provider', 'model', 'notes_ai_model',
                 'corkboard_ai_model', 'trio_ai_model', 'trio_persona', 'trio_persona_custom',
-                'trio_last_view', 'note_default_color', 'pin_default_color'];
+                'trio_last_view', 'note_default_color', 'pin_default_color', 'trio_llamacpp_ctx'];
 
     // 1) restore what the server kept (only keys the local profile is missing)
     var snap = (typeof window.__ui_settings === 'object' && window.__ui_settings) || null;
@@ -1879,6 +1891,7 @@ var fileInput   = document.getElementById('fileInput');
 var attachments = document.getElementById('attachments');
 var convList    = document.getElementById('convList');
 var modelSelect = document.getElementById('modelSelect');
+var ctxSelect = document.getElementById('ctxSelect');
 var providerSelect = document.getElementById('providerSelect');
 var apiKeyInput = document.getElementById('apiKeyInput');
 var visionBadge = document.getElementById('visionBadge');
@@ -2364,6 +2377,7 @@ function speakText(text) {
 // ─── Shared AI preferences (provider + API key) across ALL pages ──────
 var TRIO_PROVIDER_KEY = 'trio_ai_provider';
 var TRIO_MODEL_KEY = 'trio_ai_model';
+var TRIO_CTX_KEY = 'trio_llamacpp_ctx';
 var KEY_PROVIDERS = ['groq', 'huggingface', 'deepseek', 'claude', 'gemini', 'openrouter'];
 
 function readAiProvider() {
@@ -2406,6 +2420,13 @@ function saveAiModel(model) {
     localStorage.setItem(TRIO_MODEL_KEY, model);
     localStorage.setItem('notes_ai_model', model);
     localStorage.setItem('corkboard_ai_model', model);
+}
+function readLlamacppCtx() {
+    var v = parseInt(localStorage.getItem(TRIO_CTX_KEY), 10);
+    return (v > 0) ? v : 16384;
+}
+function saveLlamacppCtx(v) {
+    localStorage.setItem(TRIO_CTX_KEY, String(v));
 }
 
 function describeProvider(provider) {
@@ -2525,12 +2546,16 @@ function updateVisionBadge() {
         .catch(() => visionBadge.classList.remove('visible'));
 }
 
+function updateCtxVisibility() {
+    ctxSelect.style.display = (providerSelect.value === 'llamacpp') ? '' : 'none';
+}
+
 function startLlamacpp(model) {
     if (!model) return;
     fetch('/api/llamacpp/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: model })
+        body: JSON.stringify({ model: model, ctx_size: parseInt(ctxSelect.value, 10) || null })
     })
     .then(r => r.json())
     .then(d => {
@@ -2765,6 +2790,7 @@ function saveWorkspace() {
 
 providerSelect.addEventListener('change', function() {
     var provider = this.value;
+    updateCtxVisibility();
     // Declared before the media branch below, which returns early.
     var keyInput = document.getElementById('apiKeyInput');
     // ComfyUI (image, video and audio) are not chat providers — selecting one shows the
@@ -2925,6 +2951,15 @@ modelSelect.addEventListener('change', function() {
         startLlamacpp(model);
     }
     document.getElementById('modelInfo').textContent = '';
+});
+
+ctxSelect.addEventListener('change', function() {
+    saveLlamacppCtx(this.value);
+    // --ctx-size is a llama-server STARTUP flag, so a context change needs a
+    // restart to take effect. Restart now if this model is already being served.
+    if (providerSelect.value === 'llamacpp' && modelSelect.value) {
+        startLlamacpp(modelSelect.value);
+    }
 });
 
 function getDateGroup(dateStr) {
@@ -4920,6 +4955,7 @@ function actuallySend(text) {
             rag: ragEnabled,
             provider: provider,
             model: model,
+            ctx_size: parseInt(ctxSelect.value, 10) || null,
             api_key: apiKey,
             persona: personaPayload().persona,
             persona_custom: personaPayload().persona_custom
@@ -5156,6 +5192,14 @@ window.addEventListener('load', function() {
         }
     } catch(e) {}
     var provider = providerSelect.value;
+
+    // Restore the llama.cpp context length and show its dropdown only for llama.cpp.
+    safe(function() {
+        var ctxVal = String(readLlamacppCtx());
+        var matches = Array.prototype.filter.call(ctxSelect.options, function(o) { return o.value === ctxVal; });
+        if (matches.length) ctxSelect.value = ctxVal;
+        updateCtxVisibility();
+    });
 
     // (Conversation loading is handled by the immediate call at the end of the
     // script, so it isn't gated on the window 'load' event.)

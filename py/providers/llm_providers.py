@@ -420,18 +420,45 @@ def ensure_ollama_running(base_url: str, wait_seconds: int = 25) -> bool:
 
     candidates = []
     if os.name == "nt":
+        # Search every place Ollama can live on Windows: PATH first (a custom
+        # install dir is often added to PATH), then the two standard install dirs.
+        # "ollama app.exe" is the tray launcher (no "serve" arg); the plain
+        # ollama.exe takes "serve".
+        exe_names = []
+        which = shutil.which("ollama")
+        if which:
+            exe_names.append(which)
         local = os.environ.get("LOCALAPPDATA", "")
+        progfiles = os.environ.get("ProgramFiles", "")
         if local:
-            serve = os.path.join(local, "Programs", "Ollama", "ollama.exe")
-            tray = os.path.join(local, "Programs", "Ollama", "ollama app.exe")
-            if os.path.isfile(serve):
-                candidates.append([serve, "serve"])
-            if os.path.isfile(tray):
-                candidates.append([tray])
+            exe_names.append(os.path.join(local, "Programs", "Ollama", "ollama.exe"))
+            exe_names.append(os.path.join(local, "Programs", "Ollama", "ollama app.exe"))
+            exe_names.append(os.path.join(local, "Ollama", "ollama.exe"))
+        if progfiles:
+            exe_names.append(os.path.join(progfiles, "Ollama", "ollama.exe"))
+        seen = set()
+        for exe in exe_names:
+            if not exe or not os.path.isfile(exe):
+                continue
+            norm = os.path.normcase(os.path.abspath(exe))
+            if norm in seen:
+                continue
+            seen.add(norm)
+            if exe.lower().endswith("ollama app.exe"):
+                candidates.append([exe])
+            else:
+                candidates.append([exe, "serve"])
     else:
         which = shutil.which("ollama")
         if which:
             candidates.append([which, "serve"])
+
+    if not candidates:
+        logger.warning(
+            "Ollama was not found (checked PATH, LOCALAPPDATA\\Programs\\Ollama and "
+            "ProgramFiles\\Ollama). Install it from https://ollama.com to use the Ollama provider."
+        )
+        return False
 
     for cmd in candidates:
         try:
@@ -439,13 +466,13 @@ def ensure_ollama_running(base_url: str, wait_seconds: int = 25) -> bool:
             subprocess.Popen([str(c) for c in cmd], creationflags=flags,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              stdin=subprocess.DEVNULL)
-            print("Started Ollama: {}".format(" ".join(str(c) for c in cmd)))
+            logger.info("Started Ollama: %s", " ".join(str(c) for c in cmd))
         except Exception as exc:
-            print("Could not start Ollama ({}): {}".format(" ".join(str(c) for c in cmd), exc))
+            logger.warning("Could not start Ollama (%s): %s", " ".join(str(c) for c in cmd), exc)
             continue
         for _ in range(wait_seconds):
             if up():
-                print("Ollama is up.")
+                logger.info("Ollama is up.")
                 return True
             time.sleep(1)
     return up()
@@ -453,6 +480,12 @@ def ensure_ollama_running(base_url: str, wait_seconds: int = 25) -> bool:
 
 class OllamaProvider(LLMProvider):
     """Ollama provider using /api/chat for all requests (preserves conversation history)."""
+    # Keep num_ctx / num_predict in sync with the streaming path in app.py so the
+    # context window and max output never silently differ between code paths.
+    # (The base LLMProvider default is 65536, which is far too large for a chat reply.)
+    DEFAULT_MAX_TOKENS = 16384
+    DEFAULT_CTX = 16384
+
     def __init__(self, model: str = "vaultbox/qwen3.5-uncensored:9b",
                  base_url: Optional[str] = None):
         self.base_url = base_url or os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
@@ -498,7 +531,7 @@ class OllamaProvider(LLMProvider):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": 4096,
+                "num_ctx": self.DEFAULT_CTX,
                 "num_gpu": num_gpu,
                 "low_vram": low_vram,
             }
@@ -552,7 +585,7 @@ class OllamaProvider(LLMProvider):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": 4096,
+                "num_ctx": self.DEFAULT_CTX,
                 "num_gpu": num_gpu,
                 "low_vram": low_vram,
             }
