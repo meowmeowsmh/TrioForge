@@ -119,14 +119,7 @@ static/uploads/generated/
 static/uploads/generated_video/
 
 # ──────────────────────────────────────────────────────────────
-# Personal / scratch files
 # ──────────────────────────────────────────────────────────────
-personal.txt
-weather.html
-
-# Voice agent conversation logs + control file (kept locally, not committed)
-voiceguide_llama.cpp_guide/*.log
-voiceguide_llama.cpp_guide/control.txt
 
 # Machine state, not source: records which dependency manifests the local venv has.
 # It must NEVER be committed - a fresh clone carrying an empty marker made the
