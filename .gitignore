@@ -139,3 +139,5 @@ logs/control-panel.pid
 # WebView2 profile (cookies, cache, localStorage) - machine state, never commit
 json_configuration/webview/
 app_window.pid
+
+frames/
