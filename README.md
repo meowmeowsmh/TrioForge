@@ -62,6 +62,30 @@ accept.
 lifecycle — including a crash in the short-audio fallback, and a process kill that could
 leave the server holding its port after a frozen window.
 
+### The interface is dark — and it is yours to change
+
+**1.0.3 settles the look.** The app used to carry two palettes and a moon/sun switch, and
+the two drifted apart: a header from one and a toolbar from the other, on the same page.
+There is **one dark interface now**, in every theme, and the light theme is gone.
+
+- **Seven dark themes, plus your own.** 🎨 in the top bar switches between **Midnight** (the
+  original), **Premium** (softer, roomier, indigo), **Galaxy** (deep space and aurora),
+  **Odyssey**, **Ember**, **Forest**, **Sakura** — and **Custom**, where you choose the two
+  accents and the background yourself. Dark themes only, deliberately.
+- **One stylesheet drives all three screens** (`static/themes.css`). Chat, Notes and Cork
+  Board read the same variables, so a theme can never apply to one screen and miss another.
+- **Your choice is written to both places** — the browser and the app's saved settings — so
+  it survives a cleared profile instead of snapping back to the default.
+- **Notes and sticky notes stay readable**: pins draw their own light paper (yellow, blue),
+  so their text stays dark in every theme rather than inheriting the theme's near-white.
+- **One origin.** `localhost:5003` redirects to `127.0.0.1:5003`: a browser keeps a separate
+  cache, service worker and storage per origin, so the two names could run two different
+  versions of the app at once. Now they cannot.
+
+Want to check what your copy is really rendering? Add **`?tfdebug=1`** to any page — it
+reports the computed colour of every important surface, and the count of surfaces painted
+the wrong way for the active theme, straight into the page's HTML.
+
 > ### Is it stable? Yes — and where it can't be, it says so and gets out of the way.
 >
 > The **browser path is rock solid**: it is a local web app, and the browser is the one piece of
@@ -202,6 +226,10 @@ docker exec ollama ollama pull llama3.2:3b      # ~2 GB, runs on CPU
 | Chat | Notes | Corkboard |
 |------|-------|-----------|
 | ![Chat interface](chat.png) | ![Notes](notes.png) | ![Cork Board](cork_board.png) |
+
+All three screens share one palette, so they always match — **🎨 in the top bar** switches the
+whole app between the dark themes (these shots are **Premium**). The demo GIF at the top of
+this page walks through the same three screens.
 
 <p align="center">
   <img src="static/logo/logo-512.png" alt="TrioForge artwork" width="320">
@@ -362,6 +390,8 @@ lowest footprint, use a small model (Ollama's `qwen2.5:0.5b` sits in ~600 MB of 
 **Media** — **image, video and audio** generation (OpenRouter / Gemini / ComfyUI), **video-to-text** via ffmpeg frame sampling, and local **voice-to-voice** (STT + llama.cpp + TTS) with browser 🎤/🔊 buttons.
 
 **Find & keep** — **FTS5 full-text search** over every message with ranked, highlighted snippets and click-to-jump, **export/import** chats as Markdown or JSON, and **auto-generated titles**.
+
+**Look & feel** — a **dark interface with seven themes** (Midnight, Premium, Galaxy, Odyssey, Ember, Forest, Sakura) plus a **Custom** theme where you set the accents and background yourself, chosen from **🎨 in the top bar**. One stylesheet drives Chat, Notes and Cork Board together, so all three screens always match; sticky notes keep dark text on their own light paper.
 
 **Run it anywhere** — Windows / macOS / Linux / WSL2 / Docker, an **installable PWA** that works from your phone on the LAN, LAN + tunnel remote access, drop-in **plugins**, a 💾 live RAM/VRAM monitor, and auto-SSL.
 
