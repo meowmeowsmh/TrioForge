@@ -9,7 +9,7 @@
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "6d6a4c6df4633f0e2cbb1e4fe4fd47998f315256d983fa8db279631bedbb88ed",
   "py/backup_store.py": "dcef40c9b21be176845df407fbd30a46cf249235d185e277f2f90565089ed703",
-  "py/comfyui_service.py": "e6260074203e9a7223ed8cce73848e776073fef915101d1aad154608f2ac523c",
+  "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "4d4b76a9e164b71746b43e72cdd578e632c993db5a5b64fb38b2d77bc3f3342c",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -45,8 +45,8 @@
   "py/video_to_text.py": "fd1f5747f27eca7726ec0bf4e5743670cadbf401f1d7911ee71c9e6d606274f7",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
   "pyproject.toml": "a000d751606e0dcb60201899d4880fa743b277552efa459a8205b56275953d55",
-  "requirements-ml.txt": "e92a685b4e28341850d5adf3dee062d4ba919a02d0044f66ce036cbee1dba962",
-  "requirements.txt": "bf8545ab4c2f7411599bace43acde8a26f69aa1e7a889620828e3e7f92c86861",
+  "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
+  "requirements.txt": "3a112cab3a2725533a9986fb67b83e50ea395024adbe3498dac2e8fe179198d4",
   "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
   "start-web.bat": "990d8208adddfda265550ea98962225e9cb19188325b3b4aef584ea7643cf9a1",
   "start-web.vbs": "c52a519b8bf9b4f4ecd4b6a317bbdd0ca47e56bb4e688c1565eef92bd8f32a38",
@@ -73,8 +73,8 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "e6b006be93ba79ebd54cf73c8f8d31384f3fab7bd285b30231ed053a2c3e0099"
+  "templates/index.html": "965696865018217cffaeba63bde37e5b72d20259ad9576fd25620603d4bfbe74"
  },
- "generated": "2026-09-18T23:04:46",
+ "generated": "2026-09-19T00:02:20",
  "note": ""
 }
