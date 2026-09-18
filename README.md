@@ -381,7 +381,7 @@ lowest footprint, use a small model (Ollama's `qwen2.5:0.5b` sits in ~600 MB of 
 
 ## ✨ Features
 
-**Chat & models** — any local model (Qwen, Llama, Mistral, DeepSeek…) across **Ollama, llama.cpp, Hugging Face, Groq, DeepSeek, Claude, Gemini and OpenRouter** (one key → hundreds of models). Multi-modal vision, file/image/PDF upload, drag & drop, persistent auto-saving chats, SQLite audit log, assistant personas (with local-vs-API voice behaviour), user & bot profiles, 🔑 per-provider API keys that persist across pages, a 🖥️/☁️ local-vs-API badge on every reply, and classified error messages (401 / 402 / 429 / 5xx / timeout / unreachable). Switching models unloads the previous Ollama model so RAM/VRAM doesn't stack up.
+**Chat & models** — any local model (Qwen, Llama, Mistral, DeepSeek…) across **Ollama, llama.cpp, Hugging Face, Groq, DeepSeek, Claude, Gemini and OpenRouter** (one key → hundreds of models), with a **Context** dropdown (2K → 1M tokens) for llama.cpp. Multi-modal vision, file/image/PDF upload, drag & drop, persistent auto-saving chats, SQLite audit log, assistant personas (with local-vs-API voice behaviour), user & bot profiles, 🔑 per-provider API keys that persist across pages, a 🖥️/☁️ local-vs-API badge on every reply, and classified error messages (401 / 402 / 429 / 5xx / timeout / unreachable). Switching models unloads the previous Ollama model so RAM/VRAM doesn't stack up.
 
 **Agent & tools** — a coding agent scoped to one folder you choose, with `list_files`, `search_files`, `read_file`, `write_file`, `edit_file` (surgical, unique-match replacement), `run_command` and `web_search`, looping up to **20** model↔tool round-trips per task, plus a **live diff panel** showing everything it edits or prints. Optional, explicitly-gated **full computer access**. **Multi-agent** (up to 6 models in parallel) and **A/B compare** (two models, one prompt).
 
@@ -409,7 +409,7 @@ Configuration is done through environment variables — all optional, the app wo
 | `TRIOFORGE_ML` | `1` = also install the optional torch/semantic-search stack | *(unset)* |
 | `TRIOFORGE_AUTO_TITLE` | Chat-title generation: `heuristic` (instant, no model call) or `llm` (refine via the model in the background) | `heuristic` |
 | `TRIOFORGE_PASSWORD` | **Host mode**: when set, every page and API call asks for this password first (for instances other people can reach). Unset = local use, no gate | *(unset)* |
-| `TRIOFORGE_CTX_SIZE` | Context window for a llama.cpp model, in tokens. The main lever on KV-cache memory | `16384` |
+| `TRIOFORGE_CTX_SIZE` | Context window for a llama.cpp model, in tokens — the main lever on KV-cache memory. Also settable for the session from the **Context** dropdown in the input bar (2K → 1M). `--ctx-size` is a startup flag, so changing it restarts llama-server, and the app remembers which context the running server was started with | `16384` |
 | `TRIOFORGE_IDLE_UNLOAD` | Seconds without a request before a llama.cpp model is unloaded and its memory returned; `0` keeps it resident | `300` |
 | `TRIOFORGE_SKIP_RAM_CHECK` | `1` loads a model even when it will not fit in free RAM (it will swap) | *(unset)* |
 | `TRIOFORGE_FFMPEG` | Explicit path to the `ffmpeg` used for audio/video conversion. Otherwise TrioForge uses the build it installed itself (`tools/ffmpeg`, via **Install ffmpeg**) and only then whatever is on `PATH` — an old ffmpeg silently fails on modern formats | *(auto-detected)* |
