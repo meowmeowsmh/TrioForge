@@ -34,6 +34,17 @@ jobs:
           .venv-linux/bin/python -m pip install --upgrade pip
           .venv-linux/bin/python -m pip install -r requirements.txt
 
+      - name: Run run.sh for real (the script, not a copy of its steps)
+        # The step above does what run.sh does, by hand. This one executes the shipped
+        # script: it finds python, sees the deps are present, skips the install and hands
+        # over to the launcher. Without it, a bug in run.sh could only be found by
+        # somebody on a fresh Mac.
+        run: |
+          set -e
+          sh ./run.sh --no-install --status | tee run-sh.log
+          grep -q "TrioForge status" run-sh.log && echo "PASS: the launcher answered through run.sh" \
+            || { echo "FAIL: run.sh did not reach the launcher"; exit 1; }
+
       - name: Verify the run.sh critical-import contract
         run: |
           set -e

@@ -1,0 +1,110 @@
+name: Linux smoke test
+
+# Actually runs run.sh on Linux - the REAL script, not a re-implementation of it.
+#
+# The macOS job creates the venv and installs the deps by hand, with a comment saying it is
+# "exactly what run.sh does". That means run.sh's own logic - finding python, choosing the
+# venv path, deciding whether deps are missing, installing them, exec'ing the launcher - had
+# no coverage anywhere: a bug in run.sh could only be found by a user on a fresh machine.
+# This job executes the shipped script instead, on the platform most likely to be a fresh
+# server, and then asserts what it promises: a working venv, the critical imports, a clean
+# integrity check, and an app that serves HTTP.
+#
+# Run it from GitHub -> Actions -> "Linux smoke test" -> Run workflow.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show platform
+        run: |
+          uname -a
+          python3 -VV
+          echo "sh -> $(readlink -f /bin/sh)"
+
+      - name: run.sh parses
+        run: sh -n run.sh && echo "run.sh is syntactically valid"
+
+      # ── The point of this workflow: execute the shipped launcher ──────────
+      # One invocation does the whole first-run path (find python, create the venv,
+      # install core deps) and then hands over to the launcher, which prints its status
+      # and exits - so this finishes instead of starting a server.
+      - name: Run run.sh for real (first-run setup + status)
+        run: |
+          set -e
+          sh ./run.sh --no-install --status | tee run-sh.log
+          echo "-----"
+          grep -q "TrioForge status" run-sh.log && echo "PASS: the launcher answered through run.sh" \
+            || { echo "FAIL: run.sh did not reach the launcher"; exit 1; }
+
+      - name: run.sh kept its promise about the venv
+        run: |
+          set -e
+          test -x .venv-linux/bin/python || { echo "FAIL: .venv-linux/bin/python missing"; exit 1; }
+          echo "venv python: $(.venv-linux/bin/python -V)"
+
+      - name: Critical imports (the contract run.sh installs for)
+        run: |
+          set -e
+          for m in flask flask_compress requests psutil frontmatter; do
+            .venv-linux/bin/python -c "import $m" && echo "ok: $m"
+          done
+
+      - name: Undefined-name scan (the ProviderError class of bug)
+        run: |
+          .venv-linux/bin/python tools/undefined-names-check.py py
+
+      - name: Integrity check must be clean on a fresh clone
+        run: |
+          set -e
+          PYTHONPATH=py .venv-linux/bin/python - <<'PY'
+          from tools import integrity
+          r = integrity.check(".")
+          print("files:", r.get("files_checked"), "modified:", len(r.get("modified") or []),
+                "missing:", len(r.get("missing") or []), "added:", len(r.get("added") or []),
+                "risk:", str(r.get("risk_pct")) + "%")
+          assert r.get("risk_pct") == 0, "a fresh clone must verify at 0%"
+          print("PASS: fresh clone verifies clean")
+          PY
+
+      - name: Start the app and smoke-test endpoints
+        run: |
+          set -e
+          export TRIOFORGE_PORT=5003
+          export PYTHONWARNINGS=ignore
+          .venv-linux/bin/python py/app.py > app.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS "http://127.0.0.1:5003/" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          echo "===== app.log (tail) ====="
+          tail -20 app.log
+          curl -fsS "http://127.0.0.1:5003/" -o page.html
+          echo "page bytes: $(wc -c < page.html | tr -d ' ')"
+          grep -q "Friendly Tutor" page.html && echo "PASS: persona options baked in" \
+            || { echo "FAIL: persona dropdown empty"; exit 1; }
+          echo "===== GET /notes ====="
+          curl -fsS -o /dev/null -w "notes HTTP %{http_code}\n" "http://127.0.0.1:5003/notes"
+          echo "===== GET /corkboard ====="
+          curl -fsS -o /dev/null -w "corkboard HTTP %{http_code}\n" "http://127.0.0.1:5003/corkboard"
+          echo "ALL LINUX CHECKS PASSED"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-app-log
+          path: |
+            app.log
+            run-sh.log
+          if-no-files-found: ignore
