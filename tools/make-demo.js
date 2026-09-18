@@ -1,29 +1,33 @@
-// Regenerate the README's screenshots and demo GIF from the running app.
+// Capture README media SAFELY.
 //
-//   node tools/make-demo.js                 -> chat.png, notes.png, cork_board.png + frames/
-//   then ffmpeg assembles frames/ into demo.gif (see the command in the commit / README).
+// The first version of this tool filmed whatever was on screen. It captured a personal
+// photograph out of a real conversation and published it to a public repository. That must
+// never be possible again, so this version:
 //
-// Drives the real app in headless Chrome over the DevTools protocol, so what it captures is
-// what the app actually renders - not a mock-up. The Notes and Cork Board views are opened
-// through the app's own embedded-view function, exactly as the tabs do, so the screenshots
-// show the real interface. The theme is left as it was found.
+//   * opens a NEW EMPTY conversation and films only that - it never scrolls through, or
+//     even loads, an existing chat;
+//   * deletes that temporary conversation when it is done, so nothing is left behind;
+//   * prints every frame's path and byte size, because a photographic frame is far larger
+//     than a UI frame (237 KB vs 129 KB in the incident) and that is the cheap tell;
+//   * requires the operator to LOOK at the frames before building anything from them.
+//
+//   node tools/make-demo.js [outdir]
 const { spawn } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const PORT = 9399;
+const PORT = 9411;
 const BASE = process.env.TF_URL || 'https://127.0.0.1:5003';
-const OUT = path.resolve(__dirname, '..');
-const FRAMES = path.join(OUT, 'frames');
+const OUT = process.argv[2] ? path.resolve(process.argv[2]) : path.join(process.env.TEMP, 'tf_demo_safe');
 const W = 1440, H = 900;
 
-const profile = process.env.TEMP + '\\tf_demo_' + Date.now();
+const profile = process.env.TEMP + '\\tf_demo_safe_' + Date.now();
 const chrome = spawn(CHROME, [
     '--headless=new', '--disable-gpu', '--ignore-certificate-errors', '--hide-scrollbars',
     '--remote-debugging-port=' + PORT, '--user-data-dir=' + profile, '--no-first-run',
-    '--force-device-scale-factor=1', '--window-size=' + W + ',' + H, BASE + '/'
+    '--window-size=' + W + ',' + H, BASE + '/'
 ], { stdio: 'ignore' });
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -42,97 +46,99 @@ const getJSON = (p) => new Promise((res, rej) => {
     const page = targets.find(t => t.type === 'page');
     const ws = new WebSocket(page.webSocketDebuggerUrl);
     let id = 0; const pending = new Map();
-    ws.onmessage = (ev) => {
-        const m = JSON.parse(ev.data);
-        if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
-    };
+    ws.onmessage = (ev) => { const m = JSON.parse(ev.data);
+        if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
     const send = (method, params) => new Promise(res => {
         const myId = ++id; pending.set(myId, res);
-        ws.send(JSON.stringify({ id: myId, method, params }));
-    });
+        ws.send(JSON.stringify({ id: myId, method, params })); });
     await new Promise(res => ws.onopen = res);
     await send('Page.enable', {});
-    // Pin the viewport exactly. --window-size gives the WINDOW, which is smaller than the
-    // page area, so the captures came out 1424x749 - not the 1440x900 the README uses.
-    await send('Emulation.setDeviceMetricsOverride', {
-        width: W, height: H, deviceScaleFactor: 1, mobile: false
-    });
-    await sleep(8000);                          // let the app finish loading
+    await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+    await sleep(8000);
 
     const ev = async (expr) => {
-        const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true });
+        const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
         return r.result && r.result.result ? r.result.result.value : null;
     };
-    const shot = async (file) => {
-        const r = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-        fs.writeFileSync(file, Buffer.from(r.result.data, 'base64'));
-        return file;
-    };
 
-    fs.mkdirSync(FRAMES, { recursive: true });
-    let frameNo = 0;
+    fs.mkdirSync(OUT, { recursive: true });
+    let n = 0;
     const frame = async (label) => {
-        frameNo++;
-        const f = path.join(FRAMES, String(frameNo).padStart(2, '0') + '-' + label + '.png');
-        await shot(f);
-        console.log('  frame ' + f.replace(OUT + path.sep, ''));
+        n++;
+        const f = path.join(OUT, String(n).padStart(2, '0') + '-' + label + '.png');
+        const r = await send('Page.captureScreenshot', { format: 'png' });
+        fs.writeFileSync(f, Buffer.from(r.result.data, 'base64'));
+        const kb = Math.round(fs.statSync(f).size / 1024);
+        console.log('  ' + path.basename(f).padEnd(28) + kb + ' KB' + (kb > 180 ? '   <-- LARGE: inspect this one' : ''));
+        return f;
     };
 
-    // the theme in use, so it can be put back afterwards
+    // 1. close the setup dialog (it covers the interface), put the app in a known theme
+    await ev(`(() => { if (typeof closeSetupModal==='function') closeSetupModal();
+        const m=document.getElementById('setupModal'); if (m) m.style.display='none'; })()`);
     const startTheme = await ev(`document.documentElement.dataset.tfTheme || 'midnight'`);
-    console.log('theme in use:', startTheme);
-
-    // The app opens the Setup dialog on load when a local service is missing, and it covers
-    // the interface - the first capture came out with it across the conversation. Close it
-    // so the screenshots show the app itself.
-    await ev(`(() => {
-        if (typeof closeSetupModal === 'function') { closeSetupModal(); }
-        const m = document.getElementById('setupModal');
-        if (m) { m.style.display = 'none'; }
-    })()`);
-    await sleep(1200);
-    const modal = await ev(`(() => { const m = document.getElementById('setupModal');
-        return m ? getComputedStyle(m).display : 'absent'; })()`);
-    console.log('setup dialog display:', modal);
-
-    console.log('capturing...');
-    await frame('chat');
-    await shot(path.join(OUT, 'chat.png'));
-
-    // scroll the conversation a little, so the demo shows movement
-    await ev(`(() => { const a = document.querySelector('.chat-area');
-        if (a) { a.scrollTop = Math.max(0, a.scrollHeight - a.clientHeight - 900); } })()`);
+    await ev(`window.tfSetTheme && window.tfSetTheme('premium')`);
     await sleep(900);
-    await frame('chat-scrolled');
 
-    // the Notes view, opened exactly the way its tab does it
-    await ev(`(() => { if (typeof openEmbeddedView === 'function')
-        { openEmbeddedView('/notes','notes'); } })()`);
-    await sleep(4500);
+    // 2. a NEW EMPTY conversation - the only chat this tool ever shows. newChat() creates
+    // one but does not OPEN it, which is why the first attempt still had the previous
+    // conversation (56 messages) on screen; the guard below caught that and refused.
+    const made = await ev(`(async () => {
+        const r = await fetch('/conversations', { method: 'POST' });
+        const j = await r.json();
+        return JSON.stringify(j);
+    })()`);
+    const newId = (JSON.parse(made || '{}') || {}).id;
+    console.log('  created conversation:', newId);
+    await ev(`(() => { if (typeof selectConversation === 'function') { selectConversation(${JSON.stringify(newId)}); } })()`);
+    await sleep(3000);
+    const chatState = await ev(`(() => {
+        const nodes = document.querySelectorAll('.chat-area .msg');
+        const texts = Array.from(nodes).map(n => (n.innerText || '').trim().slice(0, 60));
+        const area = document.querySelector('.chat-area');
+        return JSON.stringify({ count: texts.length, texts: texts,
+                                scrollHeight: area ? area.scrollHeight : -1 }); })()`);
+    console.log('  new chat state:', chatState);
+    // Accept an empty conversation, or one whose entire content is the app's own welcome
+    // bubble. Anything else means real content is on screen, and this tool must not film it:
+    // that is exactly how a personal photograph reached a public repository.
+    let st = {};
+    try { st = JSON.parse(chatState || '{}'); } catch (e) { st = {}; }
+    const texts = st.texts || [];
+    const benign = texts.filter(t => !/no messages yet|say something|create one above/i.test(t));
+    if (benign.length > 0) {
+        console.log('  REFUSING: this conversation contains real content - capturing nothing.');
+        console.log('  content seen:', JSON.stringify(benign).slice(0, 220));
+        ws.close(); chrome.kill(); process.exit(2);
+    }
+    console.log('  guard passed: nothing on screen but the welcome bubble');
+
+    console.log('capturing (empty chat, notes, corkboard, themes only):');
+    await frame('chat-empty');
+    await ev(`(() => { if (typeof openEmbeddedView==='function') openEmbeddedView('/notes','notes'); })()`);
+    await sleep(4000);
     await frame('notes');
-    await shot(path.join(OUT, 'notes.png'));
-
-    // the Cork Board view, same mechanism
-    await ev(`(() => { if (typeof openEmbeddedView === 'function')
-        { openEmbeddedView('/corkboard','corkboard'); } })()`);
-    await sleep(4500);
+    await ev(`(() => { if (typeof openEmbeddedView==='function') openEmbeddedView('/corkboard','corkboard'); })()`);
+    await sleep(4000);
     await frame('corkboard');
-    await shot(path.join(OUT, 'cork_board.png'));
-
-    // back to the chat, and one other theme, to show the app is themeable
-    await ev(`(() => { if (typeof showChatView === 'function') { showChatView(); } })()`);
-    await sleep(1600);
-    await frame('back-to-chat');
-
-    const other = startTheme === 'galaxy' ? 'premium' : 'galaxy';
-    await ev(`window.tfSetTheme && window.tfSetTheme('${other}')`);
-    await sleep(1600);
-    await frame('theme-' + other);
-    await ev(`window.tfSetTheme && window.tfSetTheme('${startTheme}')`);
+    await ev(`(() => { if (typeof showChatView==='function') showChatView(); })()`);
+    await sleep(1500);
+    await frame('chat-back');
+    await ev(`window.tfSetTheme && window.tfSetTheme('galaxy')`);
+    await sleep(1400);
+    await frame('theme-galaxy');
+    await ev(`window.tfSetTheme && window.tfSetTheme('premium')`);
     await sleep(1200);
-    await frame('theme-back');
+    await frame('theme-premium');
+    await ev(`window.tfSetTheme && window.tfSetTheme('${startTheme}')`);
 
-    console.log('done. stills: chat.png, notes.png, cork_board.png; frames in frames/');
+    // 3. delete the temporary conversation, so nothing is left behind
+    const removed = await ev(`(async () => {
+        const r = await fetch('/conversations/' + ${JSON.stringify(newId)}, { method: 'DELETE' });
+        return 'deleted the temporary conversation -> ' + r.status;
+    })()`);
+    console.log('cleanup:', removed);
 
+    console.log('\nSTOP AND LOOK AT THE FRAMES BEFORE USING THEM:  ' + OUT);
     ws.close(); chrome.kill(); process.exit(0);
 })();
