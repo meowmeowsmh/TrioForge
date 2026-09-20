@@ -32,7 +32,7 @@
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "1e0ec66cb34a3a76d772e76925b5f57f2d3da8773fd7ca22bd145838aa4fe5b8",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/tools/app_window.py": "6f7867458163300122e2ed7e6ff26e9d9a6b34540b0c3d857e7e5c7dfdb458f1",
+  "py/tools/app_window.py": "ac97b2b474b1e00a760bb0d923f25c3b4bb54ee284a9067930be0a64fc237ea1",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
   "py/tools/integrity.py": "9b4a74dae5f3dc991b1ce06f4613a455df0cd256778848fc96845e3bb7edb785",
   "py/tools/launcher.py": "c92c7eafd59258d143bd1f924a1933587b772df8ab38ae8e969077229bc640d1",
@@ -73,8 +73,8 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "965696865018217cffaeba63bde37e5b72d20259ad9576fd25620603d4bfbe74"
+  "templates/index.html": "c694e5befa8ba7ab148b027dbda08293cd49fac83d72d78b261f56f4529b85ad"
  },
- "generated": "2026-09-19T00:02:20",
- "note": ""
+ "generated": "2026-09-21T02:07:45",
+ "note": "app window: chat export downloads + in-app zoom"
 }

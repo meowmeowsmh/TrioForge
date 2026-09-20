@@ -776,6 +776,21 @@ def main() -> int:
     except Exception:
         pass
 
+    # Let the browser-engine downloads actually happen.
+    #
+    # pywebview's WebView2 backend wires up DownloadStarting and then cancels every
+    # download unless this setting is on (platforms/edgechromium.py:
+    # `on_download_starting` -> `if not webview_settings['ALLOW_DOWNLOADS']`). It
+    # defaults to off, so the chat export buttons ("All (MD)", "All (JSON)") did
+    # nothing in the app window while working perfectly in a browser: the server sent
+    # the file with Content-Disposition and the embedded engine silently dropped it.
+    #
+    # This is the whole difference between "web can" and "the app cannot".
+    try:
+        webview.settings["ALLOW_DOWNLOADS"] = True
+    except Exception:
+        pass
+
     storage = user_data_dir()
     # NO proactive rotation here. It used to run whenever the previous window had not
     # exited cleanly, and it threw the profile away - including the app's UI settings

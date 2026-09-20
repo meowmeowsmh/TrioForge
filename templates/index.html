@@ -3308,6 +3308,48 @@ function toggleShortcutsModal() {
     var m = document.getElementById('shortcutsModal');
     if (m.style.display === 'flex') closeShortcutsModal(); else openShortcutsModal();
 }
+// ── Zoom ─────────────────────────────────────────────────
+// The app window cannot use the browser's own Ctrl +/-. pywebview's WebView2 backend
+// sets AreBrowserAcceleratorKeysEnabled only when running in debug mode
+// (platforms/edgechromium.py: `settings.AreBrowserAcceleratorKeysEnabled = _state['debug']`),
+// so whatever a browser does for free does nothing here. Ctrl+scroll is enabled, but it
+// is neither discoverable nor remembered.
+//
+// This gives the app its own zoom: the same keys and gestures a browser uses, applied as
+// CSS zoom on the root element (everything scales, nothing reflows into a broken layout),
+// saved to localStorage so the level survives a restart.
+var TF_ZOOM_KEY = 'tf_zoom';
+var TF_ZOOM_MIN = 0.6, TF_ZOOM_MAX = 2.0, TF_ZOOM_STEP = 0.1;
+
+function tfZoomLevel() {
+    var v = parseFloat(localStorage.getItem(TF_ZOOM_KEY) || '1');
+    return (isFinite(v) && v >= TF_ZOOM_MIN && v <= TF_ZOOM_MAX) ? v : 1;
+}
+function tfApplyZoom(level) {
+    level = Math.min(TF_ZOOM_MAX, Math.max(TF_ZOOM_MIN, Math.round(level * 100) / 100));
+    document.documentElement.style.zoom = level;
+    try { localStorage.setItem(TF_ZOOM_KEY, String(level)); } catch (e) {}
+    return level;
+}
+function tfZoomBy(delta) { return tfApplyZoom(tfZoomLevel() + delta); }
+function tfZoomReset() { return tfApplyZoom(1); }
+
+try { if (tfZoomLevel() !== 1) tfApplyZoom(tfZoomLevel()); } catch (e) {}
+
+document.addEventListener('keydown', function(e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.key === '=' || e.key === '+') { e.preventDefault(); tfZoomBy(TF_ZOOM_STEP); }
+    else if (e.key === '-' || e.key === '_') { e.preventDefault(); tfZoomBy(-TF_ZOOM_STEP); }
+    else if (e.key === '0') { e.preventDefault(); tfZoomReset(); }
+});
+// Ctrl+wheel, as in a browser. Handled here rather than left to the engine so the level
+// is the one this module remembers, instead of two zoom states disagreeing.
+document.addEventListener('wheel', function(e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    tfZoomBy(e.deltaY < 0 ? TF_ZOOM_STEP : -TF_ZOOM_STEP);
+}, { passive: false });
+
 // ── Global keyboard shortcuts ─────────────────────────────
 document.addEventListener('keydown', function(e) {
     var mod = e.ctrlKey || e.metaKey;
@@ -8139,6 +8181,10 @@ if ('serviceWorker' in navigator) {
       <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">?</td><td style="padding:6px 0; color:#8b949e;">Show this menu</td></tr>
       <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Esc</td><td style="padding:6px 0; color:#8b949e;">Close this menu</td></tr>
       <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Alt + ↓</td><td style="padding:6px 0; color:#8b949e;">Scroll to bottom</td></tr>
+        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + +</td><td style="padding:6px 0; color:#8b949e;">Zoom in</td></tr>
+        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + &minus;</td><td style="padding:6px 0; color:#8b949e;">Zoom out</td></tr>
+        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + 0</td><td style="padding:6px 0; color:#8b949e;">Reset zoom</td></tr>
+        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + wheel</td><td style="padding:6px 0; color:#8b949e;">Zoom in / out</td></tr>
     </table>
   </div>
 </div>
