@@ -257,7 +257,11 @@ _HOST_JSON_PREFIXES = ("/api/", "/conversations", "/messages", "/providers",
                        "/resources", "/deepseek", "/check_vision",
                        # Media: without this a password-gated instance answered a
                        # video request with the login PAGE, so the player got HTML.
-                       "/json_configuration/attachments/")
+                       "/json_configuration/attachments/",
+                       # Uploads are user content and now require the password (see the
+                       # gate). An <img>/<audio> tag cannot show a login page, so these
+                       # get 401 rather than HTML, exactly like the attachments above.
+                       "/static/uploads/")
 
 
 def _host_gate_on() -> bool:
@@ -327,7 +331,15 @@ def _host_password_gate():
     if not _host_gate_on():
         return None
     path = request.path or "/"
-    if path.startswith("/static/") or path.startswith("/viewer/static/"):
+    # Static assets have to load before anyone has signed in, or the login page cannot be
+    # drawn. Uploads are a different thing: /static/uploads/ holds USER CONTENT - note and
+    # corkboard images, generated media - so exempting the whole of /static/ served every
+    # uploaded file to an unauthenticated request on a shared instance. Confirmed with a
+    # test client before this change: an uploaded .wav answered 200 with 121 KB of audio
+    # and no session cookie.
+    if path.startswith("/viewer/static/"):
+        return None
+    if path.startswith("/static/") and not path.startswith("/static/uploads/"):
         return None
     if path in _HOST_OPEN_PATHS:
         return None
