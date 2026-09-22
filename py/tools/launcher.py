@@ -1603,6 +1603,16 @@ def menu_loop(args) -> int:
 
 
 def main() -> int:
+    # Claim the TrioForge identity before anything is spawned. Task Manager groups
+    # processes by AppUserModelID and a child inherits its parent's, so a process
+    # started before this call appears as its own anonymous entry instead of nesting
+    # under TrioForge. Silent and idempotent (and a no-op off Windows).
+    try:
+        from app_window import claim_app_identity
+        claim_app_identity()
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(description="TrioForge cross-platform launcher.")
     parser.add_argument("path", nargs="?", default=None,
                         help="Path to the TrioForge project folder (optional).")

@@ -539,6 +539,25 @@ def set_process_app_id() -> None:
         pass
 
 
+def claim_app_identity() -> None:
+    """Register TrioForge with the shell and stamp THIS process as TrioForge.
+
+    Call this before spawning anything. Task Manager groups processes by their
+    AppUserModelID, and a child inherits the AUMID of the parent that created it - so a
+    process started before this call shows up as its own anonymous entry instead of
+    nesting under TrioForge. That is exactly what happened: the window spawned the
+    server at line ~724 and only claimed the identity at line ~861, so the server (and
+    anything it spawns in turn) appeared as a second, unrelated entry.
+
+    Idempotent and silent: safe to call from every entry point, and never raises.
+    """
+    try:
+        register_app_id(icon_path())
+    except Exception:
+        pass
+    set_process_app_id()
+
+
 def apply_window_icon(window, ico: Path) -> bool:
     """Put the TrioForge icon on the real window (title bar, taskbar, Alt-Tab).
 
@@ -709,6 +728,11 @@ def main() -> int:
     parser.add_argument("--no-persist", action="store_true",
                         help="Do not keep cookies/localStorage between runs (debugging).")
     args = parser.parse_args()
+
+    # Claim the TrioForge identity FIRST, before this process spawns anything. Children
+    # inherit the parent's AppUserModelID, so a server started before this call lands in
+    # Task Manager as a separate anonymous entry instead of nesting under TrioForge.
+    claim_app_identity()
 
     try:
         import webview

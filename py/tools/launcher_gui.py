@@ -532,6 +532,16 @@ class ControlPanel:
 
 
 def main() -> int:
+    # Claim the TrioForge identity before the panel starts the server or the app window.
+    # Task Manager groups processes by AppUserModelID, and a child inherits its parent's:
+    # without this, the server and window it spawns appear as separate entries instead of
+    # nesting under TrioForge. Silent and idempotent.
+    try:
+        from app_window import claim_app_identity
+        claim_app_identity()
+    except Exception:
+        pass
+
     import argparse
     parser = argparse.ArgumentParser(description="TrioForge control panel")
     parser.add_argument("path", nargs="?", default=None)
