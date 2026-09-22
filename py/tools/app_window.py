@@ -55,12 +55,18 @@ def resolve_url(explicit: str, port: int) -> str:
     import time
     if explicit:
         return explicit
-    for _ in range(120):                      # up to ~3 minutes of first run
+    # 720 x 0.25s keeps the same ~3 minute budget as the previous 120 x 1.5s, but a
+    # server that is already answering is noticed in a quarter of a second instead of
+    # after a sleep. This is the wait the app window does BEFORE it creates itself, so
+    # it is on the critical path for how long the window takes to appear: the server
+    # needs ~5s to import, and the old 1.5s polling step could add up to that again
+    # purely as sleep. Measured: fastfetch and the window both wait on this loop.
+    for _ in range(720):                      # up to ~3 minutes of first run
         for scheme in ("https", "http"):
             candidate = "{}://127.0.0.1:{}/".format(scheme, port)
             if _probe(candidate):
                 return candidate
-        time.sleep(1.5)
+        time.sleep(0.25)
     return "http://127.0.0.1:{}/".format(port)
 
 

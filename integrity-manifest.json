@@ -32,7 +32,7 @@
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "1e0ec66cb34a3a76d772e76925b5f57f2d3da8773fd7ca22bd145838aa4fe5b8",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/tools/app_window.py": "b79709374a7e6e04c1ab3eb31fb259d6e55938febe922e4188dababe5a3a0c28",
+  "py/tools/app_window.py": "484c90acefabf025aee7cbfb4bf68ff618e1e037842b093f48d5643b56ce9d1d",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
   "py/tools/integrity.py": "9b4a74dae5f3dc991b1ce06f4613a455df0cd256778848fc96845e3bb7edb785",
   "py/tools/launcher.py": "ca99f20585d4b7787fb7b42690012f86577884d5950684ca715092b5de02deed",
@@ -75,6 +75,6 @@
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
   "templates/index.html": "c694e5befa8ba7ab148b027dbda08293cd49fac83d72d78b261f56f4529b85ad"
  },
- "generated": "2026-09-22T18:08:07",
- "note": "claim the app identity before spawning children"
+ "generated": "2026-09-22T18:09:49",
+ "note": "poll the server every 0.25s instead of 1.5s at window start"
 }
