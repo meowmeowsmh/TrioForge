@@ -7,7 +7,7 @@
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "9580ec10b81bcec3e1eeca5b88b2b37c02e16416bc0b8dd500bbb7d9ad88a9e8",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "0a5b593b034138287852c7a1ada7f4057f59d2e3dcd4e4372741a763aaa89b71",
+  "py/app.py": "a00a83f168808c425e7dada7939b3448cb49059a33571b88ca9e07839ffb6ac4",
   "py/backup_store.py": "dcef40c9b21be176845df407fbd30a46cf249235d185e277f2f90565089ed703",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "4d4b76a9e164b71746b43e72cdd578e632c993db5a5b64fb38b2d77bc3f3342c",
@@ -21,7 +21,7 @@
   "py/gunicorn_conf.py": "49aad15d5edaee40cde5db98c73db473de6060863c6eb9ad8d1eb4b028a14b5b",
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_installer.py": "fdd022bff63ed9e9d78578bcd48d61eb5e294f6bcbb01b79281b69c829426874",
-  "py/llamacpp_service.py": "9e8b22f4a1488d45e22d0c27200d006382894e394fb5003e76c8ad3d875ab6ca",
+  "py/llamacpp_service.py": "f7b7ae0cda5fbb4a2961b62765cc4ed5d0d405ba909e4da1880ce0fb4f048f06",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
@@ -73,8 +73,8 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "c694e5befa8ba7ab148b027dbda08293cd49fac83d72d78b261f56f4529b85ad"
+  "templates/index.html": "d48cd2c04beaee7bd28009ca3582eabbc66f88d6a5fe45a46478cec8f521a9b1"
  },
- "generated": "2026-09-22T18:09:49",
- "note": "poll the server every 0.25s instead of 1.5s at window start"
+ "generated": "2026-09-23T21:59:26",
+ "note": "llama.cpp projector off VRAM when tight + live RAM/VRAM gauge"
 }
