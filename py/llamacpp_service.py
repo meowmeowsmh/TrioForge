@@ -617,6 +617,79 @@ def _log(message: str) -> None:
         pass
 
 
+_flag_cache = {}
+
+
+def _supports_flag(exe, flag):
+    """Whether `exe` understands `flag` (cached per executable).
+
+    The launcher accepts whatever llama-server the user has - a distro package, an
+    old release tarball, or the bundled build. Older builds predate flags such as
+    --no-mmproj-offload, and an unknown flag makes llama-server exit immediately, so
+    ask --help once and remember the answer. --help exits before touching the GPU,
+    so this is cheap and safe.
+    """
+    key = (exe, flag)
+    if key in _flag_cache:
+        return _flag_cache[key]
+    supported = True
+    try:
+        # llama-server is a console program. On Windows, started from this app (which
+        # runs windowless via start.vbs), it would pop a terminal window for the probe -
+        # the same reason the real spawn further down passes these flags. DETACHED_PROCESS
+        # so it cannot attach to, or allocate, a console at all.
+        kwargs = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = (
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0))
+        out = subprocess.run([exe, "--help"], stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, timeout=15, **kwargs)
+        supported = flag in (out.stdout or b"").decode("utf-8", "replace")
+    except Exception:
+        # Could not ask (missing shared libs, odd wrapper, timeout). Assume the flag
+        # exists: an unknown-argument exit names itself in the log, whereas dropping
+        # the flag silently brings back the projector OOM crash.
+        supported = True
+    _flag_cache[key] = supported
+    return supported
+
+
+def _watch_for_load_crash(proc, log_offset, delay=20.0):
+    """Notice a llama-server that dies while loading, and step the GPU footprint down.
+
+    A load-time allocation failure aborts the process *before* it serves anything, so
+    the request that triggered the start fails with a connection error. The OOM
+    keywords gpu_oom_recovery() looks for never arrive, so every retry repeats the
+    exact same crash - three identical aborts in logs/llamacpp.log, with the user
+    left with a model server that never comes up. Reading the bytes the process just
+    wrote is the only way to see what happened.
+    """
+    def _watch():
+        try:
+            code = proc.wait(timeout=delay)
+        except Exception:
+            return                      # still alive after `delay`: it is loading/loaded
+        if code is None:
+            return
+        tail = ""
+        try:
+            with open(root_path("logs", "llamacpp.log"), "r",
+                      encoding="utf-8", errors="replace") as fh:
+                fh.seek(log_offset)
+                tail = fh.read()
+        except Exception:
+            pass
+        low = tail.lower()
+        if ("outofdevicememory" in low.replace(" ", "")
+                or "failed to allocate" in low
+                or "ggml_assert" in low):
+            _log("llama-server exited during load with an allocation failure; "
+                 "stepping the GPU footprint down for the next start")
+            gpu_oom_recovery("failed to allocate: ErrorOutOfDeviceMemory")
+    threading.Thread(target=_watch, daemon=True).start()
+
+
 def start(model=None, ctx_size=None):
     global _process, _running_model, _last_spawn, _last_used, _running_ctx
     # Resolve the requested context length to a concrete int (the UI's token
@@ -755,20 +828,35 @@ def start(model=None, ctx_size=None):
             size = os.path.getsize(model_path)
         except Exception:
             pass
+        # A vision projector (mmproj) is loaded onto the GPU as well, and llama.cpp's
+        # auto-fit does NOT reserve room for it. That is what killed the server with
+        #     failed to allocate Vulkan1 buffer of size 607815296
+        # inside clip_model_loader::load_tensors (libmtmd.so): auto-fit spent the last
+        # of the VRAM on text layers, the projector's buffer then could not be
+        # allocated, and GGML_ASSERT(buffer) aborted the whole process. Count it here.
+        mmproj_size = 0
+        if mmproj:
+            try:
+                mmproj_size = os.path.getsize(mmproj)
+            except Exception:
+                mmproj_size = 0
         vram_free = _free_vram_bytes()
         ram_free = _free_ram_bytes()
         # Forcing every layer needs room for the weights AND the KV cache AND the
-        # compute buffers. Without that headroom llama.cpp aborts with
-        # "failed to fit params to free device memory" / "failed to allocate Vulkan1
-        # buffer" and the model quietly runs on the CPU instead - which is exactly how
-        # a 6 GB model ends up in RAM. When it does not fit comfortably we pass
-        # nothing and let llama.cpp auto-fit the number of layers itself.
+        # compute buffers AND the projector. Without that headroom llama.cpp aborts
+        # with "failed to fit params to free device memory" / "failed to allocate
+        # Vulkan1 buffer" and the model quietly runs on the CPU instead - which is
+        # exactly how a 6 GB model ends up in RAM. When it does not fit comfortably
+        # we pass nothing and let llama.cpp auto-fit the number of layers itself.
         kv_headroom = int(1.5 * 1073741824)
-        offload = bool(vram_free and size and vram_free > size * 1.12 + kv_headroom)
+        offload = bool(vram_free and size
+                       and vram_free > size * 1.12 + kv_headroom + mmproj_size)
 
         try:
-            _log(("model {:.2f} GB · VRAM free {} · RAM free {} -> {}").format(
+            _log(("model {:.2f} GB{} · VRAM free {} · RAM free {} -> {}").format(
                 size / 1073741824.0,
+                "" if not mmproj_size else " + {:.2f} GB projector".format(
+                    mmproj_size / 1073741824.0),
                 "{:.2f} GB".format(vram_free / 1073741824.0) if vram_free else "unknown",
                 "{:.2f} GB".format(ram_free / 1073741824.0) if ram_free else "unknown",
                 "all layers on the GPU" if offload
@@ -778,7 +866,10 @@ def start(model=None, ctx_size=None):
 
         # Refuse a CPU load that would not fit: this is what turned a 15 GB machine
         # into a swapping one. Needs ~1.5 GB of headroom for the KV cache, compute
-        # buffers and the rest of Windows.
+        # buffers and the rest of Windows. The full model size is deliberately used
+        # here even when layers are offloaded (an over-estimate), which also absorbs
+        # the projector, so it is NOT added a second time and this stays a last-resort
+        # guard rather than something that can refuse a load that would have fitted.
         if (not offload and ram_free and size
                 and os.environ.get("TRIOFORGE_SKIP_RAM_CHECK", "").strip() not in ("1", "true", "on")):
             if size + int(1.5 * 1073741824) > ram_free:
@@ -797,6 +888,21 @@ def start(model=None, ctx_size=None):
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
         if mmproj:
             cmd += ["--mmproj", mmproj]
+        # Keep the projector on the CPU unless the VRAM budget above clearly had room
+        # for it. Its buffer is allocated outside llama.cpp's auto-fit, so leaving it
+        # on the GPU is what aborted the server (see the mmproj_size note above).
+        # Vision still works; it is just encoded on the CPU.
+        if mmproj and not offload:
+            if _supports_flag(exe, "--no-mmproj-offload"):
+                cmd += ["--no-mmproj-offload"]
+                _log("keeping the vision projector on the CPU (no VRAM to spare for it)")
+            else:
+                # An old llama.cpp keeps the projector on the GPU with nothing reserved
+                # for it - the exact abort this fix exists to prevent. Say so, rather
+                # than failing again with no explanation in the log.
+                _log("warning: {} does not accept --no-mmproj-offload; the projector will "
+                     "be placed on the GPU with little VRAM free, so a load-time OOM abort "
+                     "is likely - update llama.cpp".format(os.path.basename(exe)))
         # Peak GPU/performance defaults (config llama_args may override).
         cmd += _default_server_args(model_path, ctx)
         forced = _gpu_layers_override
@@ -828,8 +934,13 @@ def start(model=None, ctx_size=None):
         # Log the server's stdout/stderr so a crash is diagnosable (instead of
         # being swallowed by DEVNULL). Read logs/llamacpp.log to see WHY it failed.
         log_path = root_path("logs", "llamacpp.log")
+        log_offset = 0
         try:
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            try:
+                log_offset = os.path.getsize(log_path)
+            except OSError:
+                log_offset = 0
             _out = open(log_path, "ab")
         except Exception:
             _out = subprocess.DEVNULL
@@ -860,6 +971,9 @@ def start(model=None, ctx_size=None):
         _last_spawn = time.time()
         _last_used = time.time()
         ensure_idle_watchdog()
+        # A load-time crash is otherwise silent: watch this child so the next start
+        # steps the GPU footprint down instead of repeating the identical abort.
+        _watch_for_load_crash(_process, log_offset)
         return {"running": True, "model": os.path.basename(model_path),
                 "message": "starting llama.cpp with {}".format(os.path.basename(model_path))}
 
