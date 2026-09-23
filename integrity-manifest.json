@@ -73,8 +73,8 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "d48cd2c04beaee7bd28009ca3582eabbc66f88d6a5fe45a46478cec8f521a9b1"
+  "templates/index.html": "d9fef8ca88dceee40b4ddfaf08e50ee9ef4db3e0de327c77b1742dffce868cea"
  },
- "generated": "2026-09-23T21:59:26",
- "note": "llama.cpp projector off VRAM when tight + live RAM/VRAM gauge"
+ "generated": "2026-09-23T22:16:16",
+ "note": "a non-constructible SpeechRecognition no longer kills the page init"
 }
