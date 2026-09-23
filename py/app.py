@@ -4919,6 +4919,21 @@ def chat_stream():
                     audio_final_text = f"[audio error] {e}"
 
         def generate():
+            # llama.cpp only: start() above SPAWNED the server, it did not wait for it.
+            # A 12B GGUF then needs several seconds to load, and the direct streaming
+            # path below used to fire its request straight away - so the first send
+            # after a load raced the model and came back
+            #     [Errno 111] Connection refused
+            # which the UI classifies as "Could not reach the service". The provider's
+            # non-streaming paths already wait via _check_server(); do the same here so
+            # every branch of this generator is covered. The dev server is threaded, so
+            # this blocking wait does not stall the rest of the UI.
+            if provider_name == 'llamacpp':
+                try:
+                    providers['llamacpp']._check_server()
+                except Exception as e:
+                    yield f"data: {json_dumps({'error': str(e)})}\n\n"
+                    return
             full_response = ""
             thinking_acc = ""
             if tool_final_text is not None:
