@@ -7,7 +7,7 @@
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "9580ec10b81bcec3e1eeca5b88b2b37c02e16416bc0b8dd500bbb7d9ad88a9e8",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "a00a83f168808c425e7dada7939b3448cb49059a33571b88ca9e07839ffb6ac4",
+  "py/app.py": "ad69fcf51d6eb26508e99a81b6ed39ca8b037b5daa67a0dabcee59fca331fcda",
   "py/backup_store.py": "dcef40c9b21be176845df407fbd30a46cf249235d185e277f2f90565089ed703",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "4d4b76a9e164b71746b43e72cdd578e632c993db5a5b64fb38b2d77bc3f3342c",
@@ -75,6 +75,6 @@
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
   "templates/index.html": "d9fef8ca88dceee40b4ddfaf08e50ee9ef4db3e0de327c77b1742dffce868cea"
  },
- "generated": "2026-09-23T22:16:16",
- "note": "a non-constructible SpeechRecognition no longer kills the page init"
+ "generated": "2026-09-23T22:21:38",
+ "note": "wait for llama.cpp to finish loading before streaming a reply"
 }
