@@ -5146,9 +5146,15 @@ function finalizeStats(usage) {
 var recordBtn = document.getElementById('recordBtn');
 var recognition = null;
 var isRecording = false;
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
+// Test CONSTRUCTIBILITY, not mere presence. Firefox exposes SpeechRecognition as a
+// property that is NOT a constructor unless the recognition feature is enabled, so
+// `'SpeechRecognition' in window` passed and `new SpeechRecognition()` threw
+// "TypeError: SpeechRecognition is not a constructor". Being top-level and uncaught,
+// that error aborted the remainder of this script block - so the RAM/VRAM gauge, the
+// model list, the persona list and every other init below it silently never ran.
+var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (typeof SpeechRecognitionCtor === 'function') {
+    recognition = new SpeechRecognitionCtor();
     recognition.lang = 'en-US';
     recognition.continuous = false;
     recognition.interimResults = true;
