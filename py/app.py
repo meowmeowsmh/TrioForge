@@ -1698,11 +1698,14 @@ def get_resources():
                 pass
         if vram_used_gb is None and platform.system() == "Darwin":
             vram_used_gb = ram_used_gb
-        return jsonify({
+        resp = jsonify({
             'ram_used': ram_used_gb,
             'vram_used': vram_used_gb,
             'ram_total': ram.total / (1024**3)
         })
+        # A live gauge must never be served from a browser cache.
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

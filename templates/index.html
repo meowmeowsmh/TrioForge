@@ -5199,17 +5199,23 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
 var resourceIntervalId = null;
 function updateResources() {
-    fetch('/resources')
-        .then(r => r.json())
+    fetch('/resources', { cache: 'no-store' })
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(data => {
             var disp = document.getElementById('resourceDisplay');
             if (!disp) return;
             if (data.error) { disp.textContent = '⚠️ ' + data.error; return; }
-            let ram = data.ram_used !== null ? data.ram_used.toFixed(1) + 'GB' : '--';
-            let vram = data.vram_used !== null ? data.vram_used.toFixed(1) + 'GB' : '--';
-            disp.textContent = `💾 RAM: ${ram} | 🎮 VRAM: ${vram}`;
+            // null / undefined / NaN all render as '--' rather than throwing.
+            var fmt = function(v) {
+                return (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) + 'GB' : '--';
+            };
+            disp.textContent = `💾 RAM: ${fmt(data.ram_used)} | 🎮 VRAM: ${fmt(data.vram_used)}`;
         })
-        .catch(err => console.log('Resource update failed:', err));
+        .catch(err => {
+            var disp = document.getElementById('resourceDisplay');
+            if (disp) disp.textContent = '💾 RAM: -- | 🎮 VRAM: -- (no connection)';
+            console.log('Resource update failed:', err);
+        });
 }
 window.addEventListener('beforeunload', function() {
     if (resourceIntervalId) { clearInterval(resourceIntervalId); resourceIntervalId = null; }
@@ -5218,6 +5224,12 @@ window.addEventListener('beforeunload', function() {
     }
 });
 resourceIntervalId = setInterval(updateResources, 15000);
+// A throttled/suspended background tab can miss every interval and stay stuck on the
+// static placeholder forever. Refresh as soon as the tab is shown or focused again.
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) updateResources();
+});
+window.addEventListener('focus', updateResources);
 
 window.addEventListener('load', function() {
     // Run each init step in isolation so one error can never blank the sidebar.
