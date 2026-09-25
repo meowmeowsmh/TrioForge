@@ -75,7 +75,7 @@ jobs:
         # import - which is exactly what the first run did.
         shell: bash
         run: |
-          PYTHONPATH=py .venv/Scripts/python.exe - <<'PY'
+          .venv/Scripts/python.exe - <<'PY'
           import os, sys, traceback
 
           # A traceback that exists only in the step log is useless to anyone without
@@ -91,7 +91,12 @@ jobs:
 
           sys.excepthook = _dump
 
+          # app, setup_check and llama_installer live in py/; shortcuts lives in
+          # py/tools/ next to launcher.py. Both are needed, and PYTHONPATH would
+          # have to use ";" as the separator for a Windows interpreter, so the
+          # path is set here instead where it cannot be got wrong per-platform.
           sys.path.insert(0, "py")
+          sys.path.insert(0, os.path.join("py", "tools"))
           assert os.name == "nt", "not running on Windows"
 
           import setup_check as sc
