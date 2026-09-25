@@ -70,9 +70,27 @@ jobs:
 
       # ── 3. The Windows-only logic nothing had ever executed ───────────────
       - name: Windows platform-logic checks
-        shell: python
+        # The VENV python, not the runner's. This imports app, which needs flask:
+        # `shell: python` uses the system interpreter, so it died on the first
+        # import - which is exactly what the first run did.
+        shell: bash
         run: |
-          import os, sys
+          PYTHONPATH=py .venv/Scripts/python.exe - <<'PY'
+          import os, sys, traceback
+
+          # A traceback that exists only in the step log is useless to anyone without
+          # a token. Save it here so the publishing step below can turn it into an
+          # annotation - those the public check-runs API does serve.
+          def _dump(exc_type, exc, tb):
+              try:
+                  with open("platform-error.txt", "w", encoding="utf-8") as fh:
+                      fh.write("".join(traceback.format_exception(exc_type, exc, tb)))
+              except Exception:
+                  pass
+              sys.__excepthook__(exc_type, exc, tb)
+
+          sys.excepthook = _dump
+
           sys.path.insert(0, "py")
           assert os.name == "nt", "not running on Windows"
 
@@ -117,6 +135,7 @@ jobs:
           assert shortcuts.FLAVORS["window"]["script"] == "TrioForge.bat"
           assert shortcuts.FLAVORS["window"]["args"] == "--window"
           print("platform logic OK")
+          PY
 
       - name: Undefined-name scan (the ProviderError class of bug)
         shell: cmd
@@ -193,6 +212,21 @@ jobs:
                   p.kill()
               log.close()
 
+      - name: Publish diagnostics as annotations
+        # Annotations are readable through the public check-runs API; the raw step
+        # log needs a token. This is what makes a Windows failure diagnosable by
+        # somebody who is not signed in - including whoever reads it next.
+        if: failure()
+        shell: python
+        run: |
+          import os
+          for path in ("platform-error.txt", "diag.txt", "app.log"):
+              if not os.path.exists(path):
+                  continue
+              text = open(path, errors="replace").read()[-2500:]
+              escaped = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+              print("::error title=%s::%s" % (path, escaped))
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -200,6 +234,7 @@ jobs:
           name: windows-app-log
           path: |
             app.log
-            status.txt
+            diag.txt
             help.txt
+            platform-error.txt
           if-no-files-found: ignore
