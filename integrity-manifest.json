@@ -7,14 +7,19 @@
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "9580ec10b81bcec3e1eeca5b88b2b37c02e16416bc0b8dd500bbb7d9ad88a9e8",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "ad69fcf51d6eb26508e99a81b6ed39ca8b037b5daa67a0dabcee59fca331fcda",
+  "py/app.py": "75873d0fe40d0ebff8fb3f4e52afa2f895331dada0cb9152de4c7f6bddb83a19",
   "py/backup_store.py": "dcef40c9b21be176845df407fbd30a46cf249235d185e277f2f90565089ed703",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "4d4b76a9e164b71746b43e72cdd578e632c993db5a5b64fb38b2d77bc3f3342c",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
   "py/features/cork_board.py": "06e370a200428196a6b673b1a53b19323a17a7169ad409ebb5464c3c65bfe548",
+  "py/features/model_browser.py": "1d885b920ae4a3b9c19cc76f90a64dc4741e341e9854561fe84629ea60c80754",
   "py/features/notes.py": "0ec9ad2197908ec211a01bfc210a15bc664f022bdbfe2fc2571792a028182f27",
+  "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
+  "py/features/openai_api.py": "f9c43b218b0310de0f10faa162ba9f7a9bff88996b663651654988a67a75b2ec",
+  "py/features/screen_ask.py": "0d8a0c2750fb3a10620411f1c81665e944ca69eec1feef722eeed02b9940d88a",
   "py/features/viewer.py": "7c92acf444c73eb1bbd06a095a3b53aed4806c1728699d4244eba59d320ce01d",
   "py/ffmpeg_installer.py": "56e96d33ab3acef9d8e526567c658abc82f026c5b53fe5efb732a116ec656aa0",
   "py/generate_image.py": "6a7fd6815309055a0530d9a108d944adffe46768b7d386c18e1dbc3b688f3df6",
@@ -34,6 +39,7 @@
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/tools/app_window.py": "484c90acefabf025aee7cbfb4bf68ff618e1e037842b093f48d5643b56ce9d1d",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
+  "py/tools/browser_picker.py": "a77ec789f9194dcdc64ab783857c8e757f2b101a9cc9df9325105186df9b30b7",
   "py/tools/integrity.py": "9b4a74dae5f3dc991b1ce06f4613a455df0cd256778848fc96845e3bb7edb785",
   "py/tools/launcher.py": "ca99f20585d4b7787fb7b42690012f86577884d5950684ca715092b5de02deed",
   "py/tools/launcher_gui.py": "e2d5cea8d0c49512164bd07646d80d52c81a8c1bb6d362417de38e5103ba5532",
@@ -73,8 +79,8 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "d9fef8ca88dceee40b4ddfaf08e50ee9ef4db3e0de327c77b1742dffce868cea"
+  "templates/index.html": "2aafbb3a2276b98d07768be3d3cb4631507da902096037ffac925b0039f2a088"
  },
- "generated": "2026-09-23T22:21:38",
- "note": "wait for llama.cpp to finish loading before streaming a reply"
+ "generated": "2026-09-26T00:00:52",
+ "note": "model browser, OpenAI API, Obsidian bridge, screen vision, browser chooser"
 }
