@@ -10,7 +10,7 @@
 
 **Everything else it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), a file-editing agent with a live diff panel, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation, Windows/macOS/Linux/WSL + Docker, installable on your phone. → [full feature list](#-features) · [screenshots](#-see-it-in-action)
 
-**Opens in your browser — or in its own window.** On Windows, double-click **`start-web.vbs`** and TrioForge opens in your default browser, with the server running hidden behind it: the light, always-stable way. Want a real window of its own — its own icon and title, no browser tabs, no address bar? Use **`start.vbs`**, and if the embedded engine cannot draw on your GPU TrioForge hands the app to your browser by itself. On your phone or another machine the same app serves the web interface, and there is **no .exe to download**: it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
+**Opens in your browser — or in its own window.** On Windows, double-click **`TrioForge.bat`** and TrioForge opens in your default browser, with the server running hidden behind it: the light, always-stable way. Want a real window of its own — its own icon and title, no browser tabs, no address bar? Add **`--window`** to the same file, and if the embedded engine cannot draw on your GPU TrioForge hands the app to your browser by itself. On your phone or another machine the same app serves the web interface, and there is **no .exe to download**: it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
@@ -102,20 +102,19 @@ the wrong way for the active theme, straight into the page's HTML.
 
 ## ⚡ Start in 60 seconds
 
-**Windows — two ways to open it. Pick one.**
-
-**1 · Your browser (recommended — the stable, lighter way).**
+**Windows — one file to double-click: `TrioForge.bat`.**
 
 ```bash
 git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
 ```
 
-then double-click **`start-web.vbs`**.
+then double-click **`TrioForge.bat`**. That is the whole instruction: there is exactly one launcher,
+so there is nothing to choose between.
 
-The server starts hidden and the app opens in your default browser. Nothing flashes, because the
-whole launch runs invisibly. This is the one to use if your GPU driver is fussy (see *Window or
-browser?* below) — a browser tab always renders.
+It opens in your default browser and the server runs hidden behind it — the stable, lighter way, and
+the one to use if your GPU driver is fussy (see *Window or browser?* below): a browser tab always
+renders. Nothing flashes — the launcher hands over to a hidden copy of itself and closes.
 
 > **It makes its own shortcuts.** TrioForge puts a **TrioForge** icon where your platform keeps them —
 > per-user, no admin rights, nothing machine-wide, and only if it is missing:
@@ -127,17 +126,20 @@ browser?* below) — a browser tab always renders.
 > | **macOS** | A double-clickable **`TrioForge.command`** on your Desktop (Finder can't launch a `.desktop` file) |
 > | **WSL** | **Nothing** — WSL has no desktop of its own; you reach the app through Windows at the URL it prints |
 >
-> Each entry point keeps its own up to date: launching `start-web.vbs` / `./run.sh` makes sure the
-> browser one exists, launching `start.vbs` makes sure the window one does, and neither overwrites the
-> other. Manage them with `application.bat --install-shortcut` / `--remove-shortcut`, or skip the whole
-> thing with `TRIOFORGE_NO_SHORTCUT=1`.
+> Each mode keeps its own up to date: a plain launch makes sure the browser one exists, `--window`
+> makes sure the window one does, and neither overwrites the other — both shortcuts point at the same
+> `TrioForge.bat` and differ only by that argument. Manage them with
+> `TrioForge.bat --install-shortcut` / `--remove-shortcut`, or skip the whole thing with
+> `TRIOFORGE_NO_SHORTCUT=1`.
 
-**2 · Its own window.** No browser, no terminal, nothing else on screen — in the same folder,
-double-click **`start.vbs`**.
+**Want its own window instead?** One flag — from a terminal in the same folder:
+
+```bat
+TrioForge.bat --window
+```
 
 TrioForge opens in a window of its own — its name in the title bar and taskbar, no tabs, no address
-bar — with chat, notes and the corkboard inside it. The server starts hidden behind it; `start.bat`
-does the same thing from a terminal.
+bar — with chat, notes and the corkboard inside it, and the server hidden behind it.
 
 > **How the window works:** it renders with **WebView2**, the engine Windows 10/11 already ships
 > (the component Edge uses), embedded by [pywebview](https://pywebview.flowrl.com/) — one ~1 MB
@@ -155,8 +157,8 @@ does the same thing from a terminal.
 >
 > | How you open it | Memory while running |
 > |---|---|
-> | `start-web.vbs` — a tab in your browser | **~150–300 MB** (reuses the engine that is already loaded) |
-> | `start.vbs` — TrioForge's own window | **~600 MB** (a private WebView2 engine: browser, GPU, renderers, utilities) |
+> | `TrioForge.bat` — a tab in your browser | **~150–300 MB** (reuses the engine that is already loaded) |
+> | `TrioForge.bat --window` — TrioForge's own window | **~600 MB** (a private WebView2 engine: browser, GPU, renderers, utilities) |
 >
 > Same server, same data, same interface. The engine cannot be shared between them, so this is a
 > straight trade: a window of its own, or less memory *and* one less thing that a GPU driver can
@@ -172,7 +174,7 @@ dependencies on first run. Nothing else to set up.
 ```
 
 ```bat
-application.bat          :: Windows, with the output visible in the terminal
+TrioForge.bat            :: Windows, with the output visible in the terminal
 ```
 
 Then open **http://localhost:5003** (the app prints the exact URL). Use this when you want the app on
@@ -249,7 +251,7 @@ git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
 
 # 2. Run — ONE command does the whole first-run setup
-./run.sh              # Windows: double-click application.bat
+./run.sh              # Windows: double-click TrioForge.bat
 ```
 
 That single command finds/installs **Python**, creates the project venv and installs all core dependencies into it (flask, flask-compress, psutil, frontmatter, providers… — no manual `pip`), creates the model folders, and starts the app.
@@ -299,16 +301,15 @@ Then, inside the app:
 
 | Your OS | Use this file | How | Local llama.cpp | Default URL |
 |---|---|---|---|---|
-| 🪟 **Windows** | `application.bat` | Double-click it | winget build, or **⚡ Auto-install** | `https://localhost:5003` |
+| 🪟 **Windows — browser (default)** | `TrioForge.bat` | Double-click it. Server hidden, app opens in your default browser | **⚡ Auto-install** | `https://localhost:5003` |
+| 🪟 **Windows — app window** | `TrioForge.bat --window` | Same file, one flag. Nothing else appears: no browser, no terminal | **⚡ Auto-install** | own window |
 | 🐧 **Linux** | `run.sh` | `./run.sh` (first time: `chmod +x run.sh`) | `apt`/build, or **⚡ Auto-install** | `http://localhost:5003` |
 | 🍎 **macOS (Intel or Apple Silicon)** | `run.sh` | `./run.sh` — uses Homebrew's Python, finds `/opt/homebrew/bin` tools | `brew install llama.cpp`, or **⚡ Auto-install** | `http://localhost:5003` |
 | 🐧🪟 **WSL2** | `run.sh` | same as Linux | same as Linux | `http://localhost:5003` |
 | 🐳 **Docker** | `docker/application.sh` | `./docker/application.sh` | host llama-server via `LLAMA_HOST` | `http://localhost:5002` |
-| 🪟 **Windows — browser (recommended)** | `start-web.vbs` | Double-click it. Server hidden, app opens in your default browser | **⚡ Auto-install** | `https://localhost:5003` |
-| 🪟 **Windows — app window** | `start.vbs` | Double-click it. Nothing else appears: no browser, no terminal | **⚡ Auto-install** | own window |
 | 🛠️ Any OS (advanced) | `py/tools/launcher.py` | `python py/tools/launcher.py` | — | — |
 
-`application.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. `start-web.vbs` (Windows) does the same with `--detach`: the server starts hidden and the app opens in your browser. `start.vbs` (Windows) adds `--window`, so TrioForge opens in its own WebView2 window instead of your browser; `start.bat` does that from a terminal. `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
+`TrioForge.bat` and `run.sh` are thin wrappers around the launcher, which auto-detects your OS, installs dependencies if needed, and starts the app — you only ever need **one** of them. On Windows that is a *single* file: `TrioForge.bat`, whose mode is an argument (`--window`) rather than a second script to go looking for. `run.sh` also creates the venv (`.venv-linux`); add `--ml` (or `TRIOFORGE_ML=1`) to also install the optional torch/semantic-search stack. Anything else the launcher can do — `--status`, `--update`, `--install-shortcut`, `--verify` — works the same way, and `TrioForge.bat --help` lists it. The launcher also shows a small menu (Windows / Linux-macOS-WSL / Auto-detect / Quit).
 
 ### 🚀 First-run setup checker
 
@@ -701,7 +702,7 @@ To reach it from another device, open it up deliberately:
 
 ```bash
 TRIOFORGE_HOST=0.0.0.0 ./run.sh          # Linux / macOS / WSL
-set TRIOFORGE_HOST=0.0.0.0 && application.bat   # Windows (cmd)
+set TRIOFORGE_HOST=0.0.0.0 && TrioForge.bat     # Windows (cmd)
 ```
 
 …or just turn on **host mode** (`--host`, or the checkbox in the control panel), which binds all interfaces *and* puts a password in front of it. Either way the firewall will ask once — allow it for private networks.
@@ -720,7 +721,7 @@ ngrok http 5003
 
 | Give them | They get | You need |
 |---|---|---|
-| **The repo link** (`git clone`, then `start.vbs` / `run.sh`) | their own copy, their own chats, fully local | nothing |
+| **The repo link** (`git clone`, then `TrioForge.bat` / `run.sh`) | their own copy, their own chats, fully local | nothing |
 | **A link to your instance** | the workspace *you* are hosting: your notes, pins and chats | host mode on (below) |
 
 Turn host mode on with a flag — or, if you use the optional control panel, with its hosting checkbox:
@@ -736,7 +737,7 @@ What stays reachable without the password: the login page, `/api/ping` (so the c
 
 > ⚠️ **Hosting shares your workspace, not just an app.** Everyone you give the link to sees the conversations, notes and pins on that machine. Use a password, hand out the link only to people you trust, and remember you can turn host mode off again (the checkbox, or `TRIOFORGE_PASSWORD=` unset) — the app goes straight back to local-only.
 >
-> Prefer to keep *their* data separate from yours? Point them at the repo — `git clone` and `start.vbs` (Windows) or `./run.sh` gives them their own copy with its own storage.
+> Prefer to keep *their* data separate from yours? Point them at the repo — `git clone` and `TrioForge.bat` (Windows) or `./run.sh` gives them their own copy with its own storage.
 
 ### 📱 Install it as an app (PWA)
 
@@ -772,8 +773,8 @@ your next launch *is* the new version.
 
 | How you run it | How it updates |
 |---|---|
-| `application.bat` / `./run.sh` | Pulls the latest code on every start (git fast-forward). If the dependency manifests changed, they are reinstalled before the app starts. |
-| `start.vbs` / `start.bat` (Windows) | Same — they run the same launcher with `--window`, so the server starts hidden and the app opens in its own window. |
+| `TrioForge.bat` / `./run.sh` | Pulls the latest code on every start (git fast-forward). If the dependency manifests changed, they are reinstalled before the app starts. |
+| `TrioForge.bat --window` (Windows) | Same — the same launcher with `--window`, so the server starts hidden and the app opens in its own window. |
 | Docker | `./docker/application.sh --update` pulls the newest image (CI rebuilds it on every push). `restart: unless-stopped` already brings the container back after a reboot. |
 | A long-running instance | `--watch-updates 1800` checks in the background and **restarts the app** when a new version lands. On by default in auto-start mode. |
 
@@ -787,7 +788,7 @@ downloads the repository archive and overlays only the code paths, leaving your 
 
 ```bash
 # Windows
-application.bat --install-autostart        # undo with --remove-autostart
+TrioForge.bat --install-autostart          # undo with --remove-autostart
 
 # Linux / macOS
 ./run.sh --install-autostart
@@ -810,7 +811,7 @@ launcher.py --force-update         # update even with local edits (stashed, not 
 launcher.py --window               # open TrioForge in its own WebView2 window
 launcher.py --detach               # start the server hidden and return immediately
 launcher.py --host                 # open it to your network with a password
-launcher.py --no-browser           # never open a browser tab (what start.vbs uses)
+launcher.py --no-browser     # never open a browser tab (what --window uses)
 launcher.py --background-update    # start now, check for updates quietly afterwards
 launcher.py --install-shortcut     # BOTH shortcuts, Desktop + Start Menu ("TrioForge" and "TrioForge (window)")
 launcher.py --remove-shortcut      # take them away again
@@ -869,12 +870,13 @@ you are happy with the change, and it goes back to 0%.
 ```
 
 Login starts the **server only** — no window, no browser tab — so the app is ready when you want it
-and nothing appears uninvited. Each entry point keeps its own shortcut up to date: launching
-`start-web.vbs` makes sure the browser one exists, launching `start.vbs` makes sure the window one
-does, and neither touches the other.
+and nothing appears uninvited. Each mode keeps its own shortcut up to date: a plain launch makes
+sure the browser one exists, `--window` makes sure the window one does, and neither touches the
+other — both shortcuts point at the same `TrioForge.bat` and differ only by that argument.
 
-`start-web.vbs` and `start.vbs` are just `launcher.py` (`--detach`, and `--window --detach
---no-browser` respectively), run through the windowed interpreter so nothing is ever shown.
+There is only one launcher: `TrioForge.bat` is a thin wrapper that hands the work to
+`launcher.py` (`--detach`, plus `--window --no-browser` when you asked for the window), run
+through the windowed interpreter so nothing is ever shown.
 
 ### The optional control panel
 
@@ -889,7 +891,7 @@ python py/tools/launcher_gui.py .        # the panel (it hosts the app and shows
 Everything the panel does is also a flag above, so most people never need it.
 
 > There is **no .exe to download**: TrioForge is the repo (plus Docker). On Windows,
-> `start.vbs` is the double-click way in — it needs no terminal, shows no console and no
+> `TrioForge.bat` is the double-click way in — it needs no terminal, shows no console and no
 > SmartScreen dialog, because nothing is compiled or downloaded as a binary.
 
 ---
@@ -1011,7 +1013,7 @@ The app talks to Ollama on the host (not in a container):
 
 **Important:** the image deliberately excludes your local models **and** the auto-installed llama.cpp binaries. `models/`, `video_model/`, `universal_models_to_text/`, `tools/llama.cpp/` (hundreds of MB) and `.venv*` are all in `.dockerignore`. The container installs its own deps, and local inference runs on the **host** (llama.cpp remote mode / Ollama), not inside the image.
 
-> ⚠️ gunicorn relies on `fork()`/POSIX signals, so it only runs on **Linux / WSL2 / macOS**, not native Windows. On Windows use `application.bat` (Waitress) instead.
+> ⚠️ gunicorn relies on `fork()`/POSIX signals, so it only runs on **Linux / WSL2 / macOS**, not native Windows. On Windows use `TrioForge.bat` (Waitress) instead.
 
 ---
 
@@ -1080,7 +1082,7 @@ TrioForge/
 │   └── macos-smoke.yml          # CI: runs + tests the app on real Apple Silicon
 ├── pyproject.toml               # uv project (deps + optional groups)
 ├── uv.lock                      # uv lockfile (reproducible env)
-├── application.bat              # Windows launcher (double-click)
+├── TrioForge.bat                # Windows launcher (double-click) — the only one
 ├── run.sh                       # Linux / macOS / WSL launcher (auto-setup)
 ├── voice_agent.bat              # Voice agent launcher (double-click)
 ├── templates/

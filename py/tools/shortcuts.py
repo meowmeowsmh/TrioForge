@@ -1,8 +1,9 @@
 """Create (or remove) a TrioForge shortcut with the app's own icon.
 
 Per-user only: the Desktop and the Start Menu of the person running it, no admin
-rights and nothing machine-wide. The shortcut runs start.vbs on Windows (server
-hidden, TrioForge's own window) and launcher.py --window everywhere else.
+rights and nothing machine-wide. Every shortcut points at the SAME launcher -
+TrioForge.bat on Windows, launcher.py everywhere else - and the mode is an
+argument, so there is one file to know about instead of one per mode.
 
     from shortcuts import install, remove, state
     install(project)          # Desktop + Start Menu (what a first run does)
@@ -19,21 +20,23 @@ from uuid import uuid4
 
 APP_NAME = "TrioForge"
 
-# Each entry point owns its own shortcut, so whichever one you launch makes sure YOU
-# have a way back to it - and never tramples the other's:
-#   start-web.vbs -> "TrioForge"           (opens in the browser - the default)
-#   start.vbs     -> "TrioForge (window)"  (opens in its own WebView2 window)
+# Both flavours now point at the ONE launcher and differ only by argument:
+#   TrioForge.bat            -> "TrioForge"           (opens in the browser - the default)
+#   TrioForge.bat --window   -> "TrioForge (window)"  (its own WebView2 window)
+# They keep separate names, so launching one still never tramples the other.
 FLAVORS = {
     "web": {
         "suffix": "",
-        "script": "start-web.vbs",
-        "fallbacks": ("start-web.bat", "application.bat"),
+        "script": "TrioForge.bat",
+        "args": "",
+        "fallbacks": (),
         "desc": "TrioForge - opens in your browser (the server runs hidden)",
     },
     "window": {
         "suffix": " (window)",
-        "script": "start.vbs",
-        "fallbacks": ("application.bat", "start-web.vbs"),
+        "script": "TrioForge.bat",
+        "args": "--window",
+        "fallbacks": (),
         "desc": "TrioForge - opens in its own window (the server runs hidden)",
     },
 }
@@ -107,7 +110,7 @@ def _windows_targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path
 
 
 def _make_lnk(lnk: Path, target: Path, icon: Path, workdir: Path,
-              desc: str = "") -> Tuple[bool, str]:
+              desc: str = "", arguments: str = "") -> Tuple[bool, str]:
     r"""Create one Windows shortcut with the built-in WScript.Shell.
 
     Written as a throwaway .vbs and run with cscript, NOT through PowerShell
@@ -134,6 +137,10 @@ def _make_lnk(lnk: Path, target: Path, icon: Path, workdir: Path,
         "s.Description = {}".format(q(desc or APP_NAME)),
         "s.WindowStyle = 7",
     ]
+    # The mode lives in the ARGUMENT now that both flavours share one .bat, so a
+    # shortcut for the window must carry --window or it silently opens the browser.
+    if arguments:
+        lines.append("s.Arguments = {}".format(q(arguments)))
     if icon and icon.is_file():
         lines.append("s.IconLocation = {}".format(q(icon)))
     lines.append("s.Save")
@@ -279,7 +286,8 @@ def install(project: Path, where: str = "both", flavor: str = "web") -> List[str
         for label, lnk in found:
             if where not in ("both", label.lower().replace(" ", "")):
                 continue
-            ok, msg = _make_lnk(lnk, target, icon, project, spec["desc"])
+            ok, msg = _make_lnk(lnk, target, icon, project, spec["desc"],
+                                spec.get("args", ""))
             lines.append("{} shortcut: {} ({})".format(label, lnk, msg) if ok
                          else "{} shortcut failed: {}".format(label, msg))
     elif sys.platform == "darwin":

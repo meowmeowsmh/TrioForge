@@ -635,7 +635,7 @@ def _supports_flag(exe, flag):
     supported = True
     try:
         # llama-server is a console program. On Windows, started from this app (which
-        # runs windowless via start.vbs), it would pop a terminal window for the probe -
+        # runs windowless via TrioForge.bat), it would pop a terminal window for the probe -
         # the same reason the real spawn further down passes these flags. DETACHED_PROCESS
         # so it cannot attach to, or allocate, a console at all.
         kwargs = {}

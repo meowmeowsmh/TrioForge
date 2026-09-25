@@ -39,7 +39,7 @@ MANIFEST_NAME = "integrity-manifest.json"
 # safe: it is what puts themes.css and theme-loader.js under the hash check.
 INCLUDE_DIRS = ("py", "templates", "static", "docker")
 INCLUDE_FILES = (
-    "start.vbs", "start-web.vbs", "start.bat", "start-web.bat", "application.bat",
+    "TrioForge.bat", "voice_agent.bat", ".gitattributes",
     "run.sh", "requirements.txt", "requirements-ml.txt", "pyproject.toml",
 )
 # Skipped by their path FROM THE REPO ROOT only. Matching on any path component named

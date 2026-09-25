@@ -1,0 +1,11 @@
+# Line endings that matter, pinned so a checkout cannot change behaviour.
+#
+# cmd.exe's parser mishandles a .bat whose lines end LF-only: multi-line ( ... )
+# blocks and goto/label jumps are the documented failure cases. A launcher can
+# therefore work on the machine it was written on and fail only for somebody who
+# cloned it - the hardest kind of bug to hear about, because the reporter has no
+# way to see what changed. Pinning it here stops an editor, a zip round-trip or a
+# `git checkout` from silently "normalising" them.
+
+*.bat text eol=crlf
+*.cmd text eol=crlf

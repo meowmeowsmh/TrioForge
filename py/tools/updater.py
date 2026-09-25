@@ -51,7 +51,7 @@ OVERLAY_PATHS = (
     ".github",
     "static",                 # static/uploads is excluded below — that is user data
     "run.sh",
-    "application.bat",
+    "TrioForge.bat",
     "voice_agent.bat",
     "requirements.txt",
     "requirements-ml.txt",
@@ -64,6 +64,7 @@ OVERLAY_PATHS = (
     "Disclaimer.md",
     "CODE_REVIEW.md",
     ".gitignore",
+    ".gitattributes",
     ".dockerignore",
 )
 
@@ -112,7 +113,7 @@ def _env() -> Dict[str, str]:
 def run(cmd: List[str], cwd: Path, timeout: int = 60) -> Tuple[int, str]:
     """Run a command, returning (returncode, combined output). Never raises.
 
-    Git is a console program: without CREATE_NO_WINDOW, a hidden launch (start.vbs,
+    Git is a console program: without CREATE_NO_WINDOW, a hidden launch (TrioForge.bat,
     pythonw) gets a fresh console window for every git call - the "why is a terminal
     popping up with git/..." complaint.
     """

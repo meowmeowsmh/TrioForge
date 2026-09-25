@@ -1,6 +1,6 @@
 """TrioForge control panel — an optional host window.
 
-The everyday way to run TrioForge is the app itself: double-click ``start.vbs``
+The everyday way to run TrioForge is the app itself: double-click ``TrioForge.bat``
 (Windows) or run ``./run.sh`` and open the web interface. This panel is for people
 who want a small window to manage it instead: it starts and supervises the server,
 shows what it is doing, lets you restart or stop it, pull updates, turn on hosting,

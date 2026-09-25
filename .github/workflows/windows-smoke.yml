@@ -1,0 +1,183 @@
+name: Windows smoke test
+
+# Actually runs TrioForge on Windows, so you do not need a Windows machine to know
+# it still starts.
+#
+# Why this exists: the repo carries dozens of Windows-only branches - which
+# llama.cpp .zip to fetch for cuda / rocm / vulkan / cpu, the mkcert .exe, taskkill
+# in place of SIGTERM, CREATE_NO_WINDOW so no console flashes - and until this
+# workflow NOTHING ran any of them. They could all have been broken with no red X
+# anywhere. It also runs the real TrioForge.bat, which no test ever did, so the
+# launcher users actually double-click is now covered too.
+#
+# A GitHub runner has no GPU, so this covers the CPU paths and the CHOICE between
+# backends - not CUDA or Vulkan at runtime.
+#
+# Run it from GitHub -> Actions -> "Windows smoke test" -> Run workflow.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest          # Windows Server, x64
+    timeout-minutes: 30
+
+    env:
+      # Never stop for a keypress here; only a double-click should do that.
+      TRIOFORGE_NO_PAUSE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show platform (expect Windows / AMD64)
+        shell: cmd
+        run: |
+          ver
+          python -VV
+          python -c "import platform; print('system =', platform.system(), '| machine =', platform.machine())"
+
+      # ── 1. The one-launcher consolidation actually happened ───────────────
+      - name: Exactly one launcher, and the old five are gone
+        shell: cmd
+        run: |
+          if not exist TrioForge.bat (echo FAIL: TrioForge.bat is missing & exit /b 1)
+          echo ok: TrioForge.bat exists
+          for %%F in (start.bat start.vbs start-web.bat start-web.vbs application.bat) do (
+            if exist %%F (echo FAIL: %%F is still here - TrioForge.bat replaced it & exit /b 1)
+          )
+          echo ok: no stale launchers
+
+      - name: TrioForge.bat --help answers before any setup exists
+        shell: cmd
+        run: |
+          call TrioForge.bat --help > help.txt 2>&1
+          if errorlevel 1 (echo FAIL: --help exited non-zero & type help.txt & exit /b 1)
+          type help.txt
+          findstr /C:"the one launcher" help.txt >nul || (echo FAIL: --help did not print the usage & exit /b 1)
+          echo PASS: --help works with no venv and no deps
+
+      # ── 2. First-run setup, then the real launcher through the real .bat ──
+      - name: Create venv and install core deps
+        shell: cmd
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Run TrioForge.bat for real (finds Python, reaches the launcher)
+        shell: cmd
+        run: |
+          call TrioForge.bat --status > status.txt 2>&1
+          type status.txt
+          findstr /C:"TrioForge status" status.txt >nul || (echo FAIL: the .bat never reached the launcher & exit /b 1)
+          echo PASS: TrioForge.bat -^> launcher.py --status
+
+      # ── 3. The Windows-only logic nothing had ever executed ───────────────
+      - name: Windows platform-logic checks
+        shell: python
+        run: |
+          import os, sys
+          sys.path.insert(0, "py")
+          assert os.name == "nt", "not running on Windows"
+
+          import setup_check as sc
+          sc._gpu_cache = None
+          gpu = sc._gpu_backend()
+          print("detected gpu:", gpu)
+          # A runner has no GPU. The point is that the Windows branch is reached and
+          # answers sensibly, not which backend a GPU-less machine reports.
+          assert gpu["os"] == "Windows", gpu
+          hint = sc._llamacpp_install_hint(gpu)
+          print("llama.cpp hint:", hint[:100])
+          assert "winget" in hint or "win-" in hint, hint
+          assert "Windows" in sc._comfyui_install_hint(gpu), "ComfyUI hint lacks Windows"
+
+          import app
+          asset = app._mkcert_asset_name()
+          print("mkcert asset:", asset)
+          assert asset.endswith(".exe"), asset      # a bare name would 404 on Windows
+          assert "windows" in asset, asset
+
+          import llama_installer as li
+          names = ["llama-b10874-bin-macos-arm64.tar.gz",
+                   "llama-b10874-bin-ubuntu-x64.tar.gz",
+                   "llama-b10874-bin-win-cpu-x64.zip",
+                   "llama-b10874-bin-win-cuda-12.4-x64.zip",
+                   "llama-b10874-bin-win-vulkan-x64.zip",
+                   "llama-b10874-bin-win-rocm-10.0-x64.zip"]
+          for backend, want in (("cuda",   "llama-b10874-bin-win-cuda-12.4-x64.zip"),
+                                ("vulkan", "llama-b10874-bin-win-vulkan-x64.zip"),
+                                ("rocm",   "llama-b10874-bin-win-rocm-10.0-x64.zip"),
+                                ("cpu",    "llama-b10874-bin-win-cpu-x64.zip")):
+              picked = li._pick_asset(names, backend)
+              print("backend %-7s -> %s" % (backend, picked))
+              assert picked == want, (backend, picked, want)
+
+          # Both shortcuts must point at the ONE launcher, and the window one must
+          # carry --window - without it a "TrioForge (window)" icon would quietly
+          # open the browser instead.
+          import shortcuts
+          assert shortcuts.FLAVORS["web"]["script"] == "TrioForge.bat"
+          assert shortcuts.FLAVORS["window"]["script"] == "TrioForge.bat"
+          assert shortcuts.FLAVORS["window"]["args"] == "--window"
+          print("platform logic OK")
+
+      - name: Undefined-name scan (the ProviderError class of bug)
+        shell: cmd
+        run: .venv\Scripts\python.exe tools\undefined-names-check.py py
+
+      # ── 4. Does it actually serve? ────────────────────────────────────────
+      - name: Start the app and smoke-test endpoints
+        shell: python
+        run: |
+          import os, subprocess, time, urllib.request
+          env = dict(os.environ)
+          # Windows defaults to HTTPS; force plain HTTP so the probe needs no cert.
+          env["TRIOFORGE_SSL"] = "0"
+          env["TRIOFORGE_NO_BROWSER"] = "1"
+          log = open("app.log", "w", encoding="utf-8", errors="replace")
+          p = subprocess.Popen([r".venv\Scripts\python.exe", "py/app.py"],
+                               stdout=log, stderr=subprocess.STDOUT, env=env)
+          base = "http://127.0.0.1:5003"
+          try:
+              for _ in range(90):
+                  try:
+                      with urllib.request.urlopen(base + "/", timeout=3) as r:
+                          code, page = r.status, r.read().decode("utf-8", "replace")
+                      break
+                  except Exception:
+                      time.sleep(1)
+              else:
+                  log.flush()
+                  print(open("app.log", errors="replace").read()[-3000:])
+                  raise SystemExit("FAIL: the app never answered on %s" % base)
+              print("GET / HTTP %s, %d bytes" % (code, len(page)))
+              assert code == 200, code
+              assert "Friendly Tutor" in page, "FAIL: persona dropdown empty"
+              for path in ("/notes", "/corkboard"):
+                  with urllib.request.urlopen(base + path, timeout=10) as r:
+                      print("GET %s HTTP %s" % (path, r.status))
+                      assert r.status == 200, (path, r.status)
+              print("ALL WINDOWS CHECKS PASSED")
+          finally:
+              p.terminate()
+              try:
+                  p.wait(timeout=15)
+              except Exception:
+                  p.kill()
+              log.close()
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app-log
+          path: |
+            app.log
+            status.txt
+            help.txt
+          if-no-files-found: ignore
