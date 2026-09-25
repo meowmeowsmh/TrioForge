@@ -68,14 +68,6 @@ jobs:
           .venv\Scripts\python.exe -m pip install --upgrade pip
           .venv\Scripts\python.exe -m pip install -r requirements.txt
 
-      - name: Run TrioForge.bat for real (finds Python, reaches the launcher)
-        shell: cmd
-        run: |
-          call TrioForge.bat --status > status.txt 2>&1
-          type status.txt
-          findstr /C:"TrioForge status" status.txt >nul || (echo FAIL: the .bat never reached the launcher & exit /b 1)
-          echo PASS: TrioForge.bat -^> launcher.py --status
-
       # ── 3. The Windows-only logic nothing had ever executed ───────────────
       - name: Windows platform-logic checks
         shell: python
@@ -129,6 +121,36 @@ jobs:
       - name: Undefined-name scan (the ProviderError class of bug)
         shell: cmd
         run: .venv\Scripts\python.exe tools\undefined-names-check.py py
+
+      - name: Run TrioForge.bat for real (finds Python, reaches the launcher)
+        shell: cmd
+        run: |
+          echo ===== which interpreters exist ===== > diag.txt
+          if exist .venv\Scripts\python.exe echo ok: .venv\Scripts\python.exe >> diag.txt
+          if not exist .venv\Scripts\python.exe echo MISSING: .venv\Scripts\python.exe >> diag.txt
+          where py >> diag.txt 2>&1
+          where python >> diag.txt 2>&1
+          echo. >> diag.txt
+          echo ===== A) launcher.py directly, no .bat involved ===== >> diag.txt
+          .venv\Scripts\python.exe py\tools\launcher.py . --status >> diag.txt 2>&1
+          echo [direct exit=%errorlevel%] >> diag.txt
+          echo. >> diag.txt
+          echo ===== B) the same thing through TrioForge.bat --status ===== >> diag.txt
+          call TrioForge.bat --status >> diag.txt 2>&1
+          echo [via .bat exit=%errorlevel%] >> diag.txt
+          echo. >> diag.txt
+          echo ===== C) TrioForge.bat --help ===== >> diag.txt
+          call TrioForge.bat --help >> diag.txt 2>&1
+          echo [help exit=%errorlevel%] >> diag.txt
+          type diag.txt
+          rem Publish it somewhere readable without a token: the job summary shows up
+          rem in the check-run output.summary field, which the public API serves.
+          echo "## launcher diagnostics" >> "%GITHUB_STEP_SUMMARY%"
+          echo '```' >> "%GITHUB_STEP_SUMMARY%"
+          type diag.txt >> "%GITHUB_STEP_SUMMARY%"
+          echo '```' >> "%GITHUB_STEP_SUMMARY%"
+          findstr /C:"TrioForge status" diag.txt >nul || (echo FAIL: no "TrioForge status" banner anywhere in diag.txt & exit /b 1)
+          echo PASS: TrioForge.bat reached the launcher
 
       # ── 4. Does it actually serve? ────────────────────────────────────────
       - name: Start the app and smoke-test endpoints
