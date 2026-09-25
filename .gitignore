@@ -138,3 +138,7 @@ frames/
 
 # downloaded installers
 *.deb
+
+# CI/debug artefacts written into the repo root by the smoke-test diagnostics.
+platform-error.txt
+diag.txt
