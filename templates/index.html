@@ -1559,6 +1559,7 @@ video.tf-video {
       <div class="top-bar-icons" id="topBarIcons">
         <button class="unload-btn" id="unloadBtn" title="Unload current Ollama model from memory">🗑</button>
         <button class="clear-btn" id="hfDownloadBtn" onclick="openHfDownload()" title="Download a model from Hugging Face (GGUF)">⬇</button>
+          <button class="clear-btn" id="browserChoiceBtn" onclick="openBrowserModal()" title="Choose which browser TrioForge opens in">🌐</button>
         <span id="visionBadge" class="vision-badge" title="Vision capable">👁</span>
         <button class="clear-btn" onclick="clearAllChats()" title="Clear this chat's messages">🧹</button>
         <span id="deepseekStatus" style="font-size:12px;"></span>
@@ -2044,38 +2045,174 @@ unloadBtn.addEventListener('click', function() {
 });
 
 // ── Hugging Face model download ──
-function openHfDownload() {
-    var repo = prompt('Hugging Face repo id (e.g. bartowski/Qwen2.5-7B-Instruct-GGUF):');
-    if (!repo || !repo.trim()) return;
-    repo = repo.trim();
-    var file = prompt('GGUF filename to download (e.g. Qwen2.5-7B-Instruct-Q4_K_M.gguf).\nLeave empty to skip.', '');
-    if (file === null) return;
-    file = (file || '').trim();
-    var mmproj = prompt('mmproj (vision) filename to download (e.g. mmproj-Qwen2.5-7B-Instruct-BF16.gguf).\nLeave empty to skip.', '');
-    if (mmproj === null) return;
-    mmproj = (mmproj || '').trim();
+// ── Browser chooser: which browser should TrioForge open in? ──────────────────
+function openBrowserModal() {
+    var m = document.getElementById('browserModal');
+    if (!m) return;
+    m.style.display = 'flex';
+    loadBrowserList();
+}
+function closeBrowserModal() {
+    var m = document.getElementById('browserModal');
+    if (m) m.style.display = 'none';
+}
+function loadBrowserList() {
+    var box = document.getElementById('browserList');
+    var st = document.getElementById('browserStatus');
+    if (!box) return;
+    if (st) st.textContent = '';
+    box.innerHTML = 'Detecting browsers…';
+    fetch('/api/browser/list').then(function(r){ return r.json(); }).then(function(d){
+        var sel = d.selected || 'default';
+        box.innerHTML = (d.browsers || []).map(function(b){
+            var ok = b.available;
+            return '<label style="display:flex; gap:8px; align-items:center; padding:8px; border:1px solid ' +
+                   (b.id === sel ? '#2ea043' : '#222') + '; border-radius:6px; margin-bottom:4px; cursor:' +
+                   (ok ? 'pointer' : 'not-allowed') + '; color:' + (ok ? '#c9d1d9' : '#555') + ';">' +
+                   '<input type="radio" name="browserPick" value="' + b.id + '"' + (b.id === sel ? ' checked' : '') +
+                   (ok ? '' : ' disabled') + ' onchange="selectBrowser(this.value)">' +
+                   '<b>' + b.name + '</b>' +
+                   (ok ? '' : ' <span style="color:#8b949e; font-size:11px;">(not installed)</span>') +
+                   (b.path ? '<span style="color:#8b949e; font-size:11px; margin-left:auto;">' + b.path + '</span>' : '') +
+                   '</label>';
+        }).join('');
+    }).catch(function(e){ box.innerHTML = '<span style="color:#f85149;">Could not detect browsers: ' + e + '</span>'; });
+}
+function selectBrowser(id) {
+    var st = document.getElementById('browserStatus');
+    fetch('/api/browser/select', { method:'POST', headers:{'Content-Type':'application/json'},
+                                   body: JSON.stringify({ browser: id }) })
+      .then(function(r){ return r.json(); }).then(function(d){
+          if (!st) return;
+          st.innerHTML = d.error ? '<span style="color:#f85149;">' + d.error + '</span>'
+                                 : '<span style="color:#7ee787;">✅ Saved — TrioForge will use this next time it starts.</span>';
+          loadBrowserList();
+      }).catch(function(e){ if (st) st.textContent = 'Could not save: ' + e; });
+}
+function openInBrowserNow() {
+    var st = document.getElementById('browserStatus');
+    if (st) st.textContent = 'Opening…';
+    fetch('/api/browser/open', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' })
+      .then(function(r){ return r.json(); }).then(function(d){
+          if (!st) return;
+          st.innerHTML = d.error ? '<span style="color:#f85149;">' + d.error + '</span>'
+                                 : '<span style="color:#7ee787;">Opened in ' + d.opened_in + '</span>';
+      }).catch(function(e){ if (st) st.textContent = 'Failed: ' + e; });
+}
 
-    if (!file && !mmproj) {
-        status.textContent = '❌ Enter at least one filename (GGUF or mmproj).';
-        return;
-    }
-    status.textContent = '⬇ Downloading from Hugging Face… (may take a while)';
+// ── Model browser: search Hugging Face, see what FITS this machine, download ──
+function openHfDownload() { openModelBrowser(); }
+
+function openModelBrowser() {
+    var m = document.getElementById('modelBrowserModal');
+    if (!m) return;
+    m.style.display = 'flex';
+    mbLoadHardware();
+    mbLoadRecommended();
+}
+function closeModelBrowser() {
+    var m = document.getElementById('modelBrowserModal');
+    if (m) m.style.display = 'none';
+}
+
+function mbLoadHardware() {
+    fetch('/api/models/hardware').then(function(r){ return r.json(); }).then(function(hw){
+        var el = document.getElementById('mbHardware');
+        if (!el) return;
+        el.textContent = '🖥 ' + (hw.vram_total_gb || 0) + ' GB VRAM · ' +
+                         (hw.ram_free_gb || 0) + ' GB RAM free — models marked ✅ GPU run fastest';
+    }).catch(function(){});
+}
+
+function mbFitBadge(fit) {
+    var map = { gpu: ['✅ GPU', '#7ee787'], split: ['➗ Split', '#e3b341'],
+                cpu: ['🐌 RAM', '#e3b341'], too_big: ['❌ Too big', '#f85149'] };
+    var v = map[fit] || ['?', '#8b949e'];
+    return '<span style="color:' + v[1] + '; font-size:11px; font-weight:600;">' + v[0] + '</span>';
+}
+function mbRow(left, right) {
+    return '<div style="display:flex; justify-content:space-between; gap:8px; align-items:center; ' +
+           'padding:6px 8px; border:1px solid #222; border-radius:6px; margin-bottom:4px;">' +
+           '<span style="font-size:12px;">' + left + '</span>' +
+           '<span style="display:flex; gap:8px; align-items:center; white-space:nowrap;">' + right + '</span></div>';
+}
+var MB_BTN = 'padding:5px 10px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#c9d1d9; cursor:pointer; font-size:12px;';
+var MB_DL  = 'padding:5px 10px; border:1px solid #2ea043; border-radius:6px; background:#1c2b1c; color:#7ee787; cursor:pointer; font-size:12px;';
+
+function mbLoadRecommended() {
+    var box = document.getElementById('mbRecommended');
+    if (!box) return;
+    box.innerHTML = 'Loading…';
+    fetch('/api/models/recommended').then(function(r){ return r.json(); }).then(function(d){
+        if (!d.recommended) { box.innerHTML = ''; return; }
+        box.innerHTML = d.recommended.map(function(m){
+            return mbRow('<b>' + m.repo_id + '</b><br><span style="color:#8b949e;">' + m.note + '</span>',
+                         mbFitBadge(m.fit) +
+                         '<button data-repo="' + m.repo_id + '" onclick="mbLoadFiles(this.dataset.repo)" style="' + MB_BTN + '">Browse</button>');
+        }).join('');
+    }).catch(function(e){ box.textContent = 'Could not load recommendations: ' + e; });
+}
+
+function mbSearch() {
+    var q = (document.getElementById('mbQuery').value || '').trim();
+    if (!q) return;
+    var box = document.getElementById('mbResults');
+    box.innerHTML = 'Searching…';
+    fetch('/api/models/search?q=' + encodeURIComponent(q)).then(function(r){ return r.json(); }).then(function(d){
+        if (d.error) { box.innerHTML = '<span style="color:#f85149;">' + d.error + '</span>'; return; }
+        var rows = (d.results || []).map(function(m){
+            return mbRow('<b>' + m.repo_id + '</b><br><span style="color:#8b949e;">⬇ ' +
+                         (m.downloads || 0).toLocaleString() + '</span>',
+                         '<button data-repo="' + m.repo_id + '" onclick="mbLoadFiles(this.dataset.repo)" style="' + MB_BTN + '">Files</button>');
+        }).join('');
+        box.innerHTML = rows || '<span style="color:#8b949e;">No results.</span>';
+    }).catch(function(e){ box.innerHTML = '<span style="color:#f85149;">Search failed: ' + e + '</span>'; });
+}
+
+function mbLoadFiles(repo) {
+    var box = document.getElementById('mbFiles');
+    box.innerHTML = 'Listing ' + repo + '…';
+    fetch('/api/models/files?repo_id=' + encodeURIComponent(repo)).then(function(r){ return r.json(); }).then(function(d){
+        if (d.error) { box.innerHTML = '<span style="color:#f85149;">' + d.error + '</span>'; return; }
+        var html = '<div style="font-size:12px; color:#8b949e; margin:6px 0;">' + repo +
+                   ' — best size/quality first</div>';
+        (d.models || []).forEach(function(f){
+            html += mbRow(f.filename + '<br><span style="color:#8b949e;">' + f.size_gb + ' GB</span>',
+                          mbFitBadge(f.fit) +
+                          '<button data-repo="' + repo + '" data-file="' + f.filename +
+                          '" onclick="mbDownload(this.dataset.repo, this.dataset.file)" style="' + MB_DL + '">⬇ Download</button>');
+        });
+        if ((d.mmproj || []).length) {
+            html += '<div style="font-size:12px; color:#8b949e; margin:8px 0 4px;">Vision projector (mmproj) — tick it for image support</div>';
+            d.mmproj.forEach(function(f){
+                html += '<label style="display:flex; gap:8px; align-items:center; padding:6px 8px; border:1px solid #222; ' +
+                        'border-radius:6px; margin-bottom:4px; font-size:12px; cursor:pointer;">' +
+                        '<input type="checkbox" class="mb-mmproj" value="' + f.filename + '"> ' + f.filename +
+                        ' <span style="color:#8b949e;">' + f.size_gb + ' GB</span></label>';
+            });
+        }
+        html += '<div id="mbDownloadStatus" style="margin-top:8px; font-size:12px; color:#8b949e;"></div>';
+        box.innerHTML = html;
+    }).catch(function(e){ box.innerHTML = '<span style="color:#f85149;">Could not list files: ' + e + '</span>'; });
+}
+
+function mbDownload(repo, file) {
+    var picked = document.querySelector('.mb-mmproj:checked');
+    var mm = picked ? picked.value : '';
+    var st = document.getElementById('mbDownloadStatus');
+    if (st) st.textContent = '⬇ Downloading ' + file + (mm ? ' + ' + mm : '') + ' … multi-GB files take a while.';
     fetch('/api/models/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repo_id: repo, filename: file, mmproj_filename: mmproj })
-    })
-    .then(r => r.json())
-    .then(d => {
-        if (d.error) { status.textContent = '❌ ' + d.error; return; }
-        status.textContent = '✅ Downloaded: ' + (d.downloaded || []).join(', ');
-        // Refresh the model list (switch provider to llama.cpp so the file shows up).
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo_id: repo, filename: file, mmproj_filename: mm })
+    }).then(function(r){ return r.json(); }).then(function(d){
+        if (d.error) { if (st) st.innerHTML = '<span style="color:#f85149;">❌ ' + d.error + '</span>'; return; }
+        if (st) st.innerHTML = '<span style="color:#7ee787;">✅ Downloaded: ' + (d.downloaded || []).join(', ') +
+                               ' — it is now in the model list.</span>';
         providerSelect.value = 'llamacpp';
         providerSelect.dataset.prev = 'llamacpp';
-        try { saveAiProvider('llamacpp'); } catch(e) {}
+        try { saveAiProvider('llamacpp'); } catch (e) {}
         loadModels();
-    })
-    .catch(err => { status.textContent = '❌ Download failed: ' + err; });
+    }).catch(function(e){ if (st) st.textContent = '❌ Download failed: ' + e; });
 }
 
 var dropOverlay = document.getElementById('dropOverlay');
@@ -8019,6 +8156,48 @@ if ('serviceWorker' in navigator) {
       <button id="logsTab_voice" onclick="switchLogsTab('voice')" style="padding:6px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#8b949e; cursor:pointer;">🗣 Voice</button>
     </div>
     <pre id="logsContent" style="flex:1; margin:0; padding:12px; background:#0a0a0f; border:1px solid #222; border-radius:8px; color:#c9d1d9; font-size:12px; font-family:Consolas,'Courier New',monospace; white-space:pre-wrap; word-break:break-word; overflow:auto;">Loading logs…</pre>
+  </div>
+</div>
+
+<!-- Browser chooser: which browser should TrioForge open in? -->
+<div id="browserModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10009; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:16px; width:min(560px,94vw); max-height:82vh; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+      <strong style="font-size:16px;">🌐 Open TrioForge in…</strong>
+      <button onclick="closeBrowserModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:12px; color:#8b949e; margin-bottom:10px;">
+      Pick the browser TrioForge should use. The choice is remembered for the next time the app starts.
+    </div>
+    <div id="browserList" style="flex:1; overflow:auto;">Detecting browsers…</div>
+    <div id="browserStatus" style="font-size:12px; margin-top:8px; color:#8b949e; min-height:16px;"></div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button onclick="openInBrowserNow()" style="padding:8px 14px; border:1px solid #2ea043; border-radius:6px; background:#1c2b1c; color:#7ee787; cursor:pointer;">Open now</button>
+      <button onclick="closeBrowserModal()" style="padding:8px 14px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#c9d1d9; cursor:pointer;">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Model browser: search Hugging Face and download a GGUF that fits this PC -->
+<div id="modelBrowserModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10008; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:16px; width:min(880px,94vw); height:min(82vh,780px); display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <strong style="font-size:16px;">⬇ Download a model (GGUF)</strong>
+      <button onclick="closeModelBrowser()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div id="mbHardware" style="font-size:12px; color:#8b949e; margin-bottom:10px;">Detecting your hardware…</div>
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <input id="mbQuery" type="text" placeholder="Search Hugging Face for GGUF models (e.g. llama-3.1-8b)"
+             style="flex:1; padding:8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:13px;"
+             onkeydown="if(event.key==='Enter'){mbSearch();}">
+      <button onclick="mbSearch()" style="padding:8px 16px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#c9d1d9; cursor:pointer;">Search</button>
+    </div>
+    <div style="flex:1; overflow:auto;">
+      <div style="font-size:12px; color:#8b949e; margin:6px 0;">Recommended for your hardware</div>
+      <div id="mbRecommended"></div>
+      <div id="mbResults" style="margin-top:10px;"></div>
+      <div id="mbFiles" style="margin-top:10px;"></div>
+    </div>
   </div>
 </div>
 

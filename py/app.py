@@ -148,6 +148,11 @@ from providers.llm_providers import (
 from features.notes import notes_bp, upsert_note
 from features.cork_board import corkboard_bp, upsert_pin, add_link
 from features.viewer import setup_viewer
+from features.obsidian_ai import obsidian_bp
+from features.screen_ask import screen_bp
+from features.openai_api import openai_bp
+from features.model_browser import models_bp
+from features.browser_choice import browser_bp, open_url as open_in_browser
 import personas
 import comfyui_service
 import rag
@@ -186,6 +191,11 @@ def _allow_streamed_attachment_upload():
 Compress(app)
 app.register_blueprint(notes_bp)
 app.register_blueprint(corkboard_bp)
+app.register_blueprint(obsidian_bp)
+app.register_blueprint(screen_bp)
+app.register_blueprint(openai_bp)
+app.register_blueprint(models_bp)
+app.register_blueprint(browser_bp)
 
 # â”€â”€ Plugins (loaded best-effort at startup) â”€â”€
 try:
@@ -3601,7 +3611,7 @@ def _execute_tool(name, args):
             return {"error": "Only http(s) URLs are allowed."}
         try:
             import webbrowser
-            webbrowser.open(url)
+            open_in_browser(url)
             return {"ok": True, "opened": url}
         except Exception as e:
             return {"error": str(e)}
@@ -5312,7 +5322,7 @@ def _auto_open_browser(url: str) -> None:
         import webbrowser
         time.sleep(2.0)
         try:
-            webbrowser.open(url)
+            open_in_browser(url)
             logger.info("Opened your browser at %s", url)
         except Exception as exc:
             logger.warning("Could not open a browser: %s", exc)
@@ -5478,7 +5488,7 @@ if __name__ == '__main__':
                 print("[TrioForge] (not opening a browser: TRIOFORGE_NO_BROWSER is set)")
             else:
                 import webbrowser
-                webbrowser.open(url)  # synchronous: opens before we exit
+                open_in_browser(url)  # synchronous: opens before we exit
         except Exception:
             pass
         sys.exit(0)

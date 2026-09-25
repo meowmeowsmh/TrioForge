@@ -333,15 +333,53 @@ The **Setup panel** (reopen anytime with the **🚀** button in the top bar) det
 
 > macOS support is verified in CI on a real Apple Silicon runner (platform logic, llama.cpp release selection, **ComfyUI detection + the full generate flow**): [`.github/workflows/macos-smoke.yml`](.github/workflows/macos-smoke.yml).
 
-### ⬇ Download a GGUF from Hugging Face
+### ⬇ Download a model — search it, or pick one that fits your PC
 
-Click **⬇** in the top bar, then enter:
+Click **⬇** in the top bar. You get a browser, **not** a prompt asking you to type filenames:
 
-1. the **repo id** (e.g. `bartowski/Qwen2.5-7B-Instruct-GGUF`),
-2. the **GGUF filename** (e.g. `Qwen2.5-7B-Instruct-Q4_K_M.gguf`),
-3. optionally the matching **mmproj** filename for vision models (e.g. `mmproj-Qwen2.5-7B-Instruct-BF16.gguf`).
+1. **Your hardware is detected and shown**, e.g. `🖥 8 GB VRAM · 6 GB RAM free`.
+2. **Recommended models are tagged for *your* machine** — no guessing whether it will run:
 
-The file(s) land in `models/` and appear in the **llama.cpp** dropdown — ready to run locally (including workspace tools). The download is non-blocking; the result shows in the status bar.
+   | Badge | Meaning |
+   |---|---|
+   | **✅ GPU** | fits entirely in VRAM — fastest |
+   | **➗ Split** | some layers on the GPU, the rest in RAM — usable, slower |
+   | **🐌 RAM** | CPU only |
+   | **❌ Too big** | will not fit in your free memory |
+
+3. **Search Hugging Face live** (`llama-3.1-8b`, `qwen2.5-coder`, …). Nothing is hard-coded,
+   so you always see current repos and their download counts.
+4. A repo's `.gguf` files are listed **best quant first** (Q4_K_M → Q5 → Q6 → Q8 → f32) with sizes.
+5. **One-click download** into `models/`, with an optional **mmproj** tick-box for vision models.
+
+#### What fits an 8 GB GPU (e.g. RTX 5060 Laptop)
+
+| Quant of a 7–8B model | ~Size | Verdict on 8 GB VRAM |
+|---|---|---|
+| Q4_K_M | 4.6 GB | ✅ GPU — the sweet spot |
+| Q5_K_M | 5.3 GB | ✅ GPU |
+| Q6_K | 6.1 GB | ➗ Split |
+| Q8_0 | 8.0 GB | ➗ Split |
+| f32 | 30 GB | ❌ Too big |
+
+**Rule of thumb: keep the file under ~60% of your VRAM**, so the KV cache and compute
+buffers still fit. A 12B Q4 (6.8 GB) on an 8 GB card already needs a GPU/CPU split — which is
+why reply speed drops. Smaller model + higher quant usually beats bigger model + lower quant.
+
+#### The same thing from the API
+
+```bash
+curl "http://127.0.0.1:5003/api/models/hardware"                  # your VRAM / RAM
+curl "http://127.0.0.1:5003/api/models/recommended"               # picks + fit badges
+curl "http://127.0.0.1:5003/api/models/search?q=llama-3.1-8b"     # live HF search
+curl "http://127.0.0.1:5003/api/models/files?repo_id=bartowski/Meta-Llama-3.1-8B-Instruct-GGUF"
+curl -X POST http://127.0.0.1:5003/api/models/download \
+     -H 'Content-Type: application/json' \
+     -d '{"repo_id":"bartowski/Meta-Llama-3.1-8B-Instruct-GGUF","filename":"Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"}'
+```
+
+Downloaded files land in `models/`, appear in the **llama.cpp** dropdown, and are paired with
+their projector automatically (see the next section).
 
 ### 🗂️ Model folders (automatic projector pairing)
 
