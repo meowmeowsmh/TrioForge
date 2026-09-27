@@ -12,10 +12,38 @@ import json
 import os
 import socket
 import subprocess
+import shutil
 import threading
 import time
 
 from paths import root_path
+
+
+def _nvidia_offload():
+    """(prefix, extra_env) that makes llama-server run on the NVIDIA dGPU.
+
+    On a MUX-less hybrid laptop the display panel is wired to the AMD iGPU, so
+    Vulkan's *default* device is the AMD - and without this, the model would
+    silently load onto the iGPU while the RTX sat idle (VRAM estimates read the
+    NVIDIA, the server ran on the AMD). prime-run flips the default to NVIDIA.
+
+    Returns ([] , {}) when there is nothing to offload to, so machines without a
+    dGPU keep their working iGPU fallback untouched.
+    """
+    if os.name == "nt":
+        return [], {}
+    pr = shutil.which("prime-run")
+    if pr is None:
+        pr = os.path.expanduser("~/.local/bin/prime-run")
+        if not os.access(pr, os.X_OK):
+            pr = None
+    if pr is None or not os.path.exists("/dev/nvidia0"):
+        return [], {}
+    return [pr], {
+        "__NV_PRIME_RENDER_OFFLOAD": "1",
+        "__VK_LAYER_NV_optimus": "NVIDIA_only",
+        "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
+    }
 
 CONFIG_PATH = root_path("voiceguide_llama.cpp_guide", "config.json")
 
@@ -955,6 +983,14 @@ def start(model=None, ctx_size=None):
                     getattr(subprocess, "CREATE_NO_WINDOW", 0)
                     | getattr(subprocess, "DETACHED_PROCESS", 0))
                 spawn_kwargs["close_fds"] = True
+            # Offload the model server to the NVIDIA dGPU when one is present:
+            # without this, Vulkan picks the AMD iGPU (the panel is wired to it)
+            # and the RTX sits unused. prime-run + the NVIDIA-only Vulkan layer
+            # make llama.cpp select the RTX instead.
+            prefix, offload_env = _nvidia_offload()
+            if prefix:
+                cmd = prefix + cmd
+                env.update(offload_env)
             _process = subprocess.Popen(
                 cmd,
                 stdout=_out,
