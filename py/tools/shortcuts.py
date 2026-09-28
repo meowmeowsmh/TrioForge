@@ -240,8 +240,20 @@ def targets(project: Path, flavor: str = "web") -> List[Tuple[str, Path]]:
 def _make_desktop_file(path: Path, project: Path, icon: Path, flavor: str = "web") -> Tuple[bool, str]:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        pythonw = project / ".venv" / "bin" / "python3"
-        exe = str(pythonw if pythonw.is_file() else sys.executable)
+        # On Linux the venv is .venv-linux (see run.sh) - a bare ".venv" here is the
+        # WINDOWS layout (.venv/Scripts), so it has no bin/python3 at all. Only testing
+        # ".venv/bin/python3" therefore always fell through to sys.executable, which is
+        # fine when run.sh launched us from the venv but wrong when the shortcut was
+        # created by a system python: the .desktop entry then pointed at an interpreter
+        # with no Flask, and double-clicking the icon silently did nothing.
+        exe_path = None
+        for candidate in (project / ".venv-linux" / "bin" / "python",
+                          project / ".venv" / "bin" / "python3",
+                          project / ".venv" / "bin" / "python"):
+            if candidate.is_file():
+                exe_path = candidate
+                break
+        exe = str(exe_path if exe_path else sys.executable)
         # "web" opens in the user's browser (no --window); "window" opens the desktop
         # window. Same server either way.
         extra = "--window --detach --no-browser" if flavor == "window" else "--detach"

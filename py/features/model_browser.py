@@ -152,11 +152,17 @@ def fit_for(size_gb, hw=None):
     # Compare against the GPU's TOTAL, not what happens to be free: picking a model
     # replaces whatever is loaded, which frees its VRAM.
     vram = max(hw.get("vram_total_gb") or 0, hw.get("vram_free_gb") or 0)
+    ram = hw.get("ram_free_gb") or 0
     if vram and need <= vram:
         return "gpu"
-    if need <= vram + (hw.get("ram_free_gb") or 0):
+    # "split" needs a GPU to split onto. Testing "vram + ram" before "ram" made the
+    # "cpu" branch unreachable: any model that fitted in RAM also fitted in
+    # vram + ram, so a GPU-less machine was told its models would "run partly on
+    # GPU, partly in RAM" when there was no GPU at all. Gate the split on `vram`,
+    # then fall through to a plain RAM-only load.
+    if vram and need <= vram + ram:
         return "split"
-    if need <= (hw.get("ram_free_gb") or 0):
+    if need <= ram:
         return "cpu"
     return "too_big"
 

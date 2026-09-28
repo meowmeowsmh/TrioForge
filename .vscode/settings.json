@@ -7,5 +7,16 @@
   "files.readonlyInclude": {
     "static/vendor/**": true
   },
-  "python-envs.defaultEnvManager": "ms-python.python:system"
+
+  // --- Python interpreter: use TrioForge's own venv, NOT the system Python. ---
+  // The Linux venv is ".venv-linux" (see run.sh). VSCode cannot guess that name,
+  // so without this it fell back to the global system interpreter (Python 3.14),
+  // which has no Flask/psutil/frontmatter -> the import errors.
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv-linux/bin/python",
+  "python.venvPath": "${workspaceFolder}",
+  "python.venvFolders": [".venv-linux"],
+  "python-envs.defaultEnvManager": "ms-python.python:venv",
+
+  // Keep Pylance's analysis pointed at the venv's site-packages.
+  "python.analysis.extraPaths": ["${workspaceFolder}/py"]
 }
