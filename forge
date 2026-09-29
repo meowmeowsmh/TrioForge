@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 # ============================================================
-#  forge — launch the TrioForge terminal client.
+#  forge / trioforge — launch the TrioForge terminal client.
 #
-#  This is the ONLY entry point you need:
-#      ./forge                     interactive session
-#      ./forge what is a GGUF?     one-shot question
-#      ./forge --echo              offline demo, no model needed
-#      ./forge --help              all options
+#  Both names run this same script (trioforge is a symlink to it):
+#      trioforge                   interactive session
+#      trioforge what is a GGUF?   one-shot question
+#      trioforge --echo            offline demo, no model needed
+#      trioforge --version         print the version
+#      trioforge --help            all options
 #
 #  It is independent of the Flask web GUI: nothing here imports app.py.
 # ============================================================
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks: readlink -f follows the whole chain to the real script, so a
+# link dropped in ~/.local/bin (e.g. trioforge) still finds the repo root.
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "$SELF")" && pwd)"
+
+# Tell the CLI which name the user typed, so --help/--version print that name.
+export FORGE_PROG="${FORGE_PROG:-$(basename "$0")}"
 
 # Prefer the Linux venv (where rich + prompt_toolkit were installed), then the
 # Windows-style layout, then whatever python3 is on PATH.

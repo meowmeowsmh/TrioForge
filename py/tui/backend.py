@@ -76,6 +76,18 @@ def _iter_sse(response) -> Iterator[tuple[str, str]]:
                 piece = delta.get(field)
                 if piece:
                     yield "reasoning", piece
+            # Native tool calls arrive fragmented: the name once, then the JSON
+            # arguments a few characters at a time. They are passed through raw
+            # and assembled by the agent, which is the only place that knows the
+            # call is finished.
+            for tc in delta.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                yield "tool_call", {
+                    "index": tc.get("index", 0),
+                    "id": tc.get("id"),
+                    "name": fn.get("name"),
+                    "arguments": fn.get("arguments"),
+                }
             piece = delta.get("content")
             if piece:
                 yield "content", piece
@@ -93,6 +105,10 @@ class OpenAICompatBackend(Backend):
         self.temperature = temperature
         self.name = model or "default"
         self.where = self.base_url
+        # Set by the agent when it wants native tool calling. Left empty for
+        # providers (or models) that cannot do it - gemma-3-12b ignores `tools`
+        # entirely and needs the text protocol instead.
+        self.tools: list[dict] = []
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
@@ -122,6 +138,9 @@ class OpenAICompatBackend(Backend):
             "stream": True,
             "temperature": self.temperature,
         }
+        if getattr(self, "tools", None):
+            body["tools"] = self.tools
+            body["tool_choice"] = "auto"
         url = f"{self.base_url}/chat/completions"
         try:
             with httpx.stream("POST", url, json=body, headers=self._headers(),

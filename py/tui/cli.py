@@ -17,9 +17,18 @@ DEFAULT_BASE_URL = os.environ.get(
 )
 
 
+def prog_name() -> str:
+    """The name the user typed - ``trioforge`` or ``forge``.
+
+    The launcher exports FORGE_PROG; ``python -m tui`` has no useful argv[0], so
+    that falls back to the app's own name.
+    """
+    return os.environ.get("FORGE_PROG", "").strip() or "trioforge"
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        prog="forge",
+        prog=prog_name(),
         description="TrioForge terminal client — a Claude-style chat UI for your models.",
         epilog="With no arguments it starts an interactive session. "
                "Give it words and it sends one message, prints the reply and exits.",
@@ -50,5 +59,5 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--no-banner", action="store_true",
                    help="skip the header (for scripts)")
     p.add_argument("--version", action="version",
-                   version=f"forge {__version__}")
+                   version=f"{prog_name()} {__version__}")
     return p.parse_args(argv)

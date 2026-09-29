@@ -38,11 +38,15 @@ from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Input, Markdown, Static
+from textual.message import Message
+from textual.screen import ModalScreen
+from textual.widgets import (Input, Label, ListItem, ListView, Markdown, Static,
+                             TextArea)
 
+from . import agent as agent_mod
 from . import localmodels, providers, theme as T
-from .backend import (BackendError, EchoBackend, OpenAICompatBackend,
-                      auto_model, fetch_models)
+from .backend import (EchoBackend, OpenAICompatBackend, auto_model,
+                      fetch_models)
 from .session import Session
 
 DEFAULT_SYSTEM = (
@@ -51,8 +55,31 @@ DEFAULT_SYSTEM = (
     "in fenced blocks with the language tag."
 )
 
-KEYBINDS = (" esc cancel  ·  tab chat  ·  ctrl+p commands  ·  ctrl+l model  ·  "
-            "shift+enter newline  ·  ctrl+n new  ·  ctrl+q quit")
+KEYBINDS = (" enter send  ·  ctrl+j newline  ·  tab chat  ·  ctrl+p commands  ·  "
+            "ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
+
+# Crush's "working" spinner (internal/ui/anim + chat/assistant.go): an animated
+# frame, a label with cycling ellipsis, and a live elapsed timer as the suffix.
+SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+# Extra ctrl+p palette entries that are edits, not slash commands. Keys here are
+# dispatched by _palette; they never reach _command().
+PALETTE_ACTIONS = [
+    ("set key", "set/change the API key for the current provider"),
+    ("add model", "add a model id to the current provider"),
+    ("remove model", "remove a model id from the current provider"),
+]
+
+# Commands that take an argument. Picked from ctrl+p, the argument is asked for
+# instead of silently running the command with none. "mode: local" lists the
+# .gguf files on disk; everything else is a one-line text prompt.
+ARG_PROMPTS: dict[str, dict] = {
+    "/keys":     {"prompt": "provider [value] - blank lists every key"},
+    "/base-url": {"prompt": "endpoint URL", "prefill": "base_url"},
+    "/system":   {"prompt": "new system prompt", "prefill": "system"},
+    "/save":     {"prompt": "path to write the transcript"},
+    "/start":    {"mode": "local"},
+}
 
 CSS = f"""
 Screen {{ background: {T.BG}; color: {T.FG}; }}
@@ -92,11 +119,71 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
     background: #16161e;
     color: {T.WHITE};
     padding: 0 1;
-    height: 3;
+    height: auto;
+    min-height: 3;
+    max-height: 10;
+    scrollbar-size-vertical: 1;
 }}
 #prompt:focus {{
     border: round {T.PURPLE};
     background: #1a1b26;
+}}
+/* the multi-line editor's own chrome, toned down to match the old single line */
+#prompt .text-area--cursor-line {{ background: #1a1b26; }}
+#prompt .text-area--selection {{ background: {T.PURPLE} 40%; }}
+
+.from-tool {{
+    border: round #e0af68;
+    color: {T.GREY};
+}}
+.from-tool Markdown {{
+    background: {T.BG};
+}}
+
+#pickerbox {{
+    align: center middle;
+    background: #16161e;
+    border: round {T.PURPLE};
+    padding: 0 1;
+    width: 72;
+    height: 22;
+}}
+#pickerhead {{ height: 2; }}
+#pickerfilter {{
+    border: round {T.BLUE};
+    background: {T.BG};
+    height: 3;
+}}
+#pickerlist {{
+    height: 1fr;
+    background: #16161e;
+    scrollbar-size-vertical: 1;
+}}
+#pickerlist > ListItem {{ padding: 0 1; }}
+#pickerlist > ListItem.--highlight {{ background: {T.PURPLE}; color: #16161e; }}
+
+#confirmbox {{
+    align: center middle;
+    background: #16161e;
+    border: round {T.YELLOW};
+    padding: 1 2;
+    width: 64;
+    height: auto;
+}}
+
+#inputbox {{
+    align: center middle;
+    background: #16161e;
+    border: round {T.PURPLE};
+    padding: 1 2;
+    width: 64;
+    height: auto;
+}}
+#inputfield {{
+    border: round {T.BLUE};
+    background: {T.BG};
+    height: 3;
+    margin: 1 0;
 }}
 
 #keys {{
@@ -114,18 +201,88 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
 """
 
 
+_TOOL_ICON = {
+    "ls": "📂",
+    "view": "📄",
+    "write": "✏️",
+    "edit": "🔧",
+    "bash": "⏣",
+    "grep": "🔎",
+    "glob": "🧭",
+    "todos": "☑",
+}
+
+
+def _summarise(name: str, args: dict) -> str:
+    """One short line describing a tool call, shown on its transcript card."""
+    from . import tools as TL
+    tool = TL.TOOLS.get(name)
+    if tool is not None:
+        try:
+            summary = tool.summary(args or {})
+            if summary:
+                return summary
+        except Exception:  # noqa: BLE001 - a bad summary must not break the UI
+            pass
+    if args:
+        return f"{name} {str(args)[:80]}"
+    return name
+
+
+class PromptArea(TextArea):
+    """Multi-line prompt: Enter sends the message, ctrl+j inserts a newline.
+
+    Shift+Enter does NOT work, and cannot: a terminal sends the same byte (\\r)
+    for Enter and Shift+Enter, and this Textual version has no kitty-keyboard
+    protocol support to tell them apart. ctrl+j sends \\n, which every terminal
+    delivers as a distinct key - so that is the newline key.
+    """
+
+    class Submitted(Message):
+        """Posted when Enter is pressed - not when a newline is inserted."""
+
+        def __init__(self, area: "PromptArea", value: str) -> None:
+            self.area = area
+            self.value = value
+            super().__init__()
+
+        @property
+        def control(self) -> "PromptArea":
+            # what @on(..., "#prompt") matches against
+            return self.area
+
+    async def _on_key(self, event) -> None:
+        if event.key == "enter":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Submitted(self, self.text))
+            return
+        # ctrl+j is the reliable newline. The other two are best-effort: they
+        # only ever arrive if a terminal opts into an extended keyboard mode.
+        if event.key in ("ctrl+j", "shift+enter", "alt+enter"):
+            event.stop()
+            event.prevent_default()
+            self.insert("\n")
+            return
+        await super()._on_key(event)
+
+
 class ForgeApp(App):
     """Full-screen TrioForge client, laid out like Crush."""
 
     CSS = CSS
     TITLE = "TrioForge"
+    # Textual ships its own ctrl+p command palette; ours is the searchable list
+    # of slash commands, so disable the built-in to stop ctrl+p opening both.
+    ENABLE_COMMAND_PALETTE = False
 
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+l", "pick_model", "Model"),
         ("ctrl+n", "new_session", "New"),
-        ("ctrl+p", "show_help", "Commands"),
+        ("ctrl+p", "palette", "Commands"),
+        ("ctrl+o", "pick_provider", "Provider"),
         ("tab", "focus_chat", "Chat"),
         ("escape", "focus_prompt", "Prompt"),
     ]
@@ -139,9 +296,12 @@ class ForgeApp(App):
         self.session = session
         self._busy = False
         self._started = time.time()
-        self._last_tick = 0.0
         self._activity = ""       # shown in the sidebar while a turn runs
-        self._thinking = ""
+        self._tool_cards: dict = {}
+        self._active = None
+        self._spinner_i = 0
+        self._git_cache: list[str] = []
+        self._git_ts = 0.0
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -154,12 +314,14 @@ class ForgeApp(App):
         # separately let the keybind bar overlap the prompt's bottom border,
         # which is why the purple line looked cut off.
         with Vertical(id="footer"):
-            yield Input(placeholder=self._hint(), id="prompt")
+            yield PromptArea(placeholder=self._hint(), id="prompt")
             yield Static(KEYBINDS, id="keys")
 
     def on_mount(self) -> None:
-        self.query_one("#prompt", Input).focus()
+        self.query_one("#prompt", PromptArea).focus()
         self._greet()
+        # Live spinner + elapsed timer while a turn runs. Cheap no-op when idle.
+        self.set_interval(0.25, self._tick_clock)
 
     # ----------------------------------------------------------------- sidebar
     def _sidebar(self) -> Text:
@@ -233,16 +395,50 @@ class ForgeApp(App):
         return out
 
     def _git_status(self) -> list[str]:
+        # Cache for a few seconds: the sidebar now re-renders on every tick while
+        # a turn runs, and we must not fork `git status` at 4 Hz.
+        now = time.time()
+        if now - self._git_ts < 5.0:
+            return self._git_cache
         try:
             r = subprocess.run(["git", "status", "--short"], cwd=Path.cwd(),
                                capture_output=True, text=True, timeout=3)
-            return [l for l in r.stdout.splitlines() if l.strip()][:5]
+            self._git_cache = [l for l in r.stdout.splitlines() if l.strip()][:5]
         except Exception:  # noqa: BLE001 - git absent, or not a repo
-            return []
+            self._git_cache = []
+        self._git_ts = now
+        return self._git_cache
 
     def _elapsed(self) -> str:
         secs = int(time.time() - self._started)
         return f"{secs // 60}m{secs % 60:02d}s" if secs >= 60 else f"{secs}s"
+
+    def _fmt_elapsed(self, secs: float) -> str:
+        """Crush-style turn timer: 12s · 1m 5s · 1h 2m."""
+        s = int(secs)
+        if s < 60:
+            return f"{s}s"
+        if s < 3600:
+            return f"{s // 60}m {s % 60}s"
+        return f"{s // 3600}h {(s % 3600) // 60}m"
+
+    def _refresh_activity(self) -> None:
+        """Redraw the sidebar working line: spinner + label + live timer."""
+        state = self._active
+        if not self._busy or not state:
+            return
+        self._spinner_i = (self._spinner_i + 1) % len(SPINNER)
+        frame = SPINNER[self._spinner_i]
+        elapsed = time.time() - state["started"]
+        label = "thinking" if (state["reasoning"] and not state["text"]) else "working"
+        dots = "." * (int(elapsed / 0.4) % 4)
+        self._activity = (f"{frame} {label}{dots}  {self._fmt_elapsed(elapsed)}"
+                          f"  ·  ~{state.get('tokens', 0)} tok")
+        self._refresh()
+
+    def _tick_clock(self) -> None:
+        """Interval callback: keep the working timer moving between tokens."""
+        self._refresh_activity()
 
     # ------------------------------------------------------------------ helpers
     def _short_model(self) -> str:
@@ -283,11 +479,29 @@ class ForgeApp(App):
         chat.scroll_end(animate=False)
         return card
 
+    def _add_plain(self, content, role: str = "bot") -> Static:
+        """A transcript card for text that is already laid out - Markdown would
+        reflow a panel or a table and destroy its alignment."""
+        chat = self.query_one("#chat", VerticalScroll)
+        card = Static(content, classes=f"msg from-{role}")
+        chat.mount(card)
+        chat.scroll_end(animate=False)
+        return card
+
+    def _compose(self, reasoning: list[str], content: list[str]) -> str:
+        """Reasoning shown dimmed and indented, then the actual answer."""
+        think = "".join(reasoning).strip()
+        body = "".join(content)
+        if think:
+            quoted = "\n".join("> " + line for line in think.splitlines())
+            return f"{quoted}\n\n{body}"
+        return body
+
     # ------------------------------------------------------------------ events
-    @on(Input.Submitted, "#prompt")
-    def _submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
-        self.query_one("#prompt", Input).value = ""
+    @on(PromptArea.Submitted, "#prompt")
+    def _submitted(self, event: PromptArea.Submitted) -> None:
+        text = (event.value or "").strip()
+        self.query_one("#prompt", PromptArea).text = ""
         if not text or self._busy:
             return
         if text.startswith("/"):
@@ -301,105 +515,183 @@ class ForgeApp(App):
     # ------------------------------------------------------------------- reply
     @work(exclusive=True)
     async def _ask(self, text: str) -> None:
+        """Run one agent turn, drawing each tool call as it happens.
+
+        The loop lives in agent.py; this only renders its events and answers the
+        permission questions. That split is why the same agent could be driven
+        by the plain UI too.
+        """
         self._busy = True
-        model = self._short_model()
-        card = self._add("", "bot")
         started = time.time()
-        chunks: list[str] = []
-        thoughts: list[str] = []
+        card = self._add("", "bot")
+        state = {"text": "", "reasoning": "", "card": card,
+                 "started": started, "tokens": 0}
+        self._active = state
+
+        def on_event(kind: str, payload: dict) -> None:
+            # ``turn()`` runs in a worker thread, so every render is routed back
+            # onto the app's thread and awaited there. This is also what makes
+            # Markdown.update() actually apply - it returns an awaitable.
+            self.call_from_thread(self._on_event_ui, state, kind, payload)
+
         try:
-            async for kind, piece in self._stream():
-                if kind == "reasoning":
-                    thoughts.append(piece)
-                    self._thinking = "".join(thoughts)
-                else:
-                    chunks.append(piece)
-                    self._thinking = ""       # answer started: reasoning is done
-                card.update(self._compose(thoughts, chunks))
-                self.query_one("#chat", VerticalScroll).scroll_end(animate=False)
-                self._tick(started, len("".join(chunks)) // 4)
-            reply = self._compose(thoughts, chunks).strip()
-            elapsed = time.time() - started
-            if not reply:
-                card.update("*the model returned nothing — ctrl+p → /status*")
-            else:
-                self.session.add_assistant(reply)
-                card.update(f"{reply}\n\n---\n_{model} · {elapsed:.1f}s · "
-                            f"{len(reply) // 4} tok_")
-        except BackendError as exc:
-            card.update(f"**request failed** — {exc}\n\n"
-                        f"_check the endpoint, or run with `--echo`_")
+            turn = await self._run_agent(on_event)
+            final = turn.text.strip()
+            if final:
+                self.session.add_assistant(final)
+                await state["card"].update(
+                    f"{final}\n\n---\n_{self._short_model()} · "
+                    f"{time.time() - started:.1f}s · {len(turn.steps)} tool"
+                    f"{'s' if len(turn.steps) != 1 else ''}_")
+            elif turn.steps:
+                await state["card"].update(
+                    f"_finished after {len(turn.steps)} tool call(s), no summary_")
         except Exception as exc:  # noqa: BLE001
-            card.update(f"**unexpected error** — {exc}")
+            await state["card"].update(f"**unexpected error** — {exc}")
         finally:
             self._busy = False
+            self._active = None
             self._refresh()
-            self.query_one("#prompt", Input).focus()
+            self.query_one("#prompt", PromptArea).focus()
 
-    def _compose(self, thoughts: list[str], chunks: list[str]) -> str:
-        """Chain of thought as a quote block, above the answer.
+    async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
+        """Apply one agent event on the app thread (see ``_ask``)."""
+        if kind == "reasoning":
+            state["reasoning"] += payload["text"]
+            await state["card"].update(self._compose([state["reasoning"]],
+                                                     [state["text"]]))
+        elif kind == "content":
+            state["text"] += payload["text"]
+            await state["card"].update(self._compose([state["reasoning"]],
+                                                     [state["text"]]))
+        elif kind == "tool_start":
+            self._tool_card(payload["name"], payload["args"], None)
+            state["card"] = self._add("", "bot")   # next prose gets a new card
+        elif kind == "tool_end":
+            await self._finish_tool_card(payload["name"], payload["output"],
+                                         payload.get("denied", False))
+        elif kind == "error":
+            await state["card"].update(f"**request failed** — {payload['message']}")
+        state["tokens"] = len(state["text"]) // 4
+        self.query_one("#chat", VerticalScroll).scroll_end(animate=False)
+        self._refresh_activity()
 
-        Quoted rather than merged, so it is always obvious which text is the
-        model thinking and which is the reply.
-        """
-        think = "".join(thoughts).strip()
-        answer = "".join(chunks)
-        if not think:
-            return answer
-        quoted = "\n".join("> " + l for l in think.splitlines() if l.strip())
-        return f"> 🧠 **thinking**\n>\n{quoted}\n\n{answer}"
-
-    def _tick(self, started: float, tokens: int) -> None:
-        """Cheap live status, throttled - updating the sidebar per chunk is too
-        expensive, and the user only needs it to change about twice a second."""
-        now = time.time()
-        if now - self._last_tick < 0.5:
-            return
-        self._last_tick = now
-        secs = now - started
-        self._activity = (f"{self._spinner()}  {secs:4.1f}s  ·  "
-                          f"{tokens} tok"
-                          + (f"  ·  {tokens / secs:.0f} tok/s" if secs > 0.6 else ""))
-        self._refresh()
-
-    def _spinner(self) -> str:
-        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-        return frames[int(time.time() * 10) % len(frames)]
-
-    async def _stream(self):
-        """Run the blocking backend stream in a worker thread."""
+    async def _run_agent(self, on_event):
+        """The agent's ``turn`` is blocking, so it runs in a thread."""
         import asyncio
 
         loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-        payload = self.session.payload()
+        result: dict = {}
 
-        def produce():
+        def work():
             try:
-                for piece in self.backend.stream(payload):
-                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", piece))
+                ag = agent_mod.Agent(
+                    self.backend, self.session,
+                    use_tools=True,
+                    native_tools=agent_mod.supports_native_tools(self.backend),
+                    approve=self._approve_blocking,
+                    persist=lambda: providers.save(self.cfg),
+                )
+                result["turn"] = ag.turn(on_event)
             except Exception as exc:  # noqa: BLE001
-                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+                result["error"] = exc
 
-        loop.run_in_executor(None, produce)
-        while True:
-            kind, value = await queue.get()
-            if kind == "chunk":
-                yield value
-            elif kind == "error":
-                raise value
-            else:
-                return
+        await loop.run_in_executor(None, work)
+        if "error" in result:
+            raise result["error"]
+        return result["turn"]
+
+    def _approve_blocking(self, name: str, args: dict, summary: str):
+        """Ask before a dangerous tool runs.
+
+        Called from the agent's worker thread, so the modal has to be pushed
+        onto the app from the event loop and waited on. Returns True (allow
+        once), False (deny) or agent_mod.APPROVE_ALL (allow the rest).
+        """
+        import asyncio
+        import concurrent.futures
+
+        fut: concurrent.futures.Future = concurrent.futures.Future()
+
+        def push():
+            async def ask():
+                try:
+                    fut.set_result(await self.push_screen_wait(
+                        ConfirmTool(name, args, summary)))
+                except Exception as exc:  # noqa: BLE001
+                    fut.set_exception(exc)
+            self.run_worker(ask(), exclusive=False)
+
+        self.call_from_thread(push)
+        try:
+            return fut.result(timeout=300)
+        except Exception:  # noqa: BLE001 - a timeout means "no"
+            return False
+
+    # ------------------------------------------------------------ tool cards
+    def _tool_card(self, name: str, args: dict, _output) -> None:
+        """A tool call gets its own card, so the transcript shows the work."""
+        chat = self.query_one("#chat", VerticalScroll)
+        tool = _TOOL_ICON.get(name, "⚙")
+        summary = _summarise(name, args)
+        card = Markdown(f"{tool} **{name}**  `{summary}`", classes="msg from-tool")
+        chat.mount(card)
+        chat.scroll_end(animate=False)
+        self._tool_cards[name] = card
+
+    async def _finish_tool_card(self, name: str, output: str, denied: bool) -> None:
+        card = self._tool_cards.get(name)
+        lines = output.splitlines()
+        shown = "\n".join(lines[:12])
+        if len(lines) > 12:
+            shown += f"\n_… {len(lines) - 12} more lines_"
+        tool = _TOOL_ICON.get(name, "⚙")
+        head = "⛔ **denied**" if denied else f"{tool} **{name}**"
+        if card is not None:
+            try:
+                await card.update(f"{head} — done\n\n```\n{shown}\n```")
+            except Exception:  # noqa: BLE001
+                pass
 
     # --------------------------------------------------------------- commands
+    def _capture_render(self, fn) -> Text:
+        """Run ``fn`` with render's Console redirected; return the output as Text.
+
+        render's Console writes to stdout, which is invisible inside a Textual
+        app (and corrupts the screen). Swapping it for a buffer is what makes
+        every classic command's output visible in the transcript.
+        """
+        import io
+
+        from rich.console import Console
+
+        from . import render
+
+        chat = self.query_one("#chat", VerticalScroll)
+        buffer = io.StringIO()
+        previous = render._console
+        render._console = Console(
+            file=buffer, theme=T.THEME, highlight=False,
+            force_terminal=True, color_system="truecolor",
+            width=max(40, (chat.size.width or 80) - 6))
+        try:
+            fn()
+        finally:
+            render._console = previous
+        return Text.from_ansi(buffer.getvalue().rstrip("\n"))
+
     def _command(self, line: str) -> None:
-        """Slash commands: the SAME dispatch table the plain UI uses."""
+        """Slash commands: the SAME dispatch table the plain UI uses.
+
+        Commands whose handler opens its own prompt_toolkit prompt (which fights
+        Textual for the terminal) are intercepted here and re-run with the app's
+        own pickers instead.
+        """
         from . import commands as C
 
         name, _, arg = line.partition(" ")
         arg = arg.strip()
+        words = arg.lower().split()
 
         if name in ("/quit", "/exit", "/q"):
             self.exit()
@@ -407,11 +699,26 @@ class ForgeApp(App):
         if name == "/clear":
             self.action_new_session()
             return
+        if name in ("/help", "/?"):
+            self.action_show_help()
+            return
         if name == "/model" and not arg:
             self.action_pick_model()
             return
-        if name in ("/help", "/?"):
-            self.action_show_help()
+        if name == "/provider" and not arg:
+            self.action_pick_provider()
+            return
+        if name == "/setup":
+            self.run_worker(self._setup_flow(), exclusive=False)
+            return
+        if name == "/start" and not arg:
+            self.run_worker(self._start_flow(), exclusive=False)
+            return
+        if name == "/keys" and not arg:
+            self.run_worker(self._keys_flow(), exclusive=False)
+            return
+        if name == "/keys" and words and words[0] in ("clear", "reset", "wipe"):
+            self.run_worker(self._keys_clear_flow("all" in words), exclusive=False)
             return
 
         class _Ctx:
@@ -421,12 +728,17 @@ class ForgeApp(App):
         ctx.session, ctx.cfg, ctx.args = self.session, self.cfg, self.args
         ctx.backend, ctx.real_backend = self.backend, self.real_backend
         ctx.running = True
+
         try:
-            C.handle(line, ctx)
+            captured = self._capture_render(lambda: C.handle(line, ctx))
         except Exception as exc:  # noqa: BLE001
             self._add(f"command failed: {exc}", "bot")
             return
+
         self.backend, self.real_backend = ctx.backend, ctx.real_backend
+        if captured.plain.strip():
+            self._add_plain(captured, "bot")
+        self._refresh()
 
     # ---------------------------------------------------------------- actions
     def action_show_help(self) -> None:
@@ -447,30 +759,425 @@ class ForgeApp(App):
         self.query_one("#chat", VerticalScroll).focus()
 
     def action_focus_prompt(self) -> None:
-        self.query_one("#prompt", Input).focus()
+        self.query_one("#prompt", PromptArea).focus()
 
     def action_pick_model(self) -> None:
-        names = fetch_models(self.cfg.base_url, self.cfg.api_key) \
-            or list(self.cfg.current.get("models") or [])
-        if not names:
-            names = [m.name for m in localmodels.available()]
-        if not names:
-            self._add("_no models to switch to — ctrl+p → /setup_", "bot")
+        """ctrl+l - a searchable list of every model actually reachable."""
+        self.run_worker(self._pick_model(), exclusive=False)
+
+    async def _pick_model(self) -> None:
+        from .backend import fetch_models
+
+        options: list[tuple[str, str]] = []
+        seen = set()
+
+        # local .gguf files first - they are the ones that need no key
+        for m in localmodels.available():
+            options.append((m.name, f"{m.size_gb:.1f} GB · {m.caps_label} · local"))
+            seen.add(m.name)
+
+        # then whatever the current endpoint offers
+        for name in fetch_models(self.cfg.base_url, self.cfg.api_key):
+            if name not in seen:
+                options.append((name, f"{self.cfg.provider} · remote"))
+                seen.add(name)
+
+        # then cached suggestions from the config
+        for name in self.cfg.current.get("models") or []:
+            if name not in seen:
+                options.append((name, f"{self.cfg.provider} · suggested"))
+                seen.add(name)
+
+        if not options:
+            self._add("_no models found — ctrl+o to switch provider, "
+                      "or run /setup_", "bot")
             return
-        cur = self._short_model()
-        idx = (names.index(cur) + 1) % len(names) if cur in names else 0
-        self.session.model = names[idx]
-        self.cfg.model = names[idx]
+
+        choice = await self.push_screen_wait(
+            Picker("switch model", options, current=self._short_model()))
+        if not choice:
+            return
+        self._set_model(choice)
+
+    def _set_model(self, name: str) -> None:
+        """Point the session (and the backend) at a different model."""
+        from . import localmodels as lm
+
+        offline = lm.find(name)
+        self.session.model = name
+        self.cfg.model = offline.path if offline else name
+        if offline:
+            # a local model means the local endpoint, whatever was selected
+            self.cfg.provider = "local"
+            self.cfg.set_base_url("http://127.0.0.1:8080/v1")
         if not isinstance(self.backend, EchoBackend):
             self.backend = OpenAICompatBackend(
-                base_url=self.cfg.base_url, model=names[idx],
+                base_url=self.cfg.base_url, model=self.cfg.model,
                 api_key=self.cfg.api_key,
                 timeout=getattr(self.args, "timeout", 120.0),
                 temperature=getattr(self.args, "temperature", 0.7))
             self.real_backend = self.backend
         providers.save(self.cfg)
-        self._add(f"_model → **{names[idx]}**_", "bot")
+        self._add(f"_model → **{name}**_", "bot")
         self._refresh()
+
+    def action_pick_provider(self) -> None:
+        """ctrl+o - switch provider, then offer its models."""
+        self.run_worker(self._pick_provider(), exclusive=False)
+
+    async def _pick_provider(self, then_model: bool = True) -> bool:
+        options = []
+        for name in sorted(self.cfg.providers):
+            entry = self.cfg.providers[name]
+            has = "key" if entry.get("api_key") else "no key"
+            options.append((name, f"{entry.get('label','')} · {has}"))
+        choice = await self.push_screen_wait(
+            Picker("switch provider", options, current=self.cfg.provider))
+        if not choice:
+            return False
+        self.cfg.provider = choice
+        self.cfg.model = ""
+        self.session.model = ""
+        if not isinstance(self.backend, EchoBackend):
+            self.backend = OpenAICompatBackend(
+                base_url=self.cfg.base_url, model="",
+                api_key=self.cfg.api_key,
+                timeout=getattr(self.args, "timeout", 120.0),
+                temperature=getattr(self.args, "temperature", 0.7))
+            self.real_backend = self.backend
+        providers.save(self.cfg)
+        self._add(f"_provider → **{choice}**  ({self.cfg.base_url})_", "bot")
+        self._refresh()
+        # a fresh provider usually needs a model picked; offer it right away
+        if then_model:
+            await self._pick_model()
+        return True
+
+    async def _setup_flow(self) -> None:
+        """TUI /setup: provider, then its key, then a model.
+
+        Order matters - the endpoint's model list needs the key first.
+        """
+        if not await self._pick_provider(then_model=False):
+            return
+        await self._edit_key()
+        await self._pick_model()
+
+    async def _keys_flow(self) -> None:
+        """TUI /keys: print the same table, then let a key be changed."""
+        from . import render
+
+        def show():
+            render.table("saved keys", [
+                (f"{'▶' if n == self.cfg.provider else ' '} {n}",
+                 providers.key_state(self.cfg, n))
+                for n in sorted(self.cfg.providers)])
+
+        captured = self._capture_render(show)
+        if captured.plain.strip():
+            self._add_plain(captured, "bot")
+
+        options = [(n, providers.key_state(self.cfg, n))
+                   for n in sorted(self.cfg.providers)]
+        choice = await self.push_screen_wait(
+            Picker("change which key? (esc = keep as is)", options,
+                   current=self.cfg.provider))
+        if not choice:
+            return
+        raw = self.cfg.providers[choice].get("api_key", "")
+        placeholder = ("paste new key — current: " + providers.masked(raw)) if raw \
+            else "paste key (none set)"
+        value = await self._ask_input(f"key · {choice}", placeholder=placeholder,
+                                      password=True)
+        if not value or not value.strip():
+            return
+        self.cfg.providers[choice]["api_key"] = value.strip()
+        providers.save(self.cfg)
+        self._add(f"_key saved for **{choice}**_", "bot")
+        self._refresh()
+
+    async def _keys_clear_flow(self, everything: bool) -> None:
+        """TUI /keys clear [all], with the confirmation the classic prompt did."""
+        keep = "" if everything else self.cfg.provider
+        doomed = [n for n in sorted(self.cfg.providers)
+                  if n != keep and self.cfg.providers[n].get("api_key", "")]
+        if not doomed:
+            self._add("_nothing to clear — no other provider has a key saved_", "bot")
+            return
+        options = [("yes", f"remove {len(doomed)} key(s): " + ", ".join(doomed)),
+                   ("no", "keep them")]
+        choice = await self.push_screen_wait(
+            Picker(f"clear keys — keeping {keep or 'nothing'}", options))
+        if choice != "yes":
+            self._add("_cancelled_", "bot")
+            return
+        for name in doomed:
+            self.cfg.providers[name]["api_key"] = ""
+        providers.save(self.cfg)
+        self._add(f"_cleared keys for: {', '.join(doomed)}_", "bot")
+        self._refresh()
+
+    async def _start_flow(self) -> None:
+        """TUI /start: pick an offline .gguf and load it into llama-server."""
+        options = [(m.name, f"{m.size_gb:.1f} GB · {m.caps_label}")
+                   for m in localmodels.available()]
+        if not options:
+            self._add("_no offline .gguf models found_", "bot")
+            return
+        choice = await self.push_screen_wait(Picker("load which offline model?", options))
+        if not choice:
+            return
+        self._command(f"/start {choice}")
+
+    def action_palette(self) -> None:
+        """ctrl+p - searchable command palette, instead of remembering names."""
+        from .commands import COMMANDS
+        self.run_worker(self._palette(COMMANDS), exclusive=False)
+
+    async def _palette(self, commands) -> None:
+        options = [(c.split()[0], d) for c, d in commands]
+        options += PALETTE_ACTIONS
+        choice = await self.push_screen_wait(Picker("commands", options))
+        if not choice:
+            return
+        if choice in ("set key", "/key"):
+            await self._edit_key()
+        elif choice == "add model":
+            await self._add_model()
+        elif choice == "remove model":
+            await self._remove_model()
+        elif choice == "/model":
+            self.action_pick_model()
+        elif choice == "/provider":
+            self.action_pick_provider()
+        elif choice in ARG_PROMPTS:
+            arg = await self._resolve_arg(choice, ARG_PROMPTS[choice])
+            if arg:
+                self._command(f"{choice} {arg}")
+        elif choice.startswith("/"):
+            self._command(choice)
+
+    async def _resolve_arg(self, cmd: str, spec: dict):
+        """Ask for a command's argument. Returns the string, or None if cancelled."""
+        if spec.get("mode") == "local":
+            options = [(m.name, f"{m.size_gb:.1f} GB · {m.caps_label}")
+                       for m in localmodels.available()]
+            if not options:
+                self._add("_no local .gguf models found_", "bot")
+                return None
+            return await self.push_screen_wait(Picker("load local model", options))
+        # The current value goes in the PLACEHOLDER, not the field: a pre-filled
+        # field makes typing append to the old value instead of replacing it.
+        prompt = spec.get("prompt", "value")
+        prefill = spec.get("prefill")
+        shown = prompt
+        if prefill == "base_url" and self.cfg.base_url:
+            shown = f"current: {self.cfg.base_url}"
+        elif prefill == "system" and self.session.system:
+            shown = f"current: {self.session.system[:60]}"
+        return await self._ask_input(f"{cmd} — {prompt}", placeholder=shown)
+
+    # ------------------------------------------------------------ palette edits
+    async def _ask_input(self, title: str, *, placeholder: str = "",
+                         value: str = "", password: bool = False):
+        """Push the one-line input modal; returns the string or None."""
+        return await self.push_screen_wait(
+            InputDialog(title, value=value, placeholder=placeholder,
+                        password=password))
+
+    async def _edit_key(self) -> None:
+        """Set/change the API key for the CURRENT provider."""
+        raw = self.cfg.raw_key
+        placeholder = ("paste new key — current: " + providers.masked(raw)) if raw else \
+                      "paste key (none set)"
+        value = await self._ask_input(
+            f"API key · {self.cfg.provider}", placeholder=placeholder,
+            password=True)
+        if value is None or not value.strip():
+            return
+        self.cfg.set_key(value.strip())
+        providers.save(self.cfg)
+        self._add(f"_key saved for **{self.cfg.provider}**_", "bot")
+        self._refresh()
+
+    async def _add_model(self) -> None:
+        """Add a model id to the current provider's cached list."""
+        name = await self._ask_input(
+            f"add model · {self.cfg.provider}", placeholder="model id, e.g. deepseek-chat")
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        models = self.cfg.current.setdefault("models", [])
+        if name in models:
+            self._add(f"_`{name}` is already listed_", "bot")
+            return
+        models.append(name)
+        providers.save(self.cfg)
+        self._add(f"_added model **{name}**_", "bot")
+        self._refresh()
+
+    async def _remove_model(self) -> None:
+        """Remove one model id from the current provider's cached list."""
+        models = self.cfg.current.get("models") or []
+        if not models:
+            self._add("_no cached models to remove — use /models for the "
+                      "endpoint list_", "bot")
+            return
+        options = [(m, f"{self.cfg.provider} · cached") for m in models]
+        choice = await self.push_screen_wait(Picker("remove model", options))
+        if not choice:
+            return
+        self.cfg.current["models"].remove(choice)
+        providers.save(self.cfg)
+        self._add(f"_removed model **{choice}**_", "bot")
+        self._refresh()
+
+
+class Picker(ModalScreen):
+    """Searchable list: type to filter, enter to pick, esc to cancel.
+
+    ``push_screen_wait`` resolves to the chosen key (a string), or ``None``.
+    """
+
+    BINDINGS = [
+        ("enter", "choose", "Choose"),
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, title: str, options, current: str = ""):
+        super().__init__()
+        self._title = title
+        self._options = list(options)   # (key, description) pairs
+        self._current = current or ""
+        self._keys: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="pickerbox"):
+            yield Static(f"[bold {T.PURPLE}]{self._title}[/]", id="pickerhead")
+            yield Input(placeholder="type to filter…", id="pickerfilter")
+            yield ListView(id="pickerlist")
+
+    def on_mount(self) -> None:
+        self.query_one("#pickerfilter", Input).focus()
+        self._rebuild("")
+
+    @on(Input.Changed, "#pickerfilter")
+    def _on_changed(self, event: Input.Changed) -> None:
+        self._rebuild(event.value)
+
+    # The filter Input keeps focus, so Enter arrives as a submit, not as the
+    # screen-level "enter" binding. Handle both so picking always works.
+    @on(Input.Submitted, "#pickerfilter")
+    def _on_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self._choose()
+
+    def _rebuild(self, query: str) -> None:
+        q = query.strip().lower()
+        lv = self.query_one("#pickerlist", ListView)
+        lv.clear()
+        self._keys = []
+        for key, desc in self._options:
+            if q and q not in key.lower() and q not in desc.lower():
+                continue
+            mark = "● " if key == self._current else "  "
+            self._keys.append(key)
+            lv.append(ListItem(Label(f"{mark}{key}   {desc}")))
+        if self._keys:
+            lv.index = 0
+
+    def _choose(self) -> None:
+        lv = self.query_one("#pickerlist", ListView)
+        idx = lv.index
+        if self._keys and 0 <= idx < len(self._keys):
+            self.dismiss(self._keys[idx])
+
+    def action_choose(self) -> None:
+        self._choose()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ConfirmTool(ModalScreen):
+    """Ask before a dangerous tool runs: enter=once, a=allow all, n=no."""
+
+    BINDINGS = [
+        ("enter", "allow", "Allow"),
+        ("a", "allow_all", "Allow all"),
+        ("n", "deny", "Deny"),
+        ("escape", "deny", "Deny"),
+    ]
+
+    def __init__(self, name: str, args: dict, summary: str):
+        super().__init__()
+        self._name = name
+        self._args = args or {}
+        self._summary = summary or ""
+
+    def compose(self) -> ComposeResult:
+        import json
+        shown = json.dumps(self._args, indent=2)
+        if len(shown) > 400:
+            shown = shown[:400] + "\n…"
+        with Vertical(id="confirmbox"):
+            yield Static(f"[bold {T.YELLOW}]Allow `{self._name}`?[/]")
+            if self._summary:
+                yield Static(f"[{T.GREY}]{self._summary}[/]")
+            yield Static(shown)
+            yield Static(f"[{T.GREY}]enter allow · a allow all · n deny · esc deny[/]")
+
+    def action_allow(self) -> None:
+        self.dismiss(True)
+
+    def action_allow_all(self) -> None:
+        self.dismiss(agent_mod.APPROVE_ALL)
+
+    def action_deny(self) -> None:
+        self.dismiss(False)
+
+
+class InputDialog(ModalScreen):
+    """One-line input: title + Input, enter=submit, esc=cancel.
+
+    ``push_screen_wait`` resolves to the typed string, or ``None`` when cancelled.
+    """
+
+    BINDINGS = [
+        ("enter", "submit", "OK"),
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, title: str, value: str = "", placeholder: str = "",
+                 password: bool = False):
+        super().__init__()
+        self._title = title
+        self._value = value
+        self._placeholder = placeholder
+        self._password = password
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="inputbox"):
+            yield Static(f"[bold {T.PURPLE}]{self._title}[/]", id="inputtitle")
+            yield Input(value=self._value, placeholder=self._placeholder,
+                        password=self._password, id="inputfield")
+            yield Static(f"[{T.GREY}]enter ok · esc cancel[/]", id="inputhint")
+
+    def on_mount(self) -> None:
+        inp = self.query_one("#inputfield", Input)
+        inp.focus()
+        inp.cursor_position = len(self._value)
+
+    @on(Input.Submitted, "#inputfield")
+    def _on_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.dismiss(event.value)
+
+    def action_submit(self) -> None:
+        self.dismiss(self.query_one("#inputfield", Input).value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 def run(args) -> int:
