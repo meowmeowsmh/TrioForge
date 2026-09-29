@@ -48,6 +48,22 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "906f492ccfa7131703240eea274d1f1d6470e9ded9e6356fb27d060f7fe850e6",
+  "py/tui/README.md": "74f310be63603beb897618419c40ef415164ac4dc4c9ebc48c71336172f5f657",
+  "py/tui/__init__.py": "dd9bb4f93b71c8a6d2bab9d5031b5f4cda316351cb4ff9cc4eab5583d9be4b00",
+  "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
+  "py/tui/agent.py": "e240146abf11270e4af636c7b7459e6c81e428921d1a72ae7eb09b4f258e0561",
+  "py/tui/app.py": "bb35ad54babaa7d5b5036ca198958ca65d674c596b65b2f150fc278dd8e5d9da",
+  "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
+  "py/tui/cli.py": "d4108fae7aa58fcbffba2f4b9777c6d1460166edd9eab74ba1e843e8878ee0e5",
+  "py/tui/commands.py": "1ab5cb0ab421dfed718adf60f2754ed2579bd39b21f998a76a2a1e7c7383c9e5",
+  "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
+  "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
+  "py/tui/render.py": "d339be1654f425082c1c88a0e845353ed3ffd0a3199db3a584e1dd6c43c4b139",
+  "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
+  "py/tui/textual_app.py": "2265173a48f3df4f3e69db95cee6d2f0edcbcf1ca30b050cc08f9d5b44d9c40c",
+  "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
+  "py/tui/tools.py": "40305b564d682502d76ed7a0a05067963e94498fff75e0fc9c7af02d88c3bf4e",
+  "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
   "py/version.py": "2558a137032605f92ce511f3d544c0b5c48b2de6e942285056ea249074baba4d",
   "py/video_to_text.py": "fd1f5747f27eca7726ec0bf4e5743670cadbf401f1d7911ee71c9e6d606274f7",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
@@ -79,6 +95,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-29T18:56:04",
- "note": "baseline refreshed after the llamacpp GPU/KV-cache changes"
+ "generated": "2026-09-30T04:31:35",
+ "note": "baseline refreshed after the forge agent/tools/TUI changes"
 }
