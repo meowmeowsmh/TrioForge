@@ -633,8 +633,14 @@ def _list_vulkan_devices(exe):
                               stderr=subprocess.STDOUT, timeout=30, creationflags=flags)
         text = (done.stdout or b"").decode("utf-8", "replace")
         for line in text.splitlines():
-            m = re.search(r"\b(Vulkan|CUDA|Metal|ROCm|SYCL|OpenCL)(\d+):\s+(.+?)\s*"
-                          r"\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)", line)
+            # The backend prefix varies by build and platform: Vulkan0, CUDA0,
+            # Metal0, MTL0 (Metal, in some builds), ROCm0, SYCL0. Accept any
+            # alphabetic prefix rather than a list that would silently miss one -
+            # an empty list used to mean "no devices", which reads identically to
+            # "this build has no GPU". The "(N MiB, M MiB free)" tail is what keeps
+            # this from matching unrelated lines.
+            m = re.search(r"\b([A-Za-z]+)(\d+):\s+(.+?)\s*\((\d+)\s*MiB,\s*"
+                          r"(\d+)\s*MiB free\)", line)
             if m:
                 devices.append((m.group(1) + m.group(2), m.group(3).strip(),
                                 int(m.group(4)), int(m.group(5))))
