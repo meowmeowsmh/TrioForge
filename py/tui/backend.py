@@ -1,0 +1,260 @@
+"""Model transport.
+
+The client does not care whether the reply comes from llama-server, Ollama or a
+hosted API - everything behind :class:`Backend` streams plain text chunks.
+
+Two implementations:
+
+* :class:`OpenAICompatBackend` - any OpenAI-compatible ``/v1/chat/completions``
+  (llama-server, Ollama, OpenRouter, Groq, ...). This is what TrioForge's
+  ``LlamaCppProvider`` speaks, so the terminal client sees exactly the same
+  models as the web UI.
+* :class:`EchoBackend` - an offline stub. It exists so the UI can be built and
+  demoed with no model loaded at all.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from typing import Iterable, Iterator
+
+try:
+    import httpx
+except ImportError:  # pragma: no cover - httpx is a TrioForge dependency
+    httpx = None
+
+
+class BackendError(RuntimeError):
+    pass
+
+
+class Backend:
+    """Interface. ``stream`` yields text chunks as they arrive."""
+
+    name = "?"
+    where = "?"
+
+    def stream(self, messages: list[dict]) -> Iterator[tuple[str, str]]:  # pragma: no cover
+        raise NotImplementedError
+
+    def health(self) -> tuple[bool, str]:  # pragma: no cover
+        return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+
+
+def _iter_sse(response) -> Iterator[tuple[str, str]]:
+    """Yield ``(kind, text)`` from an OpenAI-style SSE stream.
+
+    ``kind`` is ``"content"`` for the answer and ``"reasoning"`` for the model's
+    chain of thought. Two field names are in the wild and TrioForge's own
+    providers read both, so this does too:
+
+    * ``reasoning_content`` - DeepSeek, and most OpenAI-compatible reasoners
+    * ``reasoning``         - OpenRouter and others
+    * ``thinking``          - Ollama
+
+    Keeping them separate (rather than concatenating) is what lets the UI show a
+    "thinking" block that is clearly not part of the answer.
+    """
+    for line in response.iter_lines():
+        if not line:
+            continue
+        if line.startswith("data: "):
+            line = line[6:]
+        if line.strip() == "[DONE]":
+            break
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        for choice in obj.get("choices", []):
+            delta = choice.get("delta") or {}
+            for field in ("reasoning_content", "reasoning", "thinking"):
+                piece = delta.get(field)
+                if piece:
+                    yield "reasoning", piece
+            piece = delta.get("content")
+            if piece:
+                yield "content", piece
+
+
+class OpenAICompatBackend(Backend):
+    """Talks to an OpenAI-compatible endpoint, streaming by default."""
+
+    def __init__(self, base_url: str, model: str, api_key: str = "",
+                 timeout: float = 120.0, temperature: float = 0.7):
+        self.base_url = base_url.rstrip("/")
+        self.model = model or "default"
+        self.api_key = api_key
+        self.timeout = timeout
+        self.temperature = temperature
+        self.name = model or "default"
+        self.where = self.base_url
+
+    def _headers(self) -> dict:
+        h = {"Content-Type": "application/json"}
+        if self.api_key:
+            h["Authorization"] = f"Bearer {self.api_key}"
+        return h
+
+    def health(self) -> tuple[bool, str]:
+        if httpx is None:
+            return False, "httpx is not installed"
+        try:
+            r = httpx.get(f"{self.base_url}/models", headers=self._headers(),
+                          timeout=5.0)
+            if r.status_code == 200:
+                return True, "reachable"
+            return False, f"HTTP {r.status_code}"
+        except Exception as exc:  # noqa: BLE001 - report anything as unreachable
+            return False, str(exc)
+
+    def stream(self, messages: list[dict]) -> Iterator[tuple[str, str]]:
+        """Yield (kind, text) - kind is 'content' or 'reasoning'."""
+        if httpx is None:
+            raise BackendError("httpx is not installed")
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "temperature": self.temperature,
+        }
+        url = f"{self.base_url}/chat/completions"
+        try:
+            with httpx.stream("POST", url, json=body, headers=self._headers(),
+                              timeout=self.timeout) as r:
+                if r.status_code == 503:
+                    # The model is still loading. Wait for it rather than failing
+                    # the user's very first message.
+                    detail = r.read().decode("utf-8", "replace")[:200]
+                    if "load" in detail.lower():
+                        wait_ready(self.base_url, timeout=min(self.timeout, 600.0))
+                        # fall through to a single retry
+                        with httpx.stream("POST", url, json=body,
+                                          headers=self._headers(),
+                                          timeout=self.timeout) as r2:
+                            if r2.status_code >= 400:
+                                d2 = r2.read().decode("utf-8", "replace")[:400]
+                                raise BackendError(f"HTTP {r2.status_code}: {d2}")
+                            yield from _iter_sse(r2)
+                        return
+                if r.status_code >= 400:
+                    detail = r.read().decode("utf-8", "replace")[:400]
+                    raise BackendError(f"HTTP {r.status_code}: {detail}")
+                yield from _iter_sse(r)
+        except BackendError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise BackendError(str(exc)) from exc
+
+
+class EchoBackend(Backend):
+    """Offline stub: no model contacted.
+
+    It emits a fake chain of thought as well as an answer, so `--echo` exercises
+    the same code path a reasoning model does - the reasoning card, the live
+    token/timing counter, the lot. Without this the stub would only ever show
+    the plainest possible turn.
+    """
+
+    name = "echo"
+    where = "offline stub"
+
+    def stream(self, messages: list[dict]) -> Iterator[tuple[str, str]]:
+        last = next((m["content"] for m in reversed(messages)
+                     if m["role"] == "user"), "")
+
+        think = (
+            f"The user asked: {last!r}.\n"
+            "This is the offline stub, so I am not contacting a model.\n"
+            "I will show some reasoning, then an answer, to prove the two are "
+            "rendered separately."
+        )
+        for word in think.split(" "):
+            yield "reasoning", word + " "
+
+        answer = (
+            f"You said: **{last}**\n\n"
+            "This is the offline stub, so no model was contacted.\n\n"
+            "Start llama-server (or pass `--base-url`) and the same UI will talk "
+            "to the real model.\n\n"
+            "```python\nprint('code blocks render too')\n```"
+        )
+        for word in answer.split(" "):
+            yield "content", word + " "
+
+
+def make_backend(args) -> Backend:
+    """Build a backend from parsed CLI arguments."""
+    if getattr(args, "echo", False):
+        return EchoBackend()
+    return OpenAICompatBackend(
+        base_url=args.base_url,
+        model=args.model,
+        api_key=getattr(args, "api_key", "") or "",
+        timeout=getattr(args, "timeout", 120.0),
+        temperature=getattr(args, "temperature", 0.7),
+    )
+
+
+def wait_ready(base_url: str, timeout: float = 600.0,
+               on_tick=None) -> bool:
+    """Block until the model is LOADED, not merely listening.
+
+    llama-server binds the port immediately but answers /health with 503
+    "Loading model" until the weights are in memory - which for a 6.8 GB model
+    takes a while. `start()` returns as soon as the port is open, so without this
+    the first message hits a 503.
+    """
+    if httpx is None:
+        return True
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[:-3]
+    deadline = time.time() + timeout
+    started = time.time()
+    while time.time() < deadline:
+        try:
+            r = httpx.get(f"{root}/health", timeout=4.0)
+            if r.status_code == 200:
+                return True
+            if r.status_code == 503:
+                if on_tick:
+                    on_tick(time.time() - started)
+            else:
+                # A server that answers anything else is up; do not hang here.
+                return True
+        except Exception:  # noqa: BLE001 - not up yet
+            if on_tick:
+                on_tick(time.time() - started)
+        time.sleep(1.5)
+    return False
+
+
+def fetch_models(base_url: str, api_key: str = "") -> list[str]:
+    """List the model ids an OpenAI-compatible endpoint offers.
+
+    Returns [] on any failure (unreachable, 401, no key) - callers treat an empty
+    list as "could not ask", and /status reports the real reason.
+    """
+    if httpx is None or not base_url:
+        return []
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        r = httpx.get(f"{base_url.rstrip('/')}/models", timeout=8.0, headers=headers)
+        if r.status_code != 200:
+            return []
+        data = r.json().get("data") or []
+        ids = [d.get("id") for d in data if d.get("id")]
+        return sorted(ids)
+    except Exception:  # noqa: BLE001 - any failure means "could not ask"
+        return []
+
+
+def auto_model(base_url: str, api_key: str = "") -> str:
+    """The first model the endpoint offers, for the header."""
+    names = fetch_models(base_url, api_key)
+    return names[0] if names else ""

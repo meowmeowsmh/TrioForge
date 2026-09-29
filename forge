@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# ============================================================
+#  forge — launch the TrioForge terminal client.
+#
+#  This is the ONLY entry point you need:
+#      ./forge                     interactive session
+#      ./forge what is a GGUF?     one-shot question
+#      ./forge --echo              offline demo, no model needed
+#      ./forge --help              all options
+#
+#  It is independent of the Flask web GUI: nothing here imports app.py.
+# ============================================================
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Prefer the Linux venv (where rich + prompt_toolkit were installed), then the
+# Windows-style layout, then whatever python3 is on PATH.
+PY="$ROOT/.venv-linux/bin/python"
+[ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
+[ -x "$PY" ] || PY="$ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+
+if [ ! -x "$PY" ]; then
+    echo "forge: no python interpreter found" >&2
+    exit 1
+fi
+
+# The tui package lives under py/, alongside app.py and providers/.
+export PYTHONPATH="$ROOT/py${PYTHONPATH:+:$PYTHONPATH}"
+
+exec "$PY" -m tui "$@"
