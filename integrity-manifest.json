@@ -27,7 +27,7 @@
   "py/gunicorn_conf.py": "49aad15d5edaee40cde5db98c73db473de6060863c6eb9ad8d1eb4b028a14b5b",
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_installer.py": "fdd022bff63ed9e9d78578bcd48d61eb5e294f6bcbb01b79281b69c829426874",
-  "py/llamacpp_service.py": "87ced45164d0781349cf623f90eac4b2728d9cb7bba2d46c2b689afd61669a1f",
+  "py/llamacpp_service.py": "2ea5cd9a95066a6ba7363068c2d193436321e5bb9586a06512f8aa91704cfa8f",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
@@ -79,6 +79,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-29T18:17:56",
- "note": "after pulling 18 commits: kept the local contrast fixes and added TRIOFORGE_LLAMA_DEVICES"
+ "generated": "2026-09-29T18:34:03",
+ "note": "TRIOFORGE_LLAMA_DEVICES + TRIOFORGE_KV_QUANT"
 }

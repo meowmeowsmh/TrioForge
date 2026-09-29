@@ -603,6 +603,13 @@ def _same_model(a, b):
     return os.path.normcase(os.path.basename(str(a))) == os.path.normcase(os.path.basename(str(b)))
 
 
+# The cache types llama.cpp accepts for --cache-type-k / --cache-type-v. Checked
+# rather than passed through, so a typo cannot reach the command line and turn into
+# an "invalid argument" exit with no server running.
+_KV_CACHE_TYPES = frozenset((
+    "f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "q5_0", "q5_1", "iq4_nl",
+))
+
 _device_cache = {}
 
 
@@ -1035,6 +1042,26 @@ def start(model=None, ctx_size=None):
             # Let llama.cpp fit the layers itself, and keep the KV cache in system
             # RAM: that is what "decode() failed ... ErrorOutOfDeviceMemory" needs.
             cmd += ["--no-kv-offload"]
+        # KV cache precision, opt-in via TRIOFORGE_KV_QUANT. The KV cache is what
+        # stops a model fitting a small card: on the machine this was measured on
+        # (RTX 5060 Laptop, 7.13 GB free; gemma-4-12B Q4, 6.26 GB; ctx 8192) the
+        # same model gave
+        #     f16 KV, KV pushed to RAM   5.43 tok/s
+        #     q8_0 KV, all layers on GPU 8.85 tok/s
+        #     two GPUs (AMD 610M + RTX)  3.10 tok/s
+        #     CPU only                   2.62 tok/s
+        # so shrinking the cache to 8 bits buys more than adding a second GPU does.
+        # Left unset by default: it is a quality/throughput trade the user should
+        # make knowingly, and f16 stays the safe choice.
+        kv_quant = os.environ.get("TRIOFORGE_KV_QUANT", "").strip()
+        if kv_quant and kv_quant.lower() not in ("f16", "none", "off"):
+            if kv_quant.lower() in _KV_CACHE_TYPES:
+                cmd += ["--cache-type-k", kv_quant, "--cache-type-v", kv_quant]
+                _log("KV cache quantised to {} (a smaller cache leaves room for more "
+                     "layers on the GPU)".format(kv_quant))
+            else:
+                _log("TRIOFORGE_KV_QUANT={} is not a cache type llama.cpp accepts "
+                     "({}); ignoring".format(kv_quant, ", ".join(sorted(_KV_CACHE_TYPES))))
         cmd += [str(a) for a in cfg.get("llama_args", [])]
         # Run the prebuilt llama-server from ITS OWN directory and point
         # LD_LIBRARY_PATH there: the llama.cpp release tarballs ship libggml.so /
