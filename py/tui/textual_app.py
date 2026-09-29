@@ -229,6 +229,14 @@ def _summarise(name: str, args: dict) -> str:
     return name
 
 
+def _short_gpu(name: str) -> str:
+    """A GPU name that survives the 36-column sidebar."""
+    for junk in ("NVIDIA ", "GeForce ", "Laptop ", "AMD ", "Intel "):
+        name = name.replace(junk, "")
+    name = name.split("(")[0].strip()       # drop the driver codename
+    return name[:34] or "GPU"
+
+
 class PromptArea(TextArea):
     """Multi-line prompt: Enter sends the message, ctrl+j inserts a newline.
 
@@ -363,6 +371,23 @@ class ForgeApp(App):
             out.append(f"{self._activity}\n", style=f"bold {T.YELLOW}")
         out.append("\n")
 
+        # ---- the machine: the numbers /specs and the fit verdicts come from
+        spec = self._specs()
+        if spec:
+            section("Machine")
+            out.append(f"{spec.get('ram_free_gb', 0):.1f} / "
+                       f"{spec.get('ram_total_gb', 0):.1f} GB RAM\n", style=T.GREY)
+            if spec.get("gpu_name"):
+                out.append(f"{_short_gpu(spec['gpu_name'])}\n", style=T.FG)
+                kind = "unified" if spec.get("gpu_unified") else "vram"
+                out.append(f"{spec.get('vram_total_gb', 0):.1f} GB {kind}", style=T.GREY)
+                if spec.get("gpu_multi"):
+                    out.append("  ·  2 GPUs", style=T.YELLOW)
+                out.append("\n")
+            else:
+                out.append("no GPU — CPU only\n", style=T.YELLOW)
+            out.append("\n")
+
         # ---- offline models on disk
         models = localmodels.available()
         if models:
@@ -450,6 +475,15 @@ class ForgeApp(App):
     def _is_local(self) -> bool:
         url = self.cfg.base_url
         return "127.0.0.1" in url or "localhost" in url
+
+    def _specs(self) -> dict:
+        """Hardware specs for the sidebar - cached inside hardware.py, because
+        the sidebar redraws four times a second while a turn runs."""
+        try:
+            import hardware
+            return hardware.specs()
+        except Exception:  # noqa: BLE001 - a machine we cannot read is not fatal
+            return {}
 
     def _hint(self) -> str:
         import random

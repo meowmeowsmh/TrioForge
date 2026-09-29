@@ -708,24 +708,28 @@ def _free_ram_bytes():
 
 
 def _free_vram_bytes():
-    """Free GPU memory in bytes, or None when there is no NVIDIA GPU to ask.
+    """Free GPU memory in bytes, or None when no GPU memory can be read.
 
     Used to decide whether a model can live in VRAM instead of RAM - the difference
     between a few hundred MB of system memory and five gigabytes of it.
+
+    This used to ask NVML directly, which returns None on anything that is not
+    NVIDIA: Apple Silicon, AMD and Intel all read as "no GPU", so the offload
+    decision silently fell back to the CPU on those machines. hardware.py answers
+    the same question for every vendor and platform, using this very binary's own
+    --list-devices output when it is available.
     """
     try:
-        import warnings
-        warnings.filterwarnings("ignore", message=".*pynvml package is deprecated.*")
-        import pynvml
-        pynvml.nvmlInit()
-        try:
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            return int(pynvml.nvmlDeviceGetMemoryInfo(handle).free)
-        finally:
-            try:
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
+        import hardware
+        total = hardware.gpu()
+        free = total.get("free") or 0
+        if free:
+            return int(free)
+        # A unified-memory machine has no separate free figure; its budget is the
+        # whole usable pool, and treating it as 0 would disable GPU offload there.
+        if total.get("unified"):
+            return int(total.get("total") or 0) or None
+        return None
     except Exception:
         return None
 

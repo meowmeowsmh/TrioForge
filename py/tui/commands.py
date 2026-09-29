@@ -21,6 +21,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/keys [provider] [value]", "list every saved key, or change one"),
     ("/keys clear [all]", "remove every key EXCEPT the current one"),
     ("/models", "list models (offline .gguf files, or the endpoint's list)"),
+    ("/specs", "what hardware was detected (GPU, memory) and what fits"),
     ("/start [name]", "load an offline .gguf into llama-server"),
     ("/model [name]", "show or switch model; 'auto' re-detects it"),
     ("/status", "server health, model, endpoint and key state"),
@@ -496,9 +497,62 @@ def _quit(ctx, arg: str) -> None:
     ctx.running = False
 
 
+# Sizes worth showing, in GB of .gguf file: a small one, the usual 7-8B at
+# Q4_K_M, a 12-14B, then two that only a big machine can hold.
+_SPEC_SIZES = (2.0, 4.6, 8.0, 16.0, 32.0)
+
+
+def _specs(ctx, arg: str) -> None:
+    """What hardware TrioForge found, and what that means for models.
+
+    Detection is hardware.py's job - it understands Apple unified memory and
+    AMD/Intel parts, not just NVIDIA, on all three platforms.
+    """
+    import hardware
+
+    spec = hardware.specs()
+
+    rows = [
+        ("system", "{} ({}) - {} cores".format(
+            spec["os"], spec["machine"], spec["cpu_count"])),
+        ("cpu", spec["cpu"] or "unknown"),
+        ("ram", "{:.1f} GB free of {:.1f} GB".format(
+            spec["ram_free_gb"], spec["ram_total_gb"])),
+    ]
+    if spec["gpu_name"]:
+        rows += [
+            ("gpu", spec["gpu_name"]),
+            ("gpu memory", "{:.1f} GB total, {:.1f} GB free{}".format(
+                spec["vram_total_gb"], spec["vram_free_gb"],
+                "  (estimate)" if spec["gpu_approximate"] else "")),
+            ("gpu backend", "{} - {} memory".format(
+                spec["gpu_backend"] or "unknown",
+                "unified with the CPU" if spec["gpu_unified"] else "dedicated")),
+            ("detected by", spec["gpu_source"]),
+        ]
+    else:
+        rows.append(("gpu", "none detected - models run on the CPU"))
+    if spec.get("gpu_devices") and len(spec["gpu_devices"]) > 1:
+        for d in spec["gpu_devices"]:
+            rows.append(("  " + d["label"], "{} - {:.1f} GB".format(d["name"], d["total_gb"])))
+    render.table("this machine", rows)
+
+    for note in spec.get("notes") or []:
+        render.info(note)
+
+    render.blank()
+    render.heading("what fits")
+    render.table("model file size -> verdict", [
+        ("{:.1f} GB".format(size),
+         "{}   {}".format(hardware.fit(size, spec),
+                          hardware.fit_label(hardware.fit(size, spec), spec)))
+        for size in _SPEC_SIZES
+    ])
+
+
 _TABLE = {
     "/help": _help, "/?": _help, "/setup": _setup,
-    "/model": _model, "/models": _models,
+    "/model": _model, "/models": _models, "/specs": _specs,
     "/provider": _provider, "/provider-add": _provider_add,
     "/key": _key, "/keys": _keys, "/status": _status, "/base-url": _base_url,
     "/system": _system, "/clear": _clear, "/history": _history,

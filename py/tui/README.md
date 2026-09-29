@@ -220,6 +220,48 @@ same, so nobody "simplifies" them back:
   OpenAI-shaped API from local models, the opposite direction. A config written
   against that list is migrated automatically, and says what it changed.
 
+## Hardware and model fit
+
+`/specs` (or `trioforge --specs` before you start) prints what the machine has
+and grades model sizes against it:
+
+```
+       system    Linux (x86_64) - 32 cores
+          ram    5.7 GB free of 14.7 GB
+          gpu    NVIDIA GeForce RTX 5060 Laptop GPU
+   gpu memory    8.0 GB total, 1.0 GB free
+  gpu backend    Vulkan - dedicated memory
+  detected by    llama.cpp --list-devices
+
+   4.6 GB    gpu       Fast - fits entirely in NVIDIA GeForce RTX 5060 ... 7.96 GB
+   8.0 GB    split     OK - runs partly on GPU, partly in RAM (slower)
+  16.0 GB    too_big   Too big for your memory right now
+```
+
+The verdicts come from `py/hardware.py`, which is deliberately multi-vendor
+because there is no portable API for "how much GPU memory is there":
+
+| Machine | How GPU memory is found |
+| --- | --- |
+| Any, with llama.cpp installed | `llama-server --list-devices` — sees Metal, Vulkan, ROCm, SYCL and CUDA at once, with free MiB per device |
+| Apple Silicon | unified memory: the GPU's wired budget, or ~75% of RAM when the kernel publishes no limit |
+| Intel Mac with a dGPU | `system_profiler` |
+| NVIDIA (any OS) | NVML |
+| AMD / Intel on Linux | the DRM sysfs nodes (`mem_info_vram_total` / `_used`) |
+| AMD / Intel on Windows | WMI, treated as an estimate |
+
+Two things it deliberately gets right, because both were getting it wrong:
+
+- **An integrated GPU's memory is system RAM.** On a hybrid laptop the iGPU and
+  the dGPU were being *summed* — an AMD 610M's 7.8 GB plus an RTX 5060's 8 GB
+  was reported as 15.8 GB, which calls a 12 GB model "fits in VRAM". The fit is
+  now judged on one device (the dedicated card when there is one), and an
+  APU/unified machine is treated as a single pool instead of VRAM + RAM.
+- **Non-NVIDIA hardware is not "no GPU".** The old probe was NVML-only, so on
+  Apple, AMD and Intel every model was graded as CPU-only — even with plenty of
+  GPU memory — and the llama.cpp layer-offload decision silently stopped
+  offloading. Both now use the same detection.
+
 ## Requirements
 
 - Python 3.12 (the `.venv-linux` interpreter)

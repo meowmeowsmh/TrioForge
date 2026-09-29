@@ -494,8 +494,31 @@ The installers also install the three packages the terminal client needs (`rich`
 trioforge --echo          # offline demo: no model, nothing to configure
 trioforge                 # a real session
 trioforge "explain this repo"   # one-shot: answer, print, exit
+trioforge --specs         # what hardware was detected, and what fits on it
 trioforge --help          # everything else
 ```
+
+`--specs` (or `/specs` inside the app) reports the CPU, RAM and GPU it found and
+then grades model sizes against them — useful when a download turns out to be
+bigger than your card:
+
+```
+       system    Linux (x86_64) - 32 cores
+          ram    5.7 GB free of 14.7 GB
+          gpu    NVIDIA GeForce RTX 5060 Laptop GPU
+   gpu memory    8.0 GB total, 1.0 GB free
+  detected by    llama.cpp --list-devices
+
+   4.6 GB    gpu       Fast - fits entirely in NVIDIA ... 7.96 GB
+   8.0 GB    split     OK - runs partly on GPU, partly in RAM (slower)
+  16.0 GB    too_big   Too big for your memory right now
+```
+
+Detection is multi-vendor and multi-platform: **Apple Silicon** (unified memory,
+via Metal), **NVIDIA** (CUDA/Vulkan), **AMD** (ROCm/Vulkan) and **Intel**
+(SYCL/Vulkan) on **Windows, macOS and Linux** — it asks `llama-server
+--list-devices` first, so it sees whatever backends your build actually has, and
+falls back to vendor APIs when the binary is not there yet.
 
 Inside the app:
 

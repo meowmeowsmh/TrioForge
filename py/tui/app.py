@@ -330,6 +330,11 @@ def main(argv: list[str] | None = None) -> int:
     from .cli import parse_args          # local import keeps startup fast
 
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if getattr(args, "specs", False):
+        # Same output as the /specs command, without starting a session.
+        from . import commands
+        commands._specs(None, "")
+        return 0
     try:
         return run(args)
     except KeyboardInterrupt:

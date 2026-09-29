@@ -58,6 +58,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help="offline stub: no model contacted, useful for a demo")
     p.add_argument("--no-banner", action="store_true",
                    help="skip the header (for scripts)")
+    p.add_argument("--specs", action="store_true",
+                   help="print the hardware that was detected (GPU, memory) and what "
+                        "fits, then exit")
     p.add_argument("--version", action="version",
                    version=f"{prog_name()} {__version__}")
     return p.parse_args(argv)

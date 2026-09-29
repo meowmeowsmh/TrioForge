@@ -96,82 +96,50 @@ KV_OVERHEAD_GB = 1.5
 FILE_OVERHEAD = 1.12
 
 
+try:
+    import hardware as _hw          # top-level module under py/
+except ImportError:                 # pragma: no cover - only when run out of tree
+    _hw = None
+
+
 def hardware():
-    """Detect VRAM/RAM so recommendations can be tailored to THIS machine."""
-    import llamacpp_service
-    vram = ram = 0
-    try:
-        vram = llamacpp_service._free_vram_bytes() or 0
-    except Exception:
-        vram = 0
-    try:
-        ram = llamacpp_service._free_ram_bytes() or 0
-    except Exception:
-        ram = 0
-    total_ram = 0
-    try:
-        import psutil
-        total_ram = psutil.virtual_memory().total
-    except Exception:
-        pass
-    return {
-        "vram_free_gb": round(vram / 1073741824, 2),
-        "vram_total_gb": round(_gpu_total() / 1073741824, 2),
-        "ram_free_gb": round(ram / 1073741824, 2),
-        "ram_total_gb": round(total_ram / 1073741824, 2),
-    }
+    """Detect GPU/RAM so recommendations can be tailored to THIS machine.
 
-
-def _gpu_total():
-    """Total VRAM on the primary GPU (0 when there is none / no NVML)."""
-    try:
-        import pynvml
-        pynvml.nvmlInit()
-        try:
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            return int(pynvml.nvmlDeviceGetMemoryInfo(handle).total)
-        finally:
-            try:
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
-    except Exception:
-        return 0
+    The detection itself lives in hardware.py, because it has to understand
+    Apple unified memory and AMD/Intel parts, not just NVML. This is the web
+    API's view of the same numbers the terminal client shows.
+    """
+    if _hw is None:
+        return {"vram_free_gb": 0.0, "vram_total_gb": 0.0,
+                "ram_free_gb": 0.0, "ram_total_gb": 0.0}
+    return _hw.specs()
 
 
 def fit_for(size_gb, hw=None):
     """How well a model of this size will run here.
 
-    gpu     - fits entirely in VRAM (fast)
+    gpu     - fits entirely in GPU memory (fast)
     split   - some layers on the GPU, the rest in RAM (usable, slower)
     cpu     - fits in RAM only (slow)
     too_big - will not fit at all without more memory
     """
-    hw = hw or hardware()
-    need = size_gb * FILE_OVERHEAD + KV_OVERHEAD_GB
-    # Compare against the GPU's TOTAL, not what happens to be free: picking a model
-    # replaces whatever is loaded, which frees its VRAM.
-    vram = max(hw.get("vram_total_gb") or 0, hw.get("vram_free_gb") or 0)
-    ram = hw.get("ram_free_gb") or 0
-    if vram and need <= vram:
-        return "gpu"
-    # "split" needs a GPU to split onto. Testing "vram + ram" before "ram" made the
-    # "cpu" branch unreachable: any model that fitted in RAM also fitted in
-    # vram + ram, so a GPU-less machine was told its models would "run partly on
-    # GPU, partly in RAM" when there was no GPU at all. Gate the split on `vram`,
-    # then fall through to a plain RAM-only load.
-    if vram and need <= vram + ram:
-        return "split"
-    if need <= ram:
+    if _hw is None:
         return "cpu"
-    return "too_big"
+    return _hw.fit(size_gb, hw)
+
+
+def fit_label(verdict, hw=None):
+    """A fit label that names the actual GPU when there is one."""
+    if _hw is None:
+        return FIT_LABEL.get(verdict, verdict)
+    return _hw.fit_label(verdict, hw)
 
 
 FIT_LABEL = {
-    "gpu": "Fast - fits entirely in your VRAM",
+    "gpu": "Fast - fits entirely in your GPU memory",
     "split": "OK - runs partly on GPU, partly in RAM (slower)",
     "cpu": "Slow - RAM only, no GPU offload",
-    "too_big": "Too big for your free memory right now",
+    "too_big": "Too big for your memory right now",
 }
 
 @models_bp.route('/search', methods=['GET'])
@@ -216,7 +184,7 @@ def files():
     hw = hardware()
     for entry in models + mmprojs:
         entry["fit"] = fit_for(entry.get("size_gb") or 0, hw)
-        entry["fit_label"] = FIT_LABEL[entry["fit"]]
+        entry["fit_label"] = fit_label(entry["fit"], hw)
     return jsonify({"repo_id": repo_id, "models": models, "mmproj": mmprojs,
                     "hardware": hw})
 
@@ -230,7 +198,7 @@ def recommended():
         entry = dict(item)
         # 7-8B at Q4_K_M is ~4.6 GB; use that as the yardstick for the pick.
         entry["fit"] = fit_for(4.6, hw)
-        entry["fit_label"] = FIT_LABEL[entry["fit"]]
+        entry["fit_label"] = fit_label(entry["fit"], hw)
         out.append(entry)
     return jsonify({"recommended": out, "hardware": hw})
 
