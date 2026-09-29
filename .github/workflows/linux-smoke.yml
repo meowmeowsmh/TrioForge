@@ -69,11 +69,27 @@ jobs:
           set -e
           PYTHONPATH=py .venv-linux/bin/python - <<'PY'
           from tools import integrity
+
           r = integrity.check(".")
           print("files:", r.get("files_checked"), "modified:", len(r.get("modified") or []),
                 "missing:", len(r.get("missing") or []), "added:", len(r.get("added") or []),
                 "risk:", str(r.get("risk_pct")) + "%")
-          assert r.get("risk_pct") == 0, "a fresh clone must verify at 0%"
+
+          if r.get("risk_pct") != 0:
+              # A stale manifest, not a mystery - say exactly how to fix it.
+              print()
+              print("The integrity baseline is out of date.")
+              if r.get("added"):
+                  print("Files added on purpose? Refresh the baseline, then commit it:")
+                  print("    ./refresh-integrity.sh")
+                  print()
+                  for p in (r.get("added") or [])[:20]:
+                      print("   added:", p)
+              if r.get("modified") or r.get("missing"):
+                  print("Files CHANGED or REMOVED - confirm that was intended, then:")
+                  print("    ./refresh-integrity.sh")
+              raise SystemExit(1)
+
           print("PASS: fresh clone verifies clean")
           PY
 
