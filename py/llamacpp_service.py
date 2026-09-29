@@ -10,6 +10,7 @@
 
 import json
 import os
+import re
 import socket
 import subprocess
 import shutil
@@ -602,6 +603,88 @@ def _same_model(a, b):
     return os.path.normcase(os.path.basename(str(a))) == os.path.normcase(os.path.basename(str(b)))
 
 
+_device_cache = {}
+
+
+def _list_vulkan_devices(exe):
+    """[(label, name, total_mib, free_mib)] from `llama-server --list-devices`.
+
+    Asked once per executable: the answer cannot change while the machine is up and
+    the question costs a process. Any failure returns [] and the callers then leave
+    the device choice to llama.cpp, exactly as before.
+
+    On a hybrid laptop this is the only place that says which GPU is which. llama.cpp
+    enumerates both and the indices are not stable across machines, so guessing from
+    a device number alone is how the layers end up on the iGPU.
+    """
+    if exe in _device_cache:
+        return _device_cache[exe]
+    devices = []
+    try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        done = subprocess.run([exe, "--list-devices"], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=30, creationflags=flags)
+        text = (done.stdout or b"").decode("utf-8", "replace")
+        for line in text.splitlines():
+            m = re.search(r"\b(Vulkan|CUDA|Metal|ROCm|SYCL|OpenCL)(\d+):\s+(.+?)\s*"
+                          r"\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)", line)
+            if m:
+                devices.append((m.group(1) + m.group(2), m.group(3).strip(),
+                                int(m.group(4)), int(m.group(5))))
+    except Exception:
+        devices = []
+    _device_cache[exe] = devices
+    return devices
+
+
+def _device_args(exe):
+    """The --device/--split-mode arguments named by TRIOFORGE_LLAMA_DEVICES.
+
+    Why this exists: llama.cpp selects one device on its own, while this module's
+    VRAM arithmetic always describes the NVIDIA. When those two disagree the layers
+    land on a GPU that was never budgeted for, which surfaces as a load-time
+    "failed to allocate Vulkan1 buffer" abort with no obvious cause. Naming the
+    device removes the guesswork.
+
+    Naming TWO of them is the only way to use the iGPU's memory, which on a hybrid
+    laptop is gigabytes of otherwise idle system RAM sitting behind the panel. It is
+    worth measuring rather than assuming: that memory is shared with Windows, it is
+    far slower than the dGPU's, and each layer boundary pays a synchronisation cost,
+    so it can easily be a loss. Hence opt-in, not a default.
+
+    TRIOFORGE_LLAMA_DEVICES
+        unset               leave the choice to llama.cpp (the default)
+        "Vulkan1"           that device only
+        "Vulkan0,Vulkan1"   both GPUs, layers split across them (--split-mode layer)
+        "cpu" / "none"      no GPU offload: everything on the CPU
+
+    The CPU is involved either way - llama.cpp keeps every layer that was not
+    offloaded there - so this decides only where the offloaded ones live.
+    """
+    want = os.environ.get("TRIOFORGE_LLAMA_DEVICES", "").strip()
+    if not want:
+        return []
+    if want.lower() in ("cpu", "none", "off"):
+        _log("TRIOFORGE_LLAMA_DEVICES={} -> no GPU offload at all".format(want))
+        return ["--device", "none"]
+    found = _list_vulkan_devices(exe)
+    known = {label: free for label, _name, _total, free in found}
+    chosen = [d.strip() for d in want.split(",") if d.strip() in known]
+    if not chosen:
+        _log("TRIOFORGE_LLAMA_DEVICES={} matched none of [{}]; leaving the device choice "
+             "to llama.cpp".format(want, ", ".join(sorted(known)) or "no devices reported"))
+        return []
+    args = ["--device", ",".join(chosen)]
+    if len(chosen) > 1:
+        # Layer split keeps each device's weights resident on it. Row split would
+        # shave every layer across both devices and pay PCIe for that on every token.
+        args += ["--split-mode", "layer"]
+    _log("GPU device(s) forced to {} (free: {})".format(
+        ", ".join(chosen),
+        ", ".join("{} {:.2f} GB".format(c, known.get(c, 0) / 1024.0) for c in chosen)))
+    return args
+
+
 def _free_ram_bytes():
     """Free physical RAM in bytes, or None if it cannot be determined."""
     try:
@@ -914,6 +997,10 @@ def start(model=None, ctx_size=None):
                                                                           size * 1.12 / 1073741824.0))}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
+        # Which GPU(s) the offloaded layers may live on. Left alone, llama.cpp picks
+        # one device by itself; TRIOFORGE_LLAMA_DEVICES names them, and is the only
+        # way to put the iGPU's spare memory to work as well (see _device_args).
+        cmd += _device_args(exe)
         if mmproj:
             cmd += ["--mmproj", mmproj]
         # Keep the projector on the CPU unless the VRAM budget above clearly had room

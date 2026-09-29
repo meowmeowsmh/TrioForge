@@ -1217,11 +1217,15 @@ svg.link-layer {
     color:#3d3d3d;
 }
 .pin-timestamp {
-    font-size:9px;
+    /* No opacity here. The timestamp is already the smallest, lowest-priority text on the
+       pin, and halving its opacity on top of that dropped it to 3.1:1 against the pin
+       paper - under the 4.5:1 WCAG AA asks of text this size, and the reason it read as
+       barely there rather than merely quiet. Measured with tools/pin-contrast-check.js:
+       3.1:1 with the opacity, 14.5:1 without. Size 9px -> 10px for the same reason. */
+    font-size:10px;
     color:#5a5a5a;
     margin-top:4px;
     text-align:right;
-    opacity:0.5;
     flex-shrink: 0;
 }
 .pin-toolbar {

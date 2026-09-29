@@ -196,7 +196,7 @@ body::before {
 }
 .conv-item .del:hover { opacity: 1; }
 .conv-item .time {
-    font-size: 11px; color: #8b949e; margin-right: 4px; white-space: nowrap;
+    font-size: 11px; color: #b0b8c0; margin-right: 4px; white-space: nowrap;
 }
 .sidebar-footer {
     padding: 12px 16px;
@@ -1089,9 +1089,38 @@ html.view-embed #scrollBottomBtn { display: none !important; }
     font-variant-numeric: tabular-nums;
 }
 .toast-text .time-row .date {
-    font-size: 9px;
-    color: rgba(255,255,255,0.5);
+    font-size: 10px;
+    color: rgba(255,255,255,0.78);
 }
+
+/* ── Readable text on a light toast ───────────────────────────────────────────────
+   The toast was built as a dark card with light text, but its background is themed and
+   the scene canvas paints over it. On a warm theme the same light text lands on a light
+   card: the date at rgba(255,255,255,.5) measured 1.6:1 on the warm accent, and the
+   main text 2.0:1 - unreadable, which is what was reported as "the name and date can't
+   be seen".
+   Rather than hard-code a colour that is only right for one theme, the card's own
+   background is measured when it is created and this class is added when that
+   background is light (see applyReadableText). Everything inside then goes near-black,
+   which measures 6.4:1 on the warm accent. */
+.toast.tf-on-light,
+.toast.tf-on-light .toast-text-main,
+.toast.tf-on-light .toast-text-main *,
+.toast.tf-on-light .sub,
+.toast.tf-on-light .clock,
+.toast.tf-on-light .date,
+.toast.tf-on-light .weather-row,
+.toast.tf-on-light .weather-row *,
+.toast.tf-on-light .fetch-status,
+.toast.tf-on-light .close-btn {
+    color: #14171a !important;
+}
+.toast.tf-on-light .toast-text-main .highlight {
+    color: #000 !important;
+    background: rgba(255,255,255,0.55) !important;
+}
+.toast.tf-on-light .toast-icon { background: rgba(0,0,0,0.12) !important; }
+.toast.tf-on-light .close-btn:hover { background: rgba(0,0,0,0.12) !important; }
 .toast-text .weather-row {
     display: flex;
     align-items: center;
@@ -1274,7 +1303,7 @@ html.view-embed #scrollBottomBtn { display: none !important; }
 }
 .msg-hit:hover { background: rgba(88,166,255,0.14); border-color: rgba(88,166,255,0.45); }
 .msg-hit-meta {
-    font-size: 10.5px; color: #8b949e; margin-bottom: 3px;
+    font-size: 10.5px; color: #b0b8c0; margin-bottom: 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .msg-hit-snip { font-size: 12px; color: #c9d1d9; line-height: 1.45; word-break: break-word; }
@@ -3439,6 +3468,28 @@ function newChat() {
             loadConversations();
         });
 }
+// ── Readable text on a light card ────────────────────────────────────────────────
+// The toast is a dark card with light text, but its background is themed (and the scene
+// canvas paints over the top of it), so on a warm theme that light text lands on a light
+// card: the date at rgba(255,255,255,.5) measured 1.6:1 and the main text 2.0:1 on the
+// warm accent - unreadable, which is what got reported as the name and date being
+// invisible. Hard-coding a colour would only be right for one theme, so the background is
+// measured instead and .tf-on-light is set when it is light; the CSS then turns every
+// text colour inside the card near-black (6.4:1 on the warm accent).
+function applyReadableText(card) {
+    try {
+        const bg = getComputedStyle(card).backgroundColor || '';
+        const m = bg.match(/rgba?\(([^)]+)\)/);
+        if (!m) return;
+        const p = m[1].split(',').map(Number);
+        const alpha = p.length > 3 ? p[3] : 1;
+        if (alpha < 0.5) return;                  // too transparent to judge
+        const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        const lum = 0.2126 * f(p[0]) + 0.7152 * f(p[1]) + 0.0722 * f(p[2]);
+        card.classList.toggle('tf-on-light', lum > 0.35);
+    } catch (e) { /* never let a colour check break the card */ }
+}
+
 function openShortcutsModal() { document.getElementById('shortcutsModal').style.display = 'flex'; }
 function closeShortcutsModal() { document.getElementById('shortcutsModal').style.display = 'none'; }
 function toggleShortcutsModal() {
@@ -5775,6 +5826,13 @@ function createToast() {
     container.innerHTML = '';
     const toast = document.createElement('div');
     toast.className = 'toast';
+    // Pick the text colour from the card's OWN background instead of assuming it is dark.
+    // The toast was designed dark with light text, but its background is themed and the
+    // scene canvas paints over it, so on a warm theme the light text lands on a light
+    // card (measured 1.6:1 for the date). applyReadableText adds .tf-on-light when the
+    // background is light, which switches everything inside to near-black.
+    applyReadableText(toast);
+
     toast.innerHTML = `
         <div class="toast-scene">
             <canvas class="toast-canvas" id="sceneCanvas"></canvas>
