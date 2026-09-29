@@ -8,7 +8,7 @@
 
 *Real session with a local model: ask → **Import Conversation** turns the answer into a pin → **✨ AI Assist → Improve Writing** rewrites it on the board → link it to a related pin. (The model's ~20s rewrite is sped up here.)*
 
-**Everything else it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), a file-editing agent with a live diff panel, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation, Windows/macOS/Linux/WSL + Docker, installable on your phone. → [full feature list](#-features) · [screenshots](#-see-it-in-action)
+**Everything else it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), a file-editing agent with a live diff panel, **a full-screen terminal client (`trioforge`)** with its own coding agent and file tools, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation, Windows/macOS/Linux/WSL + Docker, installable on your phone. → [full feature list](#-features) · [terminal client](#-the-terminal-client--forge) · [screenshots](#-see-it-in-action)
 
 **Opens in your browser — or in its own window.** On Windows, double-click **`TrioForge.bat`** and TrioForge opens in your default browser, with the server running hidden behind it: the light, always-stable way. Want a real window of its own — its own icon and title, no browser tabs, no address bar? Add **`--window`** to the same file, and if the embedded engine cannot draw on your GPU TrioForge hands the app to your browser by itself. On your phone or another machine the same app serves the web interface, and there is **no .exe to download**: it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
 
@@ -444,6 +444,78 @@ Models are big, so TrioForge is deliberate about them:
 Worth knowing: while a model *is* loaded, Windows counts the mapped model file as used RAM, so
 the number climbs during a session even with GPU offload — but it now returns by itself. For the
 lowest footprint, use a small model (Ollama's `qwen2.5:0.5b` sits in ~600 MB of VRAM).
+
+---
+
+## ⌨️ The terminal client — `forge`
+
+TrioForge also ships a **terminal client**: a full-screen chat in the spirit of
+[Crush](https://github.com/charmbracelet/crush), running in your terminal instead of a browser. It
+talks to the **same models and the same saved API keys** as the web app, and it can run a coding
+agent with real file tools — `ls`, `view`, `write`, `edit`, `bash`, `grep`, `glob`, `todos` — with
+each tool call drawn as its own card in the transcript.
+
+It is independent of the Flask app: no routes, no templates. Only the provider/model/key settings
+are shared, so configuring TrioForge once configures both.
+
+### Install the `forge` command
+
+One command puts `forge` **and** `trioforge` on your PATH, so they work from any directory.
+
+**Apple (macOS) and Linux**
+
+```bash
+git clone https://github.com/meowmeowsmh/TrioForge
+cd TrioForge
+./install.sh            # links forge + trioforge into ~/.local/bin
+trioforge --version     # -> trioforge 0.1.0
+```
+
+**Windows** — in the repo folder, in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+trioforge --version     # -> trioforge 0.1.0
+```
+
+The installers also install the three packages the terminal client needs (`rich`, `prompt_toolkit`,
+`textual`) — they are deliberately **not** in `requirements.txt`, which only covers the web app.
+
+**Or skip the install entirely** and run it straight out of the repo:
+
+| Platform | Run it directly |
+| --- | --- |
+| Apple / Linux | `./forge` |
+| Windows | `forge.cmd` |
+
+### Use it
+
+```bash
+trioforge --echo          # offline demo: no model, nothing to configure
+trioforge                 # a real session
+trioforge "explain this repo"   # one-shot: answer, print, exit
+trioforge --help          # everything else
+```
+
+Inside the app:
+
+| Key | What it does |
+| --- | --- |
+| `enter` | send the message |
+| `ctrl+j` | **new line** (multi-line input) |
+| `ctrl+p` | command palette — filter, and edit the API key or the model list |
+| `ctrl+l` | switch model (your local `.gguf` files *and* remote models) |
+| `ctrl+o` | switch provider |
+| `tab` | move focus to the transcript |
+| `ctrl+n` | new session |
+| `ctrl+q` | quit |
+
+Shift+Enter is deliberately not offered: a terminal sends the **same byte** for Enter and
+Shift+Enter, so no app can tell them apart — `ctrl+j` is the newline key.
+
+The sidebar shows the model, the provider, a live spinner with an elapsed timer while a turn runs,
+and the files you have modified. See [`py/tui/README.md`](py/tui/README.md) for the full details
+(tools, the text-vs-native tool protocol, permissions, and per-provider setup).
 
 ---
 

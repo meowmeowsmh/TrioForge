@@ -37,11 +37,19 @@ configured" and "which key is set" live in exactly one place.
 ./forge --help               # everything else
 ```
 
-A shell alias so it works from any directory is added to `~/.bashrc`:
+To run it from any directory, install the command once:
 
 ```bash
-alias forge='/home/tc/TrioForge/forge'
+./install.sh            # Linux / macOS -> `forge` + `trioforge` on your PATH
 ```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows
+```
+
+Then `trioforge` works anywhere. Both names run the same program. The installers
+also install `rich`, `prompt_toolkit` and `textual` — they are deliberately not
+in `requirements.txt`, which only covers the Flask web app.
 
 ## The setup wizard
 

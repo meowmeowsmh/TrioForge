@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# ============================================================
+#  install.sh — put the `forge` (and `trioforge`) command on your PATH.
+#
+#      ./install.sh
+#
+#  After this you can run `trioforge` from any directory. It links the
+#  launcher into the first writable directory already on your PATH, and falls
+#  back to ~/.local/bin. Works on Linux and macOS.
+#
+#  Safe to re-run: it only ever (re)creates two symlinks.
+# ============================================================
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "$SELF")" && pwd)"
+LAUNCHER="$ROOT/forge"
+
+echo "TrioForge terminal client"
+echo "  repo: $ROOT"
+
+# ---------------------------------------------------------------- pick a bin dir
+# Prefer the conventional user bin dirs when they are already on PATH. Only
+# dirs under $HOME are considered, so this never needs sudo.
+BIN=""
+for d in "$HOME/.local/bin" "$HOME/bin" "$HOME/.bin"; do
+    case ":${PATH:-}:" in
+        *":$d:"*) [ -d "$d" ] && [ -w "$d" ] && BIN="$d" && break ;;
+    esac
+done
+if [ -z "$BIN" ]; then
+    IFS=':' read -r -a PARTS <<< "${PATH:-}"
+    for d in "${PARTS[@]}"; do
+        # never drop launchers into a package manager's scratch dir
+        case "$d" in
+            *node_modules*|*/.npm/*) continue ;;
+            "$HOME"/*) [ -d "$d" ] && [ -w "$d" ] && BIN="$d" && break ;;
+        esac
+    done
+fi
+[ -n "$BIN" ] || BIN="$HOME/.local/bin"
+mkdir -p "$BIN"
+
+# ---------------------------------------------------------------- deps
+# The terminal client needs these; they are NOT part of requirements.txt,
+# which only covers the Flask web app.
+PY="$ROOT/.venv-linux/bin/python"
+[ -x "$PY" ] || PY="$ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
+if [ -x "$PY" ]; then
+    echo "  deps: installing rich + prompt_toolkit + textual"
+    "$PY" -m pip install -q --disable-pip-version-check rich prompt_toolkit textual
+else
+    echo "  deps: no venv found yet — run ./run.sh once, or:"
+    echo "        python3 -m pip install rich prompt_toolkit textual"
+fi
+
+# ---------------------------------------------------------------- link it
+chmod +x "$LAUNCHER"
+ln -sfn "$LAUNCHER" "$BIN/forge"
+ln -sfn "$LAUNCHER" "$BIN/trioforge"
+echo "  linked: $BIN/forge -> $LAUNCHER"
+echo "          $BIN/trioforge -> $LAUNCHER"
+
+# ---------------------------------------------------------------- PATH check
+case ":${PATH:-}:" in
+    *":$BIN:"*) ;;
+    *)
+        echo
+        echo "NOTE: $BIN is not on your PATH yet. Add it once:"
+        case "${SHELL:-}" in
+            */zsh)  PROFILE="$HOME/.zshrc" ;;
+            */bash) PROFILE="$HOME/.bashrc" ;;
+            *)      PROFILE="your shell profile" ;;
+        esac
+        echo "      echo 'export PATH=\"$BIN:\$PATH\"' >> $PROFILE"
+        ;;
+esac
+
+echo
+echo "Done. Try:  trioforge --version"
