@@ -818,6 +818,37 @@ def _watch_for_load_crash(proc, log_offset, delay=20.0):
     threading.Thread(target=_watch, daemon=True).start()
 
 
+def _auto_install_llama_server():
+    """Fetch the prebuilt llama.cpp for this machine the first time it is needed.
+
+    This is what "you do not have to install llama.cpp" means in practice: the
+    platform- and backend-specific build (Metal on Apple Silicon, CUDA/ROCm/
+    Vulkan elsewhere) is downloaded once into tools/llama.cpp and reused.
+
+    Set TRIOFORGE_NO_AUTO_INSTALL=1 to keep anything from being fetched - every
+    caller then behaves exactly as before (a clear "not found" error). Returns
+    the llama-server path, or None.
+    """
+    flag = os.environ.get("TRIOFORGE_NO_AUTO_INSTALL", "").strip().lower()
+    if flag not in ("", "0", "false", "no", "off"):
+        _log("llama-server is missing and TRIOFORGE_NO_AUTO_INSTALL is set - not fetching it")
+        return None
+    try:
+        import llama_installer
+        gpu = llama_installer._gpu_backend()
+        _log("llama-server not found - downloading the prebuilt {} / {} build once".format(
+            gpu.get("os", "?"), gpu.get("backend", "?")))
+        result = llama_installer.install_llamacpp()
+    except Exception as exc:  # noqa: BLE001 - never let this break a start() call
+        _log("automatic llama.cpp install failed: {}".format(exc))
+        return None
+    if result.get("ok"):
+        _log("llama.cpp installed: {}".format(result.get("path")))
+        return result.get("path")
+    _log("automatic llama.cpp install failed: {}".format(result.get("error")))
+    return None
+
+
 def start(model=None, ctx_size=None):
     global _process, _running_model, _last_spawn, _last_used, _running_ctx
     # Resolve the requested context length to a concrete int (the UI's token
@@ -941,7 +972,14 @@ def start(model=None, ctx_size=None):
         # is reused above without requiring the exe on THIS machine).
         exe = _resolve_llama_server_exe(cfg.get("llama_server", ""))
         if not exe or not os.path.isfile(exe):
-            return {"running": False, "error": "llama-server executable not found: {}".format(cfg.get("llama_server"))}
+            # Nobody should have to install llama.cpp by hand before their first
+            # local model: fetch the prebuilt build for this machine's backend.
+            exe = _auto_install_llama_server()
+        if not exe or not os.path.isfile(exe):
+            return {"running": False,
+                    "error": "llama-server executable not found: {} (run `/llama install` "
+                             "to fetch it, or set LLAMA_SERVER=<path>)".format(
+                                 cfg.get("llama_server"))}
 
         # RAM sanity check. Loading a model bigger than the free memory is what
         # turns a working machine into a thrashing one (a 12B model on a 15 GB box

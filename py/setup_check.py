@@ -149,12 +149,49 @@ def _comfyui_installed():
         return None
 
 
+def _vulkan_runtime():
+    """True when the Vulkan loader is actually installed.
+
+    The Vulkan build of llama.cpp needs the loader at runtime, so this is the
+    thing worth testing. Requiring `vulkaninfo` instead was wrong: that ships in
+    vulkan-tools, which most desktops do NOT install - so an AMD or Intel machine
+    with a perfectly good Vulkan driver was detected as "no GPU" and silently got
+    the CPU build.
+    """
+    if shutil.which("vulkaninfo"):
+        return True
+    try:
+        import ctypes.util
+        for name in ("vulkan", "vulkan-1"):
+            if ctypes.util.find_library(name):
+                return True
+    except Exception:
+        pass
+    if platform.system() == "Darwin":
+        return True          # MoltenVK ships inside the macOS build
+    return False
+
+
+def _probe_ok(cmd, timeout=5):
+    """Run a vendor tool; True only when it exists and exits 0."""
+    try:
+        if not shutil.which(cmd[0]):
+            return False
+        return subprocess.run(cmd, capture_output=True, timeout=timeout,
+                              creationflags=_no_window()).returncode == 0
+    except Exception:
+        return False
+
+
 def _gpu_backend():
     """Detect the local GPU acceleration backend without heavy imports.
 
     Returns {"os", "arch", "backend", "label"}. backend is one of:
     metal (Apple Silicon MPS) / cuda (NVIDIA) / rocm (AMD) / vulkan / cpu.
-    Cached (process-wide) so the Nvidia/AMD probe doesn't run on every request.
+
+    The vendor comes from hardware.vendor(), which reads the PCI id on Linux and
+    WMI on Windows rather than needing a vendor tool on PATH. Cached
+    (process-wide) so the probes do not run on every request.
     """
     global _gpu_cache
     if _gpu_cache is not None:
@@ -162,43 +199,55 @@ def _gpu_backend():
 
     os_name = platform.system()
     arch = (platform.machine() or "").lower()
-    # Apple Silicon → Metal (MPS). Intel Macs are CPU.
+    where = "Linux" if os_name == "Linux" else "Windows"
+
+    # Apple Silicon -> Metal (MPS). Intel Macs run the macos-x64 build, which is
+    # also Metal-capable, so they are not "CPU only" in the same sense.
     if os_name == "Darwin":
         if arch in ("arm64", "aarch64"):
             _gpu_cache = {"os": "macOS", "arch": "apple-silicon", "backend": "metal",
                           "label": "Metal (Apple Silicon)"}
-            return _gpu_cache
-        _gpu_cache = {"os": "macOS", "arch": arch, "backend": "cpu",
-                      "label": "Apple (CPU)"}
+        else:
+            _gpu_cache = {"os": "macOS", "arch": arch, "backend": "metal",
+                          "label": "Metal (Intel Mac)"}
         return _gpu_cache
-    # NVIDIA CUDA
+
+    vendor = "unknown"
     try:
-        if shutil.which("nvidia-smi") and subprocess.run(
-                ["nvidia-smi", "-L"], capture_output=True, timeout=5,
-                creationflags=_no_window()).returncode == 0:
-            _gpu_cache = {"os": "Linux" if os_name == "Linux" else "Windows", "arch": arch,
-                          "backend": "cuda", "label": "NVIDIA CUDA"}
-            return _gpu_cache
+        import hardware                      # cheap probe, never touches llama.cpp
+        vendor = hardware.vendor()
     except Exception:
-        pass
-    # AMD ROCm
-    try:
-        if shutil.which("rocm-smi") and subprocess.run(
-                ["rocm-smi"], capture_output=True, timeout=5,
-                creationflags=_no_window()).returncode == 0:
-            _gpu_cache = {"os": "Linux", "arch": arch, "backend": "rocm", "label": "AMD ROCm"}
+        vendor = "unknown"
+
+    # NVIDIA: CUDA when the driver answers, otherwise Vulkan.
+    if vendor == "nvidia" or shutil.which("nvidia-smi"):
+        if _probe_ok(["nvidia-smi", "-L"]):
+            _gpu_cache = {"os": where, "arch": arch, "backend": "cuda",
+                          "label": "NVIDIA CUDA"}
             return _gpu_cache
-    except Exception:
-        pass
-    # Vulkan
-    try:
-        if shutil.which("vulkaninfo"):
-            _gpu_cache = {"os": "Linux" if os_name == "Linux" else "Windows", "arch": arch,
-                          "backend": "vulkan", "label": "Vulkan"}
+
+    # AMD: ROCm only when it is really installed; Vulkan otherwise.
+    if vendor == "amd" or shutil.which("rocm-smi"):
+        if _probe_ok(["rocm-smi"]):
+            _gpu_cache = {"os": where, "arch": arch, "backend": "rocm",
+                          "label": "AMD ROCm"}
             return _gpu_cache
-    except Exception:
-        pass
-    _gpu_cache = {"os": os_name, "arch": arch, "backend": "cpu", "label": "CPU only"}
+
+    # Any real GPU plus a Vulkan loader -> the Vulkan build (AMD, Intel, and
+    # NVIDIA cards whose driver has no working nvidia-smi).
+    if vendor in ("nvidia", "amd", "intel") and _vulkan_runtime():
+        _gpu_cache = {"os": where, "arch": arch, "backend": "vulkan",
+                      "label": "Vulkan ({})".format(vendor)}
+        return _gpu_cache
+
+    # Last resort: a Vulkan loader with no vendor we recognised. Better the
+    # accelerated build than the CPU one when the loader is demonstrably there.
+    if _vulkan_runtime():
+        _gpu_cache = {"os": where, "arch": arch, "backend": "vulkan", "label": "Vulkan"}
+        return _gpu_cache
+
+    _gpu_cache = {"os": os_name, "arch": arch, "backend": "cpu",
+                  "label": "CPU only" + ("" if vendor == "unknown" else " ({})".format(vendor))}
     return _gpu_cache
 
 

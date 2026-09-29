@@ -262,6 +262,34 @@ Two things it deliberately gets right, because both were getting it wrong:
   GPU memory — and the llama.cpp layer-offload decision silently stopped
   offloading. Both now use the same detection.
 
+## llama.cpp is fetched for you
+
+You never install llama.cpp, and you never pick a build. The first time a local
+model is loaded, the prebuilt binary for **this** machine is downloaded once into
+`tools/llama.cpp/` and reused from then on:
+
+- **Apple Silicon / Intel Mac** → the macOS build (Metal)
+- **NVIDIA** → the CUDA build when the driver answers, Vulkan otherwise
+- **AMD** → ROCm when it is really installed, Vulkan otherwise
+- **Intel** → Vulkan
+- **no GPU** → the CPU build
+
+The backend is detected from the PCI ids on Linux and WMI on Windows, so it does
+**not** depend on `vulkaninfo` being installed — requiring it meant AMD and Intel
+machines with a working Vulkan driver were quietly given the CPU build.
+
+```bash
+trioforge --install-llama     # fetch it now instead of on first use
+```
+```bash
+/llama status                 # what backend was detected, what is installed
+/llama install                # re-fetch (e.g. after a GPU or driver change)
+```
+
+Set `TRIOFORGE_NO_AUTO_INSTALL=1` to stop anything being downloaded; loading a
+local model then reports plainly that llama-server is missing, and
+`LLAMA_SERVER=<path>` still points at your own build.
+
 ## Requirements
 
 - Python 3.12 (the `.venv-linux` interpreter)

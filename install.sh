@@ -62,6 +62,25 @@ ln -sfn "$LAUNCHER" "$BIN/trioforge"
 echo "  linked: $BIN/forge -> $LAUNCHER"
 echo "          $BIN/trioforge -> $LAUNCHER"
 
+# ---------------------------------------------------------------- llama.cpp
+# So a local model works with no manual setup. It is also fetched on first use,
+# so this is a convenience, not a requirement; TRIOFORGE_SKIP_LLAMA=1 skips it.
+if [ "${TRIOFORGE_SKIP_LLAMA:-0}" = "1" ]; then
+    echo "  llama: skipped (TRIOFORGE_SKIP_LLAMA=1)"
+elif [ -n "$(find "$ROOT/tools/llama.cpp" -name 'llama-server*' -type f 2>/dev/null | head -1)" ]; then
+    echo "  llama: already present under tools/llama.cpp"
+elif [ -x "$PY" ]; then
+    echo "  llama: downloading the prebuilt build for this machine (once)..."
+    if PYTHONPATH="$ROOT/py" "$PY" -c \
+        'import llama_installer as L; r=L.install_llamacpp(); print("        ", r["path"] if r["ok"] else "skipped: "+r["error"]); raise SystemExit(0 if r["ok"] else 1)'; then
+        echo "  llama: ready"
+    else
+        echo "  llama: could not fetch it now — it will be fetched on first use"
+    fi
+else
+    echo "  llama: will be fetched on first use"
+fi
+
 # ---------------------------------------------------------------- PATH check
 case ":${PATH:-}:" in
     *":$BIN:"*) ;;

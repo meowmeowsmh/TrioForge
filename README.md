@@ -498,6 +498,15 @@ trioforge --specs         # what hardware was detected, and what fits on it
 trioforge --help          # everything else
 ```
 
+**llama.cpp is fetched for you.** You never install it or pick a build: the
+first time a local model is loaded, the prebuilt binary for *this* machine —
+Metal on Apple Silicon, CUDA/ROCm/Vulkan on Linux and Windows, CPU when there is
+no GPU — is downloaded once into `tools/llama.cpp/` and reused. The backend comes
+from the PCI ids on Linux and WMI on Windows, so it does not depend on
+`vulkaninfo` being installed. `trioforge --install-llama` fetches it up front,
+`/llama status` shows what was detected, and `TRIOFORGE_NO_AUTO_INSTALL=1` turns
+the downloading off entirely.
+
 `--specs` (or `/specs` inside the app) reports the CPU, RAM and GPU it found and
 then grades model sizes against them — useful when a download turns out to be
 bigger than your card:

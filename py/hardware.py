@@ -334,6 +334,53 @@ def _windows_wmi():
     return best
 
 
+# PCI vendor ids, as the kernel reports them in /sys/class/drm/*/device/vendor.
+_PCI_VENDOR = {"0x10de": "nvidia", "0x1002": "amd", "0x1022": "amd", "0x8086": "intel"}
+
+
+def vendor():
+    """Which GPU vendor is present - WITHOUT asking llama.cpp.
+
+    Deliberately separate from gpu(): picking the llama.cpp *build* to download
+    must not recurse into the device enumeration, which is itself done by running
+    llama.cpp. This only reads cheap, vendor-specific facts.
+    """
+    info = system()
+    if info["os"] == "Darwin":
+        return "apple" if info.get("apple_silicon") else "unknown"
+    if info["os"] == "Linux":
+        found = set()
+        for path in glob.glob("/sys/class/drm/card*/device/vendor"):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    found.add(fh.read().strip().lower())
+            except OSError:
+                continue
+        for pci, name in _PCI_VENDOR.items():
+            if pci in found:
+                return name
+        # No DRM info (containers, odd kernels): fall back to the tools.
+        if _which("nvidia-smi"):
+            return "nvidia"
+        return "unknown"
+    if info["os"] == "Windows":
+        wmi = _windows_wmi()
+        if wmi:
+            return _vendor_of(wmi.get("name", ""))
+        if _which("nvidia-smi"):
+            return "nvidia"
+    return "unknown"
+
+
+def _which(name):
+    """shutil.which that never raises and never leaves the process's PATH."""
+    from shutil import which
+    try:
+        return which(name)
+    except Exception:
+        return None
+
+
 def gpu(refresh=False):
     """The best description of the GPU memory this machine can offer.
 

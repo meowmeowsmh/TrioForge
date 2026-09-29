@@ -335,6 +335,12 @@ def main(argv: list[str] | None = None) -> int:
         from . import commands
         commands._specs(None, "")
         return 0
+    if getattr(args, "install_llama", False):
+        # Same as /llama install. Pre-fetching is optional - llama.cpp is
+        # downloaded on first use - but useful to do while you are setting up.
+        from . import commands
+        commands._llama(None, "install")
+        return 0
     try:
         return run(args)
     except KeyboardInterrupt:

@@ -22,6 +22,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/keys clear [all]", "remove every key EXCEPT the current one"),
     ("/models", "list models (offline .gguf files, or the endpoint's list)"),
     ("/specs", "what hardware was detected (GPU, memory) and what fits"),
+    ("/llama [install|status]", "the bundled llama.cpp runtime (auto-installed)"),
     ("/start [name]", "load an offline .gguf into llama-server"),
     ("/model [name]", "show or switch model; 'auto' re-detects it"),
     ("/status", "server health, model, endpoint and key state"),
@@ -550,9 +551,48 @@ def _specs(ctx, arg: str) -> None:
     ])
 
 
+def _llama(ctx, arg: str) -> None:
+    """Show, pre-fetch or re-fetch the llama.cpp runtime.
+
+    Nothing here is required to use TrioForge - llama.cpp is fetched on first
+    use - but this makes it explicit, and lets you re-fetch after a driver or
+    GPU change so the right backend build is in place.
+    """
+    import llama_installer as LI
+
+    action = (arg or "").strip().lower()
+    gpu = LI._gpu_backend()
+    found = LI.find_installed()
+
+    if action in ("", "status", "show"):
+        render.table("llama.cpp runtime", [
+            ("platform", "{} / {}".format(gpu.get("os", "?"), gpu.get("arch", "?"))),
+            ("backend", "{}  ({})".format(gpu.get("backend", "?"), gpu.get("label", ""))),
+            ("installed", found or "not yet - it downloads on first use"),
+        ])
+        if not found:
+            render.info("nothing to do: loading a local model fetches it automatically")
+            render.info("or run /llama install now")
+        return
+
+    if action in ("install", "update", "reinstall", "get", "fetch"):
+        render.info("downloading the prebuilt llama.cpp for {} ({})...".format(
+            gpu.get("os", "?"), gpu.get("backend", "?")))
+        result = LI.install_llamacpp()
+        if result.get("ok"):
+            render.ok("llama.cpp ready: {}".format(result.get("path")))
+            render.info("load a model with /start")
+        else:
+            render.error(result.get("error") or "install failed")
+            render.info("you can also install it yourself and set LLAMA_SERVER=<path>")
+        return
+
+    render.info("usage: /llama [status | install]")
+
+
 _TABLE = {
     "/help": _help, "/?": _help, "/setup": _setup,
-    "/model": _model, "/models": _models, "/specs": _specs,
+    "/model": _model, "/models": _models, "/specs": _specs, "/llama": _llama,
     "/provider": _provider, "/provider-add": _provider_add,
     "/key": _key, "/keys": _keys, "/status": _status, "/base-url": _base_url,
     "/system": _system, "/clear": _clear, "/history": _history,

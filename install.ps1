@@ -36,6 +36,25 @@ foreach ($name in @("forge", "trioforge")) {
     Write-Host "  shim:   $shim"
 }
 
+# ---------------------------------------------------------------- llama.cpp
+# So a local model works with no manual setup. TrioForge also fetches this on
+# first use, so this is a convenience, not a requirement.
+$llamaDir = Join-Path $Root "tools\llama.cpp"
+$have = Get-ChildItem -Path $llamaDir -Filter "llama-server*" -Recurse -File `
+    -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($env:TRIOFORGE_SKIP_LLAMA -eq "1") {
+    Write-Host "  llama:  skipped (TRIOFORGE_SKIP_LLAMA=1)"
+} elseif ($have) {
+    Write-Host "  llama:  already present under tools\llama.cpp"
+} else {
+    Write-Host "  llama:  downloading the prebuilt build for this machine (once)..."
+    $env:PYTHONPATH = Join-Path $Root "py"
+    & $py -c "import llama_installer as L; r = L.install_llamacpp(); print('         ', r['path'] if r['ok'] else 'skipped: ' + r['error'])"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  llama:  could not fetch it now - it will be fetched on first use"
+    }
+}
+
 # ---------------------------------------------------------------- PATH
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($null -eq $userPath) { $userPath = "" }
