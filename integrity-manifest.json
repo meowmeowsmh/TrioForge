@@ -66,7 +66,7 @@
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
   "py/tui/render.py": "4e0adce59caf7296d26cf8591b5321a02340f5bfe0682c9d29a8eaf72f4ee97d",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "bf5aca69427e4b5e526717e4b34765363152ea05f8d49502a21a9a90ebab078b",
+  "py/tui/textual_app.py": "832e0d9f571654f52b7a06282839e9191dd56b80ffda8cdd3ab1a83906747651",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "2c1611a39b551e2a63a463948cd534869d3eea4b54915cec75b770fa96ab6eae",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -101,6 +101,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T00:47:17",
- "note": "idle act catalog + quit plea + banner dead face"
+ "generated": "2026-10-01T00:56:46",
+ "note": "quit plea: sync paint + timer exit, no worker"
 }

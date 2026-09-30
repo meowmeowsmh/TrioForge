@@ -30,7 +30,6 @@ without touching how a request is actually made.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import random
 import subprocess
@@ -62,6 +61,9 @@ DEFAULT_SYSTEM = (
 
 KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+y copy answer  ·  tab chat  ·  "
             "ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
+
+# How long the pleading "Don't!!!" face stays on screen before the app exits.
+GOODBYE_HOLD = 2.0
 
 # Crush's "working" spinner (internal/ui/anim + chat/assistant.go): an animated
 # frame, a label with cycling ellipsis, and a live elapsed timer as the suffix.
@@ -359,6 +361,7 @@ class ForgeApp(App):
         self._idle_started = time.time()
         # Once set, the tick plays the pleading "Don't!!!" face until we exit.
         self._goodbye = False
+        self._goodbye_at = 0.0
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -587,55 +590,73 @@ class ForgeApp(App):
         """The current face: the eyes/mouth, then a small emoji + name line."""
         return f"{faces.face(self._mood, self._face_i)}\n{faces.label(self._mood)}"
 
-    def _tick_face(self) -> None:
-        """Advance the face frame and redraw it only when it changed.
-
-        While a turn runs the emotion cycles its variants at the tick rate. When
-        idle the bot acts out a hobby (coffee, reading, gaming, ...): frames step
-        every ~1.2 s and the act switches to a new one every ~3 minutes. Once the
-        user asks to quit, the pleading "Don't!!!" face plays until we exit.
-        """
-        now = time.time()
-
+    def _face_now(self) -> str:
+        """The face text for the current state. Draws nothing, advances nothing."""
         if self._goodbye:
-            self._face_i += 1
-            text = faces.face("no", self._face_i) + "\nDon't!!!"
-        else:
-            if self._mood in ("happy", "sad") and now - self._face_done_at >= 10.0:
-                self._mood = "neutral"
-                self._idle_started = now
+            # The pleading eyes wobble a little slower than a busy spinner.
+            step = int((time.time() - self._goodbye_at) / 0.45)
+            return faces.face("no", step) + "\nDon't!!!"
+        if self._mood == "neutral":
+            frame = int((time.time() - self._idle_started) / 1.2) % 3
+            return (faces.idle_frame(self._idle_action, frame) + "\n"
+                    + faces.idle_label(self._idle_action))
+        return self._face_text()
 
-            if self._mood == "neutral":
-                elapsed = now - self._idle_started
-                if elapsed >= 180.0:
-                    nxt = random.randrange(len(faces.IDLE_ACTIONS))
-                    while nxt == self._idle_action and len(faces.IDLE_ACTIONS) > 1:
-                        nxt = random.randrange(len(faces.IDLE_ACTIONS))
-                    self._idle_action = nxt
-                    self._idle_started = now
-                    elapsed = 0.0
-                frame = int(elapsed / 1.2) % 3
-                text = (faces.idle_frame(self._idle_action, frame) + "\n"
-                        + faces.idle_label(self._idle_action))
-            else:
-                self._face_i += 1
-                text = self._face_text()
-
+    def _paint_face(self) -> None:
+        """Redraw the face now rather than on the next tick - the face must not
+        lag 250 ms behind the keypress that changed it."""
+        text = self._face_now()
         if text != self._last_face:
             self._last_face = text
             self.query_one("#face", Static).update(text)
+
+    def _tick_face(self) -> None:
+        """Advance the face and redraw it when it changed.
+
+        While a turn runs the emotion cycles its variants. When idle the bot acts
+        out a hobby (coffee, reading, gaming, ...): frames step every ~1.2 s and
+        the act switches to a different one every ~3 minutes. Once the user asks
+        to quit, the pleading "Don't!!!" face plays until the app exits.
+        """
+        now = time.time()
+
+        if not self._goodbye:
+            if self._mood in ("happy", "sad") and now - self._face_done_at >= 10.0:
+                self._mood = "neutral"
+                self._idle_started = now
+            if self._mood == "neutral" and now - self._idle_started >= 180.0:
+                nxt = random.randrange(len(faces.IDLE_ACTIONS))
+                while nxt == self._idle_action and len(faces.IDLE_ACTIONS) > 1:
+                    nxt = random.randrange(len(faces.IDLE_ACTIONS))
+                self._idle_action = nxt
+                self._idle_started = now
+            if self._mood != "neutral":
+                self._face_i += 1
+
+        self._paint_face()
 
     def action_quit(self) -> None:
         """ctrl+q / ctrl+c: plead, then quit."""
         self._begin_goodbye()
 
-    @work(exclusive=True)
-    async def _begin_goodbye(self) -> None:
-        """Play the pleading face for a moment, then actually exit."""
+    def _begin_goodbye(self) -> None:
+        """Say "Don't!!!" for a beat, then exit.
+
+        Deliberately NOT an async worker. ``@work(exclusive=True)`` joins the
+        shared "default" group - the same one a running turn uses - so the plea
+        could be cancelled before it ever drew, and a worker that dies before
+        reaching ``self.exit()`` leaves the app unable to quit at all. A one-shot
+        timer cannot be cancelled that way, and the face is painted right here so
+        it is on screen immediately instead of up to 250 ms later.
+        """
+        if self._goodbye:
+            return
         self._goodbye = True
-        self._face_i = 0
-        await asyncio.sleep(1.4)
-        self.exit()
+        self._goodbye_at = time.time()
+        self._last_face = ""
+        self._paint_face()
+        self._add_plain(f"{faces.emoji('no')}  Don't!!!", role="bot")
+        self.set_timer(GOODBYE_HOLD, self.exit)
 
     def _greet(self) -> None:
         self.query_one("#chat", VerticalScroll).mount(Static(
