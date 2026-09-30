@@ -142,6 +142,11 @@ jobs:
           print("platform logic OK")
           PY
 
+      # ── llama_cpp.py: the terminal client's Windows branch (no GPU needed) ──
+      - name: llama_cpp.py self-check (free port, model probe, shutdown branch)
+        shell: cmd
+        run: .venv\Scripts\python.exe py\llama_cpp.py --selftest
+
       - name: Undefined-name scan (the ProviderError class of bug)
         shell: cmd
         run: .venv\Scripts\python.exe tools\undefined-names-check.py py

@@ -94,6 +94,12 @@ jobs:
           print("platform logic OK")
           PY
 
+      # ── llama_cpp.py: the terminal client's macOS branch (no GPU needed) ──
+      - name: llama_cpp.py self-check (free port, model probe, shutdown branch)
+        run: |
+          set -e
+          .venv-linux/bin/python py/llama_cpp.py --selftest
+
       # ── 2b. ComfyUI on macOS: install auto-detection + the full generation
       #        flow (queue -> poll -> download) against a mock ComfyUI server ──
       - name: ComfyUI detection + generation flow

@@ -309,10 +309,18 @@ class Llama:
         # orphan holding the GPU.
         self._logfile = open(os.path.join(
             os.path.dirname(self.model_path) or ".", ".llama_cpp_server.log"), "wb")
+        # POSIX: its own process group, so Ctrl+C reaches us first. Windows:
+        # no console window. Each platform gets only the flags it understands -
+        # passing start_new_session on Windows (or CREATE_NO_WINDOW on Linux)
+        # raises instead of being ignored.
+        spawn_kwargs = {}
+        if os.name == "nt":
+            spawn_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        else:
+            spawn_kwargs["start_new_session"] = True
         self._proc = subprocess.Popen(cmd, stdout=self._logfile,
                                       stderr=subprocess.STDOUT,
-                                      stdin=subprocess.DEVNULL,
-                                      start_new_session=True)
+                                      stdin=subprocess.DEVNULL, **spawn_kwargs)
         self._wait_ready()
 
     def _wait_ready(self) -> None:
@@ -414,17 +422,23 @@ class Llama:
         if proc.poll() is None:
             if self.verbose:
                 _log("stopping llama-server (pid {})".format(proc.pid))
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except Exception:
-                proc.terminate()
+            if os.name == "nt":
+                proc.terminate()               # killpg/getpgid do not exist here
+            else:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                except Exception:
+                    proc.terminate()
             try:
                 proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except Exception:
+                if os.name == "nt":
                     proc.kill()
+                else:
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except Exception:
+                        proc.kill()
         if self._logfile:
             self._logfile.close()
             self._logfile = None
@@ -519,6 +533,40 @@ def _cmd_chat(llm: "Llama", system: str | None, args) -> int:
             history.append({"role": "assistant", "content": "".join(parts)})
 
 
+def _cmd_selftest() -> int:
+    """Exercise the platform-independent paths with no GPU, model or network.
+
+    The Windows and macOS CI runners call this, so the parts of llama_cpp.py that
+    used to be POSIX-only (process-group shutdown) are actually executed on the
+    platforms where they break, not just read.
+    """
+    import platform as _platform
+    osname = _platform.system()
+
+    port = find_free_port()
+    assert 8081 <= port < 8081 + 64, port
+
+    assert _running_model("127.0.0.1", port) == "", "empty port must not raise"
+
+    try:
+        model = auto_find_model()
+    except Exception:                       # noqa: BLE001 - CI has no models dir
+        model = ""
+
+    # close() on a never-started instance must be a safe no-op. This is the line
+    # that raised AttributeError on Windows before os.killpg was guarded.
+    ghost = Llama.__new__(Llama)
+    ghost._proc = None
+    ghost._logfile = None
+    ghost.verbose = False
+    ghost.close()
+
+    print("selftest OK: {} {} | free port {} | model {}".format(
+        osname, _platform.machine(), port,
+        os.path.basename(model) if model else "(none detected)"))
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         prog="llama_cpp.py",
@@ -540,6 +588,8 @@ def main(argv=None) -> int:
     p.add_argument("--specs", action="store_true", help="show hardware and exit")
     p.add_argument("--which", action="store_true",
                    help="show the llama-server binary and its devices, then exit")
+    p.add_argument("--selftest", action="store_true",
+                   help="cross-platform self-check (CI runs this on Windows and macOS)")
     p.add_argument("-q", "--quiet", action="store_true")
     args = p.parse_args(argv)
 
@@ -547,6 +597,8 @@ def main(argv=None) -> int:
         return _cmd_specs()
     if args.which:
         return _cmd_which()
+    if args.selftest:
+        return _cmd_selftest()
     if args.model and not os.path.isfile(os.path.expanduser(args.model)):
         print("no such model: {}".format(args.model), file=sys.stderr)
         return 2

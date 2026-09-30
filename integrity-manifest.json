@@ -31,7 +31,7 @@
   "py/gunicorn_conf.py": "49aad15d5edaee40cde5db98c73db473de6060863c6eb9ad8d1eb4b028a14b5b",
   "py/hardware.py": "805a8b5e15454e936531133f5a5c77c5b8b95b512033facacddb8b5bbd466a66",
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
-  "py/llama_cpp.py": "9da834364611e308571dc4605902365dd48ed9223adc2d2475d74fdf2c719a9b",
+  "py/llama_cpp.py": "1a2f1339acf99d6f38629c33d5a9b1e9627483412dadf5a698d491c41df8bec7",
   "py/llama_installer.py": "fdd022bff63ed9e9d78578bcd48d61eb5e294f6bcbb01b79281b69c829426874",
   "py/llamacpp_service.py": "0ddea5d4bdc9f6adc9b5370298d6897ce8da87940f9cf3d5c03db38d57e1b917",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
@@ -102,6 +102,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T04:01:59",
- "note": "baseline: local model auto-starts on first message"
+ "generated": "2026-10-01T04:04:27",
+ "note": "baseline: llama_cpp.py Windows/macOS-safe + selftest"
 }
