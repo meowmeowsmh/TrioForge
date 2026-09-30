@@ -507,6 +507,28 @@ from the PCI ids on Linux and WMI on Windows, so it does not depend on
 `/llama status` shows what was detected, and `TRIOFORGE_NO_AUTO_INSTALL=1` turns
 the downloading off entirely.
 
+**`py/llama_cpp.py`** is a zero-dependency, stdlib-only `llama_cpp` for people who
+would otherwise `pip install llama-cpp-python` and watch it try to compile. It
+drives the same prebuilt `llama-server` over HTTP, so there is nothing to build:
+
+```bash
+python py/llama_cpp.py --specs                 # hardware + what offloads
+python py/llama_cpp.py --which                 # the binary and its GPU devices
+python py/llama_cpp.py -m models/gemma/gemma-3-12b-it-Q4_K_M.gguf -p "2+2?" -n 40
+python py/llama_cpp.py -m MODEL --chat         # interactive
+```
+```python
+import llama_cpp                                # PYTHONPATH=<project>/py
+llm = llama_cpp.Llama("models/gemma/gemma-3-12b-it-Q4_K_M.gguf")
+print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
+for chunk in llm("tell me a story", max_tokens=200, stream=True):
+    print(chunk["choices"][0]["text"], end="", flush=True)
+```
+
+GPU layers, thread count and context are chosen from the detected hardware (all
+layers when the model fits VRAM, llama.cpp's own auto-fit in between, CPU only
+with no GPU), and it stops the server it started — including on Ctrl+C.
+
 `--specs` (or `/specs` inside the app) reports the CPU, RAM and GPU it found and
 then grades model sizes against them — useful when a download turns out to be
 bigger than your card:
