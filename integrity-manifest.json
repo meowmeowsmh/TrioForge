@@ -55,7 +55,7 @@
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "906f492ccfa7131703240eea274d1f1d6470e9ded9e6356fb27d060f7fe850e6",
   "py/tui/README.md": "6f0bed6ae2567264e55bd8aa0982233be4768518c65bfd286e15fa8da9d357c9",
-  "py/tui/__init__.py": "dd9bb4f93b71c8a6d2bab9d5031b5f4cda316351cb4ff9cc4eab5583d9be4b00",
+  "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "2f621d2ae6cb3fa280cfd5b12b926ee14b121b689295e7a84537b6a2d5da44c8",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
@@ -71,10 +71,10 @@
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "2c1611a39b551e2a63a463948cd534869d3eea4b54915cec75b770fa96ab6eae",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
-  "py/version.py": "2558a137032605f92ce511f3d544c0b5c48b2de6e942285056ea249074baba4d",
+  "py/version.py": "27251b04e8e0ec25c4abb4cff91d3c788b41f0e287a432289e3e7525f3f77515",
   "py/video_to_text.py": "fd1f5747f27eca7726ec0bf4e5743670cadbf401f1d7911ee71c9e6d606274f7",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "a000d751606e0dcb60201899d4880fa743b277552efa459a8205b56275953d55",
+  "pyproject.toml": "c743ce7f438b846a6ec1c82694e9afdd3afe20e216f2533d7868f577f2301063",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
   "requirements.txt": "3a112cab3a2725533a9986fb67b83e50ea395024adbe3498dac2e8fe179198d4",
   "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
@@ -102,6 +102,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T04:04:27",
- "note": "baseline: llama_cpp.py Windows/macOS-safe + selftest"
+ "generated": "2026-10-01T04:07:57",
+ "note": "baseline: v1.4.0"
 }

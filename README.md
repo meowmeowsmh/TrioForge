@@ -22,6 +22,29 @@
 
 ---
 
+## 🆕 What's new in 1.4 — cross-platform, end to end
+
+**1.4 makes local AI work on whichever machine you sit down at** — Apple, Windows or
+Linux — with nothing to download and nothing to compile:
+
+- **Hardware is detected, not assumed.** Apple Silicon (unified memory / Metal), NVIDIA
+  (CUDA/Vulkan), AMD (ROCm/Vulkan) and Intel (SYCL/Vulkan) — via `llama-server
+  --list-devices` first, then vendor APIs. It also no longer *sums* an iGPU's shared RAM
+  with the dGPU's VRAM (which once reported a 12 GB model as "fits in your GPU").
+- **llama.cpp is fetched for you.** The right prebuilt build for your OS + GPU is
+  downloaded once and reused; the backend comes from PCI ids on Linux and WMI on Windows,
+  not from `vulkaninfo` being installed. `trioforge --install-llama` / `/llama` control it.
+- **`py/llama_cpp.py`** — a stdlib-only `llama_cpp`, no `pip install llama-cpp-python`
+  compile to fail. `python py/llama_cpp.py -p "2+2?"` auto-detects the model, the GPU
+  layers and a free port.
+- **The terminal client (`trioforge`) now starts a local model on your first message** —
+  no more "Connection refused" for forgetting `/start`. Pickers work with the mouse and
+  arrow keys, `ctrl+y` copies an answer out, `ctrl+j` is a newline.
+- **Every GPU is listed with its free VRAM and a verdict** ("usable, but shares system
+  RAM"), and RAM is reported the way a task manager does (used/total/%, plus available).
+- **CI now runs on real Windows and Apple-Silicon runners**, including `llama_cpp.py`'s
+  lifecycle — so "works on Windows/macOS" is executed on every push, not just claimed.
+
 ## 🆕 What's new in 1.0.3 — the stability release
 
 **1.0.3 is about things that were quietly broken.** Every fix here came out of a real
