@@ -41,6 +41,11 @@ INCLUDE_DIRS = ("py", "templates", "static", "docker")
 INCLUDE_FILES = (
     "TrioForge.bat", "voice_agent.bat", ".gitattributes",
     "run.sh", "requirements.txt", "requirements-ml.txt", "pyproject.toml",
+    # The terminal client's launchers and installers. run.sh was covered but
+    # install.sh was not, and neither were install.ps1 or the forge launchers -
+    # so an edit to the script that puts `trioforge` on PATH, or that installs its
+    # dependencies, went unnoticed. Same category as TrioForge.bat and run.sh.
+    "install.ps1", "install.sh", "forge", "forge.cmd",
 )
 # Skipped by their path FROM THE REPO ROOT only. Matching on any path component named
 # "tools" would also have excluded py/tools/ - the launcher, this file, the shortcut and

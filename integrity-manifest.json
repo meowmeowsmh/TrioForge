@@ -7,6 +7,10 @@
   "docker/application.sh": "6d74e93eaadf6ed20e89154a5ed9ad9d2062e461772fa8d3b719b7efd4d27906",
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "9580ec10b81bcec3e1eeca5b88b2b37c02e16416bc0b8dd500bbb7d9ad88a9e8",
+  "forge": "3dfdd712183bb2afe80013aed7c66526528dd284ef5091de9185d276472427f0",
+  "forge.cmd": "d24294875d386637a08846184cdb17c889d145697a003d93550b0eec46524e4a",
+  "install.ps1": "011a5d651cb0b6b34ed150aec07e03f33e6f479857152a082abb306712743e9c",
+  "install.sh": "411439f9c0fb1096a5a6781cb84e43d84c8a05cb4ea7dc0cc8abe09b39fa0110",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "a0f7cd5e9f5d7505b2a535f60f095260c7c2e4232fef391416202eb74f8a8856",
   "py/backup_store.py": "dcef40c9b21be176845df407fbd30a46cf249235d185e277f2f90565089ed703",
@@ -42,7 +46,7 @@
   "py/tools/app_window.py": "484c90acefabf025aee7cbfb4bf68ff618e1e037842b093f48d5643b56ce9d1d",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
   "py/tools/browser_picker.py": "a77ec789f9194dcdc64ab783857c8e757f2b101a9cc9df9325105186df9b30b7",
-  "py/tools/integrity.py": "75cea1c03f352c235df8f41b19d4cd77c25bce2f7a61c0510393241e6cdbc03b",
+  "py/tools/integrity.py": "aeb3344b23544e5c68605a4a1364ddaaa6d70e696f77b5cde5d28759f3c0f933",
   "py/tools/launcher.py": "c1c4d40b718f39aa8ec69d8d7b2ab5b70709787d76b51247fffaf98ca112c3c6",
   "py/tools/launcher_gui.py": "57ddf1590e8c2db556d5807a471ed0d5d6fdbed3d3023faf877fa3aa6500b3d1",
   "py/tools/procutil.py": "9c6b45306a76e570b3c1dd16c67507e92c9afd2a4e6970d81373ba3f3215fff6",
@@ -96,6 +100,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-30T04:45:24",
- "note": "baseline: automatic llama.cpp provisioning"
+ "generated": "2026-09-30T19:00:54",
+ "note": "install.ps1 made ASCII-only and its deps made pip-less-venv safe; terminal-client launchers now hash-checked"
 }
