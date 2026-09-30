@@ -343,6 +343,7 @@ class ForgeApp(App):
         self._git_ts = 0.0
         self._models_cache: list = []
         self._models_ts = 0.0
+        self._sidebar_ts = 0.0
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -511,6 +512,13 @@ class ForgeApp(App):
     def _tick_clock(self) -> None:
         """Interval callback: keep the working timer moving between tokens."""
         self._refresh_activity()
+        # Also refresh the sidebar on a slow cadence so the RAM / model figures
+        # stay live. The expensive parts (models, git, GPU) are cached, so a 2 s
+        # refresh is cheap - unlike the 4 Hz full rebuild this replaced.
+        now = time.time()
+        if now - self._sidebar_ts >= 2.0:
+            self._sidebar_ts = now
+            self.query_one("#sidebody", Static).update(self._sidebar())
 
     # ------------------------------------------------------------------ helpers
     def _short_model(self) -> str:

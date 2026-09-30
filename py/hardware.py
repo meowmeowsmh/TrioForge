@@ -175,7 +175,12 @@ _SHARED_RE = re.compile(r"radeon\s+\d{3}\s*m\b")     # Ryzen APUs: 610M, 780M
 
 def _integrated(name):
     """True when this GPU's memory is really a slice of system RAM."""
-    low = (name or "").lower()
+    # Normalise "(TM)"/"(R)" and punctuation first: "AMD Radeon(TM) 610M" must
+    # match the APU patterns. Before this, the "(TM)" broke the match, the iGPU
+    # was treated as a dedicated card, and its 8 GB of *system* RAM was shown as
+    # VRAM while the real RTX 5060 was ignored ("Radeon · 8 GB vram · 2 GPUs").
+    low = re.sub(r"\([^)]*\)", "", (name or "").lower())
+    low = re.sub(r"[^a-z0-9]+", " ", low)
     if any(p in low for p in _SHARED_PATTERNS):
         return True
     return _SHARED_RE.search(low) is not None

@@ -29,7 +29,7 @@
   "py/ffmpeg_installer.py": "56e96d33ab3acef9d8e526567c658abc82f026c5b53fe5efb732a116ec656aa0",
   "py/generate_image.py": "6a7fd6815309055a0530d9a108d944adffe46768b7d386c18e1dbc3b688f3df6",
   "py/gunicorn_conf.py": "49aad15d5edaee40cde5db98c73db473de6060863c6eb9ad8d1eb4b028a14b5b",
-  "py/hardware.py": "df594862ccec2abec759857dd1ed10f9cd3647b85f0e1285228a51d77b04c2b4",
+  "py/hardware.py": "cf15e266196836a7f8f31964770c56710be1a2ec360e76a1bac23bd506da667f",
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_installer.py": "fdd022bff63ed9e9d78578bcd48d61eb5e294f6bcbb01b79281b69c829426874",
   "py/llamacpp_service.py": "0ddea5d4bdc9f6adc9b5370298d6897ce8da87940f9cf3d5c03db38d57e1b917",
@@ -65,7 +65,7 @@
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
   "py/tui/render.py": "d339be1654f425082c1c88a0e845353ed3ffd0a3199db3a584e1dd6c43c4b139",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "94e7d6c31056f635bf43207613c755f883aec6cb8cbf4cd0e9d2a232731172d8",
+  "py/tui/textual_app.py": "1e1df52682caef1d68b4ada9afb3bfe8f874e9457ee34975d9f1510be1297055",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "2c1611a39b551e2a63a463948cd534869d3eea4b54915cec75b770fa96ab6eae",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -100,6 +100,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-30T23:19:47",
- "note": "forge agent: greet like a person, act only on tasks"
+ "generated": "2026-09-30T23:33:13",
+ "note": "forge: correct GPU detection + live machine panel"
 }
