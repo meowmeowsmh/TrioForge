@@ -468,6 +468,11 @@ def _probe_gpu():
         dedicated = [d for d in devices if not _integrated(d["name"])]
         primary = max(dedicated or devices, key=lambda d: d["total"])
         shared = _integrated(primary["name"]) or primary["vendor"] == "apple"
+        # Say which one is actually used, and why the others are not, so the
+        # choice can be shown rather than merely made.
+        for d in devices:
+            d["primary"] = d is primary
+            d["integrated"] = _integrated(d["name"])
         if len(devices) > 1:
             notes.append(
                 "{} GPUs present ({}); fit is judged on {} alone - the others are "
@@ -577,9 +582,11 @@ def specs(refresh=False):
         "gpu_multi": g["multi"],
         "gpu_source": g["source"],
         "gpu_approximate": g["approximate"],
+        "gpu_primary": g["name"],
         "gpu_devices": [
             {"label": d["label"], "name": d["name"], "vendor": d["vendor"],
-             "total_gb": round(d["total"] / GB, 2), "free_gb": round(d["free"] / GB, 2)}
+             "total_gb": round(d["total"] / GB, 2), "free_gb": round(d["free"] / GB, 2),
+             "in_use": bool(d.get("primary")), "integrated": bool(d.get("integrated"))}
             for d in g["devices"]
         ],
         "notes": notes,

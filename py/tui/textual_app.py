@@ -445,9 +445,13 @@ class ForgeApp(App):
             if spec.get("gpu_name"):
                 out.append(f"{_short_gpu(spec['gpu_name'])}\n", style=T.FG)
                 kind = "unified" if spec.get("gpu_unified") else "vram"
-                out.append(f"{spec.get('vram_total_gb', 0):.1f} GB {kind}", style=T.GREY)
-                if spec.get("gpu_multi"):
-                    out.append("  ·  2 GPUs", style=T.YELLOW)
+                # Available first, like the RAM line above: total alone says
+                # nothing about whether a model fits right now.
+                out.append(f"{spec.get('vram_free_gb', 0):.1f} / "
+                           f"{spec.get('vram_total_gb', 0):.1f} GB {kind} free\n", style=T.GREY)
+                others = len(spec.get("gpu_devices") or [])
+                if others > 1:
+                    out.append(f"using 1 of {others} GPUs\n", style=T.YELLOW)
                 out.append("\n")
             else:
                 out.append("no GPU — CPU only\n", style=T.YELLOW)

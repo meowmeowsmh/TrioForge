@@ -279,6 +279,11 @@ and grades model sizes against it:
    gpu memory    8.0 GB total, 1.0 GB free
   gpu backend    Vulkan - dedicated memory
   detected by    llama.cpp --list-devices
+    gpus found    2
+       Vulkan0    6.70 GB free of 7.83 GB   integrated - shares system RAM
+                  AMD Radeon 610M (RADV RAPHAEL_MENDOCINO)
+    -> Vulkan1    7.51 GB free of 7.96 GB   IN USE
+                  NVIDIA GeForce RTX 5060 Laptop GPU
 
    4.6 GB    gpu       Fast - fits entirely in NVIDIA GeForce RTX 5060 ... 7.96 GB
    8.0 GB    split     OK - runs partly on GPU, partly in RAM (slower)

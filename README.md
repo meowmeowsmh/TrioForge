@@ -516,8 +516,13 @@ bigger than your card:
        memory    4.9 GB used of 14.7 GB (34%)
     available    9.8 GB
           gpu    NVIDIA GeForce RTX 5060 Laptop GPU
-   gpu memory    8.0 GB total, 1.0 GB free
+    gpu memory    8.0 GB total, 1.0 GB free
   detected by    llama.cpp --list-devices
+    gpus found    2
+       Vulkan0    6.70 GB free of 7.83 GB   integrated - shares system RAM
+                  AMD Radeon 610M (RADV RAPHAEL_MENDOCINO)
+    -> Vulkan1    7.51 GB free of 7.96 GB   IN USE
+                  NVIDIA GeForce RTX 5060 Laptop GPU
 
    4.6 GB    gpu       Fast - fits entirely in NVIDIA ... 7.96 GB
    8.0 GB    split     OK - runs partly on GPU, partly in RAM (slower)

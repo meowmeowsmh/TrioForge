@@ -2148,7 +2148,9 @@ function mbLoadHardware() {
     fetch('/api/models/hardware').then(function(r){ return r.json(); }).then(function(hw){
         var el = document.getElementById('mbHardware');
         if (!el) return;
-        el.textContent = '🖥 ' + (hw.vram_total_gb || 0) + ' GB VRAM · RAM ' +
+        var gpus = (hw.gpu_devices && hw.gpu_devices.length) || 0;
+        el.textContent = '🖥 ' + (hw.vram_total_gb || 0) + ' GB VRAM' +
+                         (gpus > 1 ? ' (using 1 of ' + gpus + ')' : '') + ' · RAM ' +
                          (hw.ram_used_gb || 0) + '/' + (hw.ram_total_gb || 0) + ' GB (' +
                          (hw.ram_percent || 0) + '%) · ' +
                          (hw.ram_available_gb || 0) + ' GB available — models marked ✅ GPU run fastest';

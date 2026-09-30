@@ -577,9 +577,24 @@ def _specs(ctx, arg: str) -> None:
         ]
     else:
         rows.append(("gpu", "none detected - models run on the CPU"))
-    if spec.get("gpu_devices") and len(spec["gpu_devices"]) > 1:
-        for d in spec["gpu_devices"]:
-            rows.append(("  " + d["label"], "{} - {:.1f} GB".format(d["name"], d["total_gb"])))
+
+    # Every GPU, with the memory each one can actually give right now - not just
+    # the one that was picked. With two cards the interesting question is which
+    # is in use and why, so that is stated rather than left to be inferred.
+    devices = spec.get("gpu_devices") or []
+    if len(devices) > 1:
+        rows.append(("gpus found", "{}".format(len(devices))))
+        for d in devices:
+            if d.get("in_use"):
+                mark, tag = "->", "IN USE"
+            elif d.get("integrated"):
+                mark, tag = "  ", "integrated - shares system RAM"
+            else:
+                mark, tag = "  ", "idle"
+            rows.append(("  {} {}".format(mark, d["label"]),
+                         "{:.2f} GB free of {:.2f} GB   {}".format(
+                             d["free_gb"], d["total_gb"], tag)))
+            rows.append(("", d["name"]))
     render.table("this machine", rows)
 
     for note in spec.get("notes") or []:
