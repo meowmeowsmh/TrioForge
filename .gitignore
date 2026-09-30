@@ -55,6 +55,10 @@ desktop.ini
 *.db
 *.sqlite
 *.sqlite3
+# The whole runtime-log directory is machine state (the integrity check skips it
+# too). `*.log` alone missed `server.log.1`, a rotated 5 MB log that a bare
+# `git add -A` would have published.
+/logs/
 
 # ──────────────────────────────────────────────────────────────
 # App: local user data (everyone keeps their own)
