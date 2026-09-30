@@ -30,6 +30,7 @@ without touching how a request is actually made.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -48,6 +49,7 @@ from . import agent as agent_mod
 from . import localmodels, providers, theme as T
 from .backend import (EchoBackend, OpenAICompatBackend, auto_model,
                       fetch_models)
+from .commands import COMMANDS  # built once so the first ctrl+p is instant
 from .session import Session
 
 DEFAULT_SYSTEM = (
@@ -163,6 +165,8 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
 #pickerhint {{ height: 1; margin: 1 0 0 0; }}
 #pickerlist > ListItem {{ padding: 0 1; }}
 #pickerlist > ListItem.--highlight {{ background: {T.PURPLE}; color: #16161e; }}
+
+#activity {{ height: 1; color: {T.YELLOW}; }}
 
 #confirmbox {{
     align: center middle;
@@ -337,6 +341,8 @@ class ForgeApp(App):
         self._spinner_i = 0
         self._git_cache: list[str] = []
         self._git_ts = 0.0
+        self._models_cache: list = []
+        self._models_ts = 0.0
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -345,6 +351,7 @@ class ForgeApp(App):
                 yield Static(" ", id="spacer")
             with Vertical(id="side"):
                 yield Static(self._sidebar(), id="sidebody")
+                yield Static("", id="activity")
         # The prompt and the keybind bar go in ONE docked container. Docking both
         # separately let the keybind bar overlap the prompt's bottom border,
         # which is why the purple line looked cut off.
@@ -394,8 +401,6 @@ class ForgeApp(App):
         kind = "local" if self._is_local() else "cloud"
         out.append(f"{kind}  ·  {self.session.turns} turns  ·  "
                    f"{self._elapsed()}\n", style=T.GREY)
-        if self._busy and self._activity:
-            out.append(f"{self._activity}\n", style=f"bold {T.YELLOW}")
         out.append("\n")
 
         # ---- the machine: the numbers /specs and the fit verdicts come from
@@ -416,7 +421,7 @@ class ForgeApp(App):
             out.append("\n")
 
         # ---- offline models on disk
-        models = localmodels.available()
+        models = self._models()
         if models:
             section("Models")
             for m in models[:4]:
@@ -461,6 +466,18 @@ class ForgeApp(App):
         self._git_ts = now
         return self._git_cache
 
+    def _models(self) -> list:
+        # Cache briefly. The sidebar rebuilds on state changes and used to call
+        # localmodels.available() at 4 Hz while a turn ran - a call that can
+        # round-trip to the local llama.cpp server. On Windows the slow console
+        # redraw makes that visible as a stutter; caching removes it.
+        now = time.time()
+        if now - self._models_ts < 10.0:
+            return self._models_cache
+        self._models_cache = localmodels.available()
+        self._models_ts = now
+        return self._models_cache
+
     def _elapsed(self) -> str:
         secs = int(time.time() - self._started)
         return f"{secs // 60}m{secs % 60:02d}s" if secs >= 60 else f"{secs}s"
@@ -486,7 +503,10 @@ class ForgeApp(App):
         dots = "." * (int(elapsed / 0.4) % 4)
         self._activity = (f"{frame} {label}{dots}  {self._fmt_elapsed(elapsed)}"
                           f"  ·  ~{state.get('tokens', 0)} tok")
-        self._refresh()
+        # Only the activity line changes on this tick. Rebuilding the whole
+        # sidebar here re-enumerated models at 4 Hz while a turn ran - visible as
+        # a stutter on Windows. Update just the tiny activity widget instead.
+        self.query_one("#activity", Static).update(self._activity)
 
     def _tick_clock(self) -> None:
         """Interval callback: keep the working timer moving between tokens."""
@@ -525,6 +545,7 @@ class ForgeApp(App):
 
     def _refresh(self) -> None:
         self.query_one("#sidebody", Static).update(self._sidebar())
+        self.query_one("#activity", Static).update(self._activity)
 
     def _greet(self) -> None:
         self.query_one("#chat", VerticalScroll).mount(Static(
@@ -1348,8 +1369,36 @@ class InputDialog(ModalScreen):
         self.dismiss(None)
 
 
+def _disable_quickedit() -> None:
+    """On Windows, stop the console's QuickEdit selection mode.
+
+    cmd.exe (and the legacy conhost) turn a mouse click into text-selection by
+    default, and while a selection is active the console blocks the app. Textual's
+    mouse input therefore never receives a click, and the UI looks frozen. This is
+    what makes the full-screen client clickable on Windows; on other platforms it
+    is a no-op.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ENABLE_QUICK_EDIT_MODE = 0x0040
+        ENABLE_EXTENDED_FLAGS = 0x0080
+        k32 = ctypes.windll.kernel32
+        handle = k32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        mode = ctypes.c_uint()
+        if k32.GetConsoleMode(handle, ctypes.byref(mode)):
+            k32.SetConsoleMode(
+                handle,
+                ctypes.c_uint((mode.value & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS),
+            )
+    except Exception:
+        pass  # a console tweak must never stop the client from starting
+
+
 def run(args) -> int:
     """Entry point used by app.main() for the full-screen UI."""
+    _disable_quickedit()
     cfg = providers.load()
 
     if getattr(args, "provider", "") and args.provider in cfg.providers:

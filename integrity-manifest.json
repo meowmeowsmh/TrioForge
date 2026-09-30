@@ -65,7 +65,7 @@
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
   "py/tui/render.py": "d339be1654f425082c1c88a0e845353ed3ffd0a3199db3a584e1dd6c43c4b139",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "58c507e9263cfb57ad2684c86fff582bdf940d7722959da473e05ef6afaa26f4",
+  "py/tui/textual_app.py": "94e7d6c31056f635bf43207613c755f883aec6cb8cbf4cd0e9d2a232731172d8",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "40305b564d682502d76ed7a0a05067963e94498fff75e0fc9c7af02d88c3bf4e",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -100,6 +100,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-30T21:55:27",
- "note": "baseline: copy answers out of the TUI"
+ "generated": "2026-09-30T22:55:04",
+ "note": "forge TUI: split the activity widget out of the per-tick sidebar rebuild"
 }
