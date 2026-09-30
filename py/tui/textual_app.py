@@ -46,7 +46,7 @@ from textual.widgets import (Button, Collapsible, Input, Label, ListItem, ListVi
                              Markdown, Static, TextArea)
 
 from . import agent as agent_mod
-from . import localmodels, providers, theme as T
+from . import faces, localmodels, providers, theme as T
 from .backend import (EchoBackend, OpenAICompatBackend, auto_model,
                       fetch_models)
 from .commands import COMMANDS  # built once so the first ctrl+p is instant
@@ -345,6 +345,12 @@ class ForgeApp(App):
         self._models_cache: list = []
         self._models_ts = 0.0
         self._sidebar_ts = 0.0
+        # The mood face under Providers: emotion, animation frame, and when a
+        # terminal mood (happy/sad) was set so the tick can fade it to neutral.
+        self._mood = "neutral"
+        self._face_i = 0
+        self._face_done_at = 0.0
+        self._last_face = ""
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -353,6 +359,8 @@ class ForgeApp(App):
                 yield Static(" ", id="spacer")
             with Vertical(id="side"):
                 yield Static(self._sidebar(), id="sidebody")
+                yield Static(faces.face("neutral") + "\n" + faces.label("neutral"),
+                             id="face")
                 yield Static("", id="activity")
         # The prompt and the keybind bar go in ONE docked container. Docking both
         # separately let the keybind bar overlap the prompt's bottom border,
@@ -513,6 +521,7 @@ class ForgeApp(App):
     def _tick_clock(self) -> None:
         """Interval callback: keep the working timer moving between tokens."""
         self._refresh_activity()
+        self._tick_face()
         # Also refresh the sidebar on a slow cadence so the RAM / model figures
         # stay live. The expensive parts (models, git, GPU) are cached, so a 2 s
         # refresh is cheap - unlike the 4 Hz full rebuild this replaced.
@@ -555,6 +564,32 @@ class ForgeApp(App):
     def _refresh(self) -> None:
         self.query_one("#sidebody", Static).update(self._sidebar())
         self.query_one("#activity", Static).update(self._activity)
+
+    def _set_mood(self, mood: str) -> None:
+        """Switch the face emotion. Terminal moods (happy/sad) are time-stamped
+        so the tick fades them back to neutral ten seconds later."""
+        if mood == self._mood:
+            return
+        self._mood = mood
+        self._face_i = 0
+        if mood in ("happy", "sad"):
+            self._face_done_at = time.time()
+
+    def _face_text(self) -> str:
+        """The current face: the eyes/mouth, then a small emoji + name line."""
+        return f"{faces.face(self._mood, self._face_i)}\n{faces.label(self._mood)}"
+
+    def _tick_face(self) -> None:
+        """Advance the face frame and redraw it only when it changed."""
+        if self._mood in ("happy", "sad") and time.time() - self._face_done_at >= 10.0:
+            self._mood = "neutral"
+            self._face_i = 0
+        if self._mood != "neutral":
+            self._face_i += 1
+        text = self._face_text()
+        if text != self._last_face:
+            self._last_face = text
+            self.query_one("#face", Static).update(text)
 
     def _greet(self) -> None:
         self.query_one("#chat", VerticalScroll).mount(Static(
@@ -636,6 +671,7 @@ class ForgeApp(App):
         by the plain UI too.
         """
         self._busy = True
+        self._set_mood("thinking")
         started = time.time()
         card = self._add("", "bot")
         state = {"text": "", "reasoning": "", "card": card,
@@ -663,8 +699,10 @@ class ForgeApp(App):
             elif turn.steps:
                 await state["card"].update(
                     f"_finished after {len(turn.steps)} tool call(s), no summary_")
+            self._set_mood("happy")
         except Exception as exc:  # noqa: BLE001
             await state["card"].update(f"**unexpected error** — {exc}")
+            self._set_mood("sad")
         finally:
             self._busy = False
             self._active = None
@@ -677,6 +715,7 @@ class ForgeApp(App):
         """Apply one agent event on the app thread (see ``_ask``)."""
         if kind == "reasoning":
             state["reasoning"] += payload["text"]
+            self._set_mood("thinking")
             # Thinking goes in a collapsed dropdown above the answer, so the chat
             # shows the reply and the reasoning only if the user expands it.
             if state["think"] is None:
@@ -691,6 +730,7 @@ class ForgeApp(App):
             state["text"] += payload["text"]
             await state["card"].update(state["text"])
         elif kind == "tool_start":
+            self._set_mood("glitch")
             self._tool_card(payload["name"], payload["args"], None)
             # The pre-tool prose card is empty when the reasoning went to the
             # dropdown; drop it instead of leaving an empty bubble.
@@ -700,8 +740,10 @@ class ForgeApp(App):
         elif kind == "tool_end":
             await self._finish_tool_card(payload["name"], payload["output"],
                                          payload.get("denied", False))
+            self._set_mood("thinking")
         elif kind == "error":
             await state["card"].update(f"**request failed** — {payload['message']}")
+            self._set_mood("sad")
         state["tokens"] = len(state["text"]) // 4
         self.query_one("#chat", VerticalScroll).scroll_end(animate=False)
         self._refresh_activity()
