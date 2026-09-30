@@ -63,9 +63,9 @@ KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+y copy answer  ·  tab ch
             "ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
 
 # How long the pleading "Don't!!!" face stays on screen before the app exits.
-# Quitting again during the plea leaves immediately, so this is a courtesy, not
-# a delay the user has to sit through.
-GOODBYE_HOLD = 1.5
+# Long enough to actually read: the plea is the point, so nothing except a
+# deliberate ctrl+q / ctrl+c cuts it short.
+GOODBYE_HOLD = 2.5
 
 # Typing any of these pleads and quits - no Enter required. Safe to match on the
 # typed text alone: no other command in commands.py starts with "/q".
@@ -649,32 +649,36 @@ class ForgeApp(App):
         self._paint_face()
 
     def action_quit(self) -> None:
-        """ctrl+q / ctrl+c: plead, then quit."""
+        """ctrl+q / ctrl+c: plead, then quit - or leave at once if already pleading."""
+        if self._goodbye:
+            self.exit()
+            return
         self._begin_goodbye()
 
     def _begin_goodbye(self) -> None:
-        """Say "Don't!!!" for a beat, then exit.
+        """Play the plea once, then exit.
+
+        Repeats are ignored, NOT treated as "leave now": typing /q and then
+        pressing Enter is still one request, and the plea has to last long enough
+        to be read. Cutting it short on any repeat is what made the face flash by.
+        ctrl+q / ctrl+c is the deliberate way out if you do not want to wait.
 
         Deliberately NOT an async worker. ``@work(exclusive=True)`` joins the
         shared "default" group - the same one a running turn uses - so the plea
         could be cancelled before it ever drew, and a worker that dies before
-        reaching ``self.exit()`` leaves the app unable to quit at all. A one-shot
-        timer cannot be cancelled that way, and the face is painted right here so
-        it is on screen immediately instead of up to 250 ms later.
-
-        Asking to quit a second time leaves NOW. Without that, the plea would
-        swallow every further ctrl+q / ctrl+c and the only way out of the app
-        would be the timer - one missed timer and the user is trapped.
+        reaching ``self.exit()`` leaves the app unable to quit at all.
         """
         if self._goodbye:
-            self.exit()
             return
         self._goodbye = True
         self._goodbye_at = time.time()
         self._last_face = ""
         self._paint_face()
-        self._add_plain(f"{faces.emoji('no')}  Don't!!!  ·  ctrl+q again to leave now",
+        self._add_plain(f"{faces.emoji('no')}  Don't!!!  ·  ctrl+q to leave now",
                         role="bot")
+        # Clear the command out of the prompt: it has been acted on, and leaving
+        # it there invites a stray Enter to look like a second request.
+        self.query_one("#prompt", PromptArea).text = ""
         self.set_timer(GOODBYE_HOLD, self.exit)
 
     def _greet(self) -> None:
