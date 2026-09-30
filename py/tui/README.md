@@ -144,7 +144,30 @@ recognise *which* key it is, never enough to use it.
 ### Keybindings (full-screen UI)
 
 `ctrl+p` commands · `ctrl+l` model · `ctrl+n` new session · `tab` focus chat ·
-`esc` focus prompt · `ctrl+q` quit
+`esc` focus prompt · `ctrl+y` copy the last answer · `ctrl+q` quit
+
+### Copying an answer out
+
+The TUI captures the mouse, so dragging a selection is the *app's* selection, not
+the terminal's. Three ways to get text out:
+
+| | |
+|---|---|
+| `ctrl+y` | copy the **whole last answer** — no selecting needed |
+| `/copy` · `/copy 2` | same from the command line; `2` walks one answer further back |
+| drag-select, then `ctrl+c` | copy just the part you dragged over |
+
+`ctrl+c` is deliberately dual-purpose: Textual binds it to copying a selection and
+that binding *skips itself* when nothing is selected, which is what lets the app's
+`ctrl+c` = quit still work. `ctrl+y` is the reliable one, because `TextArea` binds
+`ctrl+y` to "redo" and would otherwise swallow it — the prompt intercepts it and
+hands it to the app.
+
+Copying uses **OSC 52**, the terminal clipboard escape. That is the only route
+available here (no `xclip`/`xsel`/`wl-copy` is installed) and it also works over
+SSH, but it does require the terminal to permit clipboard writes — kitty does by
+default. In the scrolling UI, `/copy` instead shells out to `xclip`/`wl-copy`, and
+if neither exists it prints the answer so you can select it.
 
 ### Picking from a list (mouse and keyboard)
 

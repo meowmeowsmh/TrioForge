@@ -56,8 +56,8 @@ DEFAULT_SYSTEM = (
     "in fenced blocks with the language tag."
 )
 
-KEYBINDS = (" enter send  ·  ctrl+j newline  ·  tab chat  ·  ctrl+p commands  ·  "
-            "ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
+KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+y copy answer  ·  tab chat  ·  "
+            "ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
 
 # Crush's "working" spinner (internal/ui/anim + chat/assistant.go): an animated
 # frame, a label with cycling ellipsis, and a live elapsed timer as the suffix.
@@ -263,11 +263,29 @@ class PromptArea(TextArea):
             # what @on(..., "#prompt") matches against
             return self.area
 
+    class CopyRequested(Message):
+        """Posted on ctrl+y - the app owns the clipboard, not this widget."""
+
+        def __init__(self, area: "PromptArea") -> None:
+            self.area = area
+            super().__init__()
+
+        @property
+        def control(self) -> "PromptArea":
+            return self.area
+
     async def _on_key(self, event) -> None:
         if event.key == "enter":
             event.stop()
             event.prevent_default()
             self.post_message(self.Submitted(self, self.text))
+            return
+        # TextArea binds ctrl+y to "redo", so as the focused widget it eats the
+        # key and the app-level binding never fires. Copy the answer from here.
+        if event.key == "ctrl+y":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.CopyRequested(self))
             return
         # ctrl+j is the reliable newline. The other two are best-effort: they
         # only ever arrive if a terminal opts into an extended keyboard mode.
@@ -290,7 +308,11 @@ class ForgeApp(App):
 
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
-        ("ctrl+c", "quit", "Quit"),
+        # ctrl+c stays "quit" for when nothing is selected; the Screen binds it
+        # to copy_text first and that raises SkipAction without a selection, so
+        # selecting text with the mouse and pressing ctrl+c copies instead.
+        ("ctrl+c", "quit", "Quit/copy"),
+        ("ctrl+y", "copy_reply", "Copy answer"),
         ("ctrl+l", "pick_model", "Model"),
         ("ctrl+n", "new_session", "New"),
         ("ctrl+p", "palette", "Commands"),
@@ -309,6 +331,7 @@ class ForgeApp(App):
         self._busy = False
         self._started = time.time()
         self._activity = ""       # shown in the sidebar while a turn runs
+        self._replies: list[str] = []   # finished answers, newest last (for /copy)
         self._tool_cards: dict = {}
         self._active = None
         self._spinner_i = 0
@@ -536,6 +559,11 @@ class ForgeApp(App):
         return body
 
     # ------------------------------------------------------------------ events
+    @on(PromptArea.CopyRequested, "#prompt")
+    def _on_copy_requested(self, event: PromptArea.CopyRequested) -> None:
+        event.stop()
+        self.action_copy_reply()
+
     @on(PromptArea.Submitted, "#prompt")
     def _submitted(self, event: PromptArea.Submitted) -> None:
         text = (event.value or "").strip()
@@ -549,6 +577,33 @@ class ForgeApp(App):
         self.session.add_user(text)
         self._add(text, "user")
         self._ask(text)
+
+    # ------------------------------------------------------------------ copy
+    def _copy_text(self, text: str) -> bool:
+        """Put text on the system clipboard. True when a clipboard tool did it.
+
+        Textual's copy_to_clipboard writes an OSC 52 escape sequence, which is
+        the only option here (no xclip/xsel/wl-copy is installed) and the one
+        that also works over SSH. Terminals cap the length they will accept, so
+        the caller is told which route was used.
+        """
+        self.copy_to_clipboard(text)
+        return False
+
+    def _copy_reply(self, which: int = 1) -> None:
+        """Copy an answer to the clipboard: 1 = the last one, 2 = the one before."""
+        if not self._replies:
+            self._add_plain("nothing to copy yet — ask something first")
+            return
+        which = max(1, min(which, len(self._replies)))
+        text = self._replies[-which]
+        self._copy_text(text)
+        turn = "last answer" if which == 1 else f"answer {which} back"
+        self._add_plain(f"copied the {turn} — {len(text)} characters, "
+                        f"{text.count(chr(10)) + 1} line(s) — now paste with ctrl+v")
+
+    def action_copy_reply(self) -> None:
+        self._copy_reply(1)
 
     # ------------------------------------------------------------------- reply
     @work(exclusive=True)
@@ -577,6 +632,8 @@ class ForgeApp(App):
             final = turn.text.strip()
             if final:
                 self.session.add_assistant(final)
+                # Kept so the answer can be copied without selecting it by hand.
+                self._replies.append(final)
                 await state["card"].update(
                     f"{final}\n\n---\n_{self._short_model()} · "
                     f"{time.time() - started:.1f}s · {len(turn.steps)} tool"
@@ -757,6 +814,17 @@ class ForgeApp(App):
             return
         if name == "/keys" and words and words[0] in ("clear", "reset", "wipe"):
             self.run_worker(self._keys_clear_flow("all" in words), exclusive=False)
+            return
+        if name in ("/copy", "/yank"):
+            # The app owns the clipboard here, so this cannot go through the
+            # shared table (which has no terminal to write OSC 52 to).
+            n = 1
+            if arg.isdigit():
+                n = int(arg)
+            elif arg and arg.lower() not in ("last", "answer"):
+                self._add_plain("usage: /copy [how many answers back, e.g. /copy 2]")
+                return
+            self._copy_reply(n)
             return
 
         class _Ctx:

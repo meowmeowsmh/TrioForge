@@ -22,6 +22,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/keys clear [all]", "remove every key EXCEPT the current one"),
     ("/models", "list models (offline .gguf files, or the endpoint's list)"),
     ("/specs", "what hardware was detected (GPU, memory) and what fits"),
+    ("/copy [n]", "copy an answer to the clipboard (n = how many back)"),
     ("/llama [install|status]", "the bundled llama.cpp runtime (auto-installed)"),
     ("/start [name]", "load an offline .gguf into llama-server"),
     ("/model [name]", "show or switch model; 'auto' re-detects it"),
@@ -494,6 +495,44 @@ def _echo(ctx, arg: str) -> None:
         render.warn("offline stub on — nothing leaves the machine")
 
 
+def _copy(ctx, arg: str) -> None:
+    """Copy an answer to the clipboard (the scrolling UI's version of /copy).
+
+    The full-screen UI handles /copy itself: it owns the terminal and can write
+    OSC 52, which needs no external tool. Out here the best available route is a
+    clipboard utility, and when none is installed the answer is printed so it can
+    be selected by hand or piped.
+    """
+    import shutil
+    import subprocess
+
+    which = 1
+    if arg.strip().isdigit():
+        which = max(1, int(arg.strip()))
+    # session.Message carries .role/.content, not .text.
+    answers = [m.content for m in getattr(ctx.session, "messages", [])
+               if getattr(m, "role", "") == "assistant" and getattr(m, "content", "")]
+    if not answers:
+        render.warn("nothing to copy yet — ask something first")
+        return
+    which = min(which, len(answers))
+    text = answers[-which]
+
+    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"],
+                ["xsel", "--clipboard", "--input"]):
+        if shutil.which(cmd[0]):
+            try:
+                subprocess.run(cmd, input=text.encode(), check=True, timeout=10)
+                render.ok("copied {} characters via {}".format(len(text), cmd[0]))
+                return
+            except Exception:
+                continue
+
+    render.warn("no clipboard tool found (install xclip or wl-clipboard) — here it is:")
+    render.blank()
+    render.info(text)
+
+
 def _quit(ctx, arg: str) -> None:
     ctx.running = False
 
@@ -593,6 +632,7 @@ def _llama(ctx, arg: str) -> None:
 _TABLE = {
     "/help": _help, "/?": _help, "/setup": _setup,
     "/model": _model, "/models": _models, "/specs": _specs, "/llama": _llama,
+    "/copy": _copy, "/yank": _copy,
     "/provider": _provider, "/provider-add": _provider_add,
     "/key": _key, "/keys": _keys, "/status": _status, "/base-url": _base_url,
     "/system": _system, "/clear": _clear, "/history": _history,
