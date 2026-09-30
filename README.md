@@ -514,12 +514,12 @@ drives the same prebuilt `llama-server` over HTTP, so there is nothing to build:
 ```bash
 python py/llama_cpp.py --specs                 # hardware + what offloads
 python py/llama_cpp.py --which                 # the binary and its GPU devices
-python py/llama_cpp.py -m models/gemma/gemma-3-12b-it-Q4_K_M.gguf -p "2+2?" -n 40
-python py/llama_cpp.py -m MODEL --chat         # interactive
+python py/llama_cpp.py -p "2+2?" -n 40         # model, GPU and port all auto-detected
+python py/llama_cpp.py --chat                  # interactive; no flags needed
 ```
 ```python
 import llama_cpp                                # PYTHONPATH=<project>/py
-llm = llama_cpp.Llama("models/gemma/gemma-3-12b-it-Q4_K_M.gguf")
+llm = llama_cpp.Llama()                         # auto-finds the model in models/
 print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
 for chunk in llm("tell me a story", max_tokens=200, stream=True):
     print(chunk["choices"][0]["text"], end="", flush=True)

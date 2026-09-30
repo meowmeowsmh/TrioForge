@@ -12,7 +12,7 @@ OpenAI-compatible HTTP endpoint, using only the standard library - so it works o
 any Linux box that can run llama.cpp at all.
 
     import llama_cpp                      # with PYTHONPATH=<project>/py
-    llm = llama_cpp.Llama("models/gemma/gemma-3-12b-it-Q4_K_M.gguf")
+    llm = llama_cpp.Llama()              # model, GPU layers and port auto-detected
     print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
 
     for chunk in llm("Tell me a story", max_tokens=200, stream=True):
@@ -22,8 +22,8 @@ From the shell:
 
     python llama_cpp.py --specs                # hardware, and what will offload
     python llama_cpp.py --which                # the binary, and its devices
-    python llama_cpp.py -m MODEL -p "hello"    # one-shot
-    python llama_cpp.py -m MODEL --chat        # interactive
+    python llama_cpp.py -p "hello"             # one-shot; model + port auto-found
+    python llama_cpp.py --chat                 # interactive; no flags needed
 
 The server is started on demand, waited for, and shut down on exit (including
 Ctrl+C). GPU offload, thread count and context size are chosen from the detected
@@ -36,10 +36,12 @@ this project's own tools/llama.cpp - and downloaded if it is missing entirely.
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -96,6 +98,69 @@ def find_llama_server(allow_install: bool = True) -> str:
     return ""
 
 
+def _model_roots():
+    """Where to look for .gguf files when none was named."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    roots = [os.getcwd(),
+             os.path.join(os.getcwd(), "models"),
+             os.path.join(os.path.dirname(here), "models"),   # <project>/models
+             os.path.join(here, "models")]
+    return roots
+
+
+def _running_model(host: str, port: int) -> str:
+    """The model path a live server on host:port is already serving, or ""."""
+    try:
+        with urllib.request.urlopen(
+                "http://{}:{}/v1/models".format(host, port), timeout=2) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        return ((data.get("data") or [{}])[0].get("id") or "").strip()
+    except Exception:
+        return ""
+
+
+def auto_find_model(host: str = DEFAULT_HOST) -> str:
+    """Find a model without being told, so llama_cpp.py needs no -m.
+
+    Order: $LLAMA_MODEL, then a server that is already up (adopt what it runs),
+    then the .gguf files under the project's models/ (largest first - the
+    biggest is normally the one you want; projectors are skipped).
+    """
+    env = os.environ.get("LLAMA_MODEL", "").strip()
+    if env and os.path.isfile(env):
+        return env
+
+    for port in (DEFAULT_PORT, 8080):
+        model = _running_model(host, port)
+        if model and os.path.isfile(model):
+            return model
+
+    candidates = []
+    for root in _model_roots():
+        for path in glob.glob(os.path.join(root, "**", "*.gguf"), recursive=True):
+            if "mmproj" in path.lower():
+                continue                       # vision projector, not a model
+            try:
+                candidates.append((os.path.getsize(path), path))
+            except OSError:
+                continue
+    candidates.sort(reverse=True)
+    return candidates[0][1] if candidates else ""
+
+
+def find_free_port(host: str = DEFAULT_HOST, start: int = DEFAULT_PORT) -> int:
+    """The first free port from `start` upward, instead of a hardcoded number."""
+    for port in range(start, start + 64):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host, port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError("no free port between {} and {}".format(start, start + 63))
+
+
 def _server_flags(exe: str) -> set:
     """Which flags this build understands, so an older binary still starts."""
     try:
@@ -123,14 +188,26 @@ class Llama:
     alone - this class only ever stops what it started itself.
     """
 
-    def __init__(self, model_path: str, *, n_ctx: int = 4096,
+    def __init__(self, model_path: str = "", *, n_ctx: int = 4096,
                  n_gpu_layers: int | None = None, n_threads: int | None = None,
-                 host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
+                 host: str = DEFAULT_HOST, port: int | None = None,
                  server_args=None, verbose: bool = True, timeout: float = 600.0):
+        # Auto-detect the model and the port: nothing about this machine should
+        # have to be typed or hardcoded.
+        model_path = (model_path or "").strip()
+        if not model_path:
+            model_path = auto_find_model(host)
+            if verbose and model_path:
+                _log("no model given - auto-detected {}".format(model_path))
+        if not model_path:
+            raise FileNotFoundError(
+                "no model was named and none was found under models/ - pass -m "
+                "PATH, or set LLAMA_MODEL")
         self.model_path = os.path.abspath(os.path.expanduser(model_path))
         if not os.path.isfile(self.model_path):
             raise FileNotFoundError("no such model: {}".format(self.model_path))
-        self.host, self.port = host, int(port)
+        self.host = host
+        self.port = int(port) if port else 0
         self.n_ctx = int(n_ctx)
         self.verbose = verbose
         self.timeout = float(timeout)
@@ -138,12 +215,20 @@ class Llama:
         self._logfile = None
         self._exe = ""
 
+        # Reuse a server that is already up, otherwise start one on a free port
+        # rather than a fixed number that may be taken by another tool.
+        if self.port and self._already_running():
+            self._log("reusing the llama-server already on {}:{}".format(
+                host, self.port))
+            return
+        if not self.port:
+            self.port = find_free_port(host)
+            if verbose:
+                _log("picked a free port: {}".format(self.port))
+
         self.n_gpu_layers, self.n_threads = self._plan(
             n_gpu_layers, n_threads, verbose)
 
-        if self._already_running():
-            self._log("reusing the llama-server already on {}:{}".format(host, port))
-            return
         self._exe = find_llama_server()
         if not self._exe:
             raise RuntimeError(
@@ -438,7 +523,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         prog="llama_cpp.py",
         description="Run llama.cpp from the terminal - no compiled Python package.")
-    p.add_argument("-m", "--model", help="path to a .gguf model")
+    p.add_argument("-m", "--model", default="",
+                   help=".gguf path (default: auto-detected)")
     p.add_argument("-p", "--prompt", help="one-shot prompt (omit for --chat)")
     p.add_argument("--chat", action="store_true", help="interactive chat")
     p.add_argument("-n", "--max-tokens", type=int, default=256)
@@ -448,7 +534,8 @@ def main(argv=None) -> int:
                    help="layers to offload (default: decided from your GPU)")
     p.add_argument("--threads", type=int, default=None)
     p.add_argument("--host", default=DEFAULT_HOST)
-    p.add_argument("--port", type=int, default=DEFAULT_PORT)
+    p.add_argument("--port", type=int, default=None,
+                   help="port (default: reuse a running server, else a free one)")
     p.add_argument("--system", default=None, help="system prompt for --chat")
     p.add_argument("--specs", action="store_true", help="show hardware and exit")
     p.add_argument("--which", action="store_true",
@@ -460,9 +547,7 @@ def main(argv=None) -> int:
         return _cmd_specs()
     if args.which:
         return _cmd_which()
-    if not args.model:
-        p.error("a model is required (-m), or use --specs / --which")
-    if not os.path.isfile(os.path.expanduser(args.model)):
+    if args.model and not os.path.isfile(os.path.expanduser(args.model)):
         print("no such model: {}".format(args.model), file=sys.stderr)
         return 2
 
