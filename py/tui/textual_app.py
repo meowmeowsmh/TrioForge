@@ -67,8 +67,8 @@ KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+y copy answer  ·  tab ch
 # deliberate ctrl+q / ctrl+c cuts it short.
 GOODBYE_HOLD = 2.5
 
-# Typing any of these pleads and quits - no Enter required. Safe to match on the
-# typed text alone: no other command in commands.py starts with "/q".
+# Pressing Enter on any of these commands pleads before the app exits. Typing
+# them on their own does nothing - only the submit does.
 QUIT_ALIASES = ("/q", "/quit", "/exit")
 
 # Crush's "working" spinner (internal/ui/anim + chat/assistant.go): an animated
@@ -658,10 +658,13 @@ class ForgeApp(App):
     def _begin_goodbye(self) -> None:
         """Play the plea once, then exit.
 
-        Repeats are ignored, NOT treated as "leave now": typing /q and then
-        pressing Enter is still one request, and the plea has to last long enough
-        to be read. Cutting it short on any repeat is what made the face flash by.
-        ctrl+q / ctrl+c is the deliberate way out if you do not want to wait.
+        Reached from Enter on a quit command (/q, /quit, /exit) and from the
+        ctrl+q / ctrl+c bindings - never from typing alone, so the command can sit
+        in the prompt untouched until it is submitted.
+
+        Repeats are ignored, NOT treated as "leave now": the plea has to last long
+        enough to be read. ctrl+q / ctrl+c is the deliberate way out if you do not
+        want to wait.
 
         Deliberately NOT an async worker. ``@work(exclusive=True)`` joins the
         shared "default" group - the same one a running turn uses - so the plea
@@ -676,9 +679,6 @@ class ForgeApp(App):
         self._paint_face()
         self._add_plain(f"{faces.emoji('no')}  Don't!!!  ·  ctrl+q to leave now",
                         role="bot")
-        # Clear the command out of the prompt: it has been acted on, and leaving
-        # it there invites a stray Enter to look like a second request.
-        self.query_one("#prompt", PromptArea).text = ""
         self.set_timer(GOODBYE_HOLD, self.exit)
 
     def _greet(self) -> None:
@@ -709,21 +709,6 @@ class ForgeApp(App):
     def _on_copy_requested(self, event: PromptArea.CopyRequested) -> None:
         event.stop()
         self.action_copy_reply()
-
-    @on(TextArea.Changed, "#prompt")
-    def _prompt_changed(self, event: TextArea.Changed) -> None:
-        """Plead the moment a quit command is typed - Enter is not required.
-
-        The check runs on every keystroke, so "/q" reacts the instant the "q"
-        lands. Matching the text alone is safe: no other command starts with
-        "/q", so this cannot fire on the way to a longer command. Trailing
-        punctuation is tolerated so "/q!!!" and "/exit." work too.
-        """
-        if self._goodbye:
-            return
-        typed = (event.text_area.text or "").strip().lower().rstrip("!.?")
-        if typed in QUIT_ALIASES:
-            self._begin_goodbye()
 
     @on(PromptArea.Submitted, "#prompt")
     def _submitted(self, event: PromptArea.Submitted) -> None:
