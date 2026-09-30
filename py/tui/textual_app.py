@@ -65,6 +65,10 @@ KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+y copy answer  ·  tab ch
 # How long the pleading "Don't!!!" face stays on screen before the app exits.
 GOODBYE_HOLD = 2.0
 
+# Typing any of these pleads and quits - no Enter required. Safe to match on the
+# typed text alone: no other command in commands.py starts with "/q".
+QUIT_ALIASES = ("/q", "/quit", "/exit")
+
 # Crush's "working" spinner (internal/ui/anim + chat/assistant.go): an animated
 # frame, a label with cycling ellipsis, and a live elapsed timer as the suffix.
 SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
@@ -687,6 +691,21 @@ class ForgeApp(App):
         event.stop()
         self.action_copy_reply()
 
+    @on(TextArea.Changed, "#prompt")
+    def _prompt_changed(self, event: TextArea.Changed) -> None:
+        """Plead the moment a quit command is typed - Enter is not required.
+
+        The check runs on every keystroke, so "/q" reacts the instant the "q"
+        lands. Matching the text alone is safe: no other command starts with
+        "/q", so this cannot fire on the way to a longer command. Trailing
+        punctuation is tolerated so "/q!!!" and "/exit." work too.
+        """
+        if self._goodbye:
+            return
+        typed = (event.text_area.text or "").strip().lower().rstrip("!.?")
+        if typed in QUIT_ALIASES:
+            self._begin_goodbye()
+
     @on(PromptArea.Submitted, "#prompt")
     def _submitted(self, event: PromptArea.Submitted) -> None:
         text = (event.value or "").strip()
@@ -932,7 +951,7 @@ class ForgeApp(App):
         arg = arg.strip()
         words = arg.lower().split()
 
-        if name in ("/quit", "/exit", "/q"):
+        if name.lower() in QUIT_ALIASES:
             self._begin_goodbye()
             return
         if name == "/clear":
