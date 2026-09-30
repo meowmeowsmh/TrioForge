@@ -31,6 +31,7 @@ without touching how a request is actually made.
 from __future__ import annotations
 
 import os
+import random
 import subprocess
 import time
 from pathlib import Path
@@ -351,6 +352,8 @@ class ForgeApp(App):
         self._face_i = 0
         self._face_done_at = 0.0
         self._last_face = ""
+        self._blink_at = time.time() + random.uniform(2.0, 6.0)
+        self._blink_until = 0.0
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -580,13 +583,31 @@ class ForgeApp(App):
         return f"{faces.face(self._mood, self._face_i)}\n{faces.label(self._mood)}"
 
     def _tick_face(self) -> None:
-        """Advance the face frame and redraw it only when it changed."""
-        if self._mood in ("happy", "sad") and time.time() - self._face_done_at >= 10.0:
+        """Advance the face frame and redraw it only when it changed.
+
+        While a turn runs the emotion cycles its variants at the tick rate. When
+        idle the neutral face stays alive too: it blinks every few seconds and
+        drifts slowly through its eye variants, so the bot is never just frozen.
+        """
+        now = time.time()
+        if self._mood in ("happy", "sad") and now - self._face_done_at >= 10.0:
             self._mood = "neutral"
             self._face_i = 0
-        if self._mood != "neutral":
+            self._blink_at = now + random.uniform(2.0, 6.0)
+
+        if self._mood == "neutral":
+            if now >= self._blink_at:
+                self._blink_until = now + 0.2
+                self._blink_at = now + random.uniform(2.0, 6.0)
+            if now < self._blink_until:
+                text = faces.blink() + "\n" + faces.label("neutral")
+            else:
+                self._face_i = int(now / 1.5)
+                text = self._face_text()
+        else:
             self._face_i += 1
-        text = self._face_text()
+            text = self._face_text()
+
         if text != self._last_face:
             self._last_face = text
             self.query_one("#face", Static).update(text)

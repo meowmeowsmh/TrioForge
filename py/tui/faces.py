@@ -179,3 +179,8 @@ def face(emotion: str, index: int = 0) -> str:
 def label(emotion: str) -> str:
     """One small line - emoji + name - for under the face."""
     return f"{emoji(emotion)} {emotion.replace('_', ' ')}"
+
+
+def blink() -> str:
+    """Closed eyes for one tick, used for the idle blink."""
+    return render_face("─", "─", "  ─")
