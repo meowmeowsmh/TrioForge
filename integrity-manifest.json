@@ -56,7 +56,7 @@
   "py/tui/README.md": "bd415e319d3f1adf570e244b790e43d895a4afe41e3bc6ab1e537d2e456c5fe6",
   "py/tui/__init__.py": "dd9bb4f93b71c8a6d2bab9d5031b5f4cda316351cb4ff9cc4eab5583d9be4b00",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "e240146abf11270e4af636c7b7459e6c81e428921d1a72ae7eb09b4f258e0561",
+  "py/tui/agent.py": "2f621d2ae6cb3fa280cfd5b12b926ee14b121b689295e7a84537b6a2d5da44c8",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -100,6 +100,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-30T23:14:35",
- "note": "forge tools: bound output so a tool call is a summary, not a dump"
+ "generated": "2026-09-30T23:19:47",
+ "note": "forge agent: greet like a person, act only on tasks"
 }
