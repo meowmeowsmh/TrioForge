@@ -434,8 +434,14 @@ class ForgeApp(App):
         spec = self._specs()
         if spec:
             section("Machine")
-            out.append(f"{spec.get('ram_free_gb', 0):.1f} / "
-                       f"{spec.get('ram_total_gb', 0):.1f} GB RAM\n", style=T.GREY)
+            # Used/total with a percentage, like a task manager, and "available"
+            # spelled out. The raw "free" figure disagrees with every other memory
+            # readout on the machine - the page cache counts as used there.
+            out.append(f"{spec.get('ram_used_gb', 0):.1f} / "
+                       f"{spec.get('ram_total_gb', 0):.1f} GB RAM "
+                       f"{spec.get('ram_percent', 0):.0f}%\n", style=T.GREY)
+            out.append(f"{spec.get('ram_available_gb', 0):.1f} GB available\n",
+                       style=T.GREY)
             if spec.get("gpu_name"):
                 out.append(f"{_short_gpu(spec['gpu_name'])}\n", style=T.FG)
                 kind = "unified" if spec.get("gpu_unified") else "vram"

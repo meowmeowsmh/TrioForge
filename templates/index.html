@@ -2148,8 +2148,10 @@ function mbLoadHardware() {
     fetch('/api/models/hardware').then(function(r){ return r.json(); }).then(function(hw){
         var el = document.getElementById('mbHardware');
         if (!el) return;
-        el.textContent = '🖥 ' + (hw.vram_total_gb || 0) + ' GB VRAM · ' +
-                         (hw.ram_free_gb || 0) + ' GB RAM free — models marked ✅ GPU run fastest';
+        el.textContent = '🖥 ' + (hw.vram_total_gb || 0) + ' GB VRAM · RAM ' +
+                         (hw.ram_used_gb || 0) + '/' + (hw.ram_total_gb || 0) + ' GB (' +
+                         (hw.ram_percent || 0) + '%) · ' +
+                         (hw.ram_available_gb || 0) + ' GB available — models marked ✅ GPU run fastest';
     }).catch(function(){});
 }
 

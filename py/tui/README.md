@@ -273,7 +273,8 @@ and grades model sizes against it:
 
 ```
        system    Linux (x86_64) - 32 cores
-          ram    5.7 GB free of 14.7 GB
+       memory    4.9 GB used of 14.7 GB (34%)
+    available    9.8 GB
           gpu    NVIDIA GeForce RTX 5060 Laptop GPU
    gpu memory    8.0 GB total, 1.0 GB free
   gpu backend    Vulkan - dedicated memory
@@ -295,6 +296,22 @@ because there is no portable API for "how much GPU memory is there":
 | NVIDIA (any OS) | NVML |
 | AMD / Intel on Linux | the DRM sysfs nodes (`mem_info_vram_total` / `_used`) |
 | AMD / Intel on Windows | WMI, treated as an estimate |
+
+### RAM is reported the way a task manager reports it
+
+`memory  4.9 GB used of 14.7 GB (34%)` plus `available  9.8 GB` — deliberately
+**not** `free`. Linux counts the page cache as used, so `free`'s free column is
+nearly always tiny ("2.4 GB free of 14.7 GB" on a healthy idle desktop, because
+~8 GB is reclaimable cache). An earlier version published `available` under the
+name "free", so TrioForge printed 10.4 GB free while `free -h` printed 2.4 GiB
+and the desktop monitor printed a third number — all correct, none agreeing.
+`ram_free_gb` now means free, and `ram_available_gb` means available.
+
+`--specs` also explains why a 16 GB machine reports 14.7 GB: Linux exposes the
+firmware's memory map in `/sys/firmware/memmap`, and its System RAM total (15.05
+GB here) is larger than `MemTotal` because the kernel, ACPI tables and the
+integrated GPU's frame buffer are carved out of it. Windows Task Manager shows
+the *installed* size, so it reads higher. Neither number is wrong.
 
 Two things it deliberately gets right, because both were getting it wrong:
 

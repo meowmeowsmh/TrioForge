@@ -108,14 +108,28 @@ def _probe_system():
 
 
 def ram():
-    """Total and available system RAM, in bytes. available is what matters."""
-    total = free = 0
+    """Physical memory in bytes: total, used, available, and the raw free.
+
+    ``available`` is the number that matters, and the one a task manager shows.
+    Linux counts the page cache as *used*, so the raw ``free`` figure is nearly
+    always tiny and looks alarming - "2.4 GB free of 14.7 GB" on a perfectly
+    healthy idle desktop is normal, because ~8 GB of it is reclaimable cache.
+
+    This function used to publish ``available`` under the name "free", so
+    TrioForge printed "10.4 GB free" while `free -h` said 2.4 GiB free and the
+    desktop's task manager showed a third number again. All three were correct
+    and none of them agreed, which is exactly what made the RAM look wrong.
+    """
+    info = {"total": 0, "available": 0, "used": 0, "free": 0, "percent": 0.0}
     try:
         import psutil
         vm = psutil.virtual_memory()
-        total, free = int(vm.total), int(vm.available)
+        info = {"total": int(vm.total), "available": int(vm.available),
+                "used": int(vm.used), "free": int(vm.free),
+                "percent": round(float(vm.percent), 1)}
     except Exception:
         pass
+    total, free = info["total"], info["available"]
     if not total:
         # No psutil: get what we can, so the fit decision is not made blind.
         if os.name == "nt":
@@ -136,7 +150,46 @@ def ram():
             except OSError:
                 pass
         free = free or total
-    return {"ram_total": total, "ram_free": free}
+    info["total"], info["available"] = total, free
+    if not info["used"] and total:
+        info["used"] = max(0, total - free)
+    if not info["free"]:
+        info["free"] = info["available"]
+    if not info["percent"] and total:
+        info["percent"] = round(info["used"] * 100.0 / total, 1)
+    return info
+
+
+def firmware_ram():
+    """RAM the firmware says exists, or 0 when it cannot be read without root.
+
+    Linux exposes the firmware's own memory map in /sys/firmware/memmap. Its
+    "System RAM" total is always a little larger than MemTotal, because the
+    kernel, the ACPI tables and - on an APU - the integrated GPU's frame buffer
+    are carved out of it. That gap is the entire reason a laptop sold as "16 GB"
+    reports 14.7 GB, and it is worth naming rather than leaving as a mystery:
+    Windows Task Manager reports the *installed* size, so it reads higher, and
+    neither number is wrong.
+    """
+    if not sys.platform.startswith("linux"):
+        return 0
+    total = 0
+    try:
+        for entry in glob.glob("/sys/firmware/memmap/*/"):
+            try:
+                with open(entry + "type", encoding="utf-8") as fh:
+                    if fh.read().strip() != "System RAM":
+                        continue
+                with open(entry + "start", encoding="utf-8") as fh:
+                    start = int(fh.read().strip(), 16)
+                with open(entry + "end", encoding="utf-8") as fh:
+                    end = int(fh.read().strip(), 16)
+            except (OSError, ValueError):
+                continue
+            total += end - start + 1
+    except Exception:
+        return 0
+    return total
 
 
 # ------------------------------------------------------------------- the GPU
@@ -484,6 +537,17 @@ def _probe_gpu():
 def specs(refresh=False):
     """Everything a fit decision may use, plus where each number came from."""
     sysinfo, memory, g = system(), ram(), gpu()
+    fw_ram = firmware_ram()
+    notes = list(g["notes"])
+    # Only worth saying when the shortfall is big enough to notice (an APU
+    # reservation, not rounding).
+    if fw_ram and fw_ram > memory["total"] * 1.02:
+        notes.append(
+            "{:.1f} GB of RAM is visible to the firmware and {:.1f} GB is usable; "
+            "the difference is reserved for the integrated GPU (frame buffer), ACPI "
+            "and firmware. Windows Task Manager shows the installed size, so it "
+            "reads higher - neither number is wrong.".format(
+                fw_ram / GB, memory["total"] / GB))
     return {
         "os": sysinfo["os"],
         "os_release": sysinfo["os_release"],
@@ -493,8 +557,15 @@ def specs(refresh=False):
         "python": sysinfo["python"],
         "apple_silicon": bool(sysinfo.get("apple_silicon")),
 
-        "ram_total_gb": round(memory["ram_total"] / GB, 2),
-        "ram_free_gb": round(memory["ram_free"] / GB, 2),
+        "ram_total_gb": round(memory["total"] / GB, 2),
+        # "free" is the raw figure Linux reports and is nearly always tiny; it is
+        # NOT the headroom. ram_available_gb is what a task manager calls
+        # available and what fit() and the UIs must use.
+        "ram_free_gb": round(memory["free"] / GB, 2),
+        "ram_available_gb": round(memory["available"] / GB, 2),
+        "ram_used_gb": round(memory["used"] / GB, 2),
+        "ram_percent": memory["percent"],
+        "ram_firmware_gb": round(fw_ram / GB, 2) if fw_ram else 0.0,
 
         "vram_total_gb": round(g["total"] / GB, 2),
         "vram_free_gb": round(g["free"] / GB, 2),
@@ -511,7 +582,7 @@ def specs(refresh=False):
              "total_gb": round(d["total"] / GB, 2), "free_gb": round(d["free"] / GB, 2)}
             for d in g["devices"]
         ],
-        "notes": g["notes"],
+        "notes": notes,
     }
 
 
@@ -529,7 +600,9 @@ def fit(size_gb, spec=None):
     # Compare against TOTAL, not free: choosing a model replaces whatever is
     # loaded, which gives that memory back.
     vram = max(spec.get("vram_total_gb") or 0, spec.get("vram_free_gb") or 0)
-    ram = spec.get("ram_free_gb") or 0
+    # Headroom, not the raw "free": the page cache is reclaimable and free()'s
+    # free column ignores that, which would refuse models that fit comfortably.
+    ram = spec.get("ram_available_gb") or spec.get("ram_free_gb") or 0
 
     if spec.get("gpu_unified"):
         # Apple Silicon: GPU memory IS system RAM, so adding them would count the
@@ -581,7 +654,7 @@ def summary(spec=None):
             spec.get("os", "?"), spec.get("machine", "?"), spec.get("cpu_count", 0)),
         "cpu      {}".format(spec.get("cpu") or "unknown"),
         "ram      {:.1f} GB free of {:.1f} GB".format(
-            spec.get("ram_free_gb") or 0, spec.get("ram_total_gb") or 0),
+            spec.get("ram_available_gb") or 0, spec.get("ram_total_gb") or 0),
     ]
     if spec.get("gpu_name"):
         kind = "unified" if spec.get("gpu_unified") else "dedicated"

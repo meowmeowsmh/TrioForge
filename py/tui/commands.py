@@ -556,8 +556,13 @@ def _specs(ctx, arg: str) -> None:
         ("system", "{} ({}) - {} cores".format(
             spec["os"], spec["machine"], spec["cpu_count"])),
         ("cpu", spec["cpu"] or "unknown"),
-        ("ram", "{:.1f} GB free of {:.1f} GB".format(
-            spec["ram_free_gb"], spec["ram_total_gb"])),
+        # Deliberately the same shape a task manager uses, and the word
+        # "available" rather than "free": Linux counts the page cache as used, so
+        # this used to print "10.4 GB free" while `free -h` said 2.4 GiB free and
+        # the desktop monitor said something else again.
+        ("memory", "{:.1f} GB used of {:.1f} GB ({:.0f}%)".format(
+            spec["ram_used_gb"], spec["ram_total_gb"], spec["ram_percent"])),
+        ("available", "{:.1f} GB".format(spec["ram_available_gb"])),
     ]
     if spec["gpu_name"]:
         rows += [

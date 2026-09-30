@@ -338,7 +338,7 @@ The **Setup panel** (reopen anytime with the **🚀** button in the top bar) det
 
 Click **⬇** in the top bar. You get a browser, **not** a prompt asking you to type filenames:
 
-1. **Your hardware is detected and shown**, e.g. `🖥 8 GB VRAM · 6 GB RAM free`.
+1. **Your hardware is detected and shown**, e.g. `🖥 8 GB VRAM · RAM 5.4/14.7 GB (37%) · 9.2 GB available`.
 2. **Recommended models are tagged for *your* machine** — no guessing whether it will run:
 
    | Badge | Meaning |
@@ -513,7 +513,8 @@ bigger than your card:
 
 ```
        system    Linux (x86_64) - 32 cores
-          ram    5.7 GB free of 14.7 GB
+       memory    4.9 GB used of 14.7 GB (34%)
+    available    9.8 GB
           gpu    NVIDIA GeForce RTX 5060 Laptop GPU
    gpu memory    8.0 GB total, 1.0 GB free
   detected by    llama.cpp --list-devices

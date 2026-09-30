@@ -111,7 +111,8 @@ def hardware():
     """
     if _hw is None:
         return {"vram_free_gb": 0.0, "vram_total_gb": 0.0,
-                "ram_free_gb": 0.0, "ram_total_gb": 0.0}
+                "ram_free_gb": 0.0, "ram_available_gb": 0.0,
+                "ram_used_gb": 0.0, "ram_percent": 0.0, "ram_total_gb": 0.0}
     return _hw.specs()
 
 
