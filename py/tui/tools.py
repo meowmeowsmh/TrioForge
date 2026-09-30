@@ -31,7 +31,12 @@ from typing import Any, Callable
 
 # ============================================================ implementation
 
-MAX_OUTPUT = 12_000          # characters of tool output kept
+MAX_OUTPUT = 3_000           # characters of tool output kept
+# 12_000 chars is ~3k tokens per tool result, which a local model then has to
+# re-read on every round. A "hello" that made the agent run ls + glob over $HOME
+# (three near-12k results) is what turned a greeting into a 200 s turn on the
+# 5.4 GB local model. Keep the ceiling low so tool output is a summary, not a
+# directory dump.
 DEFAULT_READ_LIMIT = 400     # lines, like Crush's default read limit
 
 
@@ -71,6 +76,8 @@ def t_ls(path: str = ".", **_kw) -> str:
                     entries.append(e.name)
     except OSError as exc:
         return f"error: {exc}"
+    if len(entries) > 80:
+        entries = entries[:80] + [f"... and {len(entries) - 80} more entries"]
     return _truncate("\n".join(entries) or "(empty)")
 
 
@@ -183,8 +190,8 @@ def t_grep(pattern: str = "", path: str = ".", include: str = "", **_kw) -> str:
             for i, line in enumerate(f.read_text(encoding="utf-8",
                                                  errors="replace").splitlines(), 1):
                 if rx.search(line):
-                    hits.append(f"{f}:{i}: {line.strip()[:200]}")
-                    if len(hits) >= 200:
+                    hits.append(f"{f}:{i}: {line.strip()[:160]}")
+                    if len(hits) >= 80:
                         return _truncate("\n".join(hits) + "\n(more matches omitted)")
         except (OSError, ValueError):
             continue
@@ -197,7 +204,9 @@ def t_glob(pattern: str = "*", path: str = ".", **_kw) -> str:
         found = sorted(str(f.relative_to(p)) for f in p.rglob(pattern) if f.is_file())
     except OSError as exc:
         return f"error: {exc}"
-    return _truncate("\n".join(found[:300]) or f"(nothing matching {pattern!r})")
+    if len(found) > 120:
+        found = found[:120] + [f"... and {len(found) - 120} more files"]
+    return _truncate("\n".join(found) or f"(nothing matching {pattern!r})")
 
 
 def t_todos(todos: list | None = None, **_kw) -> str:
