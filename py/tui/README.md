@@ -359,6 +359,11 @@ Set `TRIOFORGE_NO_AUTO_INSTALL=1` to stop anything being downloaded; loading a
 local model then reports plainly that llama-server is missing, and
 `LLAMA_SERVER=<path>` still points at your own build.
 
+The first message you send on the `local` provider **starts the model server
+for you** and waits for it to be ready, so you do not get "Connection refused"
+just because nothing had run `/start` yet. If the model is missing or cannot
+load, the error is shown in the chat instead of a raw socket error.
+
 ## Requirements
 
 - Python 3.12 (the `.venv-linux` interpreter)

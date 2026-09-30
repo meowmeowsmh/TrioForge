@@ -590,6 +590,42 @@ class ForgeApp(App):
         url = self.cfg.base_url
         return "127.0.0.1" in url or "localhost" in url
 
+    def _ensure_local_server(self) -> str | None:
+        """Start llama-server when the local provider is down. Blocks; call in a thread.
+
+        A "local" provider just POSTs to 127.0.0.1:8080. If nothing was ever
+        started there, the very first message dies with "Connection refused" and
+        the user is left to discover /start. Instead, start the model, wait for
+        /health, and only let the request through when it is ready. Returns an
+        error string on failure, None when the server is up.
+        """
+        import llamacpp_service as svc
+        from urllib.parse import urlparse
+
+        url = urlparse(self.cfg.base_url or "")
+        host = url.hostname or "127.0.0.1"
+        port = url.port or 8080
+
+        if svc.server_ready(host, port, timeout=2):
+            return None                      # already up - reuse it
+
+        model = (self.session.model or "").strip() or getattr(self.cfg, "model", "")
+        if not model:
+            return ("no local model is selected — press ctrl+l to pick one, "
+                    "or run /start <model>")
+        if not os.path.isfile(os.path.expanduser(model)):
+            return "local model not found: {}".format(model)
+
+        try:
+            result = svc.start(model)
+        except Exception as exc:            # noqa: BLE001
+            return "could not start llama.cpp: {}".format(exc)
+        if not result.get("running"):
+            return result.get("error") or "llama.cpp failed to start"
+        if svc.server_ready(host, port, timeout=600):
+            return None
+        return "llama.cpp did not become ready in time — see logs/llamacpp.log"
+
     def _specs(self) -> dict:
         """Hardware specs for the sidebar - cached inside hardware.py, because
         the sidebar redraws four times a second while a turn runs."""
@@ -801,6 +837,22 @@ class ForgeApp(App):
             self.call_from_thread(self._on_event_ui, state, kind, payload)
 
         try:
+            # A "local" provider posts to llama-server on this machine. If it was
+            # never started, the first message dies with "Connection refused" and
+            # the user has to know to run /start. Start it and wait instead; the
+            # spinner shows this whole time. Runs in a thread because the server
+            # may take a while to load and must not freeze the UI.
+            if self._is_local():
+                import asyncio as _aio
+                self._activity = "starting llama.cpp…"
+                self._refresh_activity()
+                err = await _aio.to_thread(self._ensure_local_server)
+                if err:
+                    await state["card"].update(f"**request failed** — {err}")
+                    self._set_mood("sad")
+                    return
+                self._activity = ""
+
             turn = await self._run_agent(on_event)
             final = turn.text.strip()
             if final:
