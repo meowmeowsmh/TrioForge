@@ -53,7 +53,7 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "906f492ccfa7131703240eea274d1f1d6470e9ded9e6356fb27d060f7fe850e6",
-  "py/tui/README.md": "fb60ef461f2a6a1d054f470820ff8ae00bc0eaabdd25440ad605bd8eb1503472",
+  "py/tui/README.md": "9ff78d1e6043428bb1fe3c38c04a77d9c7d2e7a6ec90932e6ab30219c2c932bb",
   "py/tui/__init__.py": "dd9bb4f93b71c8a6d2bab9d5031b5f4cda316351cb4ff9cc4eab5583d9be4b00",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "e240146abf11270e4af636c7b7459e6c81e428921d1a72ae7eb09b4f258e0561",
@@ -65,7 +65,7 @@
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
   "py/tui/render.py": "d339be1654f425082c1c88a0e845353ed3ffd0a3199db3a584e1dd6c43c4b139",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "29ba6edc8820590a3dc0bc300ac01a324cfe9ce365e55fda6fe7fd382e598ac5",
+  "py/tui/textual_app.py": "3d8a7cec1874749dff88e5c4d51670c03895fc67a9231964626f873d44ea66cf",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "40305b564d682502d76ed7a0a05067963e94498fff75e0fc9c7af02d88c3bf4e",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -100,6 +100,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-30T19:00:54",
- "note": "install.ps1 made ASCII-only and its deps made pip-less-venv safe; terminal-client launchers now hash-checked"
+ "generated": "2026-09-30T21:31:19",
+ "note": "baseline: mouse support in pickers"
 }

@@ -38,10 +38,11 @@ from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.events import Click
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import (Input, Label, ListItem, ListView, Markdown, Static,
-                             TextArea)
+from textual.widgets import (Button, Input, Label, ListItem, ListView, Markdown,
+                             Static, TextArea)
 
 from . import agent as agent_mod
 from . import localmodels, providers, theme as T
@@ -159,6 +160,7 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
     background: #16161e;
     scrollbar-size-vertical: 1;
 }}
+#pickerhint {{ height: 1; margin: 1 0 0 0; }}
 #pickerlist > ListItem {{ padding: 0 1; }}
 #pickerlist > ListItem.--highlight {{ background: {T.PURPLE}; color: #16161e; }}
 
@@ -170,6 +172,8 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
     width: 64;
     height: auto;
 }}
+#confirmbuttons {{ height: auto; margin: 1 0 0 0; }}
+#confirmbuttons Button {{ margin: 0 2 0 0; min-width: 12; height: 3; }}
 
 #inputbox {{
     align: center middle;
@@ -1068,7 +1072,7 @@ class ForgeApp(App):
 
 
 class Picker(ModalScreen):
-    """Searchable list: type to filter, enter to pick, esc to cancel.
+    """Searchable list: type to filter, click or arrow to move, enter to pick.
 
     ``push_screen_wait`` resolves to the chosen key (a string), or ``None``.
     """
@@ -1076,7 +1080,19 @@ class Picker(ModalScreen):
     BINDINGS = [
         ("enter", "choose", "Choose"),
         ("escape", "cancel", "Cancel"),
+        # The filter box holds focus, so these never reach the ListView by
+        # themselves. Without them the only way to pick was to type enough of a
+        # name to filter the list down to one row and then press enter - you
+        # could not simply move to the row you wanted.
+        ("up", "move(-1)", "Up"),
+        ("down", "move(1)", "Down"),
+        ("pageup", "move(-8)", "Page up"),
+        ("pagedown", "move(8)", "Page down"),
     ]
+
+    # Two clicks on the same row within this many seconds count as a double
+    # click. Generous on purpose: it has to survive a slow hand.
+    _DOUBLE_CLICK_S = 0.6
 
     def __init__(self, title: str, options, current: str = ""):
         super().__init__()
@@ -1084,12 +1100,16 @@ class Picker(ModalScreen):
         self._options = list(options)   # (key, description) pairs
         self._current = current or ""
         self._keys: list[str] = []
+        self._last_click: tuple = (None, 0.0)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="pickerbox"):
             yield Static(f"[bold {T.PURPLE}]{self._title}[/]", id="pickerhead")
             yield Input(placeholder="type to filter…", id="pickerfilter")
             yield ListView(id="pickerlist")
+            yield Static(
+                f"[{T.GREY}]click a row to move to it · click it again (or enter) "
+                f"to pick · ↑↓/pgup/pgdn · esc cancels[/]", id="pickerhint")
 
     def on_mount(self) -> None:
         self.query_one("#pickerfilter", Input).focus()
@@ -1120,10 +1140,42 @@ class Picker(ModalScreen):
         if self._keys:
             lv.index = 0
 
+    def action_move(self, delta: int) -> None:
+        """Move the highlight, clamped to the (filtered) list."""
+        if not self._keys:
+            return
+        lv = self.query_one("#pickerlist", ListView)
+        idx = (lv.index if lv.index is not None else 0) + delta
+        lv.index = max(0, min(len(self._keys) - 1, idx))
+
+    @on(Click, "#pickerlist ListItem")
+    def _on_item_click(self, event: Click) -> None:
+        """Mouse: click a row to move to it, click the same row again to pick it.
+
+        The ListView has already moved its own highlight by the time this runs,
+        so "was this row already selected?" cannot be answered from lv.index -
+        the previous click is remembered instead. That also means a real double
+        click picks you the row, whether or not the terminal reports a click
+        chain, and a single click on a *different* row only moves the highlight.
+        """
+        event.stop()
+        lv = self.query_one("#pickerlist", ListView)
+        idx = next((i for i, child in enumerate(lv.children)
+                    if child is event.control), None)
+        if idx is None or idx >= len(self._keys):
+            return
+        now = time.monotonic()
+        last_idx, last_at = self._last_click
+        again = (last_idx == idx and now - last_at <= self._DOUBLE_CLICK_S)
+        lv.index = idx
+        self._last_click = (idx, now)
+        if again or (getattr(event, "chain", 1) or 1) >= 2:
+            self._choose()
+
     def _choose(self) -> None:
         lv = self.query_one("#pickerlist", ListView)
         idx = lv.index
-        if self._keys and 0 <= idx < len(self._keys):
+        if self._keys and idx is not None and 0 <= idx < len(self._keys):
             self.dismiss(self._keys[idx])
 
     def action_choose(self) -> None:
@@ -1159,7 +1211,21 @@ class ConfirmTool(ModalScreen):
             if self._summary:
                 yield Static(f"[{T.GREY}]{self._summary}[/]")
             yield Static(shown)
+            # Clickable as well as keyed: the same three choices, so a mouse is
+            # enough to answer the prompt.
+            with Horizontal(id="confirmbuttons"):
+                yield Button("allow", id="allow", variant="success")
+                yield Button("allow all", id="allowall", variant="warning")
+                yield Button("deny", id="deny", variant="error")
             yield Static(f"[{T.GREY}]enter allow · a allow all · n deny · esc deny[/]")
+
+    @on(Button.Pressed)
+    def _on_button(self, event: Button.Pressed) -> None:
+        event.stop()
+        action = {"allow": self.action_allow,
+                  "allowall": self.action_allow_all,
+                  "deny": self.action_deny}.get(event.button.id or "")
+        (action or self.action_deny)()
 
     def action_allow(self) -> None:
         self.dismiss(True)

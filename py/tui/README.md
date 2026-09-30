@@ -146,6 +146,29 @@ recognise *which* key it is, never enough to use it.
 `ctrl+p` commands · `ctrl+l` model · `ctrl+n` new session · `tab` focus chat ·
 `esc` focus prompt · `ctrl+q` quit
 
+### Picking from a list (mouse and keyboard)
+
+Every picker — provider, model, and the `ctrl+p` command palette — is searchable,
+and you can get to a row however you like:
+
+| | |
+|---|---|
+| **Click** a row | move the highlight to it |
+| **Click it again** (or double-click) | pick it |
+| `↑` `↓` `PgUp` `PgDn` | move the highlight |
+| type | filter the list down as you type |
+| `enter` | pick the highlighted row |
+| `esc` | cancel |
+
+The filter box keeps keyboard focus, so `↑`/`↓` are handled at the screen level
+rather than by the list — otherwise the only way to choose was to type enough of a
+name that the filter left a single row, and press enter. Clicking is timed rather
+than chain-based, so a double-click picks you the row even in terminals that do
+not report multi-click events.
+
+Tool approval prompts are clickable too: **allow** / **allow all** / **deny** are
+buttons as well as `enter` / `a` / `n`.
+
 ## Reasoning / thinking
 
 Reasoning models (DeepSeek's reasoner, Claude with thinking, and Ollama's
