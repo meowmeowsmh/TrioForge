@@ -63,7 +63,9 @@ KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+y copy answer  ·  tab ch
             "ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
 
 # How long the pleading "Don't!!!" face stays on screen before the app exits.
-GOODBYE_HOLD = 2.0
+# Quitting again during the plea leaves immediately, so this is a courtesy, not
+# a delay the user has to sit through.
+GOODBYE_HOLD = 1.5
 
 # Typing any of these pleads and quits - no Enter required. Safe to match on the
 # typed text alone: no other command in commands.py starts with "/q".
@@ -537,10 +539,17 @@ class ForgeApp(App):
         """Interval callback: keep the working timer moving between tokens."""
         self._refresh_activity()
         self._tick_face()
+        now = time.time()
+        # The plea's deadline is enforced here as well as by its one-shot timer.
+        # This tick is the one callback the app is known to keep running, so the
+        # exit cannot be lost if a timer is missed - being unable to quit is a far
+        # worse failure than a face that lingers a beat too long.
+        if self._goodbye and now - self._goodbye_at >= GOODBYE_HOLD:
+            self.exit()
+            return
         # Also refresh the sidebar on a slow cadence so the RAM / model figures
         # stay live. The expensive parts (models, git, GPU) are cached, so a 2 s
         # refresh is cheap - unlike the 4 Hz full rebuild this replaced.
-        now = time.time()
         if now - self._sidebar_ts >= 2.0:
             self._sidebar_ts = now
             self.query_one("#sidebody", Static).update(self._sidebar())
@@ -652,14 +661,20 @@ class ForgeApp(App):
         reaching ``self.exit()`` leaves the app unable to quit at all. A one-shot
         timer cannot be cancelled that way, and the face is painted right here so
         it is on screen immediately instead of up to 250 ms later.
+
+        Asking to quit a second time leaves NOW. Without that, the plea would
+        swallow every further ctrl+q / ctrl+c and the only way out of the app
+        would be the timer - one missed timer and the user is trapped.
         """
         if self._goodbye:
+            self.exit()
             return
         self._goodbye = True
         self._goodbye_at = time.time()
         self._last_face = ""
         self._paint_face()
-        self._add_plain(f"{faces.emoji('no')}  Don't!!!", role="bot")
+        self._add_plain(f"{faces.emoji('no')}  Don't!!!  ·  ctrl+q again to leave now",
+                        role="bot")
         self.set_timer(GOODBYE_HOLD, self.exit)
 
     def _greet(self) -> None:
