@@ -42,8 +42,8 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Click
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import (Button, Input, Label, ListItem, ListView, Markdown,
-                             Static, TextArea)
+from textual.widgets import (Button, Collapsible, Input, Label, ListItem, ListView,
+                             Markdown, Static, TextArea)
 
 from . import agent as agent_mod
 from . import localmodels, providers, theme as T
@@ -112,6 +112,7 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
 .from-user {{ border: round {T.CYAN}; color: {T.WHITE}; }}
 .from-bot  {{ border: round {T.GREEN}; }}
 .role {{ color: {T.GREY}; }}
+.thinking {{ color: {T.GREY}; }}
 
 /* The input keeps the SAME border when unfocused: a focus-coloured border made
    the line appear to break whenever focus moved with tab. Focus is shown by the
@@ -578,15 +579,6 @@ class ForgeApp(App):
         chat.scroll_end(animate=False)
         return card
 
-    def _compose(self, reasoning: list[str], content: list[str]) -> str:
-        """Reasoning shown dimmed and indented, then the actual answer."""
-        think = "".join(reasoning).strip()
-        body = "".join(content)
-        if think:
-            quoted = "\n".join("> " + line for line in think.splitlines())
-            return f"{quoted}\n\n{body}"
-        return body
-
     # ------------------------------------------------------------------ events
     @on(PromptArea.CopyRequested, "#prompt")
     def _on_copy_requested(self, event: PromptArea.CopyRequested) -> None:
@@ -647,6 +639,7 @@ class ForgeApp(App):
         started = time.time()
         card = self._add("", "bot")
         state = {"text": "", "reasoning": "", "card": card,
+                 "think": None, "think_body": None,
                  "started": started, "tokens": 0}
         self._active = state
 
@@ -675,6 +668,8 @@ class ForgeApp(App):
         finally:
             self._busy = False
             self._active = None
+            if state.get("think") is not None:
+                state["think"].title = f"Thinking… ({len(state['reasoning'])} chars)"
             self._refresh()
             self.query_one("#prompt", PromptArea).focus()
 
@@ -682,14 +677,25 @@ class ForgeApp(App):
         """Apply one agent event on the app thread (see ``_ask``)."""
         if kind == "reasoning":
             state["reasoning"] += payload["text"]
-            await state["card"].update(self._compose([state["reasoning"]],
-                                                     [state["text"]]))
+            # Thinking goes in a collapsed dropdown above the answer, so the chat
+            # shows the reply and the reasoning only if the user expands it.
+            if state["think"] is None:
+                body = Static(state["reasoning"], classes="thinking")
+                think = Collapsible(body, title="Thinking…", collapsed=True)
+                self.query_one("#chat", VerticalScroll).mount(think, before=state["card"])
+                state["think"] = think
+                state["think_body"] = body
+            else:
+                state["think_body"].update(state["reasoning"])
         elif kind == "content":
             state["text"] += payload["text"]
-            await state["card"].update(self._compose([state["reasoning"]],
-                                                     [state["text"]]))
+            await state["card"].update(state["text"])
         elif kind == "tool_start":
             self._tool_card(payload["name"], payload["args"], None)
+            # The pre-tool prose card is empty when the reasoning went to the
+            # dropdown; drop it instead of leaving an empty bubble.
+            if not state["text"] and state["card"] is not None:
+                state["card"].remove()
             state["card"] = self._add("", "bot")   # next prose gets a new card
         elif kind == "tool_end":
             await self._finish_tool_card(payload["name"], payload["output"],

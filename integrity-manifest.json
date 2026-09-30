@@ -65,7 +65,7 @@
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
   "py/tui/render.py": "d339be1654f425082c1c88a0e845353ed3ffd0a3199db3a584e1dd6c43c4b139",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "1e1df52682caef1d68b4ada9afb3bfe8f874e9457ee34975d9f1510be1297055",
+  "py/tui/textual_app.py": "f2b1be81a38d776a9316bc337db196e1b742f8d9f95a333e71ffe48257b6c2b9",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "2c1611a39b551e2a63a463948cd534869d3eea4b54915cec75b770fa96ab6eae",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -100,6 +100,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-09-30T23:33:13",
- "note": "forge: correct GPU detection + live machine panel"
+ "generated": "2026-09-30T23:40:34",
+ "note": "forge: reasoning in a collapsed Thinking dropdown"
 }
