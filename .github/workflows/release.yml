@@ -1,0 +1,27 @@
+name: Release
+
+# Publishes a GitHub Release whenever a v* tag is pushed. The body is CHANGELOG.md,
+# so the release notes live in the repo and are never out of step with the code.
+# (Releases cannot be created from a bare `git push --tags` without a token, so this
+# workflow does it on GitHub's side.)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TrioForge ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          generate_release_notes: false
