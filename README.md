@@ -149,11 +149,15 @@ A full-screen terminal chat (Crush-style) that shares TrioForge's models and key
 ./install.sh                    # Apple/Linux: links forge + trioforge onto your PATH
 powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows (PowerShell)
 
+trioforge --version             # -> trioforge 1.4.0
 trioforge --echo                # offline demo
 trioforge                       # a real session
 trioforge "explain this repo"   # one-shot
 trioforge --specs               # hardware + what fits
 ```
+
+`forge` and `trioforge` are the same client under two names (both point at the one
+`forge` launcher). Version **1.4.0** matches the web app.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 
