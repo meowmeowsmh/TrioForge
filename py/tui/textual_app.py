@@ -442,16 +442,31 @@ class ForgeApp(App):
                        f"{spec.get('ram_percent', 0):.0f}%\n", style=T.GREY)
             out.append(f"{spec.get('ram_available_gb', 0):.1f} GB available\n",
                        style=T.GREY)
-            if spec.get("gpu_name"):
-                out.append(f"{_short_gpu(spec['gpu_name'])}\n", style=T.FG)
-                kind = "unified" if spec.get("gpu_unified") else "vram"
-                # Available first, like the RAM line above: total alone says
-                # nothing about whether a model fits right now.
-                out.append(f"{spec.get('vram_free_gb', 0):.1f} / "
-                           f"{spec.get('vram_total_gb', 0):.1f} GB {kind} free\n", style=T.GREY)
-                others = len(spec.get("gpu_devices") or [])
-                if others > 1:
-                    out.append(f"using 1 of {others} GPUs\n", style=T.YELLOW)
+            devices = spec.get("gpu_devices") or []
+            if devices:
+                # Every GPU, not just the one that won: with two cards the
+                # questions are which is in use, and whether the other can be
+                # used at all. "1 of 2" raised that question and never answered
+                # it. A card llama.cpp lists is usable; an integrated one is
+                # usable but adds no memory, because that memory is the system
+                # RAM already reported a line above.
+                pool = spec.get("gpu_usable_count", 0)
+                head = "1 GPU" if len(devices) == 1 else f"{len(devices)} GPUs"
+                if pool >= 2:
+                    head += f" · {pool} poolable"
+                out.append(head + "\n", style=T.GREY)
+                for d in devices:
+                    if d.get("in_use"):
+                        mark, style = "-> ", T.GREEN
+                        note = f"{d['free_gb']:.1f}/{d['total_gb']:.1f}GB free"
+                    elif d.get("adds_memory"):
+                        mark, style = "   ", T.FG
+                        note = f"{d['free_gb']:.1f}/{d['total_gb']:.1f}GB idle"
+                    else:
+                        mark, style = "   ", T.GREY
+                        note = "shares system RAM"
+                    out.append(f"{mark}{_short_gpu(d['name'])[:14]:<14} ", style=style)
+                    out.append(f"{note}\n", style=T.GREY)
                 out.append("\n")
             else:
                 out.append("no GPU — CPU only\n", style=T.YELLOW)

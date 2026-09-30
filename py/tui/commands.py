@@ -587,14 +587,21 @@ def _specs(ctx, arg: str) -> None:
         for d in devices:
             if d.get("in_use"):
                 mark, tag = "->", "IN USE"
-            elif d.get("integrated"):
-                mark, tag = "  ", "integrated - shares system RAM"
+            elif not d.get("adds_memory"):
+                # Usable by llama.cpp, but offloading to it frees no memory: its
+                # "VRAM" is the system RAM already counted above.
+                mark, tag = "  ", "usable, but shares system RAM (adds no memory)"
             else:
-                mark, tag = "  ", "idle"
+                mark, tag = "  ", "usable (idle)"
             rows.append(("  {} {}".format(mark, d["label"]),
                          "{:.2f} GB free of {:.2f} GB   {}".format(
                              d["free_gb"], d["total_gb"], tag)))
             rows.append(("", d["name"]))
+        pool = spec.get("gpu_usable_count", 0)
+        rows.append(("can combine", "yes - {} cards add memory and llama.cpp can "
+                                    "split across them".format(pool) if pool >= 2
+                                    else "no - only {} card adds memory; the rest "
+                                         "share system RAM".format(pool)))
     render.table("this machine", rows)
 
     for note in spec.get("notes") or []:

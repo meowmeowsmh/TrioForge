@@ -284,6 +284,7 @@ and grades model sizes against it:
                   AMD Radeon 610M (RADV RAPHAEL_MENDOCINO)
     -> Vulkan1    7.51 GB free of 7.96 GB   IN USE
                   NVIDIA GeForce RTX 5060 Laptop GPU
+   can combine    no - only 1 card adds memory; the rest share system RAM
 
    4.6 GB    gpu       Fast - fits entirely in NVIDIA GeForce RTX 5060 ... 7.96 GB
    8.0 GB    split     OK - runs partly on GPU, partly in RAM (slower)

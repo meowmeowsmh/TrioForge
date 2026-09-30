@@ -473,6 +473,12 @@ def _probe_gpu():
         for d in devices:
             d["primary"] = d is primary
             d["integrated"] = _integrated(d["name"])
+            # Two different questions, and conflating them is what made "1 of 2"
+            # useless: can llama.cpp offload to this device at all (yes - it just
+            # listed it), and does doing so add memory (no, for an APU, because
+            # its "VRAM" is the system RAM already counted above).
+            d["usable"] = True
+            d["adds_memory"] = not d["integrated"]
         if len(devices) > 1:
             notes.append(
                 "{} GPUs present ({}); fit is judged on {} alone - the others are "
@@ -583,10 +589,14 @@ def specs(refresh=False):
         "gpu_source": g["source"],
         "gpu_approximate": g["approximate"],
         "gpu_primary": g["name"],
+        # How many cards could actually be pooled: an integrated one adds no
+        # memory, so counting it would promise RAM that does not exist.
+        "gpu_usable_count": sum(1 for d in g["devices"] if d.get("adds_memory")),
         "gpu_devices": [
             {"label": d["label"], "name": d["name"], "vendor": d["vendor"],
              "total_gb": round(d["total"] / GB, 2), "free_gb": round(d["free"] / GB, 2),
-             "in_use": bool(d.get("primary")), "integrated": bool(d.get("integrated"))}
+             "in_use": bool(d.get("primary")), "integrated": bool(d.get("integrated")),
+             "usable": bool(d.get("usable")), "adds_memory": bool(d.get("adds_memory"))}
             for d in g["devices"]
         ],
         "notes": notes,
