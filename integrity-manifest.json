@@ -61,12 +61,12 @@
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
   "py/tui/commands.py": "42f08a553330d2f2d18158f71f0967d9f19673a3f341727dbbf4c1ef5cd791eb",
-  "py/tui/faces.py": "a0eb6ba66bac664fe15b27af708d3618d91da9278ba43876ec8c6bd9b62f6202",
+  "py/tui/faces.py": "08647dcc07a83ebd1566657397a7e140adaf2ac628d56469601ddfbd28a019ff",
   "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
-  "py/tui/render.py": "d339be1654f425082c1c88a0e845353ed3ffd0a3199db3a584e1dd6c43c4b139",
+  "py/tui/render.py": "4e0adce59caf7296d26cf8591b5321a02340f5bfe0682c9d29a8eaf72f4ee97d",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "61f216f9251016a0fab952e68ed7d2b6865a874da1239e85d9db7898bc40273e",
+  "py/tui/textual_app.py": "bf5aca69427e4b5e526717e4b34765363152ea05f8d49502a21a9a90ebab078b",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "2c1611a39b551e2a63a463948cd534869d3eea4b54915cec75b770fa96ab6eae",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -101,6 +101,6 @@
   "templates/index.html": "8282958befaaa7865f0605e7264c84bf717e71bfe2287c1f46a7a962e9d808f4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T00:28:47",
- "note": "forge: idle blink on the mood face"
+ "generated": "2026-10-01T00:47:17",
+ "note": "idle act catalog + quit plea + banner dead face"
 }

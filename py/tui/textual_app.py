@@ -30,6 +30,7 @@ without touching how a request is actually made.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import random
 import subprocess
@@ -352,8 +353,12 @@ class ForgeApp(App):
         self._face_i = 0
         self._face_done_at = 0.0
         self._last_face = ""
-        self._blink_at = time.time() + random.uniform(2.0, 6.0)
-        self._blink_until = 0.0
+        # Idle act: which hobby the bot is acting out, and when this one started
+        # so the tick can advance frames every ~1.2 s and switch acts every ~3 min.
+        self._idle_action = random.randrange(len(faces.IDLE_ACTIONS))
+        self._idle_started = time.time()
+        # Once set, the tick plays the pleading "Don't!!!" face until we exit.
+        self._goodbye = False
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -362,8 +367,8 @@ class ForgeApp(App):
                 yield Static(" ", id="spacer")
             with Vertical(id="side"):
                 yield Static(self._sidebar(), id="sidebody")
-                yield Static(faces.face("neutral") + "\n" + faces.label("neutral"),
-                             id="face")
+                yield Static(faces.idle_frame(self._idle_action) + "\n"
+                             + faces.idle_label(self._idle_action), id="face")
                 yield Static("", id="activity")
         # The prompt and the keybind bar go in ONE docked container. Docking both
         # separately let the keybind bar overlap the prompt's bottom border,
@@ -586,31 +591,51 @@ class ForgeApp(App):
         """Advance the face frame and redraw it only when it changed.
 
         While a turn runs the emotion cycles its variants at the tick rate. When
-        idle the neutral face stays alive too: it blinks every few seconds and
-        drifts slowly through its eye variants, so the bot is never just frozen.
+        idle the bot acts out a hobby (coffee, reading, gaming, ...): frames step
+        every ~1.2 s and the act switches to a new one every ~3 minutes. Once the
+        user asks to quit, the pleading "Don't!!!" face plays until we exit.
         """
         now = time.time()
-        if self._mood in ("happy", "sad") and now - self._face_done_at >= 10.0:
-            self._mood = "neutral"
-            self._face_i = 0
-            self._blink_at = now + random.uniform(2.0, 6.0)
 
-        if self._mood == "neutral":
-            if now >= self._blink_at:
-                self._blink_until = now + 0.2
-                self._blink_at = now + random.uniform(2.0, 6.0)
-            if now < self._blink_until:
-                text = faces.blink() + "\n" + faces.label("neutral")
-            else:
-                self._face_i = int(now / 1.5)
-                text = self._face_text()
-        else:
+        if self._goodbye:
             self._face_i += 1
-            text = self._face_text()
+            text = faces.face("no", self._face_i) + "\nDon't!!!"
+        else:
+            if self._mood in ("happy", "sad") and now - self._face_done_at >= 10.0:
+                self._mood = "neutral"
+                self._idle_started = now
+
+            if self._mood == "neutral":
+                elapsed = now - self._idle_started
+                if elapsed >= 180.0:
+                    nxt = random.randrange(len(faces.IDLE_ACTIONS))
+                    while nxt == self._idle_action and len(faces.IDLE_ACTIONS) > 1:
+                        nxt = random.randrange(len(faces.IDLE_ACTIONS))
+                    self._idle_action = nxt
+                    self._idle_started = now
+                    elapsed = 0.0
+                frame = int(elapsed / 1.2) % 3
+                text = (faces.idle_frame(self._idle_action, frame) + "\n"
+                        + faces.idle_label(self._idle_action))
+            else:
+                self._face_i += 1
+                text = self._face_text()
 
         if text != self._last_face:
             self._last_face = text
             self.query_one("#face", Static).update(text)
+
+    def action_quit(self) -> None:
+        """ctrl+q / ctrl+c: plead, then quit."""
+        self._begin_goodbye()
+
+    @work(exclusive=True)
+    async def _begin_goodbye(self) -> None:
+        """Play the pleading face for a moment, then actually exit."""
+        self._goodbye = True
+        self._face_i = 0
+        await asyncio.sleep(1.4)
+        self.exit()
 
     def _greet(self) -> None:
         self.query_one("#chat", VerticalScroll).mount(Static(
@@ -887,7 +912,7 @@ class ForgeApp(App):
         words = arg.lower().split()
 
         if name in ("/quit", "/exit", "/q"):
-            self.exit()
+            self._begin_goodbye()
             return
         if name == "/clear":
             self.action_new_session()

@@ -148,6 +148,21 @@ TEXT_FACES = {
             ("0", "1", "  ▓"),
         ],
     },
+    "no": {
+        "emoji": "🥺",
+        "variants": [
+            ("╥", "╥", "  ﹏"),
+            ("T", "T", "  ﹏"),
+            (">", "<", "  ︵"),
+        ],
+    },
+    "dead": {
+        "emoji": "💀",
+        "variants": [
+            ("×", "×", "  ─"),
+            ("✕", "✕", "  ﹏"),
+        ],
+    },
 }
 
 DEFAULT = "neutral"
@@ -181,6 +196,97 @@ def label(emotion: str) -> str:
     return f"{emoji(emotion)} {emotion.replace('_', ' ')}"
 
 
-def blink() -> str:
-    """Closed eyes for one tick, used for the idle blink."""
-    return render_face("─", "─", "  ─")
+# ---------------------------------------------------------------------------
+# Idle "text face" actions: the bot acts out a hobby while waiting. Each action
+# is three frames; the frame advances ~1.2 s and the action changes every ~3 min.
+# ---------------------------------------------------------------------------
+IDLE_ACTIONS = [
+    ("coffee", "☕", [
+        ("●", "●", "  ᴗ  ☕"),
+        ("◕", "◕", " 口 ☕"),
+        ("u", "u", "  ᴗ ~☕"),
+    ]),
+    ("reading", "📖", [
+        ("•", "•", "  ᴗ 📖"),
+        ("•", "•", "  ─ 📖"),
+        ("◕", "◕", "  o 📖"),
+    ]),
+    ("gaming", "🎮", [
+        ("●", "●", "  ─ 🎮"),
+        (">", "<", " 口 🎮"),
+        ("^", "^", "  ᴗ 🎮"),
+    ]),
+    ("music", "🎧", [
+        ("🎧●", "●", "   ᴗ ♪"),
+        ("🎧>", "<", "   ω ♫"),
+        ("🎧^", "^", "   ᴗ ♪"),
+    ]),
+    ("coding", "💻", [
+        ("●", "●", "  ─ 💻"),
+        ("•", "•", "  ω ⌨"),
+        ("◕", "◕", "  ! 💻"),
+    ]),
+    ("snacks", "🍿", [
+        ("●", "●", "  o 🍿"),
+        ("●", "●", " 口 🍿"),
+        ("u", "u", "  ω 🍿"),
+    ]),
+    ("painting", "🎨", [
+        ("•", "•", "  ᴗ 🖌"),
+        ("◕", "◕", "  ─ 🎨"),
+        ("^", "^", "  ω 🎨"),
+    ]),
+    ("workout", "🏋", [
+        ("●", "●", "  ─ 🏋"),
+        (">", "<", " 口 🏋"),
+        ("^", "^", "  ᴗ 🏋"),
+    ]),
+    ("gardening", "🪴", [
+        ("●", "●", "  ᴗ 🪴"),
+        ("◕", "◕", "  o 💧"),
+        ("^", "^", "  🌸 🪴"),
+    ]),
+    ("guitar", "🎸", [
+        ("●", "●", "  ᴗ 🎸"),
+        (">", "<", " 口 🎶"),
+        ("^", "^", "  ω 🎸"),
+    ]),
+    ("photo", "📷", [
+        ("●", "●", "  ᴗ 📷"),
+        (">", "●", "  ─ 📸"),
+        ("◕", "◕", "  O ✨"),
+    ]),
+    ("fishing", "🎣", [
+        ("●", "●", "  ─ 🎣"),
+        ("O", "O", " 口 🎣"),
+        ("^", "^", "  ω 🐟"),
+    ]),
+    ("soup", "🍲", [
+        ("●", "●", "  ᴗ 🥄"),
+        ("◕", "◕", "  o 💨"),
+        ("u", "u", "  ω 😋"),
+    ]),
+    ("napping", "💤", [
+        ("-", "-", "  ᴗ"),
+        ("-", "-", "  ᴗ z"),
+        ("-", "-", "  ᴗ Z"),
+    ]),
+    ("blinkwave", "👋", [
+        ("●", "●", "  ᴗ"),
+        ("-", "-", "  ᴗ"),
+        ("●", "●", "  ᴗ 🖐"),
+    ]),
+]
+
+
+def idle_frame(index: int, frame: int = 0) -> str:
+    """The ``frame`` (0–2) of idle action ``index``, as a two-line face."""
+    _name, _emoji, frames = IDLE_ACTIONS[index % len(IDLE_ACTIONS)]
+    left, right, mouth = frames[frame % len(frames)]
+    return render_face(left, right, mouth)
+
+
+def idle_label(index: int) -> str:
+    """``emoji name`` for an idle action."""
+    _name, emoji_, _frames = IDLE_ACTIONS[index % len(IDLE_ACTIONS)]
+    return f"{emoji_} {_name}"

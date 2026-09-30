@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import theme as T
+from . import faces
 
 _console: Console | None = None
 
@@ -98,10 +99,16 @@ def banner(model: str, where: str, version: str = "") -> None:
     info.append("\n")
     info.append(f"{T.ICON_BOLT}  /help for commands", style=f"{T.PURPLE}")
 
+    dead = Text()
+    dead.append(faces.face("dead"), style=T.GREY)
+    dead.append("\n")
+    dead.append(f"{faces.emoji('dead')} dead", style=T.GREY)
+
     grid = Table.grid(padding=(0, 3))
     grid.add_column(no_wrap=True)
     grid.add_column()
-    grid.add_row(_wordmark(), info)
+    grid.add_column(no_wrap=True, justify="right")
+    grid.add_row(_wordmark(), info, dead)
 
     c.print()
     c.print(grid)
