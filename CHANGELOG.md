@@ -3,6 +3,31 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### The agent has a memory — DuckDB behind a Bloom filter
+
+`py/memory.py` gives the agent facts that outlive a session ("my llama port is
+8080") and finds them again later:
+
+- a **Bloom filter held in RAM** answers "definitely absent" without touching the
+  disk, so a miss ends the lookup there; only a possible hit reads the vault
+- the values live in a **DuckDB** table, which compresses the text column itself,
+  so nothing zips or unzips by hand
+- `recall` rewrites a plain sentence into candidate keys in RAM first, which is
+  what makes "what was my port setting again?" find `port_setting` with no
+  embedding model and no network
+- `/memory` prints how many lookups the gate answered in RAM, so the saving is
+  measured rather than claimed
+- the filter is **persisted as one small blob** and **rebuilt when it fills** -
+  not rescanned at boot (which would cost the very I/O the gate exists to avoid),
+  and not left to saturate (a full Bloom filter answers YES to everything)
+
+The agent gains a ninth tool, `memory` (`remember` / `recall` / `lookup` /
+`forget` / `list` / `stats`), and `/memory` works in both the full-screen client
+and the plain UI through the shared command table. `duckdb` is imported lazily:
+without it, everything else still runs and only memory reports how to install it.
+
 ## [1.4.0] — cross-platform, and the terminal client (`forge`)
 
 **The headline: local AI now works on whichever machine you sit down at** — Apple,
