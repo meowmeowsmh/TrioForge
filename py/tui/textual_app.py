@@ -114,8 +114,14 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
     width: 1fr;
     padding: 1 2;
     background: {T.BG};
+    /* A VISIBLE track. With scrollbar-background set to the chat's own colour
+       the track was invisible, so the whole scrollbar was one lone purple block
+       that slid up and down as you scrolled - it read as a glitchy broken line
+       rather than a scrollbar. Track + thumb together stay continuous. */
     scrollbar-color: {T.PURPLE};
-    scrollbar-background: {T.BG};
+    scrollbar-background: #1f2335;
+    scrollbar-color-hover: #cba6f7;
+    scrollbar-background-hover: #1f2335;
     scrollbar-size-vertical: 1;
     /* Reserve the scrollbar column ALWAYS. Without this the content width
        flips 60 -> 59 the moment the transcript overflows, so every card
