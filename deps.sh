@@ -63,12 +63,68 @@ forge_mark_deps() {
     printf 'sha256:%s\n' "$(forge_deps_hash "$1")" > "$1/.deps_installed" 2>/dev/null || true
 }
 
+# A python 3.10+ anywhere on PATH, or nothing.
+#
+# Every PATH entry is tried, not just `command -v python3`: an old python3 that
+# shadows a good one earlier in PATH would otherwise look like "no python" and
+# trigger an apt-get run that fixes nothing. python3 is preferred over python,
+# and within each name the first that actually satisfies the version wins.
+forge_find_python() {
+    local name dir
+    for name in python3 python; do
+        local IFS=':'
+        for dir in ${PATH:-}; do
+            [ -n "$dir" ] || continue
+            [ -x "$dir/$name" ] || continue
+            if "$dir/$name" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+                printf '%s' "$dir/$name"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+# Python 3.10+, INSTALLING it when it is missing or too old, so "no python" is
+# not the end of the story. Echoes the interpreter. Mirrors run.sh, which has
+# done this for the web app all along.
+forge_ensure_python() {
+    local base
+    if base="$(forge_find_python)"; then
+        printf '%s' "$base"
+        return 0
+    fi
+
+    echo "forge: python 3.10+ not found — installing it (sudo may prompt)..." >&2
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update && sudo apt-get install -y python3 python3-pip python3-venv
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y python3 python3-pip
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm python python-pip
+    elif command -v zypper >/dev/null 2>&1; then
+        sudo zypper --non-interactive install python3 python3-pip
+    elif command -v brew >/dev/null 2>&1; then
+        brew install python
+    else
+        echo "forge: no package manager found (apt/dnf/pacman/zypper/brew)." >&2
+        echo "       Install Python 3.10+ from https://www.python.org/downloads/" >&2
+        return 1
+    fi
+
+    if base="$(forge_find_python)"; then
+        printf '%s' "$base"
+        return 0
+    fi
+    echo "forge: python is installed but not on PATH yet — open a NEW terminal." >&2
+    return 1
+}
+
 # Create .venv-linux when there is no venv at all. Echoes the python path.
 forge_make_venv() {
     local root="$1" base
-    base="$(command -v python3 || command -v python || true)"
+    base="$(forge_ensure_python)" || return 1
     [ -n "$base" ] || return 1
-    "$base" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' || return 1
     echo "forge: creating a virtual environment (.venv-linux)..." >&2
     "$base" -m venv "$root/.venv-linux" >/dev/null 2>&1 || return 1
     forge_venv_python "$root"
@@ -123,6 +179,8 @@ forge_ensure_deps() {
         return 1
     fi
     forge_mark_deps "$root"
-    echo "forge: dependencies ready"
+    echo "forge: dependencies ready — both interfaces are installed:"
+    echo "         terminal client   $FORGE_PROG"
+    echo "         web app           ./run.sh    (then http://localhost:5003)"
     return 0
 }

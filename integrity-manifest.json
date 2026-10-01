@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T02:23:50",
- "note": "baseline: auto-install deps (setup.sh + self-healing forge)"
+ "generated": "2026-10-02T02:26:05",
+ "note": "baseline: python auto-install in the shared bootstrap"
 }

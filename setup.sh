@@ -27,25 +27,16 @@ echo "  repo: $ROOT"
 echo
 
 # ---------------------------------------------------------------- python
-PY_BASE="$(command -v python3 || command -v python || true)"
-if [ -z "$PY_BASE" ]; then
-    echo "ERROR: python3 was not found." >&2
-    case "$(uname -s)" in
-        Linux)  echo "       sudo apt install python3 python3-venv python3-pip" >&2 ;;
-        Darwin) echo "       brew install python" >&2 ;;
-    esac
-    exit 1
-fi
-if ! "$PY_BASE" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
-    echo "ERROR: python 3.10+ is required; found $("$PY_BASE" -V 2>&1)." >&2
-    exit 1
-fi
+# Shared with ./forge, and it INSTALLS python when it is missing or older than
+# 3.10 rather than telling the user to go and do it themselves.
+# shellcheck source=deps.sh
+. "$ROOT/deps.sh"
+
+PY_BASE="$(forge_ensure_python)" || exit 1
 echo "  python: $("$PY_BASE" -V 2>&1 | cut -d' ' -f1-2)"
 
 # ---------------------------------------------------------------- dependencies
 # Same code path ./forge uses on every launch, so the two cannot disagree.
-# shellcheck source=deps.sh
-. "$ROOT/deps.sh"
 forge_ensure_deps "$ROOT"
 
 # ---------------------------------------------------------------- PATH + llama

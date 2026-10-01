@@ -42,11 +42,26 @@ cd TrioForge
 ./setup.sh            # first time: chmod +x setup.sh
 ```
 
-**`./setup.sh` is the whole install**: it makes the venv, installs every
+**`./setup.sh` does the whole install**: it makes the venv, installs every
 dependency (web app *and* terminal client), puts `forge` / `trioforge` on your
-PATH and pre-fetches llama.cpp. Run it once and you never need it again —
-`git pull` is enough after that, because `forge` re-installs by itself when a
-requirement changes.
+PATH and pre-fetches llama.cpp.
+
+**Or skip it entirely — just run `./forge`.** It installs Python if you do not
+have 3.10+, creates the venv, installs every library for *both* interfaces, and
+starts. Nothing else to remember:
+
+```
+$ git clone https://github.com/meowmeowsmh/TrioForge.git && cd TrioForge
+$ ./forge
+forge: creating a virtual environment (.venv-linux)...
+forge: installing dependencies (first run, or requirements changed)...
+forge: dependencies ready — both interfaces are installed:
+         terminal client   forge
+         web app           ./run.sh    (then http://localhost:5003)
+```
+
+After that, a plain `git pull` is enough: `forge` re-installs by itself when a
+requirement changes, and costs nothing (~0.2s) when nothing has.
 
 Double-click **`TrioForge.bat`**. It opens in your browser, the server hidden behind it. Add **`--window`** for its own window (WebView2, ~600 MB) instead of a browser tab (~150–300 MB) — same server, same data; the window hands back to the browser automatically if your GPU can't draw it. It creates **`TrioForge`** (browser) and **`TrioForge (window)`** shortcuts per-user, no admin. Skip with `TRIOFORGE_NO_SHORTCUT=1`.
 
