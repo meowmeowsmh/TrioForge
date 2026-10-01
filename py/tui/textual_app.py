@@ -1232,6 +1232,14 @@ class ForgeApp(App):
 
     async def _finish_tool_card(self, name: str, output: str, denied: bool) -> None:
         card = self._tool_cards.get(name)
+        try:
+            # Second line of defence: a stray escape sequence here would reach
+            # the terminal itself (mouse reporting, cursor moves) and wreck the
+            # UI, so clean it even though tools.execute() already does.
+            from .tools import _clean
+            output = _clean(output) or ""
+        except Exception:  # noqa: BLE001
+            pass
         lines = output.splitlines()
         shown = "\n".join(lines[:12])
         if len(lines) > 12:

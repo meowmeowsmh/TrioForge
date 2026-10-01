@@ -157,8 +157,10 @@ def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
     if not cwd.is_dir():
         return f"error: not a directory: {cwd}"
     try:
+        # stdin=DEVNULL: a command must not be able to read (or hijack) the TTY
+        # the TUI is drawing on.
         r = subprocess.run(command, shell=True, cwd=cwd, capture_output=True,
-                           text=True, timeout=120)
+                           text=True, timeout=120, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return "error: command exceeded the 120s limit"
     except OSError as exc:
@@ -450,8 +452,40 @@ def schemas(names: list[str] | None = None) -> list[dict]:
     return [TOOLS[n].schema() for n in chosen if n in TOOLS]
 
 
+# Escape sequences must never leave a tool. A command that prints
+# "\x1b[?1000h\x1b[?1006h" turns the user's terminal into mouse-reporting mode,
+# and from then on every mouse move arrives as literal text - the UI fills with
+# "<35;37;21M<35;26;20M..." and the input line stops working. Colours, cursor
+# moves, OSC title/clipboard strings and DCS strings are all stripped too: they
+# are meaningless in a transcript, and the model cannot use them.
+_ANSI_RE = re.compile(
+    r"\x1b(?:"
+    r"\[[0-?]*[ -/]*[@-~]"             # CSI - colours, cursor, mouse modes
+    #                                     ^ 0x30-0x3F, so SGR mouse (\x1b[<..M)
+    #                                       and the private '?' modes match too
+    r"|\][^\x07\x1b]*(?:\x07|\x1b\\)"   # OSC - window title, clipboard
+    r"|[PX^_][^\x1b]*\x1b\\"            # DCS / SOS / PM / APC strings
+    r"|[ -/][0-~]"                      # nF - charset selection, e.g. ESC ( B
+    r"|[0-~]"                           # Fp/Fe/Fs - ESC 7, ESC =, ESC M, ...
+    r")"
+)
+# Control characters except tab and newline, which are real formatting.
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _clean(text):
+    """Strip escape sequences and stray control bytes from tool output."""
+    if not isinstance(text, str) or not text:
+        return text
+    return _CTRL_RE.sub("", _ANSI_RE.sub("", text))
+
+
 def execute(name: str, args: dict, on_output: Callable[[str], None] | None = None) -> str:
-    """Run one tool. Never raises - a failure is a result the model can react to."""
+    """Run one tool. Never raises - a result the model can react to.
+
+    Every result passes through ``_clean`` so no escape sequence can reach the
+    terminal, the transcript or the model.
+    """
     tool = TOOLS.get(name)
     if tool is None:
         return (f"error: unknown tool {name!r}. "
@@ -461,7 +495,7 @@ def execute(name: str, args: dict, on_output: Callable[[str], None] | None = Non
     if on_output:
         on_output(tool.summary(args))
     try:
-        return tool.run(**args)
+        return _clean(tool.run(**args))
     except TypeError as exc:
         return f"error: bad arguments for {name}: {exc}"
     except Exception as exc:  # noqa: BLE001 - a tool must never crash the agent
