@@ -556,6 +556,17 @@ def parse_text_calls(text: str) -> list[tuple[str, dict]]:
                 args = json.loads(args)
             except json.JSONDecodeError:
                 args = {}
+        if not args and isinstance(obj, dict):
+            # Small models routinely put the arguments at the TOP level:
+            #   {"name": "memory", "action": "remember", "key": "user_name"}
+            # That arrived here as an empty args dict, so the tool rejected
+            # well-formed input ("action must be one of ...") and the model had
+            # to burn a whole round trip working out the nesting. Take the rest
+            # of the object as the arguments instead.
+            flat = {k: v for k, v in obj.items()
+                    if k not in ("name", "tool", "args", "arguments")}
+            if flat:
+                args = flat
         if name:
             calls.append((name, args if isinstance(args, dict) else {}))
     return calls
