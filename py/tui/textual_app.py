@@ -483,12 +483,13 @@ class ForgeApp(App):
                         note = f"{d['free_gb']:.1f}/{d['total_gb']:.1f}GB idle"
                     else:
                         mark, style = "   ", T.GREY
-                        # "shares RAM", not "shares system RAM": the sidebar is 33
-                        # columns and mark(3) + name(14) + space leaves only 15 for
-                        # the note, so the long phrase wrapped and dropped a lone
-                        # "RAM" onto its own line - which reads as a broken panel,
-                        # not as a wrapped one.
-                        note = "shares RAM"
+                        # "iGPU · no VRAM" rather than "shares system RAM": the
+                        # longer phrase both overflowed the 33-column pane (mark(3)
+                        # + name(14) + space leaves 15) and, once shortened, still
+                        # did not say WHAT the card is. The question it produced was
+                        # literally "do radeon don't have a vram or something" - so
+                        # say it. `--specs` keeps the full wording and the numbers.
+                        note = "iGPU · no VRAM"
                     out.append(f"{mark}{_short_gpu(d['name'])[:14]:<14} ", style=style)
                     out.append(f"{note}\n", style=T.GREY)
                 out.append("\n")
