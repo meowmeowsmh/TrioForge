@@ -7,6 +7,7 @@ exactly one place to change it. Nothing here reads input - that is app.py.
 from __future__ import annotations
 
 import shutil
+import sys
 
 from rich.console import Console, Group
 from rich.markdown import Markdown
@@ -19,12 +20,45 @@ from . import theme as T
 from . import faces
 
 _console: Console | None = None
+_streams_safe = False
+
+
+def _safe_streams() -> None:
+    """Stop a non-UTF-8 console from killing the output with a traceback.
+
+    On Windows the stream encoding is often cp1252 - every pipe, and cmd.exe
+    unless the code page was changed. Box drawing and emoji then raise
+    UnicodeEncodeError from deep inside Rich's buffer flush, so `--specs` and any
+    piped one-shot died after printing half its report, even though piping is
+    documented as supported.
+
+    A pipe is unambiguous, so it gets UTF-8. A real console keeps its own code
+    page and only stops raising: unencodable glyphs degrade to "?" instead of
+    taking the whole command down.
+    """
+    global _streams_safe
+    if _streams_safe:
+        return
+    _streams_safe = True
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        try:
+            if encoding in ("utf8", "utf16", "utf32"):
+                continue
+            pipe = not stream.isatty()
+            stream.reconfigure(encoding="utf-8" if pipe else None,
+                               errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass          # a redirected or exotic stream: leave it alone
 
 
 def console() -> Console:
     """One shared Console so the theme and width are decided once."""
     global _console
     if _console is None:
+        _safe_streams()
         _console = Console(theme=T.THEME, highlight=False)
     return _console
 

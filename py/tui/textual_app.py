@@ -471,7 +471,12 @@ class ForgeApp(App):
                         note = f"{d['free_gb']:.1f}/{d['total_gb']:.1f}GB idle"
                     else:
                         mark, style = "   ", T.GREY
-                        note = "shares system RAM"
+                        # "shares RAM", not "shares system RAM": the sidebar is 33
+                        # columns and mark(3) + name(14) + space leaves only 15 for
+                        # the note, so the long phrase wrapped and dropped a lone
+                        # "RAM" onto its own line - which reads as a broken panel,
+                        # not as a wrapped one.
+                        note = "shares RAM"
                     out.append(f"{mark}{_short_gpu(d['name'])[:14]:<14} ", style=style)
                     out.append(f"{note}\n", style=T.GREY)
                 out.append("\n")
