@@ -55,7 +55,7 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "906f492ccfa7131703240eea274d1f1d6470e9ded9e6356fb27d060f7fe850e6",
-  "py/tui/README.md": "f138c11739ed487695c76d352c7f51caaae102e8f2ca727605e82ed5f73fb0a6",
+  "py/tui/README.md": "1e5697913398667813b3b883df9be62400a69a34d5a05ffbd29e10f53baa0df3",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "e257d0cb31152125f288ce1fb6772f29641c584b150afb7c083fbef4f933696d",
@@ -65,11 +65,12 @@
   "py/tui/commands.py": "fb02fc2cfa194cb0c174ee0ec89a8a31088e80f4cc5911741ad5bed3ee2b78ac",
   "py/tui/faces.py": "08647dcc07a83ebd1566657397a7e140adaf2ac628d56469601ddfbd28a019ff",
   "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
-  "py/tui/providers.py": "4648cfa4ba4ca2840fc4a256a1eca746d0e6657d3a27db2fbdc890e34032e8ac",
+  "py/tui/providers.py": "f5d33ad21e913da20f33c05dc54a1f678b2572efab2853a6829264ec51be127a",
   "py/tui/render.py": "d39747ef2c00b53e870a078089821ddb63cab0344dd9e0dbb911cddd4b086c67",
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "db26b1a1a18f8ef214df63501e61861af23507eada7142018d622beadb2e6c50",
+  "py/tui/team.py": "d2d934ce45c47346732f0cccbd4b18fdbd9d157137ea431f2e48156b0e25af2c",
+  "py/tui/textual_app.py": "75007a8be3da8db8b1b4b85d4d67e2f72450e8823b691bd190710b642e1cd533",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "e6f6fa0147615c393b0bd3f45d685893ea1380b9ecea1b6b3405a065306c5289",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -104,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T00:28:32",
- "note": "baseline: strip escape sequences from tool output"
+ "generated": "2026-10-02T00:39:28",
+ "note": "baseline: team mode (senior/junior pair)"
 }

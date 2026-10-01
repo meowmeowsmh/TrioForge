@@ -83,6 +83,14 @@ PALETTE_ACTIONS = [
     ("remove model", "remove a model id from the current provider"),
 ]
 
+#: Commands only the full-screen client has. Kept out of commands.COMMANDS so the
+#: scrolling and web UIs never list something they cannot do.
+TUI_COMMANDS = [
+    ("/auto", "route every message: local or cloud, decided for you"),
+    ("/route", "route a single prompt without pressing ctrl+a"),
+    ("/team", "senior/junior pair: the local model works, the cloud model guides"),
+]
+
 # Commands that take an argument. Picked from ctrl+p, the argument is asked for
 # instead of silently running the command with none. "mode: local" lists the
 # .gguf files on disk; everything else is a one-line text prompt.
@@ -401,6 +409,7 @@ class ForgeApp(App):
         self._replies: list[str] = []   # finished answers, newest last (for /copy)
         self._auto_route = bool(getattr(self.cfg, "route_enabled", False))
         self._route_pool = list(getattr(self.cfg, "route_pool", []) or [])
+        self._team_mode = bool(getattr(self.cfg, "team_enabled", False))
         self._tool_cards: dict = {}
         self._active = None
         self._spinner_i = 0
@@ -482,6 +491,8 @@ class ForgeApp(App):
         kind = "local" if self._is_local() else "cloud"
         out.append(f"{kind}  ·  {self.session.turns} turns  ·  "
                    f"{self._elapsed()}\n", style=T.GREY)
+        if self._team_mode:
+            out.append("TEAM MODE ON\n", style=f"bold {T.GREEN}")
         if self._auto_route:
             out.append("AUTO-ROUTE ON\n", style=f"bold {T.YELLOW}")
             # say where the next message goes, so "is it the right way?" is
@@ -1105,6 +1116,20 @@ class ForgeApp(App):
                     return
                 self._activity = ""
 
+            # Team mode: the junior (local) does the work and the senior (cloud)
+            # guides it, corrects it, and takes over if it is lost. Only makes
+            # sense on the local side - a cloud turn is already the senior.
+            if self._team_mode and self._is_local():
+                answer = await self._team_turn(text)
+                if answer:
+                    self.session.add_assistant(answer)
+                    self._replies.append(answer)
+                    await state["card"].update(
+                        f"{answer}\n\n---\n_team · junior + senior · "
+                        f"{time.time() - started:.1f}s_")
+                    self._set_mood("happy")
+                    return
+
             turn = await self._run_agent(on_event)
             final = turn.text.strip()
             if final:
@@ -1129,6 +1154,97 @@ class ForgeApp(App):
                 state["think"].title = f"Thinking… ({len(state['reasoning'])} chars)"
             self._refresh()
             self.query_one("#prompt", PromptArea).focus()
+
+    # ------------------------------------------------------------------- team
+    async def _call_text(self, backend, messages, limit: int = 700) -> str:
+        """One plain, tool-free model call. Returns '' when it cannot answer."""
+        import asyncio
+
+        def work():
+            parts = []
+            for kind, text in backend.stream(messages):
+                if kind == "content":
+                    parts.append(text)
+                    if sum(len(p) for p in parts) > limit * 4:
+                        break           # a senior that rambles is not worth waiting for
+            return "".join(parts).strip()
+
+        try:
+            return await asyncio.to_thread(work)
+        except Exception:  # noqa: BLE001 - an unreachable senior must not stop the work
+            return ""
+
+    def _team_event(self, kind: str, payload: dict) -> None:
+        """Show the junior's tool calls, so you can see it actually working."""
+        if kind == "tool_start":
+            self._tool_card(payload["name"], payload["args"], None)
+        elif kind == "tool_end":
+            self.call_from_thread(self._finish_tool_card, payload["name"],
+                                  payload["output"], payload.get("denied", False))
+
+    async def _agent_text(self, backend, task: str) -> str:
+        """A full agent turn (tools included) against ``backend``, by its text.
+
+        Runs on a throwaway session: a junior's half-finished attempt must not
+        become part of the conversation the user keeps.
+        """
+        from .session import Session
+        sess = Session(model=getattr(backend, "model", ""),
+                       where=getattr(backend, "where", ""),
+                       system=self.session.system)
+        sess.add_user(task)
+        turn = await self._run_agent(self._team_event, backend=backend, session=sess)
+        return (turn.text or "").strip()
+
+    async def _team_turn(self, text: str) -> str:
+        """Junior (local) does the work, senior (cloud) guides it.
+
+        The loop: junior attempts -> senior reviews -> junior revises with the
+        feedback -> ... and the senior takes over when the junior has no idea,
+        cannot fix it, or runs out of rounds. Returns the answer to deliver.
+        """
+        from . import localmodels as lm
+        from . import team
+
+        junior_model, cloud = self._pool_models()
+        cloud_provider, _url, cloud_model = self._cloud_target()
+        if cloud:
+            cloud_provider, _url, cloud_model = cloud
+        found = lm.find(junior_model) if junior_model else None
+        junior = self._backend_for(
+            "local", found.path if found else (junior_model or self.cfg.model))
+        senior = self._backend_for(cloud_provider, cloud_model)
+
+        def who(backend):
+            name = getattr(backend, "model", "") or ""
+            if name.endswith(".gguf"):
+                name = name.rsplit("/", 1)[-1][:-5]
+            return name or "model"
+
+        self._set_mood("thinking")
+        feedback, answer = "", ""
+        for rnd in range(1, team.MAX_ROUNDS + 1):
+            asking = team.junior_task(text, feedback, rnd)
+            self._add_plain(f"👥 junior **{who(junior)}** · attempt {rnd}")
+            answer = await self._agent_text(junior, asking)
+            if not answer:
+                self._add_plain(f"🧑‍🏫 junior had no idea — **{who(senior)}** takes control")
+                return await self._agent_text(senior, text) or answer
+
+            self._add_plain(f"🧑‍🏫 senior **{who(senior)}** is reviewing…")
+            reply = await self._call_text(senior, team.review_messages(text, answer))
+            kind, detail = team.verdict(reply)
+            if kind == "approve":
+                self._add_plain("✅ senior approved the junior's work")
+                return answer
+            if kind == "takeover":
+                self._add_plain("🧑‍🏫 senior takes control")
+                return await self._agent_text(senior, text) or answer
+            feedback = detail
+            self._add_plain("🧑‍🏫 senior → junior: " + " ".join(detail.split())[:200])
+
+        self._add_plain("🧑‍🏫 junior out of attempts — senior takes control")
+        return await self._agent_text(senior, text) or answer
 
     async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
         """Apply one agent event on the app thread (see ``_ask``)."""
@@ -1167,19 +1283,25 @@ class ForgeApp(App):
         self.query_one("#chat", VerticalScroll).scroll_end(animate=False)
         self._refresh_activity()
 
-    async def _run_agent(self, on_event):
-        """The agent's ``turn`` is blocking, so it runs in a thread."""
+    async def _run_agent(self, on_event, backend=None, session=None):
+        """The agent's ``turn`` is blocking, so it runs in a thread.
+
+        ``backend``/``session`` default to the current ones; team mode passes its
+        own so a junior's attempt can run on a throwaway session.
+        """
         import asyncio
 
+        backend = backend if backend is not None else self.backend
+        session = session if session is not None else self.session
         loop = asyncio.get_running_loop()
         result: dict = {}
 
         def work():
             try:
                 ag = agent_mod.Agent(
-                    self.backend, self.session,
+                    backend, session,
                     use_tools=True,
-                    native_tools=agent_mod.supports_native_tools(self.backend),
+                    native_tools=agent_mod.supports_native_tools(backend),
                     approve=self._approve_blocking,
                     persist=lambda: providers.save(self.cfg),
                 )
@@ -1329,6 +1451,16 @@ class ForgeApp(App):
                 self._add_plain("usage: /copy [how many answers back, e.g. /copy 2]")
                 return
             self._copy_reply(n)
+            return
+        if name == "/team":
+            self._team_mode = not self._team_mode
+            self.cfg.team_enabled = self._team_mode
+            providers.save(self.cfg)
+            self._add_plain(
+                "team mode " + ("ON — the junior (local) does the work and the "
+                                "senior (cloud) guides, corrects and takes over"
+                                if self._team_mode else "OFF — one model per message"))
+            self._refresh()
             return
         if name == "/auto":
             self._auto_route = not self._auto_route
@@ -1558,7 +1690,7 @@ class ForgeApp(App):
     def action_palette(self) -> None:
         """ctrl+p - searchable command palette, instead of remembering names."""
         from .commands import COMMANDS
-        self.run_worker(self._palette(COMMANDS), exclusive=False)
+        self.run_worker(self._palette(COMMANDS + TUI_COMMANDS), exclusive=False)
 
     async def _palette(self, commands) -> None:
         options = [(c.split()[0], d) for c, d in commands]

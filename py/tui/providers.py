@@ -134,6 +134,8 @@ class Config:
     # ctrl+a auto-route: on/off, and which "provider:model" keys are in the pool.
     route_enabled: bool = False
     route_pool: list = field(default_factory=list)
+    # Senior/junior pair: the local model works, the cloud model guides it.
+    team_enabled: bool = False
     providers: dict[str, dict] = field(default_factory=lambda: json.loads(
         json.dumps(DEFAULT_PROVIDERS)))
 
@@ -253,6 +255,7 @@ def load(path: Path | None = None) -> Config:
         model=data.get("model", ""),
         route_enabled=bool(data.get("route_enabled", False)),
         route_pool=list(data.get("route_pool") or []),
+        team_enabled=bool(data.get("team_enabled", False)),
     )
     merged = json.loads(json.dumps(DEFAULT_PROVIDERS))
     for name, entry in (data.get("providers") or {}).items():
@@ -284,6 +287,7 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "model": cfg.model,
         "route_enabled": cfg.route_enabled,
         "route_pool": cfg.route_pool,
+        "team_enabled": cfg.team_enabled,
         "providers": cfg.providers,
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     try:

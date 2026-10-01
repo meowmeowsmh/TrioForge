@@ -188,6 +188,32 @@ hints + code shape + length), `reachable()` is one TCP connect, and `decide()`
 applies offline → local, complex → cloud, else local. No network call is made to
 choose the model, so routing itself costs nothing and works offline.
 
+### Team mode — the senior/junior pair (`/team`)
+
+Auto-route picks **one** model per message. Team mode is the other thing: they work
+together. `/team` turns it on (persisted, shown as `TEAM MODE ON` in the sidebar).
+
+```
+junior (local, llama.cpp) does the work
+        │
+        ├── senior (cloud) APPROVES ......... the junior's work ships
+        ├── senior sends FEEDBACK ........... the junior tries again with it
+        ├── senior says TAKEOVER ............ the senior does it
+        └── junior produces nothing ......... the senior takes control
+```
+
+- **Both know the answer** → the senior guides the junior to make it better,
+  then ships the improved version.
+- **The junior is stuck** (no answer, or still wrong after two attempts) → the
+  senior takes over and does the job itself.
+- The exchange is visible in the transcript (`🧑‍🏫 senior → junior: …`), and the
+  junior's tool calls are drawn as usual, so you can watch them work as a pair.
+- It only applies to a **local** turn — a cloud turn is already the senior.
+- Cost: one cheap review call per junior attempt (max 2 attempts).
+
+The policy lives in `py/tui/team.py` (`MAX_ROUNDS`, `review_messages()`,
+`verdict()`, `junior_task()`), so it can be tested without a model.
+
 ### Copying an answer out
 
 The TUI captures the mouse, so dragging a selection is the *app's* selection, not

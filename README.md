@@ -222,6 +222,7 @@ print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
 | `ctrl+l` / `ctrl+o` | switch model / provider |
 | `ctrl+y` | copy the last answer |
 | `ctrl+a` | **auto-route**: send to local (llama.cpp) or cloud, decided by offline/complexity |
+| `/team` | **senior/junior pair**: the local model works, the cloud model guides and takes over |
 | `tab` / `ctrl+n` / `ctrl+q` | focus chat / new session / quit |
 
 Shift+Enter can't work — a terminal sends the same byte as Enter — so `ctrl+j` is the newline key. Full details in [`py/tui/README.md`](py/tui/README.md).
