@@ -117,6 +117,11 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
     scrollbar-color: {T.PURPLE};
     scrollbar-background: {T.BG};
     scrollbar-size-vertical: 1;
+    /* Reserve the scrollbar column ALWAYS. Without this the content width
+       flips 60 -> 59 the moment the transcript overflows, so every card
+       reflows by a column and the whole right edge - card borders and the
+       scrollbar itself - jumps. That jump is the "line is not consistent". */
+    scrollbar-gutter: stable;
 }}
 
 #side {{
@@ -171,6 +176,7 @@ CollapsibleTitle {{
     min-height: 3;
     max-height: 10;
     scrollbar-size-vertical: 1;
+    scrollbar-gutter: stable;   /* same reason as #chat: no text jump */
 }}
 #prompt:focus {{
     border: round {T.PURPLE};
