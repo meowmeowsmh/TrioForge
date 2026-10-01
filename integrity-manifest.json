@@ -33,7 +33,7 @@
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_cpp.py": "1a2f1339acf99d6f38629c33d5a9b1e9627483412dadf5a698d491c41df8bec7",
   "py/llama_installer.py": "fdd022bff63ed9e9d78578bcd48d61eb5e294f6bcbb01b79281b69c829426874",
-  "py/llamacpp_service.py": "0ddea5d4bdc9f6adc9b5370298d6897ce8da87940f9cf3d5c03db38d57e1b917",
+  "py/llamacpp_service.py": "aa8d52883017a34d6ec2d8944cd8809016866ffcf84720a460c9c68f663dab1e",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/memory.py": "a1200319eaeee27b22f28791902190885219c829e7343069a382cb29883903a0",
@@ -103,6 +103,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T21:19:51",
- "note": "sidebar GPU line fits 33 cols; piped output survives cp1252"
+ "generated": "2026-10-01T21:33:05",
+ "note": "load plans a GPU+CPU split; stop() kills by port"
 }

@@ -410,6 +410,54 @@ def _port_in_use(host, port):
         s.close()
 
 
+def _listening_pids(port):
+    """PIDs holding a LISTEN socket on ``port``, ours or a leftover's.
+
+    ``stop()`` used to terminate only the child THIS process happened to start, so
+    a llama-server left behind by an earlier run - or started by the other
+    TrioForge front end - could not be stopped at all. It stayed resident (6.2 GB
+    of RAM and 6 GB of VRAM were measured on this machine) while ``stop()``
+    reported "stopped", and the next load was then refused for want of memory.
+    Ask the OS instead of trusting a module global.
+    """
+    pids = set()
+    try:
+        import psutil
+        for conn in psutil.net_connections(kind="tcp"):
+            laddr = getattr(conn, "laddr", None)
+            if laddr and getattr(laddr, "port", None) == port and conn.pid:
+                if conn.status == psutil.CONN_LISTEN:
+                    pids.add(conn.pid)
+    except Exception:
+        pass          # unprivileged or unsupported: fall back to our own child
+    return pids
+
+
+def _is_llama_server(pid):
+    """Whether ``pid`` is a llama-server, so a stranger on the port is never killed."""
+    try:
+        import psutil
+        return "llama" in psutil.Process(pid).name().lower()
+    except Exception:
+        return False
+
+
+def _kill_pid(pid, timeout=5.0):
+    """Terminate a pid, escalating to kill. True once it is gone."""
+    try:
+        import psutil
+        proc = psutil.Process(pid)
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except psutil.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
 def _server_model(host, port):
     """Return the absolute model path the running llama-server is serving, or None.
 
@@ -748,6 +796,53 @@ def _log(message: str) -> None:
 _flag_cache = {}
 
 
+def _plan_load(size, vram_free, ram_free, mmproj_size=0, ngl_auto=True):
+    """Where will the weights live, and does the load fit?
+
+    Pure arithmetic on bytes, kept apart from the spawn so the decision can be
+    reasoned about and tested without loading a model. Three outcomes:
+
+    * **offload** - everything fits in VRAM, so ask for all layers (``-ngl 99``).
+    * **split** - it fits in neither pool alone but both together, which is the
+      normal case on a laptop: llama.cpp keeps as many layers in VRAM as the card
+      holds and runs the rest on the CPU (``-ngl auto``, its own default). Only the
+      CPU part has to fit in RAM.
+    * **neither** - no VRAM to offload to, and the whole file will not fit in RAM
+      either. That is the genuine swap case, and the caller refuses it.
+
+    Judging the whole *file* size against free RAM is what refused a 6.3 GB model
+    on a box with 6.6 GB of free RAM and 7.0 GB of free VRAM - where a split needs
+    about 1.5 GB - and reported it as "would put this machine into swap".
+    """
+    kv_headroom = int(1.5 * 1073741824)   # KV cache + compute buffers + Windows
+    # llama.cpp's VRAM accounting overshoots the file size (layer padding, context,
+    # compute buffers); 12% is the margin this file has always used.
+    vram_ratio = 1.12
+    size = int(size or 0)
+    mmproj_size = int(mmproj_size or 0)
+
+    if vram_free and size and vram_free > size * vram_ratio + kv_headroom + mmproj_size:
+        return {"offload": True, "split": False, "gpu_bytes": size,
+                "ram_needed": 0, "reason": "all layers in VRAM"}
+
+    gpu_bytes = 0
+    if vram_free and size and ngl_auto:
+        spare = max(0, int(vram_free) - kv_headroom - mmproj_size)
+        gpu_bytes = min(size, int(spare / vram_ratio))
+    cpu_bytes = max(0, size - gpu_bytes)
+    return {
+        "offload": False,
+        "split": gpu_bytes > 0,
+        "gpu_bytes": gpu_bytes,
+        "ram_needed": cpu_bytes + (kv_headroom if size else 0),
+        "reason": ("splitting across GPU and CPU: about {:.1f} GB of weights in VRAM, "
+                   "{:.1f} GB on the CPU".format(gpu_bytes / 1073741824.0,
+                                                 cpu_bytes / 1073741824.0)
+                   if gpu_bytes else
+                   "no VRAM to offload to, so every layer would sit in RAM"),
+    }
+
+
 def _supports_flag(exe, flag):
     """Whether `exe` understands `flag` (cached per executable).
 
@@ -1013,10 +1108,13 @@ def start(model=None, ctx_size=None):
         # with "failed to fit params to free device memory" / "failed to allocate
         # Vulkan1 buffer" and the model quietly runs on the CPU instead - which is
         # exactly how a 6 GB model ends up in RAM. When it does not fit comfortably
-        # we pass nothing and let llama.cpp auto-fit the number of layers itself.
-        kv_headroom = int(1.5 * 1073741824)
-        offload = bool(vram_free and size
-                       and vram_free > size * 1.12 + kv_headroom + mmproj_size)
+        # we let llama.cpp auto-fit the layers itself, which is also the CPU+GPU
+        # split. _supports_flag asks --help, so this doubles as "can this build
+        # auto-fit at all": an old build that cannot would put the whole model in
+        # RAM, and the guard below still has to refuse that.
+        plan = _plan_load(size, vram_free, ram_free, mmproj_size,
+                          ngl_auto=_supports_flag(exe, "'auto'"))
+        offload = plan["offload"]
 
         try:
             _log(("model {:.2f} GB{} · VRAM free {} · RAM free {} -> {}").format(
@@ -1025,31 +1123,25 @@ def start(model=None, ctx_size=None):
                     mmproj_size / 1073741824.0),
                 "{:.2f} GB".format(vram_free / 1073741824.0) if vram_free else "unknown",
                 "{:.2f} GB".format(ram_free / 1073741824.0) if ram_free else "unknown",
-                "all layers on the GPU" if offload
-                else "let llama.cpp auto-fit the layers (model + KV cache do not fit entirely)"))
+                plan["reason"]))
         except Exception:
             pass
 
-        # Refuse a CPU load that would not fit: this is what turned a 15 GB machine
-        # into a swapping one. Needs ~1.5 GB of headroom for the KV cache, compute
-        # buffers and the rest of Windows. The full model size is deliberately used
-        # here even when layers are offloaded (an over-estimate), which also absorbs
-        # the projector, so it is NOT added a second time and this stays a last-resort
-        # guard rather than something that can refuse a load that would have fitted.
-        if (not offload and ram_free and size
+        # Refuse only a load that genuinely cannot fit. The requirement is what has
+        # to live in RAM - the layers the GPU cannot hold, plus room for the KV
+        # cache and the rest of Windows - not the whole file, which is what made
+        # this refuse loads that would have run fine split across both.
+        if (plan["ram_needed"] and ram_free and size
                 and os.environ.get("TRIOFORGE_SKIP_RAM_CHECK", "").strip() not in ("1", "true", "on")):
-            if size + int(1.5 * 1073741824) > ram_free:
+            if plan["ram_needed"] > ram_free:
                 return {"running": False,
-                        "error": "not enough free memory for {}: the model needs about {:.1f} GB and only "
-                                 "{:.1f} GB of RAM is free{} (it would put this machine into swap).\n"
-                                 "Options: pick a smaller GGUF, close some apps, use Ollama (it offloads to "
-                                 "the GPU), or override with TRIOFORGE_SKIP_RAM_CHECK=1.".format(
-                                     os.path.basename(model_path), size / 1073741824.0,
-                                     ram_free / 1073741824.0,
-                                     "" if vram_free is None
-                                     else " and the GPU has only {:.1f} GB free (the model needs about "
-                                          "{:.1f} GB to fit there)".format(vram_free / 1073741824.0,
-                                                                          size * 1.12 / 1073741824.0))}
+                        "error": "not enough free memory for {}: {} — that needs about "
+                                 "{:.1f} GB of RAM and only {:.1f} GB is free, so it would put "
+                                 "this machine into swap.\nOptions: close some apps, pick a "
+                                 "smaller GGUF, or override with TRIOFORGE_SKIP_RAM_CHECK=1.".format(
+                                     os.path.basename(model_path), plan["reason"],
+                                     plan["ram_needed"] / 1073741824.0,
+                                     ram_free / 1073741824.0)}
 
         cmd = [exe, "-m", model_path, "--host", host, "--port", str(port)]
         # Which GPU(s) the offloaded layers may live on. Left alone, llama.cpp picks
@@ -1087,8 +1179,12 @@ def start(model=None, ctx_size=None):
             # and a few hundred MB of RAM + VRAM.
             cmd += ["--n-gpu-layers", "99"]
         else:
-            # Let llama.cpp fit the layers itself, and keep the KV cache in system
-            # RAM: that is what "decode() failed ... ErrorOutOfDeviceMemory" needs.
+            # Split across the GPU and the CPU: no -ngl, so llama.cpp puts as many
+            # layers in VRAM as the card holds and runs the rest on the CPU, with the
+            # KV cache in system RAM (that is what "decode() failed ...
+            # ErrorOutOfDeviceMemory" needs). This is the normal laptop outcome - a
+            # 6-7 GB model on an 8 GB card - and it is deliberately reached by
+            # letting llama.cpp auto-fit rather than by guessing a layer count here.
             cmd += ["--no-kv-offload"]
         # KV cache precision, opt-in via TRIOFORGE_KV_QUANT. The KV cache is what
         # stops a model fitting a small card: on the machine this was measured on
@@ -1099,9 +1195,20 @@ def start(model=None, ctx_size=None):
         #     two GPUs (AMD 610M + RTX)  3.10 tok/s
         #     CPU only                   2.62 tok/s
         # so shrinking the cache to 8 bits buys more than adding a second GPU does.
-        # Left unset by default: it is a quality/throughput trade the user should
-        # make knowingly, and f16 stays the safe choice.
+        # A model that fits entirely in VRAM keeps f16 - that is the safe choice and
+        # the cache is not what limits it there.
         kv_quant = os.environ.get("TRIOFORGE_KV_QUANT", "").strip()
+        if not kv_quant and plan["split"]:
+            # A split load keeps the KV cache in system RAM, and that - not the
+            # weights - is what tips the machine into swap: at ctx 16384 the f16
+            # cache for a 12B model is around 3 GB, measured on top of the
+            # CPU-resident layers as available RAM falling to 0.3 GB with 3.4 GB of
+            # page file in use. Halving it is the cheapest win available, so it is
+            # applied by default here and only here: f16 stays the default whenever
+            # the whole model fits in VRAM. TRIOFORGE_KV_QUANT=f16 opts back out.
+            kv_quant = "q8_0"
+            _log("KV cache quantised to q8_0: this load is split across GPU and CPU, so "
+                 "the cache sits in RAM (TRIOFORGE_KV_QUANT=f16 to override)")
         if kv_quant and kv_quant.lower() not in ("f16", "none", "off"):
             if kv_quant.lower() in _KV_CACHE_TYPES:
                 cmd += ["--cache-type-k", kv_quant, "--cache-type-v", kv_quant]
@@ -1177,17 +1284,59 @@ def start(model=None, ctx_size=None):
 
 
 def stop():
+    """Stop the model server - whoever started it - and report what really happened.
+
+    Reporting "stopped" without checking is how a leaked llama-server went
+    unnoticed: the child survived its parent, kept its ~6 GB of RAM and VRAM, and
+    the next load was refused for lack of free memory. The port is the source of
+    truth here, not a module global, and a stop that leaves something answering on
+    it did not happen.
+    """
     global _process, _running_model, _running_ctx
+    cfg = _config() or {}
+    host = os.environ.get("LLAMA_HOST") or cfg.get("llama_host", "127.0.0.1")
+    try:
+        port = int(os.environ.get("LLAMA_PORT") or cfg.get("llama_port", 8080))
+    except (TypeError, ValueError):
+        port = 8080
+
+    targets = set(_listening_pids(port))
     with _lock:
-        if _process is not None and _process.poll() is None:
-            try:
-                _process.terminate()
-            except Exception:
-                pass
+        child = (_process.pid if (_process is not None and _process.poll() is None)
+                 else None)
         _process = None
         _running_model = None
         _running_ctx = None
-    return {"running": False, "message": "stopped"}
+    if child:
+        targets.add(child)
+
+    killed, refused = [], []
+    for pid in sorted(targets):
+        # Only llama-server, or the child we spawned ourselves. Port 8080 is a
+        # popular dev port: this must never take down somebody else's server.
+        if pid == child or _is_llama_server(pid):
+            if _kill_pid(pid):
+                killed.append(pid)
+        else:
+            refused.append(pid)
+
+    # Wait for the port to come free, then report what is actually true.
+    for _ in range(12):
+        if not _port_in_use(host, port):
+            break
+        time.sleep(0.25)
+    still_up = _port_in_use(host, port)
+
+    if killed:
+        _log("stopped llama-server pid(s) {} - RAM and VRAM released".format(
+            ", ".join(str(p) for p in killed)))
+    if refused:
+        _log("port {} is held by pid(s) {}, which is not llama-server; left alone".format(
+            port, ", ".join(str(p) for p in refused)))
+    return {"running": still_up,
+            "message": "stopped" if not still_up
+            else "something else is still answering on port {}".format(port),
+            "killed": killed}
 
 
 def touch() -> None:
