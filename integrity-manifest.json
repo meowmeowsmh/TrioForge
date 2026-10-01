@@ -58,7 +58,7 @@
   "py/tui/README.md": "70e23ad6102d6191e29ecc92dc4405c7411dbe2bcec36cc30c96dcaa1678bb10",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "48388c71e992051b717e015da66be484d55fc6e2a5a624de63c008a49255f562",
+  "py/tui/agent.py": "bb1574c40c475631db57b52395b6a0fe7e56fe97a8c01791644222c036787bb9",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T02:18:49",
- "note": "baseline: accept flat tool arguments"
+ "generated": "2026-10-02T02:20:19",
+ "note": "baseline: known facts in the system prompt"
 }

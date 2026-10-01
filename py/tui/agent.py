@@ -60,10 +60,11 @@ These override everything else.
    something you did not run.
 8. When you mention code, cite it as `path/to/file.py:123` so it can be found.
 9. REMEMBER DURABLE FACTS. When the user states something lasting about
-   themselves or this project ("my llama port is 8080", "we keep notes in
-   DuckDB"), store it with the memory tool, and call action=recall before asking
-   the user to repeat themselves. Do not store passing details, file contents, or
-   secrets such as API keys and passwords.
+   themselves or this project ("my name is ...", "my llama port is 8080"), store
+   it with the memory tool. Anything already in <known_facts> above IS known -
+   answer from it directly instead of saying you do not know, and call the memory
+   tool with action=recall only if it is not there. Do not store passing details,
+   file contents, or secrets such as API keys and passwords.
 </critical_rules>
 
 {tools}
@@ -113,7 +114,45 @@ class Agent:
             tools=TL.protocol_text() if self.use_tools else
             "You have no tools. Answer from what you already know.",
         )
-        return (self.session.system + "\n\n" + base) if self.session.system else base
+        if self.session.system:
+            base = self.session.system + "\n\n" + base
+        facts = self._known_facts()
+        return base + ("\n\n" + facts if facts else "")
+
+    def _known_facts(self) -> str:
+        """The vault, put IN FRONT of the model rather than left to be asked for.
+
+        Rule 9 tells the model to call action=recall, but a small local model does
+        not reliably do it: asked "what is my name" gemma made ZERO tool calls and
+        answered "I am TrioForge" - confusing itself with the user - and only said
+        "I don't know your name" when corrected. Reading the facts costs one
+        indexed query and makes recall work whatever the model is.
+
+        Bounded on purpose: at most 40 entries, 200 characters each and ~4000
+        characters in total, newest first, so a large vault cannot crowd out the
+        conversation. Never raises - memory is a bonus, not a precondition.
+        """
+        try:
+            import memory as mem
+            if not mem.available():
+                return ""
+            rows = mem.entries(limit=40)
+        except Exception:  # noqa: BLE001 - a memory failure must not break a turn
+            return ""
+        if not rows:
+            return ""
+
+        lines, used = [], 0
+        for key, value in rows:
+            line = "- {}: {}".format(key, " ".join(str(value).split())[:200])
+            if used + len(line) > 4000:
+                break
+            used += len(line)
+            lines.append(line)
+        return ("<known_facts>\n"
+                "Facts already stored about this user and project. Use them and do\n"
+                "not ask again; call the memory tool only to add or correct one.\n"
+                + "\n".join(lines) + "\n</known_facts>")
 
     def _messages(self) -> list[dict]:
         msgs = [{"role": "system", "content": self.system_prompt()}]
