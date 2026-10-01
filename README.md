@@ -358,6 +358,14 @@ Recommended for a Linux server / WSL2 / NAS. The prebuilt image (CI-built on eve
 
 ---
 
+## 💾 Backing up
+
+`./backup.sh` packs the whole app — source, your settings and chat/notes data —
+into one tarball under `backups/`, leaving out the multi-GB model weights, the
+venv and the auto-fetched llama.cpp (all re-downloadable). `./backup.sh --all`
+adds uploads and generated media; restore with `./backup.sh --restore <file>`.
+The archive contains your API keys, so `backups/` is git-ignored and never pushed.
+
 ## 🗂️ Where your data lives
 
 | Path | Contents |

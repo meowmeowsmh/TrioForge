@@ -146,3 +146,7 @@ frames/
 # CI/debug artefacts written into the repo root by the smoke-test diagnostics.
 platform-error.txt
 diag.txt
+
+# tarballs made by ./backup.sh (contain keys + conversations, never commit)
+backups/
+
