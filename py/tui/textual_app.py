@@ -484,6 +484,15 @@ class ForgeApp(App):
                    f"{self._elapsed()}\n", style=T.GREY)
         if self._auto_route:
             out.append("AUTO-ROUTE ON\n", style=f"bold {T.YELLOW}")
+            # say where the next message goes, so "is it the right way?" is
+            # answerable at a glance rather than only after the fact
+            local, cloud = self._pool_models()
+            if cloud:
+                out.append(f"  ☁ complex → {cloud[2]}\n", style=T.GREY)
+            if local:
+                out.append(f"  💻 else → {local}\n", style=T.GREY)
+            elif self._is_local():
+                out.append(f"  💻 else → {self._short_model()}\n", style=T.GREY)
         out.append("\n")
 
         # ---- the machine: the numbers /specs and the fit verdicts come from

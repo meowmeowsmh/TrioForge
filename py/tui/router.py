@@ -140,6 +140,8 @@ def decide(prompt: str, *, cloud_provider: str, cloud_url: str, cloud_model: str
 
 
 def explain(decision: dict) -> str:
-    """One short line for the transcript / sidebar."""
-    arrow = "☁" if decision["engine"] == "cloud" else "💻"
-    return "{} {} · {}".format(arrow, decision["engine"], decision["reason"])
+    """One short line for the transcript, naming where the message is going."""
+    arrow = "☁" if decision.get("engine") == "cloud" else "💻"
+    model = decision.get("model") or ""
+    return "{} → {} · {}".format(arrow, model or decision["engine"],
+                                 decision.get("reason", ""))

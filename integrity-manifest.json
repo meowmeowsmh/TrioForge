@@ -67,9 +67,9 @@
   "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
   "py/tui/providers.py": "4648cfa4ba4ca2840fc4a256a1eca746d0e6657d3a27db2fbdc890e34032e8ac",
   "py/tui/render.py": "d39747ef2c00b53e870a078089821ddb63cab0344dd9e0dbb911cddd4b086c67",
-  "py/tui/router.py": "9650dc529ab3a4d71dd711ab3a55ab4df4247dd07fa3341a444c13be9eacd62a",
+  "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "f7eff8fb560322c04fabdb7b5f8d64069b058728246c932063e49febcba78b22",
+  "py/tui/textual_app.py": "4ed384b2366f3121e255cc47d4b2678107c06dd638be1ba2e5b210d5eb57c79e",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "91a7ae9aadc3958caf44521a488cda1b76dc9969db812aea72e8382f3dc8f549",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -104,6 +104,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T00:05:58",
- "note": "baseline: ctrl+a routing pool picker"
+ "generated": "2026-10-02T00:11:45",
+ "note": "baseline: Enter routes and shows the destination"
 }
