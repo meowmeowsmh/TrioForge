@@ -92,7 +92,7 @@ def _which(prog):
     return which(prog)
 
 
-def _vision_answer(question, image_b64, model=None):
+def _vision_answer(question, image_b64, model=None, mime="image/png"):
     """Send the screenshot to the local vision model.
 
     llama-server must be RUNNING first - a vision request against a server that
@@ -105,7 +105,8 @@ def _vision_answer(question, image_b64, model=None):
     provider = get_provider("llamacpp")
     provider._check_server()          # wait for the model to finish loading
     messages = [{"role": "user", "content": question}]
-    images = [{"b64": image_b64, "mime": "image/png", "name": "screen.png"}]
+    ext = {"image/jpeg": "jpg"}.get(mime, "png")
+    images = [{"b64": image_b64, "mime": mime, "name": "screen." + ext}]
     return provider.generate_with_image(messages, images)
 
 
@@ -124,6 +125,9 @@ def ask():
         small, shrunk = _shrink(path)
         with open(small, "rb") as fh:
             raw = fh.read()
+        # _shrink returns a .jpg, and the bytes were then announced as image/png.
+        mime = ("image/jpeg" if small.lower().endswith((".jpg", ".jpeg"))
+                else "image/png")
         if shrunk:
             logger.info("screenshot shrunk for vision (%d bytes)", len(raw))
     finally:
@@ -138,7 +142,7 @@ def ask():
 
     b64 = base64.b64encode(raw).decode("ascii")
     try:
-        answer = _vision_answer(question, b64, data.get('model'))
+        answer = _vision_answer(question, b64, data.get('model'), mime)
     except Exception as exc:
         logger.error("vision answer failed: %s", exc)
         return jsonify({"error": "vision model failed: %s" % exc,

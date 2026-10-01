@@ -13,6 +13,7 @@
 import os
 import platform
 import shutil
+import sys
 import tarfile
 import urllib.request
 import zipfile
@@ -142,7 +143,13 @@ def install_llamacpp(backend=None):
     if backend is None:
         backend = _gpu_backend().get("backend", "cpu")
 
-    info = _fetch_releases()
+    # Inside the try: an offline or rate-limited GitHub raises URLError/HTTPError,
+    # which used to escape this function instead of returning its error dict.
+    try:
+        info = _fetch_releases()
+    except Exception as exc:  # noqa: BLE001 - never raise, always report
+        return {"ok": False, "path": "",
+                "error": "Could not reach llama.cpp GitHub releases ({}).".format(exc)}
     if not info:
         return {"ok": False, "path": "", "error": "Could not reach llama.cpp GitHub releases (offline? rate-limited?)."}
     tag, names, urls = info
@@ -174,7 +181,10 @@ def install_llamacpp(backend=None):
                 zf.extractall(extract_dir)
         elif asset.endswith((".tar.gz", ".tgz")):
             with tarfile.open(archive) as tf:
-                tf.extractall(extract_dir, filter="data")
+                if sys.version_info >= (3, 12):
+                    tf.extractall(extract_dir, filter="data")
+                else:
+                    tf.extractall(extract_dir)   # `filter=` is 3.12+
         else:
             return {"ok": False, "path": "", "error": "Unsupported archive type: {}".format(asset)}
 

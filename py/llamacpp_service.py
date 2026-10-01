@@ -1198,6 +1198,21 @@ def start(model=None, ctx_size=None):
         # A model that fits entirely in VRAM keeps f16 - that is the safe choice and
         # the cache is not what limits it there.
         kv_quant = os.environ.get("TRIOFORGE_KV_QUANT", "").strip()
+        if kv_quant.lower() in ("f16", "none", "off"):
+            # _default_server_args() always adds q8_0, so opting back out has to
+            # REMOVE those flags - appending f16 left a duplicate the server may
+            # resolve either way, and the documented escape hatch did nothing.
+            keep, drop_next = [], False
+            for arg in cmd:
+                if drop_next:
+                    drop_next = False
+                    continue
+                if arg in ("--cache-type-k", "--cache-type-v"):
+                    drop_next = True
+                    continue
+                keep.append(arg)
+            cmd = keep
+            _log("KV cache left at f16 (TRIOFORGE_KV_QUANT={})".format(kv_quant))
         if not kv_quant and plan["split"]:
             # A split load keeps the KV cache in system RAM, and that - not the
             # weights - is what tips the machine into swap: at ctx 16384 the f16

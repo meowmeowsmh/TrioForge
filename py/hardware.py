@@ -505,7 +505,7 @@ def _probe_gpu():
     info = system()
     alt = None
     if info["os"] == "Darwin" and info.get("apple_silicon"):
-        alt = _apple_unified(ram()["ram_total"])
+        alt = _apple_unified(ram()["total"])
         if alt:
             alt["vendor"], alt["backend"], alt["unified"] = "apple", "Metal", True
             notes.append("unified memory: " + alt.pop("note", ""))
@@ -547,7 +547,7 @@ def _probe_gpu():
 
 def specs(refresh=False):
     """Everything a fit decision may use, plus where each number came from."""
-    sysinfo, memory, g = system(), ram(), gpu()
+    sysinfo, memory, g = system(), ram(), gpu(refresh)
     fw_ram = firmware_ram()
     notes = list(g["notes"])
     # Only worth saying when the shortfall is big enough to notice (an APU

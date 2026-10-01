@@ -308,7 +308,10 @@ def migrate_from_json_if_needed():
 
 # ---------- In‑memory cache ----------
 _notes_cache = None
-_cache_lock = threading.Lock()
+# RLock: load_notes() holds this while its JSON-import fallback calls
+# upsert_note(), which re-enters load_notes(). A plain Lock deadlocked the
+# process (permanently) whenever the DB was empty and notes.json existed.
+_cache_lock = threading.RLock()
 
 def load_notes():
     """Load notes into cache from SQLite once, then always return the cache."""
@@ -364,6 +367,10 @@ def update_note_links(note_id: str, content: str):
     """Parse [[Title]] and ![[Title]] from content and update note_links table."""
     wiki_targets = set(WIKI_LINK_RE.findall(content))
     embed_targets = set(EMBED_LINK_RE.findall(content))
+    # WIKI_LINK_RE also matches the [[...]] inside ![[...]], so every embed was
+    # being recorded twice - once as 'wiki' and once as 'embed' - duplicating
+    # backlinks and graph edges.
+    wiki_targets -= embed_targets
     
     conn = get_conn()
     conn.execute("DELETE FROM note_links WHERE from_note_id = ?", (note_id,))
@@ -654,7 +661,7 @@ def get_notes():
 
 @notes_bp.route('/api', methods=['POST'])
 def create_note():
-    data = request.get_json()
+    data = request.get_json() or {}
     note_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     content = data.get("content", "")
@@ -675,7 +682,7 @@ def create_note():
 
 @notes_bp.route('/api/<note_id>', methods=['PUT'])
 def update_note(note_id):
-    data = request.get_json()
+    data = request.get_json() or {}
     note = get_note_from_db(note_id)
     if not note:
         return jsonify({"error": "Note not found"}), 404
@@ -790,7 +797,7 @@ def semantic_search_notes():
 # ---------- AI Assistance ----------
 @notes_bp.route('/api/ai_assist', methods=['POST'])
 def ai_assist():
-    data = request.get_json()
+    data = request.get_json() or {}
     note_id = data.get('note_id')
     action = data.get('action')
     provider_name = data.get('provider', 'ollama')
@@ -880,7 +887,7 @@ def clear_all_notes():
 # ---------- Reorder ----------
 @notes_bp.route('/api/reorder', methods=['POST'])
 def reorder_notes():
-    data = request.get_json()
+    data = request.get_json() or {}
     order_map = data.get('order')
     if not order_map or not isinstance(order_map, dict):
         return jsonify({'error': 'Invalid order data'}), 400
@@ -903,7 +910,7 @@ def sync_config():
     if request.method == 'GET':
         return jsonify({"vault_path": get_vault_path()})
     else:
-        data = request.get_json()
+        data = request.get_json() or {}
         path = data.get('vault_path')
         if not path:
             return jsonify({"error": "vault_path required"}), 400
@@ -912,7 +919,7 @@ def sync_config():
 
 @notes_bp.route('/api/sync_obsidian', methods=['POST'])
 def sync_obsidian():
-    data = request.get_json()
+    data = request.get_json() or {}
     direction = data.get('direction')  # 'import' or 'export'
     vault_path = data.get('vault_path')
     # The vault path is free-form, so record WHICH directory a sync was allowed to

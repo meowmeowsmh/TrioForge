@@ -192,7 +192,7 @@ def archive_note(note):
                 note.get("content", ""),
                 note.get("created"),
                 note.get("last_modified"),
-                note.get("order", 0),
+                note.get("order", note.get("order_idx", 0)),
                 1 if note.get("pinned") else 0,
                 note.get("color", "default"),
                 tags,

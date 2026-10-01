@@ -480,7 +480,7 @@ def semantic_search_pins():
 # ---------- API: AI assistance ----------
 @corkboard_bp.route('/api/ai_assist', methods=['POST'])
 def ai_assist():
-    data = request.get_json()
+    data = request.get_json() or {}
     pin_id = data.get('pin_id')
     action = data.get('action')
     provider_name = data.get('provider', 'ollama')
@@ -632,7 +632,7 @@ def get_ai_history(pin_id):
 # ---------- API: pins ----------
 @corkboard_bp.route('/api/pins', methods=['POST'])
 def create_pin():
-    data = request.get_json() or {}
+    data = request.get_json() or {} or {}
     pin_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     vals = upsert_pin(pin_id, data, now)
@@ -641,7 +641,7 @@ def create_pin():
 
 @corkboard_bp.route('/api/pins/<pin_id>', methods=['PUT'])
 def update_pin(pin_id):
-    data = request.get_json() or {}
+    data = request.get_json() or {} or {}
     existing = get_pin(pin_id)
     if not existing:
         return jsonify({"error": "Pin not found"}), 404
@@ -706,7 +706,7 @@ def _normalize_timestamp(value, fallback):
 # Re-importing the same conversation_id replaces its previous pins/threads (idempotent).
 @corkboard_bp.route('/api/import_conversation_tree', methods=['POST'])
 def import_conversation_tree():
-    data = request.get_json() or {}
+    data = request.get_json() or {} or {}
     conversation_id = data.get('conversation_id')
     nodes = data.get('nodes')
     if not conversation_id or not isinstance(nodes, list) or not nodes:
@@ -761,7 +761,7 @@ def import_conversation_tree():
 # ---------- API: links (Red Thread = color: 'red') ----------
 @corkboard_bp.route('/api/links', methods=['POST'])
 def toggle_link():
-    data = request.get_json() or {}
+    data = request.get_json() or {} or {}
     a, b = data.get('from'), data.get('to')
     new_color = data.get('color', 'black')
     if not a or not b or a == b:
@@ -779,7 +779,7 @@ def toggle_link():
 
 @corkboard_bp.route('/api/links/color', methods=['PUT'])
 def change_link_color():
-    data = request.get_json() or {}
+    data = request.get_json() or {} or {}
     a, b, new_color = data.get('from'), data.get('to'), data.get('color', 'red')
     if not a or not b:
         return jsonify({"error": "Missing from/to"}), 400

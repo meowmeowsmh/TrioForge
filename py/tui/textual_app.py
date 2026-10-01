@@ -859,6 +859,19 @@ class ForgeApp(App):
             f"and [/][bold {T.PURPLE}]ctrl+l[/][{T.GREY}] to switch model.[/]",
             classes="role"))
 
+    def _ensure_card(self, state: dict):
+        """The turn's answer card, creating it when the turn has none yet.
+
+        Team mode deliberately creates no card up front (the team log goes
+        first), so an error path doing state["card"].update(...) dereferenced
+        None and replaced the real message with "unexpected error".
+        """
+        card = state.get("card")
+        if card is None:
+            card = self._add("", "bot")
+            state["card"] = card
+        return card
+
     def _stick_chat_bottom(self, force: bool = False) -> None:
         """Scroll the transcript to the bottom - but only when already there.
 
@@ -1179,7 +1192,8 @@ class ForgeApp(App):
                 self._refresh_activity()
                 err = await _aio.to_thread(self._ensure_local_server)
                 if err:
-                    await state["card"].update(f"**request failed** — {err}")
+                    await self._ensure_card(state).update(
+                        f"**request failed** — {err}")
                     self._set_mood("sad")
                     return
                 self._activity = ""
@@ -1368,7 +1382,8 @@ class ForgeApp(App):
                                          payload.get("denied", False))
             self._set_mood("thinking")
         elif kind == "error":
-            await state["card"].update(f"**request failed** — {payload['message']}")
+            await self._ensure_card(state).update(
+                f"**request failed** — {payload['message']}")
             self._set_mood("sad")
         state["tokens"] = len(state["text"]) // 4
         self._stick_chat_bottom()

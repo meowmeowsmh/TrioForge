@@ -281,6 +281,7 @@ def audio_to_wav_b64(audio_b64, name="audio", max_seconds=AUDIO_MAX_SECONDS, pat
     base64 WITHOUT a data-URI prefix (llama.cpp's ``input_audio.data`` wants it raw),
     or None if ffmpeg is missing / conversion fails. Never raises.
     """
+    _clear_error()      # or a stale failure from the previous attempt is reported
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
         return _fail("No ffmpeg found - install it from the Services panel "

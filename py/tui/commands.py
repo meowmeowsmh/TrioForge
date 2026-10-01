@@ -92,7 +92,7 @@ def _models(ctx, arg: str) -> None:
         rows = localmodels.rows()
         if rows:
             render.table(f"offline models on disk ({len(rows)})",
-                         [(n, d + ("  ◀ current" if n in (ctx.session.model or "") else ""))
+                         [(n, d + ("  ◀ current" if n == ctx.session.model else ""))
                           for n, d in rows])
             render.info("load one with /start <name>")
             return

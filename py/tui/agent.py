@@ -152,7 +152,7 @@ class Agent:
             # reasoning on the next round.
             messages.append(self._assistant_message(content, calls))
 
-            for name, args in calls:
+            for _i, (name, args) in enumerate(calls):
                 summary = TL.TOOLS[name].summary(args) if name in TL.TOOLS else name
                 on_event("tool_start", {"name": name, "args": args,
                                         "summary": summary})
@@ -165,7 +165,10 @@ class Agent:
                     on_event("tool_end", {"name": name, "output": output})
                 result.steps.append(Step(name, args, output,
                                          approved="denied" not in output.lower()))
-                messages.append(self._tool_message(name, output, len(messages)))
+                # The id must match _assistant_message's f"call_{i}":
+                # len(messages) drifts as the loop appends, so hosted APIs
+                # rejected every tool result for an unknown tool_call_id.
+                messages.append(self._tool_message(name, output, _i))
 
             if self.persist:
                 self.persist()

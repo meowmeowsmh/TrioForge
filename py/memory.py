@@ -484,16 +484,19 @@ class MemoryEngine:
 
     def entries(self, prefix: str = "", limit: int = 40) -> list[tuple[str, str]]:
         """``(key, value)`` rows for the UI, newest first, with a hard limit."""
-        keys = self.keys(prefix)[: max(1, int(limit))]
+        keys = self.keys(prefix)
         if not keys:
             return []
         with self._lock:
             self._db()
             marks = ",".join("?" for _ in keys)
+            # LIMIT in SQL: slicing the (alphabetically sorted) keys first took
+            # the first N by NAME and only then sorted by time, so "newest first"
+            # returned an arbitrary alphabetical slice. Limit after ORDER BY.
             rows = self._conn.execute(
                 f"SELECT memory_key, context_data FROM ai_harness_memory "
-                f"WHERE memory_key IN ({marks}) ORDER BY updated_at DESC",
-                keys).fetchall()
+                f"WHERE memory_key IN ({marks}) ORDER BY updated_at DESC LIMIT ?",
+                keys + [max(1, int(limit))]).fetchall()
             self.counters["db_reads"] += len(rows)
             return [(str(k), str(v)) for k, v in rows]
 

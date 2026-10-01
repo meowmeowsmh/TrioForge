@@ -312,8 +312,8 @@ class ControlPanel:
             self.log_line("Could not install it: {}".format(exc))
             return False
         if result.returncode != 0:
-            self.log_line("Install failed: " + (result.stdout or "").strip().splitlines()[-1:] and
-                          (result.stdout or "").strip().splitlines()[-1] or "unknown error")
+            lines = (result.stdout or "").strip().splitlines()
+            self.log_line("Install failed: " + (lines[-1] if lines else "unknown error"))
             return False
         self.log_line("Window engine installed.")
         # The panel's own interpreter already tried and failed to import it; the

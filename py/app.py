@@ -935,7 +935,15 @@ def _save_attachment_to_disk_async(b64_data, hint_name=""):
 def _load_attachment_from_disk(fname):
     if not fname:
         return ""
-    path = os.path.join(ATTACHMENTS_DIR, fname)
+    # The name round-trips through the page, so it is caller-controlled: a
+    # crafted "../../etc/passwd" must not become a read of an arbitrary path
+    # (the bytes would come back base64'd in get_messages). Real names are a
+    # uuid4 hex plus an extension - see _save_attachment.
+    safe = os.path.basename(str(fname))
+    if safe != fname or not re.fullmatch(r"[0-9a-fA-F]{32}(\.[A-Za-z0-9]{1,12})?", safe):
+        logger.warning("Refusing to load a suspicious attachment name: %r", fname)
+        return ""
+    path = os.path.join(ATTACHMENTS_DIR, safe)
     try:
         if os.path.getsize(path) > MAX_INLINE_RELOAD_BYTES:
             # Too big to inline back into the page (it would be a huge base64 string
@@ -1753,7 +1761,7 @@ threading.Thread(target=prewarm_vision_cache, daemon=True).start()
 
 @app.route('/check_vision', methods=['POST'])
 def check_vision():
-    data = request.get_json()
+    data = request.get_json() or {}
     provider_name = data.get('provider', 'ollama')
     model = data.get('model', '')
     has_vision = cached_vision_check(provider_name, model)
@@ -1761,7 +1769,7 @@ def check_vision():
 
 @app.route('/providers/models', methods=['POST'])
 def get_provider_models():
-    data = request.get_json()
+    data = request.get_json() or {}
     provider_name = data.get('provider', 'ollama')
     api_key = sanitize_api_key(data.get('api_key', None))
     models = _cached_models(provider_name, api_key or 'None')
@@ -1851,7 +1859,7 @@ def download_hf_model():
 @app.route('/set_model', methods=['POST'])
 def set_model():
     global current_model, _cached_html
-    data = request.get_json()
+    data = request.get_json() or {}
     model = data.get('model')
     if not model:
         return jsonify({'error': 'No model provided'}), 400
@@ -2612,7 +2620,7 @@ def clear_all():
 
 @app.route('/conversations/<cid>/messages/<int:idx>', methods=['PUT'])
 def edit_message(cid, idx):
-    data = request.get_json()
+    data = request.get_json() or {}
     new_text = data.get('text', '').strip()
     if not new_text:
         return jsonify({'error': 'Text cannot be empty'}), 400
@@ -2653,7 +2661,7 @@ def delete_message(cid, idx):
 @app.route('/conversations/<cid>/rename', methods=['PUT'])
 def rename_conversation(cid):
     global _conversations_dirty
-    data = request.get_json()
+    data = request.get_json() or {}
     new_title = data.get('title', '').strip()
     if not new_title:
         return jsonify({'error': 'Title cannot be empty'}), 400
@@ -2669,7 +2677,7 @@ def rename_conversation(cid):
 @app.route('/conversations/reorder', methods=['POST'])
 def reorder_conversations():
     global _conversations_dirty
-    data = request.get_json()
+    data = request.get_json() or {}
     order_map = data.get('order')
     if not order_map or not isinstance(order_map, dict):
         return jsonify({'error': 'Invalid order data'}), 400
@@ -5247,7 +5255,7 @@ def backup_restore_note(note_id):
         "title": note.get("title", "Untitled"),
         "content": note.get("content", ""),
         "created": note.get("created"),
-        "order": note.get("order", 0),
+        "order": note.get("order", note.get("order_idx", 0)),   # archive uses order_idx
         "pinned": note.get("pinned", False),
         "color": note.get("color", "default"),
         "tags": note.get("tags", []),

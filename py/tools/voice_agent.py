@@ -76,7 +76,10 @@ def _find_executable(value):
     if p.is_absolute() or os.path.dirname(value) or os.path.exists(value):
         return _resolve(value)
     env_exe = os.environ.get("LLAMA_SERVER", "").strip()
-    if env_exe and (os.path.isfile(env_exe) or shutil.which(env_exe)):
+    # Only for a llama executable: this resolver runs for every binary, so the
+    # env var used to hand the speech-to-speech program llama-server's path.
+    if env_exe and "llama" in Path(value).name.lower() and (
+            os.path.isfile(env_exe) or shutil.which(env_exe)):
         return env_exe if os.path.isfile(env_exe) else _resolve(shutil.which(env_exe))
     found = shutil.which(value)
     if found:

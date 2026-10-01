@@ -1011,7 +1011,9 @@ def _exe_resource_langs(path: Path, rtype: int):
 
         def on_name(h, t, name, lp):
             if name:
-                ids.append(int(name))
+                # name is a ctypes c_void_p here; int() on it raises, so the
+                # resource ids were never collected and icons never enumerated.
+                ids.append(name.value if hasattr(name, "value") else int(name))
             return True
 
         k32.EnumResourceNamesW(mod, ctypes.c_void_p(rtype), ENUMNAMEPROC(on_name), 0)

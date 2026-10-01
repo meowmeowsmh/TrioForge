@@ -11,6 +11,7 @@
 import os
 import platform
 import shutil
+import sys
 import tarfile
 import urllib.request
 import zipfile
@@ -153,7 +154,10 @@ def install_ffmpeg():
                 zf.extractall(extract_dir)
         elif asset.endswith((".tar.xz", ".tar.gz", ".tgz")):
             with tarfile.open(archive) as tf:
-                tf.extractall(extract_dir, filter="data")
+                if sys.version_info >= (3, 12):
+                    tf.extractall(extract_dir, filter="data")
+                else:
+                    tf.extractall(extract_dir)   # `filter=` is 3.12+
         else:
             return {"ok": False, "path": "", "error": "Unsupported archive: {}".format(asset)}
 
