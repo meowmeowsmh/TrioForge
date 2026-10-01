@@ -55,7 +55,7 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "906f492ccfa7131703240eea274d1f1d6470e9ded9e6356fb27d060f7fe850e6",
-  "py/tui/README.md": "f4c6ebed78fbc946a3aa098329c5f978da9fcee94722a29c6927e8f3ab3c752a",
+  "py/tui/README.md": "f138c11739ed487695c76d352c7f51caaae102e8f2ca727605e82ed5f73fb0a6",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "e257d0cb31152125f288ce1fb6772f29641c584b150afb7c083fbef4f933696d",
@@ -65,11 +65,11 @@
   "py/tui/commands.py": "fb02fc2cfa194cb0c174ee0ec89a8a31088e80f4cc5911741ad5bed3ee2b78ac",
   "py/tui/faces.py": "08647dcc07a83ebd1566657397a7e140adaf2ac628d56469601ddfbd28a019ff",
   "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
-  "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
+  "py/tui/providers.py": "4648cfa4ba4ca2840fc4a256a1eca746d0e6657d3a27db2fbdc890e34032e8ac",
   "py/tui/render.py": "d39747ef2c00b53e870a078089821ddb63cab0344dd9e0dbb911cddd4b086c67",
   "py/tui/router.py": "9650dc529ab3a4d71dd711ab3a55ab4df4247dd07fa3341a444c13be9eacd62a",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "55323b8c869ad00e676bfb0f10110423d53052832198d5bee14d2c9b5598a678",
+  "py/tui/textual_app.py": "f7eff8fb560322c04fabdb7b5f8d64069b058728246c932063e49febcba78b22",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "91a7ae9aadc3958caf44521a488cda1b76dc9969db812aea72e8382f3dc8f549",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -104,6 +104,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T23:48:45",
- "note": "baseline: ctrl+a auto-route (local/cloud router)"
+ "generated": "2026-10-02T00:05:58",
+ "note": "baseline: ctrl+a routing pool picker"
 }

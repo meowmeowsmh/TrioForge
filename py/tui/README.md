@@ -159,17 +159,23 @@ recognise *which* key it is, never enough to use it.
 
 ### Auto-route — local vs cloud, decided for you (`ctrl+a`)
 
-`ctrl+a` reads the prompt you typed and sends it through the router instead of the
-current model. Two facts decide, and no model is asked to choose:
+`ctrl+a` has two jobs:
+
+- **with a prompt typed** — sends that message through the router instead of the
+  current model;
+- **with an empty prompt** — opens the **control panel**, where you scroll and
+  pick *which* models are in the pool (select 2, 5, or as many as you like).
 
 | Check | Result |
 |---|---|
 | cloud API unreachable (offline) | → **local** (llama.cpp), always |
-| task is complex (architecture, math, concurrency…) | → **cloud** (your keyed provider, e.g. DeepSeek) |
+| task is complex (architecture, math, concurrency…) | → **cloud** (a keyed model from your pool) |
 | task is simple (boilerplate, rename, formatting…) | → **local** |
 
-So llama.cpp does the small jobs and your API key guides the big ones — cheap,
-and it keeps working with no internet. Each send prints the verdict, e.g.
+In the panel, `space` or a click toggles a model on/off, `a` turns auto-route
+itself on/off, and `enter` saves (your choices persist). So llama.cpp does the
+small jobs and your API key guides the big ones — cheap, and it keeps working
+with no internet. Each send prints the verdict, e.g.
 `☁ cloud · complex task: architecture` or `💻 local · simple task — local is plenty`.
 
 ```bash

@@ -208,6 +208,20 @@ CollapsibleTitle {{
 }}
 #confirmbuttons {{ height: auto; margin: 1 0 0 0; }}
 #confirmbuttons Button {{ margin: 0 2 0 0; min-width: 12; height: 3; }}
+#routerbox {{
+    align: center middle;
+    background: #16161e;
+    border: round {T.YELLOW};
+    padding: 1 2;
+    width: 72;
+    height: 80%;
+}}
+#routerhead {{ height: 2; }}
+#routerstatus {{ height: 1; margin: 0 0 1 0; }}
+#routerlist {{ height: 1fr; border: round #2f3549; padding: 0 1; }}
+#routerlist > ListItem {{ padding: 0 1; }}
+#routerlist > ListItem.--highlight {{ background: {T.PURPLE}; color: #16161e; }}
+#routerhint {{ height: 1; margin: 1 0 0 0; }}
 
 #inputbox {{
     align: center middle;
@@ -385,7 +399,8 @@ class ForgeApp(App):
         self._started = time.time()
         self._activity = ""       # shown in the sidebar while a turn runs
         self._replies: list[str] = []   # finished answers, newest last (for /copy)
-        self._auto_route = False        # ctrl+a / /auto: route every message
+        self._auto_route = bool(getattr(self.cfg, "route_enabled", False))
+        self._route_pool = list(getattr(self.cfg, "route_pool", []) or [])
         self._tool_cards: dict = {}
         self._active = None
         self._spinner_i = 0
@@ -825,10 +840,10 @@ class ForgeApp(App):
 
     # ---------------------------------------------------------------- routing
     def _cloud_target(self) -> tuple[str, str, str]:
-        """The cloud endpoint complex tasks go to: the first keyed provider.
+        """The default cloud endpoint: the first keyed provider, or deepseek.
 
-        Preference order is the common paid ones; any other non-local provider
-        with a base_url is a fallback, so routing never hard-codes one name.
+        Used only when the routing pool is empty - a chosen cloud model in the
+        pool always wins over this default.
         """
         for name in ("deepseek", "claude", "groq", "gemini", "openrouter",
                      "huggingface"):
@@ -844,6 +859,60 @@ class ForgeApp(App):
                 return name, entry["base_url"], model
         return "deepseek", "https://api.deepseek.com/v1", "deepseek-chat"
 
+    def _route_candidates(self):
+        """Every model auto-route may pick from, as (key, label) pairs.
+
+        Local: each .gguf in models/. Cloud: each provider's models (first three
+        per provider, enough to choose without flooding the list). Keys are
+        ``local:<name>`` or ``<provider>:<model>``.
+        """
+        from . import localmodels as lm
+        out = []
+        for m in lm.available():
+            out.append((f"local:{m.name}", f"💻 {m.name}  · {m.size_gb:.1f} GB"))
+        for name in ("deepseek", "claude", "groq", "gemini", "openrouter",
+                     "huggingface", "ollama"):
+            entry = self.cfg.providers.get(name, {})
+            if not entry.get("base_url"):
+                continue
+            has = "key" if entry.get("api_key") else "no key"
+            for m in (entry.get("models") or [])[:3]:
+                out.append((f"{name}:{m}", f"☁ {name}:{m}  · {has}"))
+        return out
+
+    def _pool_models(self):
+        """Resolve the selected pool into (local_model, cloud provider,url,model)."""
+        local_model, cloud = "", None
+        for key in self._route_pool:
+            if key.startswith("local:"):
+                local_model = local_model or key.split(":", 1)[1]
+            elif ":" in key and cloud is None:
+                provider, _, model = key.partition(":")
+                entry = self.cfg.providers.get(provider, {})
+                if entry.get("base_url"):
+                    cloud = (provider, entry["base_url"], model)
+        return local_model, cloud
+
+    async def _router_panel(self) -> None:
+        """ctrl+a with no prompt: pick models and toggle auto-route."""
+        candidates = self._route_candidates()
+        if not candidates:
+            self._add_plain("no models to route between — download a .gguf or add a key")
+            return
+        result = await self.push_screen_wait(
+            RouterScreen(candidates, self._route_pool, self._auto_route))
+        if result is None:
+            return
+        enabled, selected = result
+        self._auto_route = enabled
+        self._route_pool = selected
+        self.cfg.route_enabled = enabled
+        self.cfg.route_pool = selected
+        providers.save(self.cfg)
+        self._add_plain(f"auto-route {'ON' if enabled else 'OFF'} · "
+                        f"{len(selected)} model(s) in the pool")
+        self._refresh()
+
     def _backend_for(self, provider: str, model: str):
         """Build the backend for an ARBITRARY provider, not just the current one."""
         entry = self.cfg.providers.get(provider, {})
@@ -855,10 +924,19 @@ class ForgeApp(App):
             temperature=getattr(self.args, "temperature", 0.7))
 
     def _route(self, text: str) -> dict:
-        """Decide local vs cloud for ``text`` and point the app at the winner."""
+        """Decide local vs cloud for ``text`` and point the app at the winner.
+
+        The chosen models come from the ctrl+a pool; when nothing is selected the
+        defaults are used (current local model, first keyed cloud provider) so
+        routing still works out of the box.
+        """
         from . import router
+        local_model, cloud = self._pool_models()
         cloud_provider, cloud_url, cloud_model = self._cloud_target()
-        local_model = self.cfg.model if self.cfg.provider == "local" else ""
+        if cloud is not None:
+            cloud_provider, cloud_url, cloud_model = cloud
+        if not local_model and self.cfg.provider == "local":
+            local_model = self.cfg.model
         decision = router.decide(
             text, cloud_provider=cloud_provider, cloud_url=cloud_url,
             cloud_model=cloud_model, local_model=local_model)
@@ -870,17 +948,17 @@ class ForgeApp(App):
             self.backend = self._backend_for(decision["provider"], self.cfg.model)
             self.real_backend = self.backend
         providers.save(self.cfg)
-        # show which engine was picked and why, so the choice is never a mystery
         self._add_plain(router.explain(decision))
         self._refresh()
         return decision
 
     def action_auto_route(self) -> None:
-        """ctrl+a - route the typed message to local or cloud, then send it."""
+        """ctrl+a - route the typed message, or open the pool picker when empty."""
         area = self.query_one("#prompt", PromptArea)
         text = (area.text or "").strip()
         if not text:
-            self._add_plain("ctrl+a routes a typed message — type it first, then ctrl+a")
+            # no prompt: this is the control panel — pick models, toggle on/off
+            self.run_worker(self._router_panel(), exclusive=False)
             return
         area.text = ""
         self.session.add_user(text)
@@ -1722,6 +1800,100 @@ class InputDialog(ModalScreen):
 
     def action_submit(self) -> None:
         self.dismiss(self.query_one("#inputfield", Input).value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class RouterScreen(ModalScreen):
+    """ctrl+a (empty prompt): choose which models auto-route may use.
+
+    ``space`` / click toggles a model's checkbox; ``a`` toggles auto-route itself;
+    ``enter`` saves; ``escape`` cancels. ``push_screen_wait`` resolves to
+    ``(enabled, [selected keys])`` or ``None`` when cancelled.
+    """
+
+    BINDINGS = [
+        ("space", "toggle", "Toggle"),
+        ("enter", "save", "Done"),
+        ("escape", "cancel", "Cancel"),
+        ("a", "toggle_auto", "Auto on/off"),
+    ]
+
+    def __init__(self, candidates, selected, enabled: bool):
+        super().__init__()
+        self._candidates = list(candidates)      # [(key, label)]
+        self._selected = set(selected or [])
+        self._enabled = bool(enabled)
+        self._keys: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="routerbox"):
+            yield Static(f"[bold {T.YELLOW}]auto-route[/]", id="routerhead")
+            yield Static("", id="routerstatus")
+            yield ListView(id="routerlist")
+            yield Static(f"[{T.GREY}]space/click toggle a model · a auto on/off · "
+                         f"enter done · esc cancel[/]", id="routerhint")
+
+    def on_mount(self) -> None:
+        self._rebuild()
+        self.query_one("#routerlist", ListView).focus()
+
+    def _rebuild(self) -> None:
+        lv = self.query_one("#routerlist", ListView)
+        lv.clear()
+        self._keys = []
+        for key, label in self._candidates:
+            mark = "☑" if key in self._selected else "☐"
+            self._keys.append(key)
+            lv.append(ListItem(Label(f"{mark}  {label}")))
+        if self._keys:
+            lv.index = 0
+        self._status()
+
+    def _status(self) -> None:
+        on = self._enabled
+        style = f"bold {T.YELLOW}" if on else T.GREY
+        self.query_one("#routerstatus", Static).update(
+            f"[{style}]auto-route {'ON' if on else 'OFF'}[/] · "
+            f"{len(self._selected)} model(s) selected")
+
+    def _toggle_at(self, idx) -> None:
+        if not (0 <= idx < len(self._keys)):
+            return
+        key = self._keys[idx]
+        if key in self._selected:
+            self._selected.discard(key)
+        else:
+            self._selected.add(key)
+        self._rebuild()
+        self.query_one("#routerlist", ListView).index = idx
+
+    def action_toggle(self) -> None:
+        lv = self.query_one("#routerlist", ListView)
+        self._toggle_at(lv.index if lv.index is not None else 0)
+
+    @on(Click, "#routerlist ListItem")
+    def _on_item_click(self, event: Click) -> None:
+        event.stop()
+        lv = self.query_one("#routerlist", ListView)
+        idx = next((i for i, c in enumerate(lv.children) if c is event.control), None)
+        if idx is not None:
+            self._toggle_at(idx)
+
+    # ListView binds enter to "select", so the focused list eats it before the
+    # screen's enter->save binding can fire. Selecting a row = "done".
+    @on(ListView.Selected, "#routerlist")
+    def _on_selected(self, event: ListView.Selected) -> None:
+        event.stop()
+        self.action_save()
+
+    def action_toggle_auto(self) -> None:
+        self._enabled = not self._enabled
+        self._status()
+
+    def action_save(self) -> None:
+        self.dismiss((self._enabled, sorted(self._selected)))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
