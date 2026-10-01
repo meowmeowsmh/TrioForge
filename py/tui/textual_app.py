@@ -116,6 +116,13 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
     color: {T.GREY};
 }}
 
+/* 1fr, not the default auto. The panels are taller than the pane on a short
+   terminal, and with auto height #sidebody grew past the bottom of #side and
+   pushed the mood face and the activity spinner out of the viewport with it -
+   the face would simply not be drawn. Taking the leftover space keeps those two
+   rows alive; the panels clip instead, which is the cheaper thing to lose. */
+#sidebody {{ height: 1fr; }}
+
 /* width: 1fr (not auto) so text WRAPS inside the pane instead of
    growing past it and getting clipped. */
 .msg {{ margin: 1 0 0 0; padding: 0 1; width: 1fr; }}

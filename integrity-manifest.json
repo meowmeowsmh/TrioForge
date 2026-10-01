@@ -68,7 +68,7 @@
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
   "py/tui/render.py": "4e0adce59caf7296d26cf8591b5321a02340f5bfe0682c9d29a8eaf72f4ee97d",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "b9a2864b034d3ba7657ff77d88d2e04e845cbafc835cd4aa0bf1869a792aefdc",
+  "py/tui/textual_app.py": "4cf68e02cbd5b4c45eaba4c7add54a4be38ea6379eb00938ca4e4cfa2c6e8bfe",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "91a7ae9aadc3958caf44521a488cda1b76dc9969db812aea72e8382f3dc8f549",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -103,6 +103,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T15:44:47",
- "note": "memory vault: DuckDB + Bloom gate, tool + /memory"
+ "generated": "2026-10-01T20:53:11",
+ "note": "forge screenshot in README + sidebar face clipping fix"
 }

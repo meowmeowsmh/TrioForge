@@ -143,7 +143,9 @@ llama.cpp loads a text `.gguf`; vision/video models also need a **projector** (`
 
 ## ⌨️ The terminal client — `forge`
 
-A full-screen terminal chat (Crush-style) that shares TrioForge's models and keys, plus a coding agent with file tools (`ls`, `view`, `write`, `edit`, `bash`, `grep`, `glob`, `todos`), each drawn as its own card.
+A full-screen terminal chat (Crush-style) that shares TrioForge's models and keys, plus a coding agent with file tools (`ls`, `view`, `write`, `edit`, `bash`, `grep`, `glob`, `todos`, `memory`), each drawn as its own card.
+
+![The forge terminal client: a user message, a tool-call card and an answer, with a sidebar showing the machine, the offline models and the bot's mood face](forge.png)
 
 ```bash
 ./install.sh                    # Apple/Linux: links forge + trioforge onto your PATH
@@ -185,6 +187,16 @@ print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
 | `tab` / `ctrl+n` / `ctrl+q` | focus chat / new session / quit |
 
 Shift+Enter can't work — a terminal sends the same byte as Enter — so `ctrl+j` is the newline key. Full details in [`py/tui/README.md`](py/tui/README.md).
+
+**It remembers things between sessions.** `/memory` keeps durable facts in a local DuckDB vault with a Bloom filter gate in front of it, so a key that is definitely absent is answered from RAM without touching the disk:
+
+```bash
+/memory set my_port = 8080                 # store a fact
+/memory recall what was my port again?     # sentence in, matching facts out
+/memory                                    # keys, gate stats, recent entries
+```
+
+The agent gets the same thing as a tool, so "remember my llama port is 8080" works in plain English. Nothing leaves your machine, and the vault is `sqlite_data/memory.duckdb`.
 
 ---
 
