@@ -131,6 +131,18 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
 .role {{ color: {T.GREY}; }}
 .thinking {{ color: {T.GREY}; }}
 
+/* Textual's default title paints the block cursor on :focus, so ONE click on
+   "Thinking… (311 chars)" left a solid #0178D4 block there permanently - the
+   click focuses the title and nothing ever clears it. The title must stay
+   focusable (enter toggles it from the keyboard), so focus is shown with colour
+   and weight instead of a filled bar, and neither state paints a background. */
+CollapsibleTitle {{
+    color: {T.GREY};
+    text-style: none;
+    &:hover {{ color: {T.WHITE}; background: transparent; }}
+    &:focus {{ color: {T.CYAN}; text-style: bold; background: transparent; }}
+}}
+
 /* The input keeps the SAME border when unfocused: a focus-coloured border made
    the line appear to break whenever focus moved with tab. Focus is shown by the
    block cursor instead, which does not disturb the frame. */

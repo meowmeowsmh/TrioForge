@@ -68,7 +68,7 @@
   "py/tui/providers.py": "9dd88c641b9e02b331f11fe047812c490e59514cbba5a6d64885b6e16580071e",
   "py/tui/render.py": "d39747ef2c00b53e870a078089821ddb63cab0344dd9e0dbb911cddd4b086c67",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "461bb9dd64e0bf9130b56b73a6349bd9f5c504585b446bf2984f8ecb70fb7fed",
+  "py/tui/textual_app.py": "8e2d651ab412a279481b884f48d0d0c9387d20635479313a1c0c51065e92775b",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "91a7ae9aadc3958caf44521a488cda1b76dc9969db812aea72e8382f3dc8f549",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -103,6 +103,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T21:33:05",
- "note": "load plans a GPU+CPU split; stop() kills by port"
+ "generated": "2026-10-01T21:43:25",
+ "note": "thinking title no longer keeps the focus block"
 }
