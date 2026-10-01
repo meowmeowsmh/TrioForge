@@ -341,6 +341,18 @@ class PromptArea(TextArea):
         def control(self) -> "PromptArea":
             return self.area
 
+    class ScrollRequested(Message):
+        """Posted on PageUp/PageDown - scroll the TRANSCRIPT, not the cursor."""
+
+        def __init__(self, area: "PromptArea", direction: int) -> None:
+            self.area = area
+            self.direction = direction
+            super().__init__()
+
+        @property
+        def control(self) -> "PromptArea":
+            return self.area
+
     async def _on_key(self, event) -> None:
         if event.key == "enter":
             event.stop()
@@ -360,6 +372,15 @@ class PromptArea(TextArea):
             event.stop()
             event.prevent_default()
             self.post_message(self.RouteRequested(self))
+            return
+        # TextArea binds PageUp/PageDown to move the CURSOR a page - useless in a
+        # three-line prompt box, and it meant the transcript could not be
+        # scrolled at all while typing. Send them to the chat instead.
+        if event.key in ("pageup", "pagedown"):
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.ScrollRequested(
+                self, -1 if event.key == "pageup" else 1))
             return
         # ctrl+j is the reliable newline. The other two are best-effort: they
         # only ever arrive if a terminal opts into an extended keyboard mode.
@@ -388,6 +409,8 @@ class ForgeApp(App):
         ("ctrl+c", "quit", "Quit/copy"),
         ("ctrl+y", "copy_reply", "Copy answer"),
         ("ctrl+a", "auto_route", "Auto-route"),
+        ("pageup", "scroll_chat(-1)", "Scroll up"),
+        ("pagedown", "scroll_chat(1)", "Scroll down"),
         ("ctrl+l", "pick_model", "Model"),
         ("ctrl+n", "new_session", "New"),
         ("ctrl+p", "palette", "Commands"),
@@ -858,6 +881,17 @@ class ForgeApp(App):
         event.stop()
         self.action_auto_route()
 
+    @on(PromptArea.ScrollRequested, "#prompt")
+    def _on_scroll_requested(self, event: PromptArea.ScrollRequested) -> None:
+        event.stop()
+        self.action_scroll_chat(event.direction)
+
+    def action_scroll_chat(self, direction) -> None:
+        """Scroll the transcript by a screenful (PageUp/PageDown)."""
+        chat = self.query_one("#chat", VerticalScroll)
+        step = max(1, chat.size.height - 4)
+        chat.scroll_relative(y=int(direction) * step, animate=False)
+
     # ---------------------------------------------------------------- routing
     def _cloud_target(self) -> tuple[str, str, str]:
         """The default cloud endpoint: the first keyed provider, or deepseek.
@@ -1087,7 +1121,10 @@ class ForgeApp(App):
         self._busy = True
         self._set_mood("thinking")
         started = time.time()
-        card = self._add("", "bot")
+        team = self._team_mode and self._is_local()
+        # In team mode the answer card is created at the END: mounting it first
+        # put the reply above the junior/senior steps that produced it.
+        card = None if team else self._add("", "bot")
         state = {"text": "", "reasoning": "", "card": card,
                  "think": None, "think_body": None,
                  "started": started, "tokens": 0}
@@ -1119,14 +1156,14 @@ class ForgeApp(App):
             # Team mode: the junior (local) does the work and the senior (cloud)
             # guides it, corrects it, and takes over if it is lost. Only makes
             # sense on the local side - a cloud turn is already the senior.
-            if self._team_mode and self._is_local():
+            if team:
                 answer = await self._team_turn(text)
                 if answer:
                     self.session.add_assistant(answer)
                     self._replies.append(answer)
-                    await state["card"].update(
+                    self._add(
                         f"{answer}\n\n---\n_team · junior + senior · "
-                        f"{time.time() - started:.1f}s_")
+                        f"{time.time() - started:.1f}s_", "bot")
                     self._set_mood("happy")
                     return
 

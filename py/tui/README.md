@@ -157,6 +157,10 @@ recognise *which* key it is, never enough to use it.
 `ctrl+p` commands · `ctrl+l` model · `ctrl+n` new session · `tab` focus chat ·
 `esc` focus prompt · `ctrl+y` copy the last answer · `ctrl+a` auto-route · `ctrl+q` quit
 
+`PageUp`/`PageDown` scroll the **transcript** — the prompt box keeps keyboard
+focus, and `TextArea` binds those keys to cursor-paging, so before this the
+transcript could not be scrolled at all while typing.
+
 ### Auto-route — local vs cloud, decided for you (`ctrl+a`)
 
 `ctrl+a` has two jobs:
@@ -204,8 +208,10 @@ junior (local, llama.cpp) does the work
 
 - **Both know the answer** → the senior guides the junior to make it better,
   then ships the improved version.
-- **The junior is stuck** (no answer, or still wrong after two attempts) → the
-  senior takes over and does the job itself.
+- **The junior is stuck** → the senior takes over and does the job itself. A reply
+  that only asks you for clarification, greets, or restates the task counts as
+  *stuck*, not as work: the senior is told never to approve one, and to run the
+  tools itself instead.
 - The exchange is visible in the transcript (`🧑‍🏫 senior → junior: …`), and the
   junior's tool calls are drawn as usual, so you can watch them work as a pair.
 - It only applies to a **local** turn — a cloud turn is already the senior.

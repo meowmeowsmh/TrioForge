@@ -55,7 +55,7 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "906f492ccfa7131703240eea274d1f1d6470e9ded9e6356fb27d060f7fe850e6",
-  "py/tui/README.md": "1e5697913398667813b3b883df9be62400a69a34d5a05ffbd29e10f53baa0df3",
+  "py/tui/README.md": "838ebc334d88ec7571914c38efa4bb890ab07ab40f9a5f47962aec7996e28de7",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "e257d0cb31152125f288ce1fb6772f29641c584b150afb7c083fbef4f933696d",
@@ -69,8 +69,8 @@
   "py/tui/render.py": "d39747ef2c00b53e870a078089821ddb63cab0344dd9e0dbb911cddd4b086c67",
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/team.py": "d2d934ce45c47346732f0cccbd4b18fdbd9d157137ea431f2e48156b0e25af2c",
-  "py/tui/textual_app.py": "75007a8be3da8db8b1b4b85d4d67e2f72450e8823b691bd190710b642e1cd533",
+  "py/tui/team.py": "fded0e603eae576fe73991c1d9895a63926ef16f046cdcc255e573924a1bdd9a",
+  "py/tui/textual_app.py": "89b9b892d2264977b9e9fd028f3a470d2222144e61bcf0fd1ed1d525d7f6c950",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "e6f6fa0147615c393b0bd3f45d685893ea1380b9ecea1b6b3405a065306c5289",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T00:39:28",
- "note": "baseline: team mode (senior/junior pair)"
+ "generated": "2026-10-02T00:51:31",
+ "note": "baseline: scroll keys, team ordering, stricter senior"
 }
