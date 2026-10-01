@@ -932,8 +932,11 @@ class ForgeApp(App):
         """
         from . import router
         engine = "local" if self._is_local() else "cloud"
-        # the model being routed TO, not a stale session value
+        # The model being routed TO, not a stale session value - and shortened,
+        # because a local model is a full .gguf path.
         model = self.cfg.model or self._short_model()
+        if model.endswith(".gguf"):
+            model = model.rsplit("/", 1)[-1][:-5]
         entry = self.cfg.providers.get(self.cfg.provider, {})
         url = entry.get("base_url", "")
 

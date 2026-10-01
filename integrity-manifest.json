@@ -69,7 +69,7 @@
   "py/tui/render.py": "d39747ef2c00b53e870a078089821ddb63cab0344dd9e0dbb911cddd4b086c67",
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/textual_app.py": "953622173a3515846bc20b87c81cdaa28e8e602255b3f08dafa15d01b4411f4a",
+  "py/tui/textual_app.py": "d0d34f98454697abc685e8bf44329d6c57d1cb523b3f6718fdc2cb8ceb23b01c",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "91a7ae9aadc3958caf44521a488cda1b76dc9969db812aea72e8382f3dc8f549",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -104,6 +104,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T00:20:31",
- "note": "baseline: local route resolves to a real path"
+ "generated": "2026-10-02T00:21:18",
+ "note": "baseline: shortened status line"
 }
