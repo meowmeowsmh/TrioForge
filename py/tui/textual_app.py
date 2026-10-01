@@ -137,6 +137,10 @@ Screen {{ background: {T.BG}; color: {T.FG}; }}
 .msg {{ margin: 1 0 0 0; padding: 0 1; width: 1fr; }}
 .from-user {{ border: round {T.CYAN}; color: {T.WHITE}; }}
 .from-bot  {{ border: round {T.GREEN}; }}
+/* Meta lines (routing, status, team steps) are commentary, not a model's
+   answer - no green border, just dim grey. The old default put a green rounded
+   border on every one of them and stacked them into a noisy column. */
+.from-meta {{ color: {T.GREY}; border: none; margin: 0; }}
 .role {{ color: {T.GREY}; }}
 .thinking {{ color: {T.GREY}; }}
 
@@ -855,11 +859,37 @@ class ForgeApp(App):
             f"and [/][bold {T.PURPLE}]ctrl+l[/][{T.GREY}] to switch model.[/]",
             classes="role"))
 
-    def _add(self, text: str, role: str) -> Markdown:
+    def _stick_chat_bottom(self, force: bool = False) -> None:
+        """Scroll the transcript to the bottom - but only when already there.
+
+        During a turn (especially /team) cards mount rapidly; unconditional
+        scroll_end made the view snap to the bottom on every one, so you could
+        not scroll up to read the earlier steps. Only stick when the user is
+        already near the bottom, unless force=True (their own send, the final
+        answer).
+        """
+        chat = self.query_one("#chat", VerticalScroll)
+        if force:
+            chat.scroll_end(animate=False)
+            return
+        vs = getattr(chat, "virtual_size", None)
+        max_y = max(0, vs.height - chat.size.height) if vs is not None else 0
+        if chat.scroll_offset.y >= max_y - 2:
+            chat.scroll_end(animate=False)
+
+    def _add(self, text: str, role: str, *, force_scroll: bool = False) -> Markdown:
         chat = self.query_one("#chat", VerticalScroll)
         card = Markdown(text or "…", classes=f"msg from-{role}")
         chat.mount(card)
-        chat.scroll_end(animate=False)
+        self._stick_chat_bottom(force=force_scroll)
+        return card
+
+    def _add_meta(self, content: str) -> Static:
+        """A dim, borderless commentary line (routing, status, team steps)."""
+        chat = self.query_one("#chat", VerticalScroll)
+        card = Static(content, classes="msg from-meta")
+        chat.mount(card)
+        self._stick_chat_bottom()
         return card
 
     def _add_plain(self, content, role: str = "bot") -> Static:
@@ -868,7 +898,7 @@ class ForgeApp(App):
         chat = self.query_one("#chat", VerticalScroll)
         card = Static(content, classes=f"msg from-{role}")
         chat.mount(card)
-        chat.scroll_end(animate=False)
+        self._stick_chat_bottom()
         return card
 
     # ------------------------------------------------------------------ events
@@ -952,7 +982,7 @@ class ForgeApp(App):
         """ctrl+a with no prompt: pick models and toggle auto-route."""
         candidates = self._route_candidates()
         if not candidates:
-            self._add_plain("no models to route between — download a .gguf or add a key")
+            self._add_meta("no models to route between — download a .gguf or add a key")
             return
         result = await self.push_screen_wait(
             RouterScreen(candidates, self._route_pool, self._auto_route))
@@ -964,7 +994,7 @@ class ForgeApp(App):
         self.cfg.route_enabled = enabled
         self.cfg.route_pool = selected
         providers.save(self.cfg)
-        self._add_plain(f"auto-route {'ON' if enabled else 'OFF'} · "
+        self._add_meta(f"auto-route {'ON' if enabled else 'OFF'} · "
                         f"{len(selected)} model(s) in the pool")
         self._refresh()
 
@@ -1045,7 +1075,7 @@ class ForgeApp(App):
             self.backend = self._backend_for(decision["provider"], self.cfg.model)
             self.real_backend = self.backend
         providers.save(self.cfg)
-        self._add_plain(router.explain(decision))
+        self._add_meta(router.explain(decision))
         self._refresh()
         return decision
 
@@ -1059,9 +1089,9 @@ class ForgeApp(App):
             return
         area.text = ""
         self.session.add_user(text)
-        self._add(text, "user")
+        self._add(text, "user", force_scroll=True)
         self._route(text)
-        self._add_plain(self._target_status())
+        self._add_meta(self._target_status())
         self._ask(text)
 
     @on(PromptArea.Submitted, "#prompt")
@@ -1075,12 +1105,12 @@ class ForgeApp(App):
             self._refresh()
             return
         self.session.add_user(text)
-        self._add(text, "user")
+        self._add(text, "user", force_scroll=True)
         if self._auto_route:
             self._route(text)      # /auto: decide local vs cloud on every send
         # Enter is the moment to say where this actually went, and whether that
         # destination is usable right now.
-        self._add_plain(self._target_status())
+        self._add_meta(self._target_status())
         self._ask(text)
 
     # ------------------------------------------------------------------ copy
@@ -1098,13 +1128,13 @@ class ForgeApp(App):
     def _copy_reply(self, which: int = 1) -> None:
         """Copy an answer to the clipboard: 1 = the last one, 2 = the one before."""
         if not self._replies:
-            self._add_plain("nothing to copy yet — ask something first")
+            self._add_meta("nothing to copy yet — ask something first")
             return
         which = max(1, min(which, len(self._replies)))
         text = self._replies[-which]
         self._copy_text(text)
         turn = "last answer" if which == 1 else f"answer {which} back"
-        self._add_plain(f"copied the {turn} — {len(text)} characters, "
+        self._add_meta(f"copied the {turn} — {len(text)} characters, "
                         f"{text.count(chr(10)) + 1} line(s) — now paste with ctrl+v")
 
     def action_copy_reply(self) -> None:
@@ -1158,13 +1188,13 @@ class ForgeApp(App):
             # guides it, corrects it, and takes over if it is lost. Only makes
             # sense on the local side - a cloud turn is already the senior.
             if team:
-                answer = await self._team_turn(text)
+                answer = await self._team_turn(text, state)
                 if answer:
                     self.session.add_assistant(answer)
                     self._replies.append(answer)
                     self._add(
                         f"{answer}\n\n---\n_team · junior + senior · "
-                        f"{time.time() - started:.1f}s_", "bot")
+                        f"{time.time() - started:.1f}s_", "bot", force_scroll=True)
                     self._set_mood("happy")
                     return
 
@@ -1200,7 +1230,7 @@ class ForgeApp(App):
             self.query_one("#prompt", PromptArea).focus()
 
     # ------------------------------------------------------------------- team
-    async def _call_text(self, backend, messages, limit: int = 700) -> str:
+    async def _call_text(self, backend, messages, state, limit: int = 700) -> str:
         """One plain, tool-free model call. Returns '' when it cannot answer."""
         import asyncio
 
@@ -1214,9 +1244,11 @@ class ForgeApp(App):
             return "".join(parts).strip()
 
         try:
-            return await asyncio.to_thread(work)
+            out = await asyncio.to_thread(work)
         except Exception:  # noqa: BLE001 - an unreachable senior must not stop the work
             return ""
+        state["tokens"] = state.get("tokens", 0) + max(0, len(out) // 4)
+        return out
 
     def _team_event(self, kind: str, payload: dict) -> None:
         """Show the junior's tool calls, so you can see it actually working.
@@ -1239,7 +1271,7 @@ class ForgeApp(App):
             ui(self._finish_tool_card, payload["name"], payload["output"],
                payload.get("denied", False))
 
-    async def _agent_text(self, backend, task: str) -> str:
+    async def _agent_text(self, backend, task: str, state) -> str:
         """A full agent turn (tools included) against ``backend``, by its text.
 
         Runs on a throwaway session: a junior's half-finished attempt must not
@@ -1251,9 +1283,11 @@ class ForgeApp(App):
                        system=self.session.system)
         sess.add_user(task)
         turn = await self._run_agent(self._team_event, backend=backend, session=sess)
-        return (turn.text or "").strip()
+        text = (turn.text or "").strip()
+        state["tokens"] = state.get("tokens", 0) + max(0, len(text) // 4)
+        return text
 
-    async def _team_turn(self, text: str) -> str:
+    async def _team_turn(self, text: str, state) -> str:
         """Junior (local) does the work, senior (cloud) guides it.
 
         The loop: junior attempts -> senior reviews -> junior revises with the
@@ -1282,26 +1316,26 @@ class ForgeApp(App):
         feedback, answer = "", ""
         for rnd in range(1, team.MAX_ROUNDS + 1):
             asking = team.junior_task(text, feedback, rnd)
-            self._add_plain(f"👥 junior **{who(junior)}** · attempt {rnd}")
-            answer = await self._agent_text(junior, asking)
+            self._add_meta(f"👥 junior **{who(junior)}** · attempt {rnd}")
+            answer = await self._agent_text(junior, asking, state)
             if not answer:
-                self._add_plain(f"🧑‍🏫 junior had no idea — **{who(senior)}** takes control")
-                return await self._agent_text(senior, text) or answer
+                self._add_meta(f"🧑‍🏫 junior had no idea — **{who(senior)}** takes control")
+                return await self._agent_text(senior, text, state) or answer
 
-            self._add_plain(f"🧑‍🏫 senior **{who(senior)}** is reviewing…")
-            reply = await self._call_text(senior, team.review_messages(text, answer))
+            self._add_meta(f"🧑‍🏫 senior **{who(senior)}** is reviewing…")
+            reply = await self._call_text(senior, team.review_messages(text, answer), state)
             kind, detail = team.verdict(reply)
             if kind == "approve":
-                self._add_plain("✅ senior approved the junior's work")
+                self._add_meta("✅ senior approved the junior's work")
                 return answer
             if kind == "takeover":
-                self._add_plain("🧑‍🏫 senior takes control")
-                return await self._agent_text(senior, text) or answer
+                self._add_meta("🧑‍🏫 senior takes control")
+                return await self._agent_text(senior, text, state) or answer
             feedback = detail
-            self._add_plain("🧑‍🏫 senior → junior: " + " ".join(detail.split())[:200])
+            self._add_meta("🧑‍🏫 senior → junior: " + " ".join(detail.split())[:200])
 
-        self._add_plain("🧑‍🏫 junior out of attempts — senior takes control")
-        return await self._agent_text(senior, text) or answer
+        self._add_meta("🧑‍🏫 junior out of attempts — senior takes control")
+        return await self._agent_text(senior, text, state) or answer
 
     async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
         """Apply one agent event on the app thread (see ``_ask``)."""
@@ -1337,7 +1371,7 @@ class ForgeApp(App):
             await state["card"].update(f"**request failed** — {payload['message']}")
             self._set_mood("sad")
         state["tokens"] = len(state["text"]) // 4
-        self.query_one("#chat", VerticalScroll).scroll_end(animate=False)
+        self._stick_chat_bottom()
         self._refresh_activity()
 
     async def _run_agent(self, on_event, backend=None, session=None):
@@ -1406,7 +1440,7 @@ class ForgeApp(App):
         summary = _summarise(name, args)
         card = Markdown(f"{tool} **{name}**  `{summary}`", classes="msg from-tool")
         chat.mount(card)
-        chat.scroll_end(animate=False)
+        self._stick_chat_bottom()
         self._tool_cards[name] = card
 
     async def _finish_tool_card(self, name: str, output: str, denied: bool) -> None:
@@ -1505,7 +1539,7 @@ class ForgeApp(App):
             if arg.isdigit():
                 n = int(arg)
             elif arg and arg.lower() not in ("last", "answer"):
-                self._add_plain("usage: /copy [how many answers back, e.g. /copy 2]")
+                self._add_meta("usage: /copy [how many answers back, e.g. /copy 2]")
                 return
             self._copy_reply(n)
             return
@@ -1513,7 +1547,7 @@ class ForgeApp(App):
             self._team_mode = not self._team_mode
             self.cfg.team_enabled = self._team_mode
             providers.save(self.cfg)
-            self._add_plain(
+            self._add_meta(
                 "team mode " + ("ON — the junior (local) does the work and the "
                                 "senior (cloud) guides, corrects and takes over"
                                 if self._team_mode else "OFF — one model per message"))
@@ -1521,14 +1555,14 @@ class ForgeApp(App):
             return
         if name == "/auto":
             self._auto_route = not self._auto_route
-            self._add_plain("auto-route " + ("ON — every message is sent to "
+            self._add_meta("auto-route " + ("ON — every message is sent to "
                              "local or cloud automatically" if self._auto_route
                              else "OFF"))
             self._refresh()
             return
         if name == "/route":
             if not arg:
-                self._add_plain("usage: /route <your prompt>")
+                self._add_meta("usage: /route <your prompt>")
                 return
             self.session.add_user(arg)
             self._add(arg, "user")
