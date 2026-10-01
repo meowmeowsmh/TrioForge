@@ -33,6 +33,7 @@ from __future__ import annotations
 import os
 import random
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -1182,7 +1183,13 @@ class ForgeApp(App):
                     f"_finished after {len(turn.steps)} tool call(s), no summary_")
             self._set_mood("happy")
         except Exception as exc:  # noqa: BLE001
-            await state["card"].update(f"**unexpected error** — {exc}")
+            # In team mode no card was created up front, so one may be needed here
+            # - otherwise the handler itself raised and hid the real failure.
+            card = state.get("card")
+            if card is None:
+                state["card"] = self._add(f"**unexpected error** — {exc}", "bot")
+            else:
+                await card.update(f"**unexpected error** — {exc}")
             self._set_mood("sad")
         finally:
             self._busy = False
@@ -1212,12 +1219,25 @@ class ForgeApp(App):
             return ""
 
     def _team_event(self, kind: str, payload: dict) -> None:
-        """Show the junior's tool calls, so you can see it actually working."""
+        """Show the junior's tool calls, so you can see it actually working.
+
+        Called from the agent's WORKER THREAD (``turn()`` runs in an executor),
+        so every widget call has to be handed to the app thread - mounting from
+        here raised "no running event loop" and killed the turn.
+        """
+        def ui(fn, *args) -> None:
+            # Already on the app thread (a direct call, or a future sync path)?
+            # Then call it; call_from_thread refuses same-thread calls.
+            if getattr(self, "_thread_id", None) == threading.get_ident():
+                fn(*args)
+            else:
+                self.call_from_thread(fn, *args)
+
         if kind == "tool_start":
-            self._tool_card(payload["name"], payload["args"], None)
+            ui(self._tool_card, payload["name"], payload["args"], None)
         elif kind == "tool_end":
-            self.call_from_thread(self._finish_tool_card, payload["name"],
-                                  payload["output"], payload.get("denied", False))
+            ui(self._finish_tool_card, payload["name"], payload["output"],
+               payload.get("denied", False))
 
     async def _agent_text(self, backend, task: str) -> str:
         """A full agent turn (tools included) against ``backend``, by its text.
