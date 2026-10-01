@@ -37,6 +37,14 @@ configured" and "which key is set" live in exactly one place.
 ./forge --help               # everything else
 ```
 
+On Windows the launcher is a batch file, because the `trioforge` symlink cannot
+survive a checkout there (git writes it out as a plain text file):
+
+```powershell
+.\forge.cmd                  # PowerShell, from the repo folder
+forge.cmd                    # cmd, or double-click it in Explorer
+```
+
 To run it from any directory, install the command once:
 
 ```bash
@@ -47,9 +55,11 @@ To run it from any directory, install the command once:
 powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows
 ```
 
-Then `trioforge` works anywhere. Both names run the same program. The installers
-also install `rich`, `prompt_toolkit` and `textual` — they are deliberately not
-in `requirements.txt`, which only covers the Flask web app.
+Then `forge` and `trioforge` work anywhere. Both names run the same program, and
+`--version` / `--help` print the name you used. The installers also install
+`rich`, `prompt_toolkit`, `textual` and `duckdb`: the first three are deliberately
+not in `requirements.txt` (that covers the Flask web app), and `duckdb` is shared
+with it for the memory vault.
 
 ## The setup wizard
 

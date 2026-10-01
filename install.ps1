@@ -95,7 +95,10 @@ New-Item -ItemType Directory -Force -Path $bin | Out-Null
 $target = Join-Path $Root "forge.cmd"
 foreach ($name in @("forge", "trioforge")) {
     $shim = Join-Path $bin "$name.cmd"
-    "@echo off`r`ncall `"$target`" %*" | Set-Content -Path $shim -Encoding ASCII
+    # FORGE_PROG carries the invoked name through to the CLI, so `trioforge
+    # --version` says trioforge and `forge --version` says forge.
+    "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$target`" %*" |
+        Set-Content -Path $shim -Encoding ASCII
     Write-Host "  shim:   $shim"
 }
 

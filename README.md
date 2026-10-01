@@ -147,19 +147,56 @@ A full-screen terminal chat (Crush-style) that shares TrioForge's models and key
 
 ![The forge terminal client: a user message, a tool-call card and an answer, with a sidebar showing the machine, the offline models and the bot's mood face](forge.png)
 
-```bash
-./install.sh                    # Apple/Linux: links forge + trioforge onto your PATH
-powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows (PowerShell)
+**`forge` and `trioforge` are the same program.** `trioforge` is a symlink to the `forge` launcher, and `--version` / `--help` print whichever name you typed. On Windows that symlink cannot survive a checkout — git writes it out as a plain text file — so Windows gets a `.cmd` shim for each name instead.
 
-trioforge --version             # -> trioforge 1.4.0
-trioforge --echo                # offline demo
-trioforge                       # a real session
-trioforge "explain this repo"   # one-shot
-trioforge --specs               # hardware + what fits
+### Try it without installing anything
+
+The launchers are already in the repo — run one straight from the folder:
+
+| Your shell | Command |
+|---|---|
+| Linux · macOS · WSL | `./forge` — first time: `chmod +x forge` |
+| Windows (PowerShell) | `.\forge.cmd` |
+| Windows (cmd), or double-click it in Explorer | `forge.cmd` |
+
+No launcher at all — it is just a Python module:
+
+```bash
+PYTHONPATH=py python3 -m tui         # Linux / macOS / WSL
+set PYTHONPATH=py && python -m tui   # Windows cmd
+$env:PYTHONPATH="py"; python -m tui  # Windows PowerShell
 ```
 
-`forge` and `trioforge` are the same client under two names (both point at the one
-`forge` launcher). Version **1.4.0** matches the web app.
+That route needs the four packages by hand: `python -m pip install rich prompt_toolkit textual duckdb`. The installers below do it for you.
+
+### Install the command once
+
+| Your machine | Command |
+|---|---|
+| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -File .\install.ps1` |
+| Linux · macOS · WSL | `./install.sh` |
+
+Both install `rich`, `prompt_toolkit`, `textual` and `duckdb` into the repo's own venv, then put the commands on your PATH:
+
+- **Windows** writes `forge.cmd` and `trioforge.cmd` shims into `%USERPROFILE%\bin` and appends that folder to your **user** PATH — **open a new terminal** before `forge` resolves.
+- **Linux / macOS** symlinks `forge` and `trioforge` into the first writable folder already on your PATH (`~/.local/bin`, `~/bin`, `~/.bin`), falling back to `~/.local/bin`, and prints the exact `export PATH=...` line to add if that folder is not on your PATH yet.
+
+Neither needs admin, and both are safe to re-run. Both also fetch the prebuilt llama.cpp for your GPU (`TRIOFORGE_SKIP_LLAMA=1` skips that). If the packages cannot be installed, **nothing is linked, on purpose** — a `forge` that exists and then dies with `ModuleNotFoundError: textual` is worse than no launcher at all, which is why both scripts verify the imports before they link anything.
+
+**`forge` not recognised?** Windows: open a *new* terminal (the PATH change only applies to new ones), or call it by full path — `& "$env:USERPROFILE\bin\forge.cmd"`. Linux/macOS: run `./forge` from the repo, or run the `export PATH=...` line the installer printed.
+
+### Then just use it
+
+```bash
+forge                           # interactive session (identical to trioforge)
+forge --echo                    # offline demo: no model contacted
+forge --classic                 # plain scroll-back UI, no alternate screen
+forge "explain this repo"       # one-shot
+forge --specs                   # hardware that was detected, and what fits
+forge --version                 # -> forge 1.4.0: the CLI prints the name you typed
+```
+
+Requires **Python 3.10+** (see `pyproject.toml`), and the client tracks the web app's version — **1.4.0**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 

@@ -15,6 +15,12 @@ setlocal
 set "ROOT=%~dp0"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
+rem Tell the CLI which name the user typed, so --version and --help print that
+rem name - the same thing ./forge does with basename "$0". The install.ps1 shims
+rem set it to the name they were called as (trioforge.cmd reports "trioforge");
+rem running forge.cmd directly falls back to "forge".
+if not defined FORGE_PROG set "FORGE_PROG=forge"
+
 rem The project venv, once it exists, is the interpreter that has the deps.
 set "PY=%ROOT%\.venv\Scripts\python.exe"
 if not exist "%PY%" set "PY="

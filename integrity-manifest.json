@@ -8,8 +8,8 @@
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "9580ec10b81bcec3e1eeca5b88b2b37c02e16416bc0b8dd500bbb7d9ad88a9e8",
   "forge": "3dfdd712183bb2afe80013aed7c66526528dd284ef5091de9185d276472427f0",
-  "forge.cmd": "d24294875d386637a08846184cdb17c889d145697a003d93550b0eec46524e4a",
-  "install.ps1": "2f8d19f4c5e25dac90b344a1c50a059bbb2d43e8386016d72cb002101d10f76d",
+  "forge.cmd": "ff1c521a40ab9b5e6e2a44c47304555a5f0be5f65371a8dd6639085e06385f2c",
+  "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "50b03e369fe276a42c40eb8e9da912bcfc29a68db21b990c6dde0d3c35a4f142",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "a0f7cd5e9f5d7505b2a535f60f095260c7c2e4232fef391416202eb74f8a8856",
@@ -55,7 +55,7 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "906f492ccfa7131703240eea274d1f1d6470e9ded9e6356fb27d060f7fe850e6",
-  "py/tui/README.md": "d484305aadbab9f0d397388ef99c545c8994345f3fcfab1b7f9b0acc86d6770a",
+  "py/tui/README.md": "c9519ee60e57bf62c75b9a8a06d60b9004d9c6357b63818b34190a7b382cce3d",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "e257d0cb31152125f288ce1fb6772f29641c584b150afb7c083fbef4f933696d",
@@ -103,6 +103,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-01T20:53:11",
- "note": "forge screenshot in README + sidebar face clipping fix"
+ "generated": "2026-10-01T21:07:49",
+ "note": "forge install/run docs + FORGE_PROG on Windows"
 }
