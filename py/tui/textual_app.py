@@ -1293,7 +1293,7 @@ class ForgeApp(App):
                     note = "_stopped by you — this answer is incomplete_"
                     if answer:
                         self._replies.append(answer)
-                        self._add(f"{answer}\n\n---\n{note}", "bot", force_scroll=True)
+                        self._add(f"{answer}\n\n{note}", "bot", force_scroll=True)
                     else:
                         self._add(note, "bot", force_scroll=True)
                     self._set_mood("neutral")
@@ -1302,7 +1302,7 @@ class ForgeApp(App):
                     self.session.add_assistant(answer)
                     self._replies.append(answer)
                     self._add(
-                        f"{answer}\n\n---\n_team · junior + senior · "
+                        f"{answer}\n\n_team · junior + senior · "
                         f"{time.time() - started:.1f}s_", "bot", force_scroll=True)
                     self._set_mood("happy")
                     return
@@ -1315,7 +1315,7 @@ class ForgeApp(App):
                 note = "_stopped by you — this answer is incomplete_"
                 if final:
                     self._replies.append(final)
-                    await self._ensure_card(state).update(f"{final}\n\n---\n{note}")
+                    await self._ensure_card(state).update(f"{final}\n\n{note}")
                 else:
                     await self._ensure_card(state).update(note)
                 self._set_mood("neutral")
@@ -1328,7 +1328,7 @@ class ForgeApp(App):
                 # bare model when nothing was routed.
                 head = self._route_note or self._short_model()
                 await state["card"].update(
-                    f"{final}\n\n---\n_{head} · "
+                    f"{final}\n\n_{head} · "
                     f"{time.time() - started:.1f}s · {len(turn.steps)} tool"
                     f"{'s' if len(turn.steps) != 1 else ''}_")
             elif turn.steps:
