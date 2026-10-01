@@ -34,6 +34,13 @@ psutil>=5.9.0            # RAM / VRAM live monitor
 pynvml>=11.525.0         # NVIDIA GPU monitoring
 duckduckgo-search>=6.0.0 # optional web search
 
+# ── Memory vault (DuckDB + Bloom filter gate) ───────────────────
+# py/memory.py keeps durable facts in a DuckDB file with a Bloom filter held
+# in RAM in front of it, so a key that is definitely absent costs no disk read.
+# It is imported lazily: with duckdb missing, /memory and the agent's memory
+# tool report how to install it instead of breaking the app.
+duckdb>=1.1.0
+
 # ── Semantic search / embeddings (OPTIONAL — app runs without) ──
 # These pull in torch + the CUDA toolkit (~2 GB), so they are NOT installed by
 # default. If you want semantic RAG (meaning-based search instead of keywords),

@@ -37,21 +37,23 @@ if (-not (Test-Path $py)) {
 # `trioforge` to fail later with ModuleNotFoundError: textual. Install with
 # whatever this interpreter really has, prove the imports work, and refuse to
 # create a launcher that cannot run.
-$deps = @("rich", "prompt_toolkit", "textual")
+# duckdb backs the memory vault (py/memory.py); forge imports it lazily, but the
+# memory tool and /memory need it, so it belongs with the TUI deps.
+$deps = @("rich", "prompt_toolkit", "textual", "duckdb")
 
 function Test-TuiDeps([string]$interpreter) {
-    & $interpreter -c "import rich, prompt_toolkit, textual" 2>$null
+    & $interpreter -c "import rich, prompt_toolkit, textual, duckdb" 2>$null
     return ($LASTEXITCODE -eq 0)
 }
 
 if (Test-TuiDeps $py) {
-    Write-Host "  deps: already present (rich + prompt_toolkit + textual)"
+    Write-Host "  deps: already present (rich + prompt_toolkit + textual + duckdb)"
 } else {
     $ok = $false
 
     & $py -m pip --version *> $null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  deps: pip install rich + prompt_toolkit + textual"
+        Write-Host "  deps: pip install rich + prompt_toolkit + textual + duckdb"
         & $py -m pip install --quiet --disable-pip-version-check @deps
         $ok = Test-TuiDeps $py
     } else {
@@ -59,7 +61,7 @@ if (Test-TuiDeps $py) {
     }
 
     if (-not $ok -and (Get-Command uv -ErrorAction SilentlyContinue)) {
-        Write-Host "  deps: uv pip install rich + prompt_toolkit + textual"
+        Write-Host "  deps: uv pip install rich + prompt_toolkit + textual + duckdb"
         & uv pip install --python $py --quiet @deps
         $ok = Test-TuiDeps $py
     }
@@ -73,14 +75,14 @@ if (Test-TuiDeps $py) {
 
     if (-not $ok) {
         Write-Host ""
-        Write-Host "ERROR: could not install rich / prompt_toolkit / textual into:" -ForegroundColor Red
+        Write-Host "ERROR: could not install rich / prompt_toolkit / textual / duckdb into:" -ForegroundColor Red
         Write-Host "       $py" -ForegroundColor Red
         Write-Host ""
         Write-Host "  No launcher was created, on purpose: a 'trioforge' that exists and then"
         Write-Host "  dies with ModuleNotFoundError: textual is worse than no launcher at all."
         Write-Host ""
         Write-Host "  Install them by hand, then re-run this script:"
-        Write-Host "      uv pip install --python `"$py`" rich prompt_toolkit textual"
+        Write-Host "      uv pip install --python `"$py`" rich prompt_toolkit textual duckdb"
         exit 1
     }
     Write-Host "  deps: installed"

@@ -33,6 +33,12 @@ dependencies = [
     "psutil>=5.9.0",                         # RAM / VRAM live monitor
     "pynvml>=11.525.0",                      # NVIDIA GPU monitoring
     "duckduckgo-search>=6.0.0",              # optional web search
+
+    # ── Memory vault ──
+    # py/memory.py: durable facts in a DuckDB file behind a Bloom filter gate
+    # held in RAM. Imported lazily, so a missing duckdb degrades to a clear
+    # message instead of an ImportError.
+    "duckdb>=1.1.0",
 ]
 
 [dependency-groups]

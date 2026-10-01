@@ -135,6 +135,7 @@ Override the location with `FORGE_CONFIG_DIR`.
 | `/status` | provider, endpoint, model, key state, health |
 | `/system [text]` | show or set the system prompt |
 | `/clear` · `/history` · `/save [path]` | session handling |
+| `/memory [list\|get\|set\|forget\|recall]` | the offline memory vault (DuckDB + Bloom gate) |
 | `/echo` | toggle the offline stub |
 | `/quit` | leave |
 
@@ -226,6 +227,54 @@ second so it never competes with the model for CPU:
 ```
 ⠹  3.4s  ·  128 tok  ·  38 tok/s
 ```
+
+## Memory
+
+The agent keeps facts that outlive a session — "my llama port is 8080", "we keep
+notes in DuckDB" — and looks them up later. `py/memory.py` (shared with the web
+app) uses two layers:
+
+* **A Bloom filter gate held in RAM.** It answers "is this key *definitely*
+  absent?" with no disk access at all. A miss ends the lookup right there.
+* **A DuckDB table** holding the values. DuckDB compresses that text column
+  itself, so nothing here zips or unzips by hand.
+
+The gate is probabilistic, so its two answers are not symmetric:
+
+```
+gate says NO   -> definitely absent  -> skip the query       (exact)
+gate says YES  -> probably present   -> query and confirm     (maybe)
+```
+
+A false positive therefore costs one wasted query and can never return a wrong
+value, because the DuckDB lookup still has to match the key. `/memory` prints how
+many lookups the gate answered in RAM, so the saving is measured rather than
+claimed.
+
+A filter can only test an exact key, so `recall` first rewrites "what was my port
+setting again?" into candidate keys — in RAM, with no embeddings and no model —
+and only then offers those to the gate.
+
+Two details worth keeping:
+
+* the filter is **persisted as one BLOB** and read back in a single small query.
+  Re-deriving it at boot by scanning every key would cost exactly the disk I/O the
+  gate exists to avoid, and get slower as the vault grows.
+* it is **rebuilt once it fills**. A saturated Bloom filter answers YES to
+  everything, which would silently turn every lookup into a disk read.
+
+DuckDB allows one writing process per file. If the web app already holds the
+vault, `forge` reopens it read-only instead of failing, and says so in `/memory`.
+
+| | |
+|---|---|
+| `/memory` | keys, gate stats, most recent entries |
+| `/memory list [prefix]` · `/memory get KEY` | inspect |
+| `/memory set KEY = VALUE` · `/memory forget KEY` | edit |
+| `/memory recall <sentence>` | sentence in, matching entries out |
+| agent tool | `memory(action=remember\|recall\|lookup\|forget\|list\|stats)` |
+
+The vault lives at `sqlite_data/memory.duckdb`, which is gitignored.
 
 ## Layout of the code
 
@@ -371,6 +420,9 @@ load, the error is shown in the chat instead of a raw socket error.
 - `rich` — rendering for the plain UI
 - `prompt_toolkit` — input for the plain UI
 - `textual` — the full-screen UI
+- `duckdb` — the memory vault (`/memory` and the agent's `memory` tool). Imported
+  lazily, so without it everything else still runs and only memory reports that
+  it is missing.
 
 The full-screen UI needs a real TTY. Anything piped — or `--classic` — falls
 back to the scrolling UI automatically, so `forge "question" | ...` still works.

@@ -224,6 +224,77 @@ def t_todos(todos: list | None = None, **_kw) -> str:
     return "\n".join(lines)
 
 
+def t_memory(action: str = "", key: str = "", value: str = "",
+             query: str = "", tags: str = "", **_kw) -> str:
+    """Long-term memory that outlives the session.
+
+    Backed by TrioForge's own DuckDB vault (sqlite_data/memory.duckdb) with a
+    Bloom filter gate held in RAM in front of it: a key that is definitely absent
+    is answered without touching the disk at all. "recall" takes a plain sentence
+    and rewrites it into candidate keys, which is what makes "what was my port
+    setting again?" find ``port_setting`` without an embedding model.
+    """
+    import memory as mem  # noqa: PLC0415 - keeps duckdb an optional import
+
+    if not mem.available():
+        return f"error: {mem.missing_reason()}"
+
+    action = (action or "").strip().lower()
+
+    if action in ("remember", "set", "store", "save", "add"):
+        if not key:
+            return "error: remember needs a key"
+        result = mem.remember(key, value, tags)
+        if not result.get("ok"):
+            return f"error: {result.get('error')}"
+        verb = "updated" if result.get("updated") else "saved"
+        note = " (truncated)" if result.get("truncated") else ""
+        return (f"{verb} {result['key']!r}{note} - "
+                f"{result['keys']} key(s) in the vault")
+
+    if action in ("recall", "find", "search", "query", "ask"):
+        text = query or key          # models sometimes put the sentence in `key`
+        if not text:
+            return "error: recall needs a sentence"
+        hits = mem.recall(text)
+        if not hits:
+            return f"nothing remembered matching {text!r}"
+        return "\n".join(f"{k}: {v}" for k, v, _score in hits)
+
+    if action in ("lookup", "get", "read", "show"):
+        if not key:
+            return "error: lookup needs an exact key"
+        found = mem.lookup(key)
+        if found is None:
+            return f"no memory stored under {key!r}"
+        return found
+
+    if action in ("forget", "delete", "remove", "rm"):
+        if not key:
+            return "error: forget needs a key"
+        return (f"forgot {key!r}" if mem.forget(key)
+                else f"nothing stored under {key!r}")
+
+    if action in ("list", "keys", "all"):
+        found = mem.keys(key)
+        if not found:
+            return "(the memory vault is empty)"
+        shown = found[:80]
+        more = f"\n... and {len(found) - 80} more" if len(found) > 80 else ""
+        return "\n".join(shown) + more
+
+    if action in ("stats", "status"):
+        s = mem.stats()
+        return (f"{s['keys']} keys - {s['bits']} bits ({s['bytes']} bytes RAM, "
+                f"{s['hashes']} hashes, {s['fill']:.1%} full) - "
+                f"{s['gate_skips']}/{s['lookups']} lookups skipped in RAM "
+                f"({s['saved_pct']:.0f}% with no disk read) - "
+                f"vault {s['db_bytes'] / 1024:.1f} KB")
+
+    return ("error: action must be one of remember, recall, lookup, forget, "
+            "list, stats")
+
+
 # ============================================================ the registry
 
 
@@ -260,6 +331,39 @@ _register(Tool(
     _obj({"path": {"type": "string", "description": "directory, default ."}}, []),
     t_ls,
     summary=lambda a: f"ls {a.get('path', '.')}",
+))
+
+_register(Tool(
+    "todos",
+    "Record a short task list so a multi-step job stays on track. Pass the whole "
+    "list each time, with status: pending | in_progress | completed.",
+    _obj({"todos": {"type": "array", "items": _obj(
+        {"content": {"type": "string"},
+         "status": {"type": "string",
+                    "enum": ["pending", "in_progress", "completed"]}},
+        ["content"])}}, ["todos"]),
+    t_todos,
+    summary=lambda a: f"todos ({len(a.get('todos') or [])} items)",
+))
+
+_register(Tool(
+    "memory",
+    "Long-term memory that survives the session. action=remember takes key+value "
+    "and is for durable facts the user tells you about themselves or the project. "
+    "action=recall takes a plain sentence ('what was my port setting again?') and "
+    "finds matching keys. action=lookup needs an exact key; action=list and "
+    "action=stats inspect the vault. Not for files - use view/write/grep for those.",
+    _obj({"action": {"type": "string", "enum": [
+            "remember", "recall", "lookup", "forget", "list", "stats"]},
+          "key": {"type": "string", "description": "exact key, e.g. port_setting"},
+          "value": {"type": "string", "description": "what to store (remember)"},
+          "query": {"type": "string", "description": "a plain sentence (recall)"},
+          "tags": {"type": "string",
+                   "description": "optional extra words recall can match on"}},
+         ["action"]),
+    t_memory,
+    summary=lambda a: "memory {} {}".format(
+        a.get("action", ""), a.get("key") or a.get("query") or "").strip(),
 ))
 
 _register(Tool(

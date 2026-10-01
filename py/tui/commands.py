@@ -32,6 +32,8 @@ COMMANDS: list[tuple[str, str]] = [
     ("/clear", "forget the conversation"),
     ("/history", "replay the conversation"),
     ("/save [path]", "write the transcript to a file"),
+    ("/memory [list|get|set|forget|recall]",
+     "offline memory vault (DuckDB table behind a Bloom gate)"),
     ("/echo", "toggle the offline stub"),
     ("/quit", "leave (Ctrl-D also works)"),
 ]
@@ -656,6 +658,131 @@ def _llama(ctx, arg: str) -> None:
     render.info("usage: /llama [status | install]")
 
 
+def _one_line(text: str, width: int = 70) -> str:
+    """Collapse a stored value onto one line for the list views."""
+    flat = " ".join((text or "").split())
+    return flat[:width] + ("..." if len(flat) > width else "")
+
+
+def _memory(ctx, arg: str) -> None:
+    """The offline memory vault: a DuckDB table behind a Bloom filter gate.
+
+    Every lookup asks the gate first. A key the gate rejects is definitely absent,
+    so that lookup ends in RAM and the vault is never touched - which is what the
+    stats line counts.
+    """
+    try:
+        import memory as mem
+    except Exception as exc:  # noqa: BLE001
+        render.error(f"memory vault unavailable: {exc}")
+        return
+
+    if not mem.available():
+        render.warn(mem.missing_reason())
+        return
+
+    verb, _, rest = (arg or "").strip().partition(" ")
+    verb = verb.lower()
+    rest = rest.strip()
+
+    if verb in ("", "stats", "gate", "status"):
+        s = mem.stats()
+        render.table("memory vault", [
+            ("vault", "{}  ({:.1f} KB)".format(s["db"], s["db_bytes"] / 1024)),
+            ("keys", str(s["keys"])),
+            ("gate (RAM)", "{} bits · {} hashes · {} bytes · {:.1%} full".format(
+                s["bits"], s["hashes"], s["bytes"], s["fill"])),
+            ("gate target", "{:.1%} false positives at {} keys".format(
+                s["target_fp"], s["capacity"])),
+            ("lookups", "{} of {} skipped in RAM — {:.0f}% with no disk read".format(
+                s["gate_skips"], s["lookups"], s["saved_pct"])),
+            ("false hits", "{} (gate said maybe, the vault said no)".format(
+                s["gate_misses"])),
+            ("writes", "{}  ·  filter rebuilds {}".format(
+                s["writes"], s["rebuilds"])),
+        ])
+        if not s["writable"]:
+            render.warn(s["reason"])
+        rows = mem.entries(limit=10)
+        if rows:
+            render.info("most recently updated:")
+            for key, value in rows:
+                render.info(f"  {key} = {_one_line(value)}")
+        else:
+            render.info("nothing stored yet — ask the agent to remember something, "
+                        "or use /memory set KEY = VALUE")
+        return
+
+    if verb in ("list", "keys"):
+        found = mem.keys(rest)
+        if not found:
+            render.warn("the vault is empty" if not rest
+                        else f"no key starts with {rest!r}")
+            return
+        render.info("{} key(s):".format(len(found)))
+        for key in found[:60]:
+            render.info(f"  {key}")
+        if len(found) > 60:
+            render.info("  ... and {} more".format(len(found) - 60))
+        return
+
+    if verb in ("get", "lookup", "show"):
+        if not rest:
+            render.error("usage: /memory get KEY")
+            return
+        value = mem.lookup(rest)
+        if value is None:
+            render.warn(f"no memory stored under {rest!r}")
+            return
+        render.info(f"{rest} =")
+        for line in (value.splitlines() or [""]):
+            render.info(f"  {line}")
+        return
+
+    if verb in ("set", "add", "remember", "save"):
+        key, sep, value = rest.partition("=")
+        if not sep:                       # no '=': the first word is the key
+            key, _, value = rest.partition(" ")
+        key, value = key.strip(), value.strip()
+        if not key or not value:
+            render.error("usage: /memory set KEY = VALUE")
+            return
+        result = mem.remember(key, value)
+        if not result.get("ok"):
+            render.error(result.get("error") or "could not store that")
+            return
+        render.ok("{} {!r} — {} key(s), gate {:.1%} full".format(
+            "updated" if result.get("updated") else "saved",
+            result["key"], result["keys"], mem.stats()["fill"]))
+        return
+
+    if verb in ("forget", "delete", "rm", "remove"):
+        if not rest:
+            render.error("usage: /memory forget KEY")
+            return
+        if mem.forget(rest):
+            render.ok(f"forgot {rest!r}")
+        else:
+            render.warn(f"nothing stored under {rest!r}")
+        return
+
+    if verb in ("recall", "find", "search"):
+        if not rest:
+            render.error("usage: /memory recall what was my port setting again?")
+            return
+        hits = mem.recall(rest)
+        if not hits:
+            render.warn(f"nothing remembered matching {rest!r}")
+            return
+        render.info("{} match(es), ranked by the keyword rewriter:".format(len(hits)))
+        for key, value, score in hits:
+            render.info(f"  {key} (score {score:.1f}) = {_one_line(value, 60)}")
+        return
+
+    render.info("usage: /memory [list | get KEY | set KEY = VALUE | forget KEY | "
+                "recall SENTENCE | stats]")
+
+
 _TABLE = {
     "/help": _help, "/?": _help, "/setup": _setup,
     "/model": _model, "/models": _models, "/specs": _specs, "/llama": _llama,
@@ -665,6 +792,7 @@ _TABLE = {
     "/system": _system, "/clear": _clear, "/history": _history,
     "/save": _save, "/echo": _echo, "/start": _start,
     "/quit": _quit, "/exit": _quit, "/q": _quit,
+    "/memory": _memory, "/mem": _memory,
 }
 
 
