@@ -41,6 +41,14 @@ duckduckgo-search>=6.0.0 # optional web search
 # tool report how to install it instead of breaking the app.
 duckdb>=1.1.0
 
+# ── Terminal client (`forge` / `trioforge`) ─────────────────────
+# These used to be installed separately by install.sh, which meant a fresh clone
+# that ran run.sh (or pip install -r requirements.txt) got the web app but
+# `forge` died on ModuleNotFoundError. One manifest now covers both.
+rich>=13.7.0
+prompt_toolkit>=3.0.43
+textual>=0.80.0
+
 # ── Semantic search / embeddings (OPTIONAL — app runs without) ──
 # These pull in torch + the CUDA toolkit (~2 GB), so they are NOT installed by
 # default. If you want semantic RAG (meaning-based search instead of keywords),

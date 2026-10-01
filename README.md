@@ -39,7 +39,14 @@
 ```bash
 git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
+./setup.sh            # first time: chmod +x setup.sh
 ```
+
+**`./setup.sh` is the whole install**: it makes the venv, installs every
+dependency (web app *and* terminal client), puts `forge` / `trioforge` on your
+PATH and pre-fetches llama.cpp. Run it once and you never need it again —
+`git pull` is enough after that, because `forge` re-installs by itself when a
+requirement changes.
 
 Double-click **`TrioForge.bat`**. It opens in your browser, the server hidden behind it. Add **`--window`** for its own window (WebView2, ~600 MB) instead of a browser tab (~150–300 MB) — same server, same data; the window hands back to the browser automatically if your GPU can't draw it. It creates **`TrioForge`** (browser) and **`TrioForge (window)`** shortcuts per-user, no admin. Skip with `TRIOFORGE_NO_SHORTCUT=1`.
 
@@ -50,6 +57,8 @@ Double-click **`TrioForge.bat`**. It opens in your browser, the server hidden be
 ```
 
 Then open **http://localhost:5003** (the app prints the exact URL).
+`run.sh` installs the web dependencies itself, so `./setup.sh` is only needed
+if you also want the `forge` terminal client on your PATH.
 
 **Docker** — one line, if you already run Ollama:
 

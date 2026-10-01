@@ -10,6 +10,9 @@
 #      trioforge --help            all options
 #
 #  It is independent of the Flask web GUI: nothing here imports app.py.
+#
+#  It also installs anything missing before launching, so a fresh `git clone` and
+#  a `git pull` both just work. Set TRIOFORGE_SKIP_DEPS=1 to opt out.
 # ============================================================
 set -euo pipefail
 
@@ -21,15 +24,29 @@ ROOT="$(cd "$(dirname "$SELF")" && pwd)"
 # Tell the CLI which name the user typed, so --help/--version print that name.
 export FORGE_PROG="${FORGE_PROG:-$(basename "$0")}"
 
-# Prefer the Linux venv (where rich + prompt_toolkit were installed), then the
-# Windows-style layout, then whatever python3 is on PATH.
-PY="$ROOT/.venv-linux/bin/python"
-[ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
-[ -x "$PY" ] || PY="$ROOT/.venv/bin/python"
-[ -x "$PY" ] || PY="$(command -v python3)"
+# ---------------------------------------------------------------- dependencies
+# A fresh clone has no venv and no packages, and `git pull` can add a dependency.
+# Rather than making anyone remember a step, install what is missing first: the
+# alternative is ModuleNotFoundError on the very first run, which reads as a
+# broken app. The check is a bash hash of the requirement files, so a normal
+# start pays about 10ms and nothing else.
+# shellcheck source=deps.sh
+. "$ROOT/deps.sh"
 
-if [ ! -x "$PY" ]; then
-    echo "forge: no python interpreter found" >&2
+if [ "${TRIOFORGE_SKIP_DEPS:-0}" != "1" ]; then
+    forge_ensure_deps "$ROOT" || true   # it reports its own failure; still try to run
+fi
+
+# ---------------------------------------------------------------- interpreter
+# Prefer the Linux venv (where the deps were just installed), then the
+# Windows-style layout, then whatever python3 is on PATH.
+PY="$(forge_venv_python "$ROOT" 2>/dev/null || true)"
+if [ -z "${PY:-}" ]; then
+    PY="$(command -v python3 || true)"
+fi
+
+if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
+    echo "forge: no python interpreter found — run ./setup.sh" >&2
     exit 1
 fi
 

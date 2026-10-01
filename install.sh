@@ -42,58 +42,31 @@ fi
 mkdir -p "$BIN"
 
 # ---------------------------------------------------------------- deps
-# The terminal client needs these. rich/textual/prompt_toolkit are not in
-# requirements.txt (that file covers the Flask web app); duckdb is, because the
-# memory vault is shared by both.
-PY="$ROOT/.venv-linux/bin/python"
-[ -x "$PY" ] || PY="$ROOT/.venv/bin/python"
-[ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
-if [ -x "$PY" ]; then
-    # A venv made by uv contains NO pip, and this script runs under `set -e`, so
-    # `python -m pip` used to abort the whole install with a bare "No module named
-    # pip" and no guidance. Try what the interpreter really has, verify the imports,
-    # and never link a launcher that cannot run.
-    if "$PY" -c "import rich, prompt_toolkit, textual, duckdb" 2>/dev/null; then
-        echo "  deps: already present (rich + prompt_toolkit + textual + duckdb)"
-        deps_ok=1
-    else
-        deps_ok=0
-        if "$PY" -m pip --version >/dev/null 2>&1; then
-            echo "  deps: pip install rich + prompt_toolkit + textual + duckdb"
-            "$PY" -m pip install -q --disable-pip-version-check rich prompt_toolkit textual duckdb || true
-        else
-            echo "  deps: this venv has no pip (uv venvs ship without one)"
-        fi
-        if ! "$PY" -c "import rich, prompt_toolkit, textual, duckdb" 2>/dev/null \
-           && command -v uv >/dev/null 2>&1; then
-            echo "  deps: uv pip install rich + prompt_toolkit + textual + duckdb"
-            uv pip install --python "$PY" -q rich prompt_toolkit textual duckdb || true
-        fi
-        if ! "$PY" -c "import rich, prompt_toolkit, textual, duckdb" 2>/dev/null; then
-            echo "  deps: bootstrapping pip with ensurepip, then installing"
-            "$PY" -m ensurepip --upgrade >/dev/null 2>&1 || true
-            "$PY" -m pip install -q --disable-pip-version-check rich prompt_toolkit textual duckdb || true
-        fi
-        if "$PY" -c "import rich, prompt_toolkit, textual, duckdb" 2>/dev/null; then
-            deps_ok=1
-            echo "  deps: installed"
-        fi
-    fi
-    if [ "$deps_ok" -ne 1 ]; then
-        echo "" >&2
-        echo "ERROR: could not install rich / prompt_toolkit / textual into:" >&2
-        echo "       $PY" >&2
-        echo "" >&2
-        echo "  Nothing was linked, on purpose: a 'trioforge' that exists and then dies" >&2
-        echo "  with ModuleNotFoundError: textual is worse than no launcher at all." >&2
-        echo "" >&2
-        echo "  Install them by hand, then re-run this script:" >&2
-        echo "      uv pip install --python \"$PY\" rich prompt_toolkit textual duckdb" >&2
-        exit 1
-    fi
+# ONE implementation, in deps.sh, shared with ./forge and ./setup.sh - this
+# script used to carry its own copy of the pip/uv/ensurepip dance, which is how
+# three installers end up disagreeing about what "installed" means.
+# shellcheck source=deps.sh
+. "$ROOT/deps.sh"
+
+if [ -z "$(forge_venv_python "$ROOT" 2>/dev/null || true)" ]; then
+    echo "  deps: no virtual environment yet."
+    echo "        ./setup.sh creates one and installs everything (recommended),"
+    echo "        or run ./run.sh once for the web app."
+elif forge_ensure_deps "$ROOT"; then
+    deps_ok=1
+    echo "  deps: present (requirements.txt)"
 else
-    echo "  deps: no venv found yet — run ./run.sh once, or:"
-    echo "        python3 -m pip install rich prompt_toolkit textual duckdb"
+    deps_ok=0
+    echo "" >&2
+    echo "ERROR: could not install the dependencies into:" >&2
+    echo "       $(forge_venv_python "$ROOT")" >&2
+    echo "" >&2
+    echo "  Nothing was linked, on purpose: a 'trioforge' that exists and then dies" >&2
+    echo "  with ModuleNotFoundError: textual is worse than no launcher at all." >&2
+    echo "" >&2
+    echo "  Fix it, then re-run this script:" >&2
+    echo "      ./setup.sh" >&2
+    exit 1
 fi
 
 # ---------------------------------------------------------------- link it

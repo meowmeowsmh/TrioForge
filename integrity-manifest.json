@@ -7,10 +7,10 @@
   "docker/application.sh": "6d74e93eaadf6ed20e89154a5ed9ad9d2062e461772fa8d3b719b7efd4d27906",
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "9580ec10b81bcec3e1eeca5b88b2b37c02e16416bc0b8dd500bbb7d9ad88a9e8",
-  "forge": "3dfdd712183bb2afe80013aed7c66526528dd284ef5091de9185d276472427f0",
+  "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
   "forge.cmd": "ff1c521a40ab9b5e6e2a44c47304555a5f0be5f65371a8dd6639085e06385f2c",
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
-  "install.sh": "50b03e369fe276a42c40eb8e9da912bcfc29a68db21b990c6dde0d3c35a4f142",
+  "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "ed969d68d3e6bf5e8dce98b3b943336951481dff43b6d111bf3436c0c4a8d39e",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
@@ -79,7 +79,7 @@
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
   "pyproject.toml": "0515ee7ac978c01f1128ed2574d7ad2ceb6c34b69e99243499d9cf7f1004087b",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
-  "requirements.txt": "7d9b2684087fffd2231de596f2c4c484e1d611bde4066aef8b7b986e3d87a2b7",
+  "requirements.txt": "0bbbc19d712282dfd0f5e60d2ef4774ae4942b5972db45ec2b5cc190d6b558e4",
   "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
   "static/image/icon_llm.png": "24aeef77274ef6820d3bc92060540b6a9078a9b1ecd8597677bd559e2f0a40a8",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T02:20:19",
- "note": "baseline: known facts in the system prompt"
+ "generated": "2026-10-02T02:23:50",
+ "note": "baseline: auto-install deps (setup.sh + self-healing forge)"
 }
