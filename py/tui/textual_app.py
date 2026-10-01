@@ -59,7 +59,7 @@ DEFAULT_SYSTEM = (
     "in fenced blocks with the language tag."
 )
 
-KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+y copy answer  ·  tab chat  ·  "
+KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+a auto-route  ·  ctrl+y copy  ·  tab chat  ·  "
             "ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
 
 # How long the pleading "Don't!!!" face stays on screen before the app exits.
@@ -308,6 +308,17 @@ class PromptArea(TextArea):
         def control(self) -> "PromptArea":
             return self.area
 
+    class RouteRequested(Message):
+        """Posted on ctrl+a - the app owns the local/cloud routing."""
+
+        def __init__(self, area: "PromptArea") -> None:
+            self.area = area
+            super().__init__()
+
+        @property
+        def control(self) -> "PromptArea":
+            return self.area
+
     async def _on_key(self, event) -> None:
         if event.key == "enter":
             event.stop()
@@ -320,6 +331,13 @@ class PromptArea(TextArea):
             event.stop()
             event.prevent_default()
             self.post_message(self.CopyRequested(self))
+            return
+        # TextArea binds ctrl+a to "cursor to start of line", so the focused
+        # prompt eats it before the app's binding. Route the message from here.
+        if event.key == "ctrl+a":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.RouteRequested(self))
             return
         # ctrl+j is the reliable newline. The other two are best-effort: they
         # only ever arrive if a terminal opts into an extended keyboard mode.
@@ -347,6 +365,7 @@ class ForgeApp(App):
         # selecting text with the mouse and pressing ctrl+c copies instead.
         ("ctrl+c", "quit", "Quit/copy"),
         ("ctrl+y", "copy_reply", "Copy answer"),
+        ("ctrl+a", "auto_route", "Auto-route"),
         ("ctrl+l", "pick_model", "Model"),
         ("ctrl+n", "new_session", "New"),
         ("ctrl+p", "palette", "Commands"),
@@ -366,6 +385,7 @@ class ForgeApp(App):
         self._started = time.time()
         self._activity = ""       # shown in the sidebar while a turn runs
         self._replies: list[str] = []   # finished answers, newest last (for /copy)
+        self._auto_route = False        # ctrl+a / /auto: route every message
         self._tool_cards: dict = {}
         self._active = None
         self._spinner_i = 0
@@ -447,6 +467,8 @@ class ForgeApp(App):
         kind = "local" if self._is_local() else "cloud"
         out.append(f"{kind}  ·  {self.session.turns} turns  ·  "
                    f"{self._elapsed()}\n", style=T.GREY)
+        if self._auto_route:
+            out.append("AUTO-ROUTE ON\n", style=f"bold {T.YELLOW}")
         out.append("\n")
 
         # ---- the machine: the numbers /specs and the fit verdicts come from
@@ -796,6 +818,76 @@ class ForgeApp(App):
         event.stop()
         self.action_copy_reply()
 
+    @on(PromptArea.RouteRequested, "#prompt")
+    def _on_route_requested(self, event: PromptArea.RouteRequested) -> None:
+        event.stop()
+        self.action_auto_route()
+
+    # ---------------------------------------------------------------- routing
+    def _cloud_target(self) -> tuple[str, str, str]:
+        """The cloud endpoint complex tasks go to: the first keyed provider.
+
+        Preference order is the common paid ones; any other non-local provider
+        with a base_url is a fallback, so routing never hard-codes one name.
+        """
+        for name in ("deepseek", "claude", "groq", "gemini", "openrouter",
+                     "huggingface"):
+            entry = self.cfg.providers.get(name, {})
+            if entry.get("api_key") and entry.get("base_url"):
+                model = (entry.get("models") or [""])[0]
+                return name, entry["base_url"], model
+        for name, entry in self.cfg.providers.items():
+            if name == "local":
+                continue
+            if entry.get("base_url"):
+                model = (entry.get("models") or [""])[0]
+                return name, entry["base_url"], model
+        return "deepseek", "https://api.deepseek.com/v1", "deepseek-chat"
+
+    def _backend_for(self, provider: str, model: str):
+        """Build the backend for an ARBITRARY provider, not just the current one."""
+        entry = self.cfg.providers.get(provider, {})
+        url = entry.get("base_url", "")
+        key = providers.resolve(entry.get("api_key", ""))
+        return OpenAICompatBackend(
+            base_url=url, model=model, api_key=key,
+            timeout=getattr(self.args, "timeout", 120.0),
+            temperature=getattr(self.args, "temperature", 0.7))
+
+    def _route(self, text: str) -> dict:
+        """Decide local vs cloud for ``text`` and point the app at the winner."""
+        from . import router
+        cloud_provider, cloud_url, cloud_model = self._cloud_target()
+        local_model = self.cfg.model if self.cfg.provider == "local" else ""
+        decision = router.decide(
+            text, cloud_provider=cloud_provider, cloud_url=cloud_url,
+            cloud_model=cloud_model, local_model=local_model)
+
+        self.cfg.provider = decision["provider"]
+        self.cfg.model = decision.get("model") or ""
+        self.session.model = self.cfg.model
+        if not isinstance(self.backend, EchoBackend):
+            self.backend = self._backend_for(decision["provider"], self.cfg.model)
+            self.real_backend = self.backend
+        providers.save(self.cfg)
+        # show which engine was picked and why, so the choice is never a mystery
+        self._add_plain(router.explain(decision))
+        self._refresh()
+        return decision
+
+    def action_auto_route(self) -> None:
+        """ctrl+a - route the typed message to local or cloud, then send it."""
+        area = self.query_one("#prompt", PromptArea)
+        text = (area.text or "").strip()
+        if not text:
+            self._add_plain("ctrl+a routes a typed message — type it first, then ctrl+a")
+            return
+        area.text = ""
+        self.session.add_user(text)
+        self._add(text, "user")
+        self._route(text)
+        self._ask(text)
+
     @on(PromptArea.Submitted, "#prompt")
     def _submitted(self, event: PromptArea.Submitted) -> None:
         text = (event.value or "").strip()
@@ -808,6 +900,8 @@ class ForgeApp(App):
             return
         self.session.add_user(text)
         self._add(text, "user")
+        if self._auto_route:
+            self._route(text)      # /auto: decide local vs cloud on every send
         self._ask(text)
 
     # ------------------------------------------------------------------ copy
@@ -1094,6 +1188,22 @@ class ForgeApp(App):
                 self._add_plain("usage: /copy [how many answers back, e.g. /copy 2]")
                 return
             self._copy_reply(n)
+            return
+        if name == "/auto":
+            self._auto_route = not self._auto_route
+            self._add_plain("auto-route " + ("ON — every message is sent to "
+                             "local or cloud automatically" if self._auto_route
+                             else "OFF"))
+            self._refresh()
+            return
+        if name == "/route":
+            if not arg:
+                self._add_plain("usage: /route <your prompt>")
+                return
+            self.session.add_user(arg)
+            self._add(arg, "user")
+            self._route(arg)
+            self._ask(arg)
             return
 
         class _Ctx:

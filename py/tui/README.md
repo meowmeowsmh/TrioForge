@@ -155,7 +155,32 @@ recognise *which* key it is, never enough to use it.
 ### Keybindings (full-screen UI)
 
 `ctrl+p` commands · `ctrl+l` model · `ctrl+n` new session · `tab` focus chat ·
-`esc` focus prompt · `ctrl+y` copy the last answer · `ctrl+q` quit
+`esc` focus prompt · `ctrl+y` copy the last answer · `ctrl+a` auto-route · `ctrl+q` quit
+
+### Auto-route — local vs cloud, decided for you (`ctrl+a`)
+
+`ctrl+a` reads the prompt you typed and sends it through the router instead of the
+current model. Two facts decide, and no model is asked to choose:
+
+| Check | Result |
+|---|---|
+| cloud API unreachable (offline) | → **local** (llama.cpp), always |
+| task is complex (architecture, math, concurrency…) | → **cloud** (your keyed provider, e.g. DeepSeek) |
+| task is simple (boilerplate, rename, formatting…) | → **local** |
+
+So llama.cpp does the small jobs and your API key guides the big ones — cheap,
+and it keeps working with no internet. Each send prints the verdict, e.g.
+`☁ cloud · complex task: architecture` or `💻 local · simple task — local is plenty`.
+
+```bash
+/auto            # toggle: route EVERY message automatically (sidebar shows AUTO-ROUTE ON)
+/route <prompt>  # route one prompt without pressing ctrl+a
+```
+
+The router is `py/tui/router.py`: `classify()` scores the prompt (word-boundary
+hints + code shape + length), `reachable()` is one TCP connect, and `decide()`
+applies offline → local, complex → cloud, else local. No network call is made to
+choose the model, so routing itself costs nothing and works offline.
 
 ### Copying an answer out
 
