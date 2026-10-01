@@ -63,7 +63,7 @@
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
   "py/tui/commands.py": "e181a487e29a27c438dde6659a44a41ebefe1b9750a9bd11d83cf8c903e89bdd",
-  "py/tui/faces.py": "08647dcc07a83ebd1566657397a7e140adaf2ac628d56469601ddfbd28a019ff",
+  "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
   "py/tui/providers.py": "f5d33ad21e913da20f33c05dc54a1f678b2572efab2853a6829264ec51be127a",
   "py/tui/render.py": "d39747ef2c00b53e870a078089821ddb63cab0344dd9e0dbb911cddd4b086c67",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T01:34:50",
- "note": "baseline: centre the sidebar face"
+ "generated": "2026-10-02T01:38:36",
+ "note": "baseline: bigger sidebar face"
 }

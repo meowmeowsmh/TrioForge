@@ -179,9 +179,19 @@ def emoji(emotion: str) -> str:
     return TEXT_FACES.get(emotion, TEXT_FACES[DEFAULT])["emoji"]
 
 
+# Face geometry. The mouth strings below were authored against a 3-space eye gap
+# and 2 leading spaces, so widening the gap has to shift EVERY mouth by the same
+# amount - otherwise the mouth drifts off the centre line between the eyes.
+# (The music variants indent by 3 because "🎧●" is two columns; a constant shift
+# preserves that too.) One place to change, all variants stay aligned.
+_EYE_GAP = 7
+_MOUTH_PAD = (_EYE_GAP - 3) // 2
+
+
 def render_face(left_eye: str, right_eye: str, mouth: str) -> str:
     """Format eyes and mouth into the multi-line face."""
-    return f"{left_eye}   {right_eye}\n{mouth}"
+    return (f"{left_eye}{' ' * _EYE_GAP}{right_eye}\n"
+            f"{' ' * _MOUTH_PAD}{mouth}")
 
 
 def face(emotion: str, index: int = 0) -> str:
