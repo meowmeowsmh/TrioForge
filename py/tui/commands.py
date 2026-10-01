@@ -35,7 +35,10 @@ COMMANDS: list[tuple[str, str]] = [
     ("/memory [list|get|set|forget|recall]",
      "offline memory vault (DuckDB table behind a Bloom gate)"),
     ("/echo", "toggle the offline stub"),
-    ("/quit", "leave (Ctrl-D also works)"),
+    # Ctrl-D is EOF in the plain scrolling UI but "delete char" in the
+    # terminal client's editor, so the shared help names the key that is
+    # actually true in both.
+    ("/quit", "leave the session (ctrl+q in the terminal client)"),
 ]
 
 

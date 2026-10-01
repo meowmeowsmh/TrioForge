@@ -84,6 +84,8 @@ class Turn:
     text: str = ""
     reasoning: str = ""
     steps: list[Step] = field(default_factory=list)
+    #: True when the user cancelled: text/steps hold whatever arrived first.
+    stopped: bool = False
 
 
 class Agent:
@@ -132,18 +134,31 @@ class Agent:
         return bool(verdict)
 
     # -------------------------------------------------------------------- loop
-    def turn(self, on_event: Callable[[str, dict], None]) -> Turn:
+    def turn(self, on_event: Callable[[str, dict], None],
+             should_stop: Callable[[], bool] | None = None) -> Turn:
         """Run the turn. ``on_event(kind, payload)`` drives the UI.
 
         kinds: reasoning · content · tool_start · tool_end · approval · done
+
+        ``should_stop`` is polled between streamed chunks, between steps and
+        between tool calls, so a long local generation can be abandoned. It
+        cannot interrupt a tool that is already running (bash has its own
+        timeout); everything else stops within a chunk.
         """
         result = Turn()
         messages = self._messages()
 
         for step_no in range(MAX_STEPS):
-            content, reasoning, calls = self._one_request(messages, on_event)
+            if should_stop and should_stop():
+                result.stopped = True
+                break
+            content, reasoning, calls, stopped = self._one_request(
+                messages, on_event, should_stop)
             result.reasoning += reasoning
             result.text += content
+            if stopped:
+                result.stopped = True
+                break
 
             if not self.use_tools or not calls:
                 break
@@ -153,6 +168,9 @@ class Agent:
             messages.append(self._assistant_message(content, calls))
 
             for _i, (name, args) in enumerate(calls):
+                if should_stop and should_stop():
+                    result.stopped = True
+                    break
                 summary = TL.TOOLS[name].summary(args) if name in TL.TOOLS else name
                 on_event("tool_start", {"name": name, "args": args,
                                         "summary": summary})
@@ -170,23 +188,33 @@ class Agent:
                 # rejected every tool result for an unknown tool_call_id.
                 messages.append(self._tool_message(name, output, _i))
 
+            if result.stopped:
+                break
+
             if self.persist:
                 self.persist()
 
-        on_event("done", {"steps": len(result.steps)})
+        on_event("done", {"steps": len(result.steps), "stopped": result.stopped})
         return result
 
     # --------------------------------------------------------------- one round
-    def _one_request(self, messages: list[dict],
-                     on_event) -> tuple[str, str, list[tuple[str, dict]]]:
-        """One model call. Returns (content, reasoning, tool calls)."""
+    def _one_request(self, messages: list[dict], on_event,
+                     should_stop: Callable[[], bool] | None = None
+                     ) -> tuple[str, str, list[tuple[str, dict]], bool]:
+        """One model call. Returns (content, reasoning, tool calls, stopped)."""
         content: list[str] = []
         reasoning: list[str] = []
         partial: dict[int, dict] = {}
+        stopped = False
 
         self.backend.tools = TL.schemas() if (self.use_tools and self.native_tools) else []
         try:
             for kind, payload in self.backend.stream(messages):
+                if should_stop and should_stop():
+                    # Keep whatever was streamed so far - a half answer the user
+                    # chose to cut short is still worth showing.
+                    stopped = True
+                    break
                 if kind == "reasoning":
                     reasoning.append(payload)
                     on_event("reasoning", {"text": payload})
@@ -203,7 +231,7 @@ class Agent:
                         slot["arguments"] += payload["arguments"]
         except BackendError as exc:
             on_event("error", {"message": str(exc)})
-            return "".join(content), "".join(reasoning), []
+            return "".join(content), "".join(reasoning), [], stopped
 
         text = "".join(content)
         calls: list[tuple[str, dict]] = []
@@ -226,7 +254,7 @@ class Agent:
             if calls:
                 text = TL.strip_text_calls(text)
 
-        return text, "".join(reasoning), calls
+        return text, "".join(reasoning), calls, stopped
 
     # ------------------------------------------------------------- wire format
     def _assistant_message(self, content: str, calls: list[tuple[str, dict]]) -> dict:

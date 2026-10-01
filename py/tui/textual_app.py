@@ -20,7 +20,7 @@ to reproduce the same shape - which is TWO panes, not one:
     +----------------------------------+----------------------+
     | ▌ ask anything…                                          |
     +----------------------------------------------------------+
-    | esc cancel · tab chat · ctrl+p commands · ctrl+q quit     |
+    | ctrl+c cancel · ctrl+q quit · tab chat · ctrl+p commands  |
     +----------------------------------------------------------+
 
 Everything below the widget layer - backend.py, providers.py, session.py,
@@ -60,8 +60,10 @@ DEFAULT_SYSTEM = (
     "in fenced blocks with the language tag."
 )
 
-KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+a auto-route  ·  ctrl+y copy  ·  tab chat  ·  "
-            "ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new  ·  ctrl+q quit")
+# Ordered by consequence, not by feature list: the bar truncates on a narrow
+# terminal, so the keys that stop things come before the ones that start them.
+KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+c cancel  ·  ctrl+q quit  ·  ctrl+y copy  ·  "
+            "ctrl+a auto-route  ·  tab chat  ·  ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new")
 
 # How long the pleading "Don't!!!" face stays on screen before the app exits.
 # Long enough to actually read: the plea is the point, so nothing except a
@@ -210,6 +212,7 @@ CollapsibleTitle {{
 #pickerlist > ListItem.--highlight {{ background: {T.PURPLE}; color: #16161e; }}
 
 #activity {{ height: 1; color: {T.YELLOW}; }}
+#statusline {{ height: 1; color: {T.GREY}; padding: 0 2; }}
 
 /* width: 1fr is required for the centring to do anything: a Static defaults to
    its content width (~6 columns for the face), so text-align had nothing to
@@ -413,10 +416,12 @@ class ForgeApp(App):
 
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
-        # ctrl+c stays "quit" for when nothing is selected; the Screen binds it
-        # to copy_text first and that raises SkipAction without a selection, so
-        # selecting text with the mouse and pressing ctrl+c copies instead.
-        ("ctrl+c", "quit", "Quit/copy"),
+        # Textual's Screen binds ctrl+c to copy_text, so with text selected
+        # ctrl+c copies; without a selection that action raises SkipAction and
+        # falls through to here. So: copy if you selected something, otherwise
+        # STOP the turn - ctrl+q is the way out, because in every terminal
+        # ctrl+c means "interrupt", not "exit".
+        ("ctrl+c", "cancel_turn", "Cancel the running turn"),
         ("ctrl+y", "copy_reply", "Copy answer"),
         ("ctrl+a", "auto_route", "Auto-route"),
         ("pageup", "scroll_chat(-1)", "Scroll up"),
@@ -443,6 +448,13 @@ class ForgeApp(App):
         self._auto_route = bool(getattr(self.cfg, "route_enabled", False))
         self._route_pool = list(getattr(self.cfg, "route_pool", []) or [])
         self._team_mode = bool(getattr(self.cfg, "team_enabled", False))
+        # Set by ctrl+c; polled by the agent between streamed chunks so a long
+        # local generation can be abandoned. threading.Event, not a bool: the
+        # agent reads it from a worker thread.
+        self._stop = threading.Event()
+        # The live routing/server line, and the routing note for the current send.
+        self._status_text = ""
+        self._route_note = ""
         self._tool_cards: dict = {}
         self._active = None
         self._spinner_i = 0
@@ -479,6 +491,10 @@ class ForgeApp(App):
         # separately let the keybind bar overlap the prompt's bottom border,
         # which is why the purple line looked cut off.
         with Vertical(id="footer"):
+            # One live line for routing + server state. These used to be two
+            # PERMANENT cards per message in the transcript, so a 20-message
+            # session carried 40 lines of chrome you scrolled past forever.
+            yield Static("", id="statusline")
             yield PromptArea(placeholder=self._hint(), id="prompt")
             yield Static(KEYBINDS, id="keys")
 
@@ -692,7 +708,7 @@ class ForgeApp(App):
         # refresh is cheap - unlike the 4 Hz full rebuild this replaced.
         if now - self._sidebar_ts >= 2.0:
             self._sidebar_ts = now
-            self.query_one("#sidebody", Static).update(self._sidebar())
+            self.query_one("#sidebody", Static).update(self._sidebar_fitted())
 
     # ------------------------------------------------------------------ helpers
     def _short_model(self) -> str:
@@ -762,7 +778,7 @@ class ForgeApp(App):
         ])
 
     def _refresh(self) -> None:
-        self.query_one("#sidebody", Static).update(self._sidebar())
+        self.query_one("#sidebody", Static).update(self._sidebar_fitted())
         self.query_one("#activity", Static).update(self._activity)
 
     def _set_mood(self, mood: str) -> None:
@@ -824,6 +840,25 @@ class ForgeApp(App):
 
         self._paint_face()
 
+    def action_cancel_turn(self) -> None:
+        """ctrl+c: stop the turn that is running. ctrl+q is the way out.
+
+        ctrl+c means "interrupt" in every terminal, so binding it to quit meant
+        the key you press to STOP something killed the whole session - and a
+        local turn can run for minutes. It now abandons the turn at the next
+        streamed chunk (the partial answer is kept); when nothing is running it
+        just says so.
+        """
+        if not self._busy:
+            self.notify("nothing is running — ctrl+q quits", timeout=3)
+            return
+        self._stop.set()
+        self._activity = "⏹ stopping…"
+        try:
+            self.query_one("#activity", Static).update(self._activity)
+        except Exception:  # noqa: BLE001 - the line is cosmetic
+            pass
+
     def action_quit(self) -> None:
         """ctrl+q / ctrl+c: plead, then quit - or leave at once if already pleading."""
         if self._goodbye:
@@ -876,6 +911,47 @@ class ForgeApp(App):
             card = self._add("", "bot")
             state["card"] = card
         return card
+
+    def _sidebar_fitted(self) -> Text:
+        """The sidebar, trimmed to the pane with a marker when it overflows.
+
+        #sidebody is height: 1fr so the face and the spinner stay on screen, which
+        means a short terminal silently CLIPPED the panels - Models, Providers and
+        Modified just vanished with nothing to say they had. Keep the top and say
+        how much was cut. allow_blank=True is required: Text.split() drops blank
+        lines by default, which would both miscount and delete the spacing.
+        """
+        text = self._sidebar()
+        try:
+            height = self.query_one("#sidebody", Static).size.height
+        except Exception:  # noqa: BLE001 - not mounted yet, or no screen
+            return text
+        if height <= 1:
+            return text
+        parts = text.split("\n", allow_blank=True)
+        if len(parts) <= height:
+            return text
+        keep = height - 1
+        out = Text()
+        for part in parts[:keep]:
+            out.append_text(part)
+            out.append("\n")
+        out.append(f"… {len(parts) - keep} more line(s) hidden — "
+                   f"make the window taller\n", style=T.GREY)
+        return out
+
+    def _set_status(self, text: str) -> None:
+        """Write the live status line. It is OVERWRITTEN, never appended to."""
+        self._status_text = text
+        try:
+            self.query_one("#statusline", Static).update(text)
+        except Exception:  # noqa: BLE001 - the line is cosmetic, never fatal
+            pass
+
+    def _status_combined(self) -> str:
+        """Why this message went where it did, plus whether that is usable."""
+        bits = [b for b in (self._route_note, self._target_status()) if b]
+        return "   ·   ".join(bits)
 
     def _stick_chat_bottom(self, force: bool = False) -> None:
         """Scroll the transcript to the bottom - but only when already there.
@@ -1093,7 +1169,8 @@ class ForgeApp(App):
             self.backend = self._backend_for(decision["provider"], self.cfg.model)
             self.real_backend = self.backend
         providers.save(self.cfg)
-        self._add_meta(router.explain(decision))
+        self._route_note = router.explain(decision)
+        self._set_status(self._status_combined())
         self._refresh()
         return decision
 
@@ -1109,7 +1186,7 @@ class ForgeApp(App):
         self.session.add_user(text)
         self._add(text, "user", force_scroll=True)
         self._route(text)
-        self._add_meta(self._target_status())
+        self._set_status(self._status_combined())
         self._ask(text)
 
     @on(PromptArea.Submitted, "#prompt")
@@ -1124,11 +1201,12 @@ class ForgeApp(App):
             return
         self.session.add_user(text)
         self._add(text, "user", force_scroll=True)
+        self._route_note = ""      # never let the previous send's route leak here
         if self._auto_route:
             self._route(text)      # /auto: decide local vs cloud on every send
         # Enter is the moment to say where this actually went, and whether that
         # destination is usable right now.
-        self._add_meta(self._target_status())
+        self._set_status(self._status_combined())
         self._ask(text)
 
     # ------------------------------------------------------------------ copy
@@ -1168,6 +1246,7 @@ class ForgeApp(App):
         by the plain UI too.
         """
         self._busy = True
+        self._stop.clear()      # a new turn is never born cancelled
         self._set_mood("thinking")
         started = time.time()
         team = self._team_mode and self._is_local()
@@ -1208,6 +1287,17 @@ class ForgeApp(App):
             # sense on the local side - a cloud turn is already the senior.
             if team:
                 answer = await self._team_turn(text, state)
+                # The team loop bails at its next await once ctrl+c is pressed,
+                # so its partial answer must not be dressed up as a finished one.
+                if self._stop.is_set():
+                    note = "_stopped by you — this answer is incomplete_"
+                    if answer:
+                        self._replies.append(answer)
+                        self._add(f"{answer}\n\n---\n{note}", "bot", force_scroll=True)
+                    else:
+                        self._add(note, "bot", force_scroll=True)
+                    self._set_mood("neutral")
+                    return
                 if answer:
                     self.session.add_assistant(answer)
                     self._replies.append(answer)
@@ -1219,12 +1309,26 @@ class ForgeApp(App):
 
             turn = await self._run_agent(on_event)
             final = turn.text.strip()
+            if turn.stopped:
+                # Whatever streamed before ctrl+c is still worth keeping - just
+                # say plainly that it is incomplete.
+                note = "_stopped by you — this answer is incomplete_"
+                if final:
+                    self._replies.append(final)
+                    await self._ensure_card(state).update(f"{final}\n\n---\n{note}")
+                else:
+                    await self._ensure_card(state).update(note)
+                self._set_mood("neutral")
+                return
             if final:
                 self.session.add_assistant(final)
                 # Kept so the answer can be copied without selecting it by hand.
                 self._replies.append(final)
+                # The route note names the destination AND why; fall back to the
+                # bare model when nothing was routed.
+                head = self._route_note or self._short_model()
                 await state["card"].update(
-                    f"{final}\n\n---\n_{self._short_model()} · "
+                    f"{final}\n\n---\n_{head} · "
                     f"{time.time() - started:.1f}s · {len(turn.steps)} tool"
                     f"{'s' if len(turn.steps) != 1 else ''}_")
             elif turn.steps:
@@ -1334,25 +1438,40 @@ class ForgeApp(App):
         self._set_mood("thinking")
         feedback, answer = "", ""
         for rnd in range(1, team.MAX_ROUNDS + 1):
+            if self._stop.is_set():
+                return answer       # ctrl+c: hand back whatever the junior had
             asking = team.junior_task(text, feedback, rnd)
             self._add_meta(f"👥 junior **{who(junior)}** · attempt {rnd}")
             answer = await self._agent_text(junior, asking, state)
             if not answer:
+                if self._stop.is_set():
+                    return answer
                 self._add_meta(f"🧑‍🏫 junior had no idea — **{who(senior)}** takes control")
                 return await self._agent_text(senior, text, state) or answer
 
-            self._add_meta(f"🧑‍🏫 senior **{who(senior)}** is reviewing…")
+            if self._stop.is_set():
+                return answer
+            # "reviewing…" is pure transience: it is always superseded by the
+            # verdict a moment later, so it goes on the live status line instead
+            # of adding a card per round to the transcript.
+            keep = self._status_text
+            self._set_status(f"🧑‍🏫 senior {who(senior)} is reviewing…")
             reply = await self._call_text(senior, team.review_messages(text, answer), state)
+            self._set_status(keep)
             kind, detail = team.verdict(reply)
             if kind == "approve":
                 self._add_meta("✅ senior approved the junior's work")
                 return answer
             if kind == "takeover":
+                if self._stop.is_set():
+                    return answer
                 self._add_meta("🧑‍🏫 senior takes control")
                 return await self._agent_text(senior, text, state) or answer
             feedback = detail
             self._add_meta("🧑‍🏫 senior → junior: " + " ".join(detail.split())[:200])
 
+        if self._stop.is_set():
+            return answer
         self._add_meta("🧑‍🏫 junior out of attempts — senior takes control")
         return await self._agent_text(senior, text, state) or answer
 
@@ -1416,7 +1535,8 @@ class ForgeApp(App):
                     approve=self._approve_blocking,
                     persist=lambda: providers.save(self.cfg),
                 )
-                result["turn"] = ag.turn(on_event)
+                result["turn"] = ag.turn(
+                    on_event, should_stop=self._stop.is_set)
             except Exception as exc:  # noqa: BLE001
                 result["error"] = exc
 

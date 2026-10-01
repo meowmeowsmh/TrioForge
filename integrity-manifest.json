@@ -58,11 +58,11 @@
   "py/tui/README.md": "838ebc334d88ec7571914c38efa4bb890ab07ab40f9a5f47962aec7996e28de7",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "8e0668ce561bedf61891081ba2d8ec9dde8b30d9c1f0617e47593690e43d65e8",
+  "py/tui/agent.py": "48388c71e992051b717e015da66be484d55fc6e2a5a624de63c008a49255f562",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
-  "py/tui/commands.py": "e181a487e29a27c438dde6659a44a41ebefe1b9750a9bd11d83cf8c903e89bdd",
+  "py/tui/commands.py": "f913320408afbe169b7227966f290d364cc1c127ce8fb2e49be1579d77ef8e8c",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
   "py/tui/providers.py": "f5d33ad21e913da20f33c05dc54a1f678b2572efab2853a6829264ec51be127a",
@@ -70,7 +70,7 @@
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
   "py/tui/team.py": "fded0e603eae576fe73991c1d9895a63926ef16f046cdcc255e573924a1bdd9a",
-  "py/tui/textual_app.py": "7fd718784738574a530fc72329437745cd108a006cca913899a01c26530c613a",
+  "py/tui/textual_app.py": "69b4644ba77a14dc6ab91aa43515b2f03595a13c1aebf8c871a12e621cd40ac0",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "e6f6fa0147615c393b0bd3f45d685893ea1380b9ecea1b6b3405a065306c5289",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T01:38:36",
- "note": "baseline: bigger sidebar face"
+ "generated": "2026-10-02T01:52:59",
+ "note": "baseline: cancel, status line, sidebar marker"
 }
