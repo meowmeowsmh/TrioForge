@@ -86,13 +86,6 @@ PALETTE_ACTIONS = [
     ("remove model", "remove a model id from the current provider"),
 ]
 
-#: Commands only the full-screen client has. Kept out of commands.COMMANDS so the
-#: scrolling and web UIs never list something they cannot do.
-TUI_COMMANDS = [
-    ("/auto", "route every message: local or cloud, decided for you"),
-    ("/route", "route a single prompt without pressing ctrl+a"),
-    ("/team", "senior/junior pair: the local model works, the cloud model guides"),
-]
 
 # Commands that take an argument. Picked from ctrl+p, the argument is asked for
 # instead of silently running the command with none. "mode: local" lists the
@@ -1664,7 +1657,7 @@ class ForgeApp(App):
             self.action_new_session()
             return
         if name in ("/help", "/?"):
-            self.action_show_help()
+            self.action_show_help(arg)
             return
         if name == "/model" and not arg:
             self.action_pick_model()
@@ -1742,13 +1735,36 @@ class ForgeApp(App):
         self._refresh()
 
     # ---------------------------------------------------------------- actions
-    def action_show_help(self) -> None:
-        from .commands import COMMANDS
-        # A Markdown LIST, with a blank line around it. Joining plain lines with
-        # \n made Markdown treat them as ONE paragraph, so every command ran
-        # together on one line and the tail was clipped.
-        rows = "\n".join(f"- `{c}` — {d}" for c, d in COMMANDS)
-        self._add(f"### commands\n\n{rows}\n", "bot")
+    def action_show_help(self, query: str = "") -> None:
+        """Every command grouped with a runnable example, or one in detail.
+
+        Both views come from commands.COMMAND_GROUPS. /team, /auto and /route
+        used to exist only as palette entries, so /help never mentioned them.
+        """
+        from .commands import COMMAND_GROUPS, lookup
+
+        query = (query or "").strip()
+        if query:
+            found = lookup(query)
+            if found is None:
+                self._add_meta(f"no command called `{query}` — `/help` lists them all")
+                return
+            lines = [f"### `{found.usage}`", "", found.desc, "",
+                     "**example**", "", "```", found.example, "```"]
+            if found.client == "tui":
+                lines += ["", "_terminal client only — run `forge` to use it_"]
+            self._add("\n".join(lines) + "\n", "bot")
+            return
+
+        out = ["### commands", "",
+               "_`/help <command>` explains any one of them._", ""]
+        for title, rows in COMMAND_GROUPS:
+            out += [f"**{title}**", ""]
+            for c in rows:
+                tag = "  _(terminal client only)_" if c.client == "tui" else ""
+                out.append(f"- `{c.usage}` — {c.desc}{tag}  ·  `e.g. {c.example}`")
+            out.append("")
+        self._add("\n".join(out) + "\n", "bot")
 
     def action_new_session(self) -> None:
         self.session.clear()
@@ -1933,10 +1949,18 @@ class ForgeApp(App):
     def action_palette(self) -> None:
         """ctrl+p - searchable command palette, instead of remembering names."""
         from .commands import COMMANDS
-        self.run_worker(self._palette(COMMANDS + TUI_COMMANDS), exclusive=False)
+        self.run_worker(self._palette(COMMANDS), exclusive=False)
 
     async def _palette(self, commands) -> None:
-        options = [(c.split()[0], d) for c, d in commands]
+        # One entry per COMMAND, not per usage row: /keys and /memory each
+        # document several forms, and repeating them would bury the rest.
+        seen, options = set(), []
+        for usage, desc in commands:
+            name = usage.split()[0]
+            if name in seen:
+                continue
+            seen.add(name)
+            options.append((name, desc))
         options += PALETTE_ACTIONS
         choice = await self.push_screen_wait(Picker("commands", options))
         if not choice:

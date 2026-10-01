@@ -8,42 +8,137 @@ else in the app needs to know about it.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NamedTuple
 
 from . import localmodels, providers, render
 from .backend import EchoBackend, fetch_models
 
-# (usage, description) - also what /help prints, in this order.
-COMMANDS: list[tuple[str, str]] = [
-    ("/help", "show this list"),
-    ("/setup", "guided setup: provider → model → API key"),
-    ("/provider [name]", "list or switch provider (local, deepseek, groq, ...)"),
-    ("/key [value]", "show/change the key for the CURRENT provider"),
-    ("/keys [provider] [value]", "list every saved key, or change one"),
-    ("/keys clear [all]", "remove every key EXCEPT the current one"),
-    ("/models", "list models (offline .gguf files, or the endpoint's list)"),
-    ("/specs", "what hardware was detected (GPU, memory) and what fits"),
-    ("/copy [n]", "copy an answer to the clipboard (n = how many back)"),
-    ("/llama [install|status]", "the bundled llama.cpp runtime (auto-installed)"),
-    ("/start [name]", "load an offline .gguf into llama-server"),
-    ("/model [name]", "show or switch model; 'auto' re-detects it"),
-    ("/status", "server health, model, endpoint and key state"),
-    ("/base-url [url]", "show or set the endpoint"),
-    ("/system [text]", "show or set the system prompt"),
-    ("/clear", "forget the conversation"),
-    ("/history", "replay the conversation"),
-    ("/save [path]", "write the transcript to a file"),
-    ("/memory [list|get|set|forget|recall]",
-     "offline memory vault (DuckDB table behind a Bloom gate)"),
-    ("/echo", "toggle the offline stub"),
-    # Ctrl-D is EOF in the plain scrolling UI but "delete char" in the
-    # terminal client's editor, so the shared help names the key that is
-    # actually true in both.
-    ("/quit", "leave the session (ctrl+q in the terminal client)"),
+class Cmd(NamedTuple):
+    """One slash command.
+
+    ``usage`` is the grammar exactly as the handler parses it, ``example`` is a
+    line you can actually type. ``client`` is "" for both UIs or "tui" for the
+    full-screen client only - the scrolling UI filters those out.
+    """
+    usage: str
+    desc: str
+    example: str
+    client: str = ""
+
+
+#: Every command, grouped. This is the SINGLE source of truth: /help, /help
+#: <command>, the ctrl+p palette and the usage errors all read it, so a command
+#: cannot be added without becoming discoverable. (It could before: /team and
+#: /auto existed only in the palette, so /help never mentioned them.)
+COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
+    ("getting started", [
+        Cmd("/help [command]", "list every command, or explain one in detail",
+            "/help /team"),
+        Cmd("/setup", "guided setup: provider, then model, then API key", "/setup"),
+        Cmd("/status", "server health, model, endpoint and key state", "/status"),
+        Cmd("/specs", "the hardware detected, and which models fit it", "/specs"),
+    ]),
+    ("the model", [
+        Cmd("/model [name|auto]", "show or switch model; 'auto' re-detects it",
+            "/model auto"),
+        Cmd("/models", "list models: local .gguf files, or the endpoint's list",
+            "/models"),
+        Cmd("/start [name]", "load a local .gguf into llama-server",
+            "/start gemma-3-12b-it"),
+        Cmd("/provider [name]", "list providers, or switch to one",
+            "/provider deepseek"),
+        Cmd("/base-url [url]", "show or set the endpoint",
+            "/base-url http://127.0.0.1:8080/v1"),
+    ]),
+    ("keys", [
+        Cmd("/key [value]", "show or set the key for the CURRENT provider",
+            "/key sk-abc123"),
+        Cmd("/keys", "every provider, and whether it has a key", "/keys"),
+        Cmd("/keys <provider> [value]", "detail for one provider, or set its key",
+            "/keys groq gsk-abc123"),
+        Cmd("/keys clear [all]", "forget saved keys ('all' clears yours too)",
+            "/keys clear all"),
+    ]),
+    ("routing and teamwork", [
+        Cmd("/auto", "route every message: local or cloud, decided for you",
+            "/auto", "tui"),
+        Cmd("/route <prompt>", "send one prompt and show the routing decision",
+            "/route explain this error", "tui"),
+        Cmd("/team", "the senior/junior pair: local works, cloud guides",
+            "/team", "tui"),
+        Cmd("/copy [n]", "copy an answer (n = how many answers back)", "/copy 2"),
+    ]),
+    ("llama.cpp", [
+        Cmd("/llama", "is the bundled llama.cpp runtime installed and running",
+            "/llama"),
+        Cmd("/llama install", "fetch the right build for this GPU and start it",
+            "/llama install"),
+    ]),
+    ("the conversation", [
+        Cmd("/clear", "forget the conversation", "/clear"),
+        Cmd("/history", "replay the conversation", "/history"),
+        Cmd("/save [path]", "write the transcript to a file", "/save ~/chat.md"),
+        Cmd("/system [text]", "show or set the system prompt",
+            "/system answer in one line"),
+    ]),
+    ("memory", [
+        Cmd("/memory", "what the offline vault holds, plus the gate stats",
+            "/memory"),
+        Cmd("/memory list [prefix]", "list stored keys", "/memory list"),
+        Cmd("/memory get <key>", "read one value back", "/memory get editor"),
+        Cmd("/memory set <key> = <value>", "remember a fact",
+            "/memory set editor = neovim"),
+        Cmd("/memory recall <sentence>", "search memory by meaning",
+            "/memory recall what editor do I use"),
+        Cmd("/memory forget <key>", "delete a key", "/memory forget editor"),
+    ]),
+    ("other", [
+        Cmd("/echo", "toggle the offline stub (no model needed)", "/echo"),
+        Cmd("/quit", "leave (ctrl+q in the terminal client)", "/quit"),
+    ]),
 ]
 
 
+def _visible(cmd: Cmd, client: str) -> bool:
+    """Terminal-client-only commands are hidden from the scrolling UI."""
+    return cmd.client != "tui" or client == "tui"
+
+
+def _iter(client: str = "tui") -> list[Cmd]:
+    """Every command the given client can actually run."""
+    return [c for _title, rows in COMMAND_GROUPS for c in rows
+            if _visible(c, client)]
+
+
+#: Flat (usage, description) in group order - what the palette searches.
+COMMANDS: list[tuple[str, str]] = [(c.usage, c.desc) for c in _iter()]
+
+
+def lookup(query: str) -> Cmd | None:
+    """Find the command a user meant by ``query`` ("/team", "team", "/keys")."""
+    q = query.strip().lower().lstrip("/")
+    for c in _iter():
+        name = c.usage.split()[0].lstrip("/").lower()
+        if q == name:
+            return c
+    return None
+
+
 def _help(ctx, arg: str) -> None:
-    render.help_panel(COMMANDS)
+    """``/help`` lists everything; ``/help <command>`` explains one."""
+    query = (arg or "").strip()
+    if query:
+        found = lookup(query)
+        if found is None:
+            render.error(f"no command called {query!r} — /help lists them all")
+            return
+        render.help_detail(found.usage, found.desc, found.example,
+                           found.client == "tui")
+        return
+    client = "tui" if getattr(ctx, "is_tui", False) else "plain"
+    groups = [(title, [c for c in rows if _visible(c, client)])
+              for title, rows in COMMAND_GROUPS]
+    render.help_panel([(t, r) for t, r in groups if r])
 
 
 def _setup(ctx, arg: str) -> None:

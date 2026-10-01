@@ -131,9 +131,24 @@ Override the location with `FORGE_CONFIG_DIR`.
 
 ## Commands
 
+`/help` lists every command **grouped by purpose, each with a runnable example**,
+and `/help <command>` explains one in detail:
+
+```
+/help /team          ->  ### /team
+                         the senior/junior pair: local works, cloud guides
+                         example
+                         /team
+```
+
+`/help`, the `ctrl+p` palette and the usage errors all read the same table
+(`COMMAND_GROUPS` in `commands.py`), so a new command cannot be added without
+becoming discoverable. `Cmd.client = "tui"` marks the terminal-client-only ones;
+the scrolling UI's help hides those rather than advertising something it cannot run.
+
 | Command | |
 |---|---|
-| `/help` | list everything |
+| `/help [command]` | list everything, or explain one |
 | `/setup` | re-run the guided setup |
 | `/provider [name]` | list or switch provider |
 | `/key` · `/key <value>` | show / change the key for the current provider |
@@ -378,6 +393,10 @@ same, so nobody "simplifies" them back:
   than the pane and was clipped — text appeared to be eaten.
 - **`/help` is a Markdown list, not joined lines.** Consecutive lines are one
   paragraph in Markdown, so every command ran together on a single line.
+- **One table drives the help, the palette and the errors.** `/team`, `/auto` and
+  `/route` used to live only in the palette, so `/help` never mentioned them and
+  nobody could discover them. The palette also de-duplicates: `/keys` and
+  `/memory` document several forms each and would otherwise repeat.
 - **The input border is the same colour focused and unfocused.** Tying it to
   `:focus` made the frame appear to break every time you tabbed away.
 - **The prompt and keybind bar share one docked container.** Docked separately,

@@ -290,12 +290,37 @@ def rule() -> None:
     console().print(Rule(style=T.GREY))
 
 
-def help_panel(rows: list[tuple[str, str]]) -> None:
+def help_panel(groups) -> None:
+    """Every command, grouped, each with a runnable example.
+
+    Built from commands.COMMAND_GROUPS, so /help, the ctrl+p palette and the
+    usage errors can never disagree about what exists.
+    """
     body = Text()
-    for cmd, desc in rows:
-        body.append(f"  {cmd:<20}", style="cmd")
-        body.append(f"{desc}\n", style="fg")
+    for title, rows in groups:
+        body.append(f"{title}\n", style="accent")
+        for cmd in rows:
+            body.append(f"  {cmd.usage:<28}", style="cmd")
+            body.append(f"{cmd.desc}\n", style="fg")
+            body.append(f"  {'':<28}", style="")
+            body.append(f"e.g. {cmd.example}\n", style="dim")
+        body.append("\n")
     console().print(Panel(body, title="[cmd]commands[/]", title_align="left",
+                          border_style=T.GREY, padding=(0, 1)))
+
+
+def help_detail(usage: str, desc: str, example: str, tui_only: bool = False) -> None:
+    """One command, explained: what it does, and a line you can type."""
+    body = Text()
+    body.append(f"{usage}\n\n", style="cmd")
+    body.append(f"{desc}\n\n", style="fg")
+    body.append("example\n", style="accent")
+    body.append(f"  {example}\n", style="dim")
+    if tui_only:
+        body.append("\nterminal client only — run ", style="warn")
+        body.append("forge", style="cmd")
+        body.append("\n", style="warn")
+    console().print(Panel(body, title="[cmd]help[/]", title_align="left",
                           border_style=T.GREY, padding=(0, 1)))
 
 
