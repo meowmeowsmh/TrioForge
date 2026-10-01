@@ -922,6 +922,35 @@ class ForgeApp(App):
                         f"{len(selected)} model(s) in the pool")
         self._refresh()
 
+    def _target_status(self) -> str:
+        """Check the destination is actually usable, and say so in one line.
+
+        This is a real check, not a label: for a cloud target it opens a TCP
+        connection to the endpoint and looks at whether a key is set; for a local
+        target it asks llama.cpp whether its server is up. Printed right after
+        Enter, so "did it go the right way" has a factual answer.
+        """
+        from . import router
+        engine = "local" if self._is_local() else "cloud"
+        # the model being routed TO, not a stale session value
+        model = self.cfg.model or self._short_model()
+        entry = self.cfg.providers.get(self.cfg.provider, {})
+        url = entry.get("base_url", "")
+
+        if engine == "cloud":
+            key = "key set" if entry.get("api_key") else "NO KEY"
+            up = router.reachable(url, timeout=3.0)
+            verdict = "reachable" if up else "UNREACHABLE"
+            return f"status: ☁ {self.cfg.provider} · {model} · {verdict} · {key}"
+
+        try:
+            import llamacpp_service as svc
+            running = bool(svc.status().get("running"))
+        except Exception:                       # noqa: BLE001
+            running = router.reachable(url, timeout=1.0)
+        verdict = "server up" if running else "server down (it will be started)"
+        return f"status: 💻 local · {model} · {verdict}"
+
     def _backend_for(self, provider: str, model: str):
         """Build the backend for an ARBITRARY provider, not just the current one."""
         entry = self.cfg.providers.get(provider, {})
@@ -973,6 +1002,7 @@ class ForgeApp(App):
         self.session.add_user(text)
         self._add(text, "user")
         self._route(text)
+        self._add_plain(self._target_status())
         self._ask(text)
 
     @on(PromptArea.Submitted, "#prompt")
@@ -989,6 +1019,9 @@ class ForgeApp(App):
         self._add(text, "user")
         if self._auto_route:
             self._route(text)      # /auto: decide local vs cloud on every send
+        # Enter is the moment to say where this actually went, and whether that
+        # destination is usable right now.
+        self._add_plain(self._target_status())
         self._ask(text)
 
     # ------------------------------------------------------------------ copy
