@@ -600,8 +600,10 @@ def available() -> bool:
 
 
 def missing_reason() -> str:
-    return ("the memory vault needs DuckDB: python -m pip install duckdb "
-            "(or re-run install.ps1 / install.sh)")
+    from common import pip_hint
+    return ("the memory vault needs DuckDB. Run: "
+            + pip_hint("duckdb")
+            + "  (or re-run install.sh / install.ps1)")
 
 
 def engine() -> MemoryEngine:

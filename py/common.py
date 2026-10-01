@@ -79,6 +79,20 @@ def _module_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
+def pip_hint(packages: str) -> str:
+    """The pip command that will ACTUALLY work on this machine.
+
+    "pip install X" is wrong wherever the system Python is marked externally
+    managed (PEP 668): Debian, Ubuntu and Mint all refuse it with
+    "externally-managed-environment", and a bare "python" may not even exist
+    (Mint ships python3 only). Name the interpreter we are running under, so the
+    line can be pasted as-is.
+    """
+    import sys
+    exe = getattr(sys, "executable", "") or "python3"
+    return f'"{exe}" -m pip install {packages}'
+
+
 EMBED_AVAILABLE = (
     _module_available("sentence_transformers")
     and _module_available("numpy")
@@ -87,7 +101,7 @@ EMBED_AVAILABLE = (
 if not EMBED_AVAILABLE:
     logger.warning(
         "sentence-transformers, numpy, or scikit-learn not installed. "
-        "Run: pip install sentence-transformers scikit-learn numpy"
+        "Run: " + pip_hint("sentence-transformers scikit-learn numpy")
     )
 
 _embed_model = None

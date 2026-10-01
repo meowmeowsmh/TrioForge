@@ -12,10 +12,10 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "50b03e369fe276a42c40eb8e9da912bcfc29a68db21b990c6dde0d3c35a4f142",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "4ca8f44a49f9c2bd083ca0cc6a673854655a1d9f1729275f22e5d983c74c15cc",
+  "py/app.py": "ed969d68d3e6bf5e8dce98b3b943336951481dff43b6d111bf3436c0c4a8d39e",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
-  "py/common.py": "4d4b76a9e164b71746b43e72cdd578e632c993db5a5b64fb38b2d77bc3f3342c",
+  "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
@@ -36,7 +36,7 @@
   "py/llamacpp_service.py": "0e170a3b32975594f98d66532c3458667155c6d4c48ae6017fbc3b88f6dddec1",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
-  "py/memory.py": "2314e764d4fa4a7cedb0584c65ccb4a4be9bbfbb343357e736d678ffcde66d51",
+  "py/memory.py": "0b74df6bfa5b1167a3cdbd611ba4b9fdc2141b2b22b3840dd2b5ab1bb720a111",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "3cbe70d93c453fb97b2ad18e3c7ba76b013aaf9e81c839b0951a7de22fc3dab0",
@@ -70,7 +70,7 @@
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
   "py/tui/team.py": "fded0e603eae576fe73991c1d9895a63926ef16f046cdcc255e573924a1bdd9a",
-  "py/tui/textual_app.py": "aae7a0edb4ef13e6e996703398b6dc65d34c1a5d23949991ae73026ff0084341",
+  "py/tui/textual_app.py": "bce46b2afe9a656839aa705d71ed076c188ac7834c02b444e641a06910a02ccc",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "e6f6fa0147615c393b0bd3f45d685893ea1380b9ecea1b6b3405a065306c5289",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T02:08:05",
- "note": "baseline: grouped, example-rich command help"
+ "generated": "2026-10-02T02:14:13",
+ "note": "baseline: footer height auto + working pip advice"
 }

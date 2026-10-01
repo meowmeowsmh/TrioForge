@@ -66,6 +66,7 @@ except ImportError:
     json_loads = std_json.loads
     logger.info("Using standard json (install orjson for better performance)")
 
+import common
 from paths import root_path
 import backup_store
 import llamacpp_service
@@ -931,6 +932,12 @@ def _save_attachment_to_disk_async(b64_data, hint_name=""):
     path = os.path.join(ATTACHMENTS_DIR, fname)
     _executor.submit(_write_attachment, path, b64_data)
     return fname
+
+def _pip(packages: str) -> str:
+    """The pip line that works HERE (PEP 668: "pip install X" is refused on
+    Debian/Ubuntu/Mint, and a bare `python` may not exist)."""
+    return common.pip_hint(packages)
+
 
 def _load_attachment_from_disk(fname):
     if not fname:
@@ -1829,7 +1836,7 @@ def download_hf_model():
     try:
         from huggingface_hub import hf_hub_download
     except ImportError:
-        return jsonify({'error': 'huggingface_hub is not installed. Run: pip install huggingface_hub'}), 500
+        return jsonify({'error': f'huggingface_hub is not installed. Run: {_pip("huggingface_hub")}'}), 500
 
     models_dir = root_path("models")
     os.makedirs(models_dir, exist_ok=True)
@@ -3651,7 +3658,7 @@ def _execute_tool(name, args):
             pyautogui.write(text, interval=0.02)
             return {"ok": True}
         except ImportError:
-            return {"error": "pyautogui not installed. Run: pip install pyautogui"}
+            return {"error": f"pyautogui not installed. Run: {_pip('pyautogui')}"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -3665,7 +3672,7 @@ def _execute_tool(name, args):
             pyautogui.hotkey(*combo)
             return {"ok": True, "pressed": keys}
         except ImportError:
-            return {"error": "pyautogui not installed. Run: pip install pyautogui"}
+            return {"error": f"pyautogui not installed. Run: {_pip('pyautogui')}"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -3679,7 +3686,7 @@ def _execute_tool(name, args):
             pyautogui.screenshot(path)
             return {"ok": True, "path": path, "url": f"/static/uploads/screenshots/{fname}"}
         except ImportError:
-            return {"error": "pyautogui not installed. Run: pip install pyautogui"}
+            return {"error": f"pyautogui not installed. Run: {_pip('pyautogui')}"}
         except Exception as e:
             return {"error": str(e)}
 

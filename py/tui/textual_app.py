@@ -271,9 +271,13 @@ CollapsibleTitle {{
     color: #414868;
 }}
 
+/* auto, NOT the old fixed 4. That 4 was exactly prompt(3) + keys(1); adding the
+   status line made the content 5 rows, so #keys was laid out one row BELOW the
+   viewport and the whole keybind bar silently disappeared. Let it size to its
+   children instead of hard-coding a number that has to be kept in step. */
 #footer {{
     dock: bottom;
-    height: 4;
+    height: auto;
     background: {T.BG};
 }}
 """
