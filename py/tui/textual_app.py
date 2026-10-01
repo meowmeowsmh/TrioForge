@@ -980,8 +980,18 @@ class ForgeApp(App):
             cloud_model=cloud_model, local_model=local_model)
 
         self.cfg.provider = decision["provider"]
-        self.cfg.model = decision.get("model") or ""
-        self.session.model = self.cfg.model
+        model = decision.get("model") or ""
+        if decision["provider"] == "local" and model:
+            # The routing pool holds the picker's SHORT name ("gemma-3-12b-it"),
+            # but llama.cpp needs a real path: resolve_model() treats a bare name
+            # as a relative path, fails, and the turn dies with "model not
+            # found". _set_model already does this conversion; routing must too.
+            from . import localmodels as lm
+            found = lm.find(model)
+            if found:
+                model = found.path
+        self.cfg.model = model
+        self.session.model = model
         if not isinstance(self.backend, EchoBackend):
             self.backend = self._backend_for(decision["provider"], self.cfg.model)
             self.real_backend = self.backend
