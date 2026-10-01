@@ -211,6 +211,11 @@ CollapsibleTitle {{
 
 #activity {{ height: 1; color: {T.YELLOW}; }}
 
+/* width: 1fr is required for the centring to do anything: a Static defaults to
+   its content width (~6 columns for the face), so text-align had nothing to
+   centre within and the face sat against the left edge of the 34-column pane. */
+#face {{ width: 1fr; text-align: center; }}
+
 #confirmbox {{
     align: center middle;
     background: #16161e;
