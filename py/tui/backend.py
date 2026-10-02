@@ -30,6 +30,34 @@ class BackendError(RuntimeError):
     pass
 
 
+def friendly_error(text: str) -> str:
+    """Map a raw transport/OS error to something a human understands.
+
+    httpx surfaces OS errors verbatim ("[Errno 10061] Connect call failed"),
+    which reads like garbage in the transcript. Translate the two cases users
+    actually hit - the local model not running, and a slow/absent reply - and
+    leave anything else untouched.
+    """
+    t = (text or "").lower()
+    if "10061" in t or "connection refused" in t or "actively refused" in t \
+            or "cannot connect" in t or "errno 111" in t:
+        return ("the local model is not running — start it with /start, or just "
+                "send a message and it will auto-start")
+    if "timed out" in t or "timeout" in t or "readtimeout" in t:
+        return "the model took too long to answer (timed out)"
+    if "name or service not known" in t or "getaddrinfo" in t \
+            or "errno 11001" in t:
+        return "could not reach the endpoint — check the provider's base URL"
+    if t.startswith("http 401") or "invalid_api_key" in t or "invalid api key" in t \
+            or "incorrect api key" in t or "unauthorized" in t:
+        return "the API key was rejected (401) — check the key for this provider"
+    if t.startswith("http 429"):
+        return "rate limited (429) — wait a moment and try again"
+    if t.startswith("http 404"):
+        return "the model name was not found (404) — check it exists on this provider"
+    return text
+
+
 class Backend:
     """Interface. ``stream`` yields text chunks as they arrive."""
 
@@ -167,17 +195,17 @@ class OpenAICompatBackend(Backend):
                                           timeout=self.timeout) as r2:
                             if r2.status_code >= 400:
                                 d2 = r2.read().decode("utf-8", "replace")[:400]
-                                raise BackendError(f"HTTP {r2.status_code}: {d2}")
+                                raise BackendError(friendly_error(f"HTTP {r2.status_code}: {d2}"))
                             yield from _iter_sse(r2)
                         return
                 if r.status_code >= 400:
                     detail = r.read().decode("utf-8", "replace")[:400]
-                    raise BackendError(f"HTTP {r.status_code}: {detail}")
+                    raise BackendError(friendly_error(f"HTTP {r.status_code}: {detail}"))
                 yield from _iter_sse(r)
         except BackendError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise BackendError(str(exc)) from exc
+            raise BackendError(friendly_error(str(exc))) from exc
 
 
 class EchoBackend(Backend):

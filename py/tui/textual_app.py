@@ -633,12 +633,16 @@ class ForgeApp(App):
         # ---- providers and whether each has a key
         section("Providers")
         for name in sorted(self.cfg.providers)[:6]:
-            has = bool(self.cfg.providers[name].get("api_key"))
+            raw = self.cfg.providers[name].get("api_key", "")
+            # Resolve ${VAR}: a placeholder whose env var is unset is NOT a key,
+            # so the sidebar must say "env unset" rather than lying "key".
+            has = bool(providers.resolve(raw))
             current = name == self.cfg.provider
             out.append("● " if has else "○ ",
                        style=T.GREEN if has else (T.YELLOW if current else "#414868"))
             out.append(f"{name}", style=f"bold {T.FG}" if current else T.GREY)
-            out.append(f"  {'key' if has else '—'}\n", style="#414868")
+            label = "key" if has else ("env unset" if raw else "—")
+            out.append(f"  {label}\n", style="#414868")
         out.append("\n")
 
         # ---- git: the files an assistant would actually be asked about
@@ -1088,7 +1092,7 @@ class ForgeApp(App):
         for name in ("deepseek", "claude", "groq", "gemini", "openrouter",
                      "huggingface"):
             entry = self.cfg.providers.get(name, {})
-            if entry.get("api_key") and entry.get("base_url"):
+            if providers.resolve(entry.get("api_key", "")) and entry.get("base_url"):
                 model = (entry.get("models") or [""])[0]
                 return name, entry["base_url"], model
         for name, entry in self.cfg.providers.items():
@@ -1143,7 +1147,7 @@ class ForgeApp(App):
             entry = self.cfg.providers.get(name, {})
             if not entry.get("base_url"):
                 continue
-            has = "key" if entry.get("api_key") else "no key"
+            has = "key" if providers.resolve(entry.get("api_key", "")) else "no key"
             kind = "💻" if name in offline else "☁"
             models = live.get(name) or (entry.get("models") or [])
             for m in models[:6]:
@@ -1208,7 +1212,7 @@ class ForgeApp(App):
         url = entry.get("base_url", "")
 
         if engine == "cloud":
-            key = "key set" if entry.get("api_key") else "NO KEY"
+            key = "key set" if providers.resolve(entry.get("api_key", "")) else "NO KEY"
             up = router.reachable(url, timeout=3.0)
             verdict = "reachable" if up else "UNREACHABLE"
             return f"status: ☁ {self.cfg.provider} · {model} · {verdict} · {key}"
@@ -1523,10 +1527,17 @@ class ForgeApp(App):
                        where=getattr(backend, "where", ""),
                        system=self.session.system)
         sess.add_user(task)
-        turn = await self._run_agent(self._team_event, backend=backend,
+        def on_event(kind, payload):
+            # Count content as it streams, so the sidebar's token counter moves
+            # DURING the turn instead of sitting at "~0 tok" for minutes while
+            # the model is actually generating (team mode never updated it).
+            if kind == "content" and isinstance(payload, dict):
+                state["tokens"] = state.get("tokens", 0) + max(0, len(payload.get("text", "")) // 4)
+            self._team_event(kind, payload)
+
+        turn = await self._run_agent(on_event, backend=backend,
                                      session=sess, use_tools=use_tools)
         text = (turn.text or "").strip()
-        state["tokens"] = state.get("tokens", 0) + max(0, len(text) // 4)
         return text, list(turn.steps)
 
     async def _team_turn(self, text: str, state) -> str:
@@ -1978,7 +1989,7 @@ class ForgeApp(App):
         options = []
         for name in sorted(self.cfg.providers):
             entry = self.cfg.providers[name]
-            has = "key" if entry.get("api_key") else "no key"
+            has = "key" if providers.resolve(entry.get("api_key", "")) else "no key"
             options.append((name, f"{entry.get('label','')} · {has}"))
         choice = await self.push_screen_wait(
             Picker("switch provider", options, current=self.cfg.provider))
