@@ -150,6 +150,21 @@ def t_edit(file_path: str = "", old_string: str = "", new_string: str = "",
     return f"edited {p}  ({n} replacement{'s' if n != 1 else ''})"
 
 
+def _kill_tree(pid: int) -> None:
+    """Kill a process and every descendant, so a timeout cannot orphan them."""
+    try:
+        import psutil
+        proc = psutil.Process(pid)
+        for child in proc.children(recursive=True):
+            try:
+                child.kill()
+            except Exception:
+                pass
+        proc.kill()
+    except Exception:
+        pass
+
+
 def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
     if not command.strip():
         return "error: command is empty"
@@ -158,20 +173,23 @@ def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
         return f"error: not a directory: {cwd}"
     try:
         # stdin=DEVNULL: a command must not be able to read (or hijack) the TTY
-        # the TUI is drawing on.
-        r = subprocess.run(command, shell=True, cwd=cwd, capture_output=True,
-                           text=True, timeout=120, stdin=subprocess.DEVNULL)
+        # the TUI is drawing on. Popen (not run) so a timeout can kill the whole
+        # tree: run() only killed the shell and left its children running.
+        proc = subprocess.Popen(
+            command, shell=True, cwd=cwd, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True)
+        out, _ = proc.communicate(timeout=120)
     except subprocess.TimeoutExpired:
-        return "error: command exceeded the 120s limit"
+        _kill_tree(proc.pid)
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return "error: command exceeded the 120s limit (its process tree was killed)"
     except OSError as exc:
         return f"error: {exc}"
-    out = ""
-    if r.stdout:
-        out += r.stdout
-    if r.stderr:
-        out += ("\n" if out else "") + r.stderr
-    out = out.strip() or "(no output)"
-    return _truncate(f"<cwd>{cwd}</cwd>\nexit={r.returncode}\n{out}")
+    out = (out or "").strip() or "(no output)"
+    return _truncate(f"<cwd>{cwd}</cwd>\nexit={proc.returncode}\n{out}")
 
 
 def t_grep(pattern: str = "", path: str = ".", include: str = "", **_kw) -> str:
@@ -481,6 +499,32 @@ def _clean(text):
     return _CTRL_RE.sub("", _ANSI_RE.sub("", text))
 
 
+_SECRET_RES = [
+    re.compile(r"sk-[A-Za-z0-9_-]{12,}", re.I),
+    re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9_\-\.]{10,}"),
+    re.compile(r"(?i)\b(api[_-]?key|apikey|secret|password|token|authorization)"
+               r"\s*[:=]\s*[\"']?[A-Za-z0-9_\-\.]{10,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+               re.S),
+]
+
+
+def _redact(text: str) -> str:
+    """Mask obvious secrets in tool output before it reaches the model.
+
+    The agent can read any file it can see, including a config that holds API
+    keys. Redacting here means a key the model happened to view can never be
+    echoed back into its context - and in team mode, sent on to the cloud senior.
+    """
+    if not isinstance(text, str) or not text:
+        return text
+    out = _SECRET_RES[0].sub("sk-[REDACTED]", text)
+    out = _SECRET_RES[1].sub(r"\1[REDACTED]", out)
+    out = _SECRET_RES[2].sub(r"\1=[REDACTED]", out)
+    out = _SECRET_RES[3].sub("[REDACTED PRIVATE KEY]", out)
+    return out
+
+
 def execute(name: str, args: dict, on_output: Callable[[str], None] | None = None) -> str:
     """Run one tool. Never raises - a result the model can react to.
 
@@ -496,7 +540,7 @@ def execute(name: str, args: dict, on_output: Callable[[str], None] | None = Non
     if on_output:
         on_output(tool.summary(args))
     try:
-        return _clean(tool.run(**args))
+        return _redact(_clean(tool.run(**args)))
     except TypeError as exc:
         return f"error: bad arguments for {name}: {exc}"
     except Exception as exc:  # noqa: BLE001 - a tool must never crash the agent

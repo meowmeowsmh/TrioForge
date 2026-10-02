@@ -169,8 +169,13 @@ class Agent:
         tool = TL.TOOLS.get(name)
         if tool is None or not tool.danger:
             return True
-        if self._allow_all or self.approve is None:
+        if self._allow_all:
             return True
+        if self.approve is None:
+            # No permission callback is wired (a scripted/web caller). Never run a
+            # write/edit/bash tool without consent - the full-screen UI always
+            # passes one, so this default only affects callers that forgot.
+            return False
         verdict = self.approve(name, args, tool.summary(args))
         if verdict == APPROVE_ALL:
             self._allow_all = True

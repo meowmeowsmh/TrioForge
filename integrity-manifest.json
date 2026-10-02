@@ -36,7 +36,7 @@
   "py/llamacpp_service.py": "c7baa5a614cc2a7ad9c94da29fd727a27d4275e1433a11871ce6db4973fc7839",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
-  "py/memory.py": "0b74df6bfa5b1167a3cdbd611ba4b9fdc2141b2b22b3840dd2b5ab1bb720a111",
+  "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "3cbe70d93c453fb97b2ad18e3c7ba76b013aaf9e81c839b0951a7de22fc3dab0",
@@ -58,7 +58,7 @@
   "py/tui/README.md": "70e23ad6102d6191e29ecc92dc4405c7411dbe2bcec36cc30c96dcaa1678bb10",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "15a59c75161629e693223b812d7a2cdfa554280c41d1cc20657bcb25acb76b5e",
+  "py/tui/agent.py": "615ccefc27d9d8858bb914a2679da890b05abc2daae16406975f0c8d1d7ffbdf",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -72,7 +72,7 @@
   "py/tui/team.py": "fded0e603eae576fe73991c1d9895a63926ef16f046cdcc255e573924a1bdd9a",
   "py/tui/textual_app.py": "d2208995c4428866cbb303643652788de81dff7ba7b1a6d0d10edc2da5151e79",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
-  "py/tui/tools.py": "29dccccf7cfb3992314eb7401b931c4e49e842fdbbc7515e2f2853e0d7809533",
+  "py/tui/tools.py": "0794c1f66311254d1cdfd3c8401c548b09cbe3389e49696758c8bed463d68898",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
   "py/version.py": "27251b04e8e0ec25c4abb4cff91d3c788b41f0e287a432289e3e7525f3f77515",
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T00:23:35",
- "note": "throttle stream re-renders to stop flicker"
+ "generated": "2026-10-03T00:39:49",
+ "note": "security audit fixes: redact secrets, deny danger tools, tree-kill, memory race, key truncation"
 }

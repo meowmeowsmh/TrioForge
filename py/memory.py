@@ -243,6 +243,17 @@ def rewrite(sentence: str, keys_: Iterable[tuple[str, str]],
 # ---------------------------------------------------------------- the engine
 
 
+def _norm_key(key: str) -> str:
+    """The one way every public method normalises a key.
+
+    ``remember`` used to truncate over-long keys to ``MAX_KEY_CHARS`` while
+    ``lookup``/``forget`` only stripped them, so a >120-char key was stored under
+    a shortened name that could never be read back or deleted by the name the
+    caller used.
+    """
+    return (key or "").strip()[:MAX_KEY_CHARS]
+
+
 class MemoryEngine:
     """DuckDB vault + RAM Bloom gate + RAM key index. Thread-safe.
 
@@ -340,7 +351,19 @@ class MemoryEngine:
                 self._index = {}
             self._gate.nkeys = len(self._index)
             if self._index:
-                return
+                # A crash between a write and the filter save leaves the persisted
+                # index blob out of step with the table: the row exists but the
+                # gate/index do not know it, so after a restart the key is
+                # permanently invisible. Trust the table's row count - one cheap
+                # COUNT(*) - and rebuild only when it disagrees with the blob.
+                count = None
+                try:
+                    count = self._conn.execute(
+                        "SELECT COUNT(*) FROM ai_harness_memory").fetchone()[0]
+                except Exception:  # noqa: BLE001 - table may not exist yet
+                    count = None
+                if count == len(self._index):
+                    return
         else:
             self._gate = BloomGate()
 
@@ -399,7 +422,7 @@ class MemoryEngine:
     # -- writes
     def remember(self, key: str, value: str, tags: str = "") -> dict:
         """Store one entry and flip its bits in the gate."""
-        key = (key or "").strip()[:MAX_KEY_CHARS]
+        key = _norm_key(key)
         if not key:
             return {"ok": False, "error": "a memory needs a key"}
         value = value if isinstance(value, str) else str(value)
@@ -435,7 +458,7 @@ class MemoryEngine:
         the gate keeps saying YES for the deleted key. Lookups for it then miss in
         DuckDB, which is a false positive, not a wrong answer.
         """
-        key = (key or "").strip()
+        key = _norm_key(key)
         with self._lock:
             self._db()
             if not self.writable:
@@ -455,7 +478,7 @@ class MemoryEngine:
     # -- reads
     def lookup(self, key: str) -> Optional[str]:
         """Gate first, then one indexed row fetch. Returns None when absent."""
-        key = (key or "").strip()
+        key = _norm_key(key)
         if not key:
             return None
         with self._lock:
