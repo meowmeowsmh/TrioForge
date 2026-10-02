@@ -69,7 +69,7 @@
   "py/tui/render.py": "9b825f569c9cd55ba00e06cbb49d196c674678e75f8fc71bec0c89069a82bca5",
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/team.py": "109b317b728520537bbbd7cdc879d724c0bede7ad4ceb8d17539fc9a6f52ffd3",
+  "py/tui/team.py": "28ec1da284ca5520cc1450a2da99dc6fc9545235bec634d1d2ce8406c9ccab60",
   "py/tui/textual_app.py": "4eec258c4c95485dc88ecdba42102f8dc9a86806802c2e8bc3d2abf0d210bfe7",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "e3e24fa5d1b8b4d27194b20022b4acc3d6cf30d50b24a79ca5a83f570d30bbdd",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T03:36:56",
- "note": "junior told to make the change, not browse"
+ "generated": "2026-10-03T03:46:39",
+ "note": "clean senior prompt spacing"
 }
