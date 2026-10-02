@@ -106,9 +106,20 @@ def verdict(reply: str):
 
 
 def junior_task(task: str, feedback: str, round_no: int) -> str:
-    """What the junior is asked on round ``round_no`` (>1 includes the feedback)."""
+    """What the junior is asked on round ``round_no`` (>1 includes the feedback).
+
+    The directive up front is the difference between a junior that *does* the work
+    and one that lists a few files and hands back a description. A small local
+    model needs to be told to make the actual change, not to browse.
+    """
+    directive = ("Do this task yourself now, with your tools: view/grep/glob to "
+                 "read, write/edit to change the code, bash to run it. Make the "
+                 "actual change and run it - do NOT just list files or describe "
+                 "what you would do. Report what you changed, with file paths and "
+                 "evidence.\n\n")
     task = (task or "").strip()
     if round_no <= 1 or not (feedback or "").strip():
-        return task
-    return ("{}\n\n[SENIOR FEEDBACK - fix these before answering]\n{}".format(
-        task, feedback.strip()))
+        return directive + task
+    return (directive + task + "\n\n"
+            "[SENIOR FEEDBACK - fix these before answering]\n{}".format(
+                feedback.strip()))
