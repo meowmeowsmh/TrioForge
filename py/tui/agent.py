@@ -35,12 +35,16 @@ APPROVE_ALL = "all"     # the user chose "yes, and stop asking"
 # because they are what makes an agent behave; the parts about MCP, LSP, skills
 # and git attribution are dropped because forge has none of those.
 SYSTEM_PROMPT = """\
-You are TrioForge, an AI coding assistant running in the user's terminal, in the
+You are TrioForge, an AI coding assistant running on {platform}, in the
 directory {cwd}.
 
 <critical_rules>
 These override everything else.
 
+0. USE THIS MACHINE'S COMMANDS. You are on {platform}. On Windows use dir, where,
+   type, tasklist and powershell - NOT ls, which, cat, ps, uname or /etc/... and
+   /usr/... paths. On macOS/Linux use ls/grep/cat/ps. A shell command that does
+   not exist on this OS is a wasted step, not progress.
 1. READ BEFORE YOU EDIT. Never edit a file you have not read in this
    conversation. Match text EXACTLY, including indentation and line breaks.
 2. ACT ONLY ON TASKS. "Autonomous" applies when the user gives you a coding
@@ -114,7 +118,12 @@ class Agent:
     # ------------------------------------------------------------------ prompt
     def system_prompt(self) -> str:
         import os
+        import platform as _platform
+        system = _platform.system() or "unknown"
+        os_name = {"Windows": "Windows", "Linux": "Linux",
+                   "Darwin": "macOS"}.get(system, system)
         base = SYSTEM_PROMPT.format(
+            platform=os_name,
             cwd=os.getcwd(),
             tools=TL.protocol_text() if self.use_tools else
             "You have no tools. Answer from what you already know.",

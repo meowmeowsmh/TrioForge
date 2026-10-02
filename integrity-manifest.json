@@ -58,7 +58,7 @@
   "py/tui/README.md": "fc8db022d14512f964b6c5e0f2e48a09ca805cb96d30dc12c36456011d1cff09",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "615ccefc27d9d8858bb914a2679da890b05abc2daae16406975f0c8d1d7ffbdf",
+  "py/tui/agent.py": "e028dd3cac9e1c3126009e0e32a18cdf0266c99e24a401e0a360b1f48646ddb9",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -69,8 +69,8 @@
   "py/tui/render.py": "9b825f569c9cd55ba00e06cbb49d196c674678e75f8fc71bec0c89069a82bca5",
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
-  "py/tui/team.py": "fded0e603eae576fe73991c1d9895a63926ef16f046cdcc255e573924a1bdd9a",
-  "py/tui/textual_app.py": "d2208995c4428866cbb303643652788de81dff7ba7b1a6d0d10edc2da5151e79",
+  "py/tui/team.py": "94f1ed43de126b7d8f8370bc54815287b6bcefdee47674e11427db8dc36964b6",
+  "py/tui/textual_app.py": "4eec258c4c95485dc88ecdba42102f8dc9a86806802c2e8bc3d2abf0d210bfe7",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "e3e24fa5d1b8b4d27194b20022b4acc3d6cf30d50b24a79ca5a83f570d30bbdd",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T03:29:36",
- "note": "README + CHANGELOG for recent fixes"
+ "generated": "2026-10-03T03:34:25",
+ "note": "agent knows its OS; senior sees junior tool activity"
 }

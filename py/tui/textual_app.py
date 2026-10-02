@@ -1475,7 +1475,7 @@ class ForgeApp(App):
         turn = await self._run_agent(self._team_event, backend=backend, session=sess)
         text = (turn.text or "").strip()
         state["tokens"] = state.get("tokens", 0) + max(0, len(text) // 4)
-        return text
+        return text, list(turn.steps)
 
     async def _team_turn(self, text: str, state) -> str:
         """Junior (local) does the work, senior (cloud) guides it.
@@ -1509,12 +1509,12 @@ class ForgeApp(App):
                 return answer       # ctrl+c: hand back whatever the junior had
             asking = team.junior_task(text, feedback, rnd)
             self._add_meta(f"👥 junior **{who(junior)}** · attempt {rnd}")
-            answer = await self._agent_text(junior, asking, state)
+            answer, steps = await self._agent_text(junior, asking, state)
             if not answer:
                 if self._stop.is_set():
                     return answer
                 self._add_meta(f"🧑‍🏫 junior had no idea — **{who(senior)}** takes control")
-                return await self._agent_text(senior, text, state) or answer
+                return (await self._agent_text(senior, text, state))[0] or answer
 
             if self._stop.is_set():
                 return answer
@@ -1523,7 +1523,7 @@ class ForgeApp(App):
             # of adding a card per round to the transcript.
             keep = self._status_text
             self._set_status(f"🧑‍🏫 senior {who(senior)} is reviewing…")
-            reply = await self._call_text(senior, team.review_messages(text, answer), state)
+            reply = await self._call_text(senior, team.review_messages(text, answer, steps), state)
             self._set_status(keep)
             kind, detail = team.verdict(reply)
             if kind == "approve":
@@ -1533,14 +1533,14 @@ class ForgeApp(App):
                 if self._stop.is_set():
                     return answer
                 self._add_meta("🧑‍🏫 senior takes control")
-                return await self._agent_text(senior, text, state) or answer
+                return (await self._agent_text(senior, text, state))[0] or answer
             feedback = detail
             self._add_meta("🧑‍🏫 senior → junior: " + " ".join(detail.split())[:200])
 
         if self._stop.is_set():
             return answer
         self._add_meta("🧑‍🏫 junior out of attempts — senior takes control")
-        return await self._agent_text(senior, text, state) or answer
+        return (await self._agent_text(senior, text, state))[0] or answer
 
     async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
         """Apply one agent event on the app thread (see ``_ask``)."""

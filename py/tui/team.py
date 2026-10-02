@@ -31,6 +31,11 @@ was expected to USE them and produce the finished work.
 A reply that only asks the user for clarification, greets, restates the task, or \
 says it needs more information is NOT work. It is a failure. Never approve it.
 
+Also judge WHAT the junior actually ran. If its tool activity does not make sense \
+for the platform (e.g. it ran ls /etc/profile, ps aux or touched /usr/bin on a \
+Windows machine), that is wasted work: send FEEDBACK naming the right commands, or \
+TAKEOVER. The junior must not just sit there listing things - it must do the task.
+
 Answer with EXACTLY ONE of these, nothing else on the first line:
 
 APPROVE
@@ -46,12 +51,35 @@ FEEDBACK: <instruction>
     which path, and what to look for. "Ask the user" is never acceptable.
 
 """
-def review_messages(task: str, answer: str):
-    """The messages the senior receives: the task and the junior's attempt."""
+def _step_line(step) -> str:
+    """One line summarising a junior's tool call, so the senior sees WHAT it ran."""
+    args = step.args or {}
+    name = step.name or "tool"
+    if name == "bash":
+        return "bash: {}".format(str(args.get("command", "")).strip()[:120])
+    if name in ("view", "write", "edit"):
+        return "{}: {}".format(name, args.get("file_path", "?"))
+    if name == "grep":
+        return "grep: {!r}".format(args.get("pattern", "?"))
+    if name == "glob":
+        return "glob: {}".format(args.get("pattern", "?"))
+    if name == "ls":
+        return "ls: {}".format(args.get("path", "."))
+    if name == "memory":
+        return "memory: {}".format(args.get("action", "?"))
+    return name
+
+
+def review_messages(task: str, answer: str, steps=None):
+    """The messages the senior receives: task, the junior's tool activity, its answer."""
+    activity = ""
+    if steps:
+        activity = ("\n\nJUNIOR'S TOOL ACTIVITY (what it actually ran):\n"
+                    + "\n".join("- {}".format(_step_line(s)) for s in steps))
     return [
         {"role": "system", "content": SENIOR_SYSTEM},
-        {"role": "user", "content": "TASK:\n{}\n\nJUNIOR'S WORK:\n{}".format(
-            (task or "").strip(), (answer or "").strip() or "(nothing - it produced no answer)")},
+        {"role": "user", "content": "TASK:\n{}\n\nJUNIOR'S WORK:\n{}{}".format(
+            (task or "").strip(), (answer or "").strip() or "(nothing - it produced no answer)", activity)},
     ]
 
 
