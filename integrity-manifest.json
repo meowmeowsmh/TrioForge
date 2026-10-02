@@ -72,7 +72,7 @@
   "py/tui/team.py": "b4aa7f87b38c3310ebfc55203eab80ace5f55b9adbec6d69f70479ec325e783e",
   "py/tui/textual_app.py": "5e654eac2741ce71c13dcf4d458445c01ea51189721ad8f28c1e5bf09ab21b99",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
-  "py/tui/tools.py": "e3e24fa5d1b8b4d27194b20022b4acc3d6cf30d50b24a79ca5a83f570d30bbdd",
+  "py/tui/tools.py": "173e1e66c9ce3a153e97b8c9a250d2c8388944cba2190a995483bc7dc4b02177",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
   "py/version.py": "27251b04e8e0ec25c4abb4cff91d3c788b41f0e287a432289e3e7525f3f77515",
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T04:36:26",
- "note": "team empty answer no longer falls through"
+ "generated": "2026-10-03T04:49:05",
+ "note": "clear error when a tool path is a folder"
 }

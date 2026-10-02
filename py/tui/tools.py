@@ -84,6 +84,8 @@ def t_ls(path: str = ".", **_kw) -> str:
 def t_view(file_path: str = "", offset: int = 1, limit: int = DEFAULT_READ_LIMIT,
            **_kw) -> str:
     p = _resolve(file_path)
+    if p.is_dir():
+        return f"error: {p} is a folder, not a file — pass a file path"
     if not p.is_file():
         return f"error: no such file: {p}"
     try:
@@ -105,6 +107,11 @@ def t_view(file_path: str = "", offset: int = 1, limit: int = DEFAULT_READ_LIMIT
 
 def t_write(file_path: str = "", content: str = "", **_kw) -> str:
     p = _resolve(file_path)
+    # A directory path resolves to the folder itself (the agent's cwd is often
+    # the home dir), and write_text on it raised a raw "Permission denied" that
+    # read like a crash. Say what it is instead.
+    if p.is_dir():
+        return f"error: {p} is a folder, not a file — write to a file path inside it"
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         existed = p.is_file()
@@ -123,6 +130,8 @@ def t_edit(file_path: str = "", old_string: str = "", new_string: str = "",
     silently edit the wrong place, which is worse than failing.
     """
     p = _resolve(file_path)
+    if p.is_dir():
+        return f"error: {p} is a folder, not a file — view a file inside it first"
     if not p.is_file():
         return f"error: no such file: {p} (view it first)"
     try:
