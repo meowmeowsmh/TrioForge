@@ -1404,6 +1404,16 @@ class ForgeApp(App):
                         f"{time.time() - started:.1f}s_", "bot", force_scroll=True)
                     self._set_mood("happy")
                     return
+                # The team produced nothing - most often the cloud senior's key is
+                # missing or invalid. Mount a clear note and STOP: falling through
+                # to the non-team path here crashes, because team mode never
+                # created the content card that path updates.
+                self._add("_the team produced no answer — the cloud senior's key is "
+                          "probably missing or invalid (set the provider key, e.g. "
+                          "DEEPSEEK_API_KEY, or pick another provider)_", "bot",
+                          force_scroll=True)
+                self._set_mood("sad")
+                return
 
             turn = await self._run_agent(on_event)
             final = turn.text.strip()
