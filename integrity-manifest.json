@@ -70,7 +70,7 @@
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
   "py/tui/team.py": "fded0e603eae576fe73991c1d9895a63926ef16f046cdcc255e573924a1bdd9a",
-  "py/tui/textual_app.py": "eddba21777c5842cd9b1139afabf77e29c821ff0470090c6af61f71c7edec562",
+  "py/tui/textual_app.py": "d2208995c4428866cbb303643652788de81dff7ba7b1a6d0d10edc2da5151e79",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "29dccccf7cfb3992314eb7401b931c4e49e842fdbbc7515e2f2853e0d7809533",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T00:08:45",
- "note": "keep the local model warm during a turn"
+ "generated": "2026-10-03T00:23:35",
+ "note": "throttle stream re-renders to stop flicker"
 }

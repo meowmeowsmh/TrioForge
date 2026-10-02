@@ -1408,6 +1408,14 @@ class ForgeApp(App):
             self._active = None
             if state.get("think") is not None:
                 state["think"].title = f"Thinking… ({len(state['reasoning'])} chars)"
+                # The body was throttled while hidden (collapsed); paint the full
+                # reasoning now so expanding the dropdown later shows all of it,
+                # not just the first chunk.
+                try:
+                    if state.get("think_body") is not None:
+                        state["think_body"].update(state["reasoning"])
+                except Exception:  # noqa: BLE001 - cosmetic, never fatal
+                    pass
             self._refresh()
             self.query_one("#prompt", PromptArea).focus()
 
@@ -1548,10 +1556,23 @@ class ForgeApp(App):
                 state["think"] = think
                 state["think_body"] = body
             else:
-                state["think_body"].update(state["reasoning"])
+                # The body is hidden while collapsed, so repainting it on every
+                # token is pure waste; when expanded, coalesce to ~4 paints/second.
+                if not state["think"].collapsed and \
+                        time.time() - state.get("_think_last", 0) >= 0.25:
+                    state["_think_last"] = time.time()
+                    state["think_body"].update(state["reasoning"])
         elif kind == "content":
             state["text"] += payload["text"]
-            await state["card"].update(state["text"])
+            # Re-parsing the whole Markdown card on every token floods the loop
+            # with layout work (the card grows each time), which is what made the
+            # interface flicker and blank during a stream. Coalesce to ~8 renders
+            # per second; the final card.update at the end of the turn paints the
+            # tail this deliberately skips.
+            if state["card"] is not None and \
+                    time.time() - state.get("_card_last", 0) >= 0.12:
+                state["_card_last"] = time.time()
+                await state["card"].update(state["text"])
         elif kind == "tool_start":
             self._set_mood("glitch")
             self._tool_card(payload["name"], payload["args"], None)
