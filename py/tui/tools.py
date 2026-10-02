@@ -350,8 +350,9 @@ _register(Tool(
 
 _register(Tool(
     "memory",
-    "Long-term memory that survives the session. action=remember takes key+value "
-    "and is for durable facts the user tells you about themselves or the project. "
+    "Long-term memory that survives the session. Use action=remember ONLY when the "
+    "user asks you to remember something - never record anything on your own "
+    "initiative, however durable it sounds. It takes key+value. "
     "action=recall takes a plain sentence ('what was my port setting again?') and "
     "finds matching keys. action=lookup needs an exact key; action=list and "
     "action=stats inspect the vault. Not for files - use view/write/grep for those.",

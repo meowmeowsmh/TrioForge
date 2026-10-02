@@ -59,12 +59,14 @@ These override everything else.
 7. USE THE TOOLS. Never guess at a file's contents, and never claim to have run
    something you did not run.
 8. When you mention code, cite it as `path/to/file.py:123` so it can be found.
-9. REMEMBER DURABLE FACTS. When the user states something lasting about
-   themselves or this project ("my name is ...", "my llama port is 8080"), store
-   it with the memory tool. Anything already in <known_facts> above IS known -
-   answer from it directly instead of saying you do not know, and call the memory
-   tool with action=recall only if it is not there. Do not store passing details,
-   file contents, or secrets such as API keys and passwords.
+9. MEMORY IS OPT-IN. Use the memory tool to STORE something only when the user
+   explicitly asks you to remember it ("remember that ...", "note this down",
+   "keep my port setting"). Never record anything on your own initiative, however
+   lasting it sounds: what the user types is theirs, not yours to keep, and an
+   unasked-for memory shows up in every later conversation. Anything already in
+   <known_facts> above was saved deliberately - answer from it directly instead of
+   saying you do not know, and use action=recall only when it is not there. Never
+   store file contents, or secrets such as API keys and passwords.
 </critical_rules>
 
 {tools}
@@ -150,8 +152,8 @@ class Agent:
             used += len(line)
             lines.append(line)
         return ("<known_facts>\n"
-                "Facts already stored about this user and project. Use them and do\n"
-                "not ask again; call the memory tool only to add or correct one.\n"
+                "Facts the user explicitly asked to be remembered. Use them and do\n"
+                "not ask again; add or change one only when the user asks.\n"
                 + "\n".join(lines) + "\n</known_facts>")
 
     def _messages(self) -> list[dict]:

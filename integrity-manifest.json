@@ -58,7 +58,7 @@
   "py/tui/README.md": "70e23ad6102d6191e29ecc92dc4405c7411dbe2bcec36cc30c96dcaa1678bb10",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "bb1574c40c475631db57b52395b6a0fe7e56fe97a8c01791644222c036787bb9",
+  "py/tui/agent.py": "b3151d613dffe4832bb6967ea1ea0ec05285feca9ebd18d25ba5273576d63a0e",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -72,7 +72,7 @@
   "py/tui/team.py": "fded0e603eae576fe73991c1d9895a63926ef16f046cdcc255e573924a1bdd9a",
   "py/tui/textual_app.py": "c3ba13efc2a9628f49bb4563e9ab2aae0f75504919768e1ba493b32c025b503c",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
-  "py/tui/tools.py": "433934377ed0a296938fa35b10a3d67a16bbbf566298b1b9c1e8e7b89589aa20",
+  "py/tui/tools.py": "29dccccf7cfb3992314eb7401b931c4e49e842fdbbc7515e2f2853e0d7809533",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
   "py/version.py": "27251b04e8e0ec25c4abb4cff91d3c788b41f0e287a432289e3e7525f3f77515",
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T15:36:59",
- "note": "baseline: surface a split GPU/CPU load"
+ "generated": "2026-10-02T15:46:43",
+ "note": "baseline: memory writes are opt-in"
 }

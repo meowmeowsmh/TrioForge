@@ -121,7 +121,7 @@ def test_known_facts() -> None:
     class B:
         model = "m"; base_url = "http://127.0.0.1:1/v1"; tools = []
 
-    BLOCK = "Facts already stored about this user and project"
+    BLOCK = "Facts the user explicitly asked to be remembered"
 
     def prompt(rows, available=True):
         memory.entries = lambda prefix="", limit=40: rows
@@ -140,6 +140,31 @@ def test_known_facts() -> None:
     lines = [l for l in block.splitlines() if l.startswith("- ")]
     assert len(lines) <= 40 and len(block) <= 4300, (len(lines), len(block))
     print("  injected, bounded, silent when empty/broken -> OK")
+
+
+def test_memory_is_optin() -> None:
+    """Memory must never be written on the model's own initiative.
+
+    Both the system rule and the tool description used to say "store durable
+    facts the user tells you about themselves", which reads as an instruction to
+    save things nobody asked to keep - and an unasked-for memory then appears in
+    every later conversation.
+    """
+    _title("memory is opt-in")
+    from tui import agent as A
+    from tui.tools import TOOLS
+
+    prompt = A.SYSTEM_PROMPT
+    assert "MEMORY IS OPT-IN" in prompt, "the rule is gone"
+    assert "Never record anything on your own initiative" in prompt
+    assert "explicitly asks you to remember" in prompt
+    # the old wording that invited auto-saving must not come back
+    assert "When the user states something lasting" not in prompt
+
+    desc = TOOLS["memory"].description
+    assert "ONLY when the" in desc and "user asks you to remember" in desc, desc[:90]
+    assert "durable facts the user tells you" not in desc
+    print("  system rule + tool description both say 'only when asked' -> OK")
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +283,7 @@ def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
-             test_known_facts, test_plan_load]
+             test_known_facts, test_memory_is_optin, test_plan_load]
     failed = []
     for t in tests:
         try:
