@@ -70,7 +70,7 @@
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
   "py/tui/team.py": "b4aa7f87b38c3310ebfc55203eab80ace5f55b9adbec6d69f70479ec325e783e",
-  "py/tui/textual_app.py": "9aed58871970ecd08e60a42d3af0b910c921440861b989984f540a6dc214ec6f",
+  "py/tui/textual_app.py": "c448c29edc94c37a00bf74e7699f5d2d0ebe2b2edfb421e899b1f470fc791c9b",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "e3e24fa5d1b8b4d27194b20022b4acc3d6cf30d50b24a79ca5a83f570d30bbdd",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T04:21:01",
- "note": "parallel team mode: senior ships, junior follows"
+ "generated": "2026-10-03T04:28:04",
+ "note": "live provider model discovery incl. ollama"
 }

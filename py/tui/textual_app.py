@@ -474,6 +474,9 @@ class ForgeApp(App):
         self._git_ts = 0.0
         self._models_cache: list = []
         self._models_ts = 0.0
+        # provider -> (fetched_at, [models]); Ollama's list is only knowable by
+        # asking it, so it is cached rather than read from the config.
+        self._providers_cache: dict = {}
         self._sidebar_ts = 0.0
         # The mood face under Providers: emotion, animation frame, and when a
         # terminal mood (happy/sad) was set so the tick can fade it to neutral.
@@ -1096,14 +1099,42 @@ class ForgeApp(App):
                 return name, entry["base_url"], model
         return "deepseek", "https://api.deepseek.com/v1", "deepseek-chat"
 
-    def _route_candidates(self):
+    def _live_provider_models(self) -> dict:
+        """{provider: [models it actually offers]} - cached, BLOCKING.
+
+        Ollama's speed is entirely a function of which model is pulled (a 0.5B is
+        instant, a 70B crawls), so the picker has to show what is installed on
+        THIS machine, not a name written into a config file. An empty list means
+        "could not ask", and the caller falls back to the config's names.
+
+        Call it through ``asyncio.to_thread``: a provider that is not running
+        would otherwise freeze the panel while it times out.
+        """
+        now = time.time()
+        out = {}
+        for name, entry in (self.cfg.providers or {}).items():
+            if name == "local" or not entry.get("base_url"):
+                continue
+            cached = self._providers_cache.get(name)
+            if cached and now - cached[0] < 120:
+                out[name] = cached[1]
+                continue
+            live = fetch_models(entry["base_url"], entry.get("api_key", ""))
+            self._providers_cache[name] = (now, live)
+            out[name] = live
+        return out
+
+    def _route_candidates(self, live=None):
         """Every model auto-route may pick from, as (key, label) pairs.
 
-        Local: each .gguf in models/. Cloud: each provider's models (first three
-        per provider, enough to choose without flooding the list). Keys are
-        ``local:<name>`` or ``<provider>:<model>``.
+        Offline: each .gguf in models/, plus whatever Ollama has pulled. Cloud:
+        the models each provider ACTUALLY offers (``live``, fetched by the
+        caller), falling back to the config's names when it cannot be asked.
+        Keys are ``local:<name>`` or ``<provider>:<model>``.
         """
         from . import localmodels as lm
+        live = live or {}
+        offline = {"local", "ollama"}
         out = []
         for m in lm.available():
             out.append((f"local:{m.name}", f"💻 {m.name}  · {m.size_gb:.1f} GB"))
@@ -1113,8 +1144,10 @@ class ForgeApp(App):
             if not entry.get("base_url"):
                 continue
             has = "key" if entry.get("api_key") else "no key"
-            for m in (entry.get("models") or [])[:3]:
-                out.append((f"{name}:{m}", f"☁ {name}:{m}  · {has}"))
+            kind = "💻" if name in offline else "☁"
+            models = live.get(name) or (entry.get("models") or [])
+            for m in models[:6]:
+                out.append((f"{name}:{m}", f"{kind} {name}:{m}  · {has}"))
         return out
 
     def _pool_models(self):
@@ -1132,7 +1165,13 @@ class ForgeApp(App):
 
     async def _router_panel(self) -> None:
         """ctrl+a with no prompt: pick models and toggle auto-route."""
-        candidates = self._route_candidates()
+        import asyncio
+
+        # Ask each provider what it actually offers, off the UI thread: an
+        # unreachable one (Ollama not running) would otherwise freeze the panel
+        # for as long as its timeout.
+        live = await asyncio.to_thread(self._live_provider_models)
+        candidates = self._route_candidates(live)
         if not candidates:
             self._add_meta("no models to route between — download a .gguf or add a key")
             return
