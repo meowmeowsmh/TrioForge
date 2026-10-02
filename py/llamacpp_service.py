@@ -844,6 +844,50 @@ def _plan_load(size, vram_free, ram_free, mmproj_size=0, ngl_auto=True):
     }
 
 
+def _auto_pick_model(paths):
+    """Choose the best GGUF from ``paths`` with no user in the loop.
+
+    This is the auto-scan: a saved model path is only trustworthy while that
+    exact file exists, and a path recorded on another machine (or a model renamed
+    in place) must not leave llama.cpp permanently off. Score every candidate
+    against the hardware with the SAME plan the load itself will use, then pick:
+
+      1. fits entirely in VRAM   - fastest, RAM stays free
+      2. splits GPU + CPU        - the normal laptop case
+      3. does not fit cleanly    - only when nothing else is left
+
+    Ties go to the larger model, on the reasoning that a bigger local model is
+    the one the user deliberately kept around. Returns ``(path, reason)`` or
+    ``(None, None)`` when there is nothing to pick from.
+    """
+    vram = _free_vram_bytes()
+    ram = _free_ram_bytes()
+    tiers = {0: [], 1: [], 2: []}
+    for p in paths:
+        name = os.path.basename(p).lower()
+        # A vision projector (mmproj/clip) is a companion to a text model, not a
+        # model in its own right. Auto-scan must skip them: they are tiny, so
+        # they always "fit entirely in VRAM" and would otherwise outrank every
+        # real model.
+        if "mmproj" in name or "clip" in name:
+            continue
+        try:
+            size = os.path.getsize(p)
+        except OSError:
+            continue
+        plan = _plan_load(size, vram, ram, 0, ngl_auto=True)
+        tier = 0 if plan["offload"] else (1 if plan["split"] else 2)
+        tiers[tier].append((size, p))
+    for tier in (0, 1, 2):
+        if tiers[tier]:
+            _size, path = max(tiers[tier], key=lambda pair: pair[0])
+            verb = ("fits entirely in VRAM" if tier == 0
+                    else "splits across GPU and CPU" if tier == 1
+                    else "does not fit cleanly")
+            return path, verb
+    return None, None
+
+
 def _supports_flag(exe, flag):
     """Whether `exe` understands `flag` (cached per executable).
 
@@ -977,25 +1021,16 @@ def start(model=None, ctx_size=None):
         model_ref = model or cfg.get("model")
         model_path = resolve_model(model_ref)
         if not model_path or not os.path.isfile(model_path):
-            # The saved model moved or was deleted - a renamed/updated GGUF is the
-            # usual story. Auto-start used to die right here with "model not
-            # found", which left llama.cpp permanently off after a reboot until the
-            # user hand-picked a model again. Prefer the LARGEST model on disk
-            # instead (the flagship the machine was built around), and say so, so
-            # the server still comes up. (Newest-by-mtime was tried and picked an
-            # old re-downloaded model over the one actually in use.)
-            try:
-                candidates = sorted(_list_gguf_files(),
-                                    key=lambda p: os.path.getsize(p), reverse=True)
-            except Exception:
-                candidates = []
-            if candidates:
-                model_path = candidates[0]
-                _log("saved model {!r} is gone; starting {!r} instead".format(
-                    model_ref, os.path.basename(model_path)))
+            # The saved model is gone, or was recorded on another machine with a
+            # path that does not exist here. Never let that leave llama.cpp off:
+            # scan this machine's model roots and run the best one that fits.
+            model_path, why = _auto_pick_model(_list_gguf_files())
+            if model_path:
+                _log("auto-scan: saved model {!r} is not here; starting {!r} - {}".format(
+                    model_ref, os.path.basename(model_path), why))
             else:
                 return {"running": False,
-                        "error": "model not found: {} (and no other .gguf files "
+                        "error": "model not found: {} (and no .gguf files "
                                  "are available)".format(model_ref)}
 
         # Remote mode (Docker → host llama-server): when LLAMA_HOST is set, the
