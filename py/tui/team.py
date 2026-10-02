@@ -18,10 +18,14 @@ is read), so it can be tested without a model, a GPU or a network.
 
 from __future__ import annotations
 
+import os
+
 #: How many times the junior may be sent back with feedback before the senior
-#: does the job itself. Two is enough to fix a wrong path or a missing step
-#: without paying for an argument.
-MAX_ROUNDS = 2
+#: does the job itself. Default 1 for speed: one junior attempt, one review, then
+#: it ships or the senior takes over. Set TRIOFORGE_TEAM_ROUNDS=2 to trade speed
+#: for a second round of correction - but every round is another full local turn
+#: plus another cloud review, so this is the main speed lever in team mode.
+MAX_ROUNDS = max(1, int(os.environ.get("TRIOFORGE_TEAM_ROUNDS", "1") or 1))
 
 SENIOR_SYSTEM = (
     "You are the SENIOR engineer. A junior model (small, local, fast but weak) was "
