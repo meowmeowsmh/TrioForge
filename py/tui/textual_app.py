@@ -708,6 +708,19 @@ class ForgeApp(App):
         self._refresh_activity()
         self._tick_face()
         now = time.time()
+        # While a turn is running, keep the local llama.cpp warm. The idle watchdog
+        # unloads it after ~5 minutes of no model request, but a long turn never
+        # asks the local model while the SENIOR is reasoning on the cloud, or while
+        # a bash tool is running - so the watchdog unloaded the junior mid-turn and
+        # the next request died with "WinError 10061 ... actively refused". Marking
+        # it in use here (every tick while busy) means the unload can only ever
+        # happen between turns, never inside one.
+        if self._busy:
+            try:
+                import llamacpp_service as svc
+                svc.touch()
+            except Exception:
+                pass
         # The plea's deadline is enforced here as well as by its one-shot timer.
         # This tick is the one callback the app is known to keep running, so the
         # exit cannot be lost if a timer is missed - being unable to quit is a far
