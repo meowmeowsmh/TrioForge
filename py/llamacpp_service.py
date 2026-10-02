@@ -1030,8 +1030,10 @@ def start(model=None, ctx_size=None):
                     model_ref, os.path.basename(model_path), why))
             else:
                 return {"running": False,
-                        "error": "model not found: {} (and no .gguf files "
-                                 "are available)".format(model_ref)}
+                        "error": "model not found: {} - and this machine has no .gguf "
+                                 "files yet. Download one (README 'Download a model', or "
+                                 "/models) and the next start will pick it up "
+                                 "automatically.".format(model_ref)}
 
         # Remote mode (Docker → host llama-server): when LLAMA_HOST is set, the
         # container just connects to the server running ON THE HOST. It never needs

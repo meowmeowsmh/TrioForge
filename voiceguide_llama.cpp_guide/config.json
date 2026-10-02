@@ -1,6 +1,6 @@
 {
   "llama_server": "llama-server",
-  "model": "models/gemma/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf",
+  "model": "",
   "llama_host": "127.0.0.1",
   "llama_port": 8080,
   "voice_llama_port": 8082,
