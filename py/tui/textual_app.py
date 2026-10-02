@@ -464,6 +464,9 @@ class ForgeApp(App):
         # The live routing/server line, and the routing note for the current send.
         self._status_text = ""
         self._route_note = ""
+        # Set when llama.cpp starts, read by _warn_if_slow_load().
+        self._load_plan = None
+        self._warned_load = None
         self._tool_cards: dict = {}
         self._active = None
         self._spinner_i = 0
@@ -762,9 +765,42 @@ class ForgeApp(App):
             return "could not start llama.cpp: {}".format(exc)
         if not result.get("running"):
             return result.get("error") or "llama.cpp failed to start"
+        # Keep the load plan: a split load is roughly an order of magnitude slower
+        # per token, and this was previously only ever written to the log file, so
+        # the first symptom was replies taking minutes with no explanation.
+        self._load_plan = result.get("plan")
         if svc.server_ready(host, port, timeout=600):
             return None
         return "llama.cpp did not become ready in time — see logs/llamacpp.log"
+
+    def _warn_if_slow_load(self) -> None:
+        """Say it out loud when most of the model went to the CPU.
+
+        Only when at least a quarter of the weights did: the VRAM arithmetic
+        carries a deliberate 1.5 GB headroom, so a model that only just fits is
+        predicted to split when llama.cpp will in fact keep all of it on the card.
+        Warning on that would be crying wolf; a 12B with half its weights in
+        system RAM is not a false alarm.
+        """
+        plan = getattr(self, "_load_plan", None)
+        if not plan or not plan.get("split"):
+            return
+        model = (self.session.model or getattr(self.cfg, "model", "")) or ""
+        size = plan.get("gpu_bytes", 0) + plan.get("cpu_bytes", 0)
+        cpu = plan.get("cpu_bytes", 0)
+        if not size or cpu * 4 < size:
+            return                      # under a quarter on the CPU: not the story
+        if getattr(self, "_warned_load", None) == model:
+            return                      # once per model, not once per message
+        self._warned_load = model
+        gb = 1073741824.0
+        self._add_meta(
+            "⚠ {:.1f} GB of this {:.1f} GB model has to run on the CPU "
+            "({:.1f} GB fits in VRAM) — CPU layers are several times slower per "
+            "token, so replies will drag.\n"
+            "   Faster: a smaller quant (Q4_K_M), a smaller model, or a lower "
+            "context serve the whole model from the GPU.".format(
+                cpu / gb, size / gb, plan.get("gpu_bytes", 0) / gb))
 
     def _specs(self) -> dict:
         """Hardware specs for the sidebar - cached inside hardware.py, because
@@ -1290,6 +1326,7 @@ class ForgeApp(App):
                     self._set_mood("sad")
                     return
                 self._activity = ""
+                self._warn_if_slow_load()
 
             # Team mode: the junior (local) does the work and the senior (cloud)
             # guides it, corrects it, and takes over if it is lost. Only makes

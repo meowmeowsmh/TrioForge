@@ -150,3 +150,6 @@ diag.txt
 # tarballs made by ./backup.sh (contain keys + conversations, never commit)
 backups/
 
+# scratch config dir the regression suite uses when FORGE_CONFIG_DIR is unset
+tests/.tmp/
+

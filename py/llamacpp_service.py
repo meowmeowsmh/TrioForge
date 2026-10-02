@@ -823,7 +823,7 @@ def _plan_load(size, vram_free, ram_free, mmproj_size=0, ngl_auto=True):
 
     if vram_free and size and vram_free > size * vram_ratio + kv_headroom + mmproj_size:
         return {"offload": True, "split": False, "gpu_bytes": size,
-                "ram_needed": 0, "reason": "all layers in VRAM"}
+                "cpu_bytes": 0, "ram_needed": 0, "reason": "all layers in VRAM"}
 
     gpu_bytes = 0
     if vram_free and size and ngl_auto:
@@ -834,6 +834,7 @@ def _plan_load(size, vram_free, ram_free, mmproj_size=0, ngl_auto=True):
         "offload": False,
         "split": gpu_bytes > 0,
         "gpu_bytes": gpu_bytes,
+        "cpu_bytes": cpu_bytes,
         "ram_needed": cpu_bytes + (kv_headroom if size else 0),
         "reason": ("splitting across GPU and CPU: about {:.1f} GB of weights in VRAM, "
                    "{:.1f} GB on the CPU".format(gpu_bytes / 1073741824.0,
@@ -1295,6 +1296,10 @@ def start(model=None, ctx_size=None):
         # steps the GPU footprint down instead of repeating the identical abort.
         _watch_for_load_crash(_process, log_offset)
         return {"running": True, "model": os.path.basename(model_path),
+                # The load plan goes back to the caller: a split load is roughly an
+                # order of magnitude slower per token, and until now that decision
+                # was only ever written to logs/llamacpp.log.
+                "plan": plan, "size_bytes": size, "mmproj_bytes": mmproj_size,
                 "message": "starting llama.cpp with {}".format(os.path.basename(model_path))}
 
 
