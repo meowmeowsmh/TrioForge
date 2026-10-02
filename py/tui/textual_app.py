@@ -48,7 +48,7 @@ from textual.widgets import (Button, Collapsible, Input, Label, ListItem, ListVi
                              Markdown, Static, TextArea)
 
 from . import agent as agent_mod
-from . import faces, localmodels, providers, theme as T
+from . import faces, localmodels, providers, team, theme as T
 from .backend import (EchoBackend, OpenAICompatBackend, auto_model,
                       fetch_models)
 from .commands import COMMANDS  # built once so the first ctrl+p is instant
@@ -1576,10 +1576,14 @@ class ForgeApp(App):
         self._add_meta(f"👥 parallel: **{who(junior)}** (local) + **{who(senior)}** (cloud) both started")
 
         # Both begin at once; the junior keeps going to completion in the
-        # background without blocking the senior's faster answer.
+        # background without blocking the senior's faster answer. Each gets its
+        # own directive: the senior must produce the finished work (it has the
+        # write tools), the junior a complete inline answer (it is read-only).
         junior_task = asyncio.create_task(
-            self._agent_text(junior, text, state, use_tools=False))
-        senior_answer = (await self._agent_text(senior, text, state))[0] or ""
+            self._agent_text(junior, team.junior_opinion(text), state,
+                             use_tools=False))
+        senior_answer = (await self._agent_text(
+            senior, team.senior_task(text), state))[0] or ""
 
         if self._stop.is_set():
             junior_task.cancel()

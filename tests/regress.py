@@ -283,11 +283,43 @@ def _last_card(app):
 
 
 # ---------------------------------------------------------------------------
+# team — the senior/junior directives (a parallel pair must be told to WORK)
+# ---------------------------------------------------------------------------
+def test_team_directives() -> None:
+    _title("team directives")
+    from tui import team
+
+    task = "create a new folder for the project"
+    senior = team.senior_task(task)
+    junior = team.junior_opinion(task)
+
+    # both wrap the user's actual words, not replace them
+    assert senior.endswith(task) and junior.endswith(task)
+
+    # the senior is authoritative and has write tools: it must make the REAL
+    # thing, not an empty folder / a list / a plan / a question back. This is
+    # the exact regression: it once got the bare prompt and replied "Created
+    # <empty folder>. Done." with zero code.
+    for phrase in ("Do this task yourself now", "write/edit to create",
+                   "bash to run and verify", "not an empty folder, a list, a plan",
+                   "Do not ask the user for clarification"):
+        assert phrase in senior, phrase
+
+    # the junior is read-only, so its finished work must be inline in the text
+    assert "Answer this task yourself, now" in junior
+    assert "Give the COMPLETE answer inline" in junior
+    assert "not a list of files" in junior
+    assert "Do not ask the user for clarification" in junior
+    print("  senior=do-the-work, junior=full-inline-answer -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
-             test_known_facts, test_memory_is_optin, test_plan_load]
+             test_known_facts, test_memory_is_optin, test_plan_load,
+             test_team_directives]
     failed = []
     for t in tests:
         try:

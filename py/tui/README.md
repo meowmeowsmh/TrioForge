@@ -210,30 +210,30 @@ choose the model, so routing itself costs nothing and works offline.
 ### Team mode — the senior/junior pair (`/team`)
 
 Auto-route picks **one** model per message. Team mode is the other thing: they work
-together. `/team` turns it on (persisted, shown as `TEAM MODE ON` in the sidebar).
+together, at once. `/team` turns it on (persisted, shown as `TEAM MODE ON` in the sidebar).
 
 ```
-junior (local, llama.cpp) does the work
+junior (local, llama.cpp)  ─┐  both start on the same task
+senior (cloud)             ─┘
         │
-        ├── senior (cloud) APPROVES ......... the junior's work ships
-        ├── senior sends FEEDBACK ........... the junior tries again with it
-        ├── senior says TAKEOVER ............ the senior does it
-        └── junior produces nothing ......... the senior takes control
+        ├── senior ships first ......... its answer is the deliverable
+        └── junior keeps going offline .. its answer is appended as a note
 ```
 
-- **Both know the answer** → the senior guides the junior to make it better,
-  then ships the improved version.
-- **The junior is stuck** → the senior takes over and does the job itself. A reply
-  that only asks you for clarification, greets, or restates the task counts as
-  *stuck*, not as work: the senior is told never to approve one, and to run the
-  tools itself instead.
-- The exchange is visible in the transcript (`🧑‍🏫 senior → junior: …`), and the
-  junior's tool calls are drawn as usual, so you can watch them work as a pair.
+- **Both are real workers**, not a browse-and-describes pair. The only split is
+  who writes files: the senior has the write tools (so it creates and runs the
+  finished work), while the junior runs **read-only** so two agents never clobber
+  the same paths — it puts its full answer inline instead.
+- The senior is told to produce the *actual result* — real files with real
+  content, run and reported — never an empty folder, a list, a plan, or a
+  question handed back. The junior is told to give its complete answer inline.
 - It only applies to a **local** turn — a cloud turn is already the senior.
-- Cost: one cheap review call per junior attempt (max 2 attempts).
+- The exchange is visible in the transcript (`🧑‍🏫 senior … finished` /
+  `💻 local … also finished`), and the senior's tool calls are drawn as usual,
+  so you can watch them work as a pair.
 
-The policy lives in `py/tui/team.py` (`MAX_ROUNDS`, `review_messages()`,
-`verdict()`, `junior_task()`), so it can be tested without a model.
+The directives live in `py/tui/team.py` (`senior_task()`, `junior_opinion()`),
+so they can be tested without a model.
 
 ### Copying an answer out
 
