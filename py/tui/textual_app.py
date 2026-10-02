@@ -1461,31 +1461,41 @@ class ForgeApp(App):
             ui(self._finish_tool_card, payload["name"], payload["output"],
                payload.get("denied", False))
 
-    async def _agent_text(self, backend, task: str, state) -> str:
-        """A full agent turn (tools included) against ``backend``, by its text.
+    async def _agent_text(self, backend, task: str, state, use_tools: bool = True) -> str:
+        """A full agent turn against ``backend``, by its text.
 
-        Runs on a throwaway session: a junior's half-finished attempt must not
-        become part of the conversation the user keeps.
+        Runs on a throwaway session: a half-finished attempt must not become part
+        of the conversation the user keeps. ``use_tools=False`` gives a read-only
+        model (it can still read, but cannot write/edit/bash) - used for the
+        parallel junior, so it and the senior never clobber the same files.
         """
         from .session import Session
         sess = Session(model=getattr(backend, "model", ""),
                        where=getattr(backend, "where", ""),
                        system=self.session.system)
         sess.add_user(task)
-        turn = await self._run_agent(self._team_event, backend=backend, session=sess)
+        turn = await self._run_agent(self._team_event, backend=backend,
+                                     session=sess, use_tools=use_tools)
         text = (turn.text or "").strip()
         state["tokens"] = state.get("tokens", 0) + max(0, len(text) // 4)
         return text, list(turn.steps)
 
     async def _team_turn(self, text: str, state) -> str:
-        """Junior (local) does the work, senior (cloud) guides it.
+        """Parallel team: the local junior and the cloud senior start at once.
 
-        The loop: junior attempts -> senior reviews -> junior revises with the
-        feedback -> ... and the senior takes over when the junior has no idea,
-        cannot fix it, or runs out of rounds. Returns the answer to deliver.
+        The senior is fast and strong, so it is authoritative: its answer ships
+        the moment it is ready and the turn returns. The junior (offline, slower)
+        runs alongside and its independent answer is appended as a note when it
+        lands, but it never blocks the deliverable. No relay, no review loop -
+        this is "both models working on the task in the fastest way".
+
+        The junior runs without write tools: two agents writing the same files in
+        parallel would overwrite each other, so the senior is the only one that
+        changes files. The junior is the offline second opinion.
         """
+        import asyncio
+
         from . import localmodels as lm
-        from . import team
 
         junior_model, cloud = self._pool_models()
         cloud_provider, _url, cloud_model = self._cloud_target()
@@ -1503,44 +1513,42 @@ class ForgeApp(App):
             return name or "model"
 
         self._set_mood("thinking")
-        feedback, answer = "", ""
-        for rnd in range(1, team.MAX_ROUNDS + 1):
-            if self._stop.is_set():
-                return answer       # ctrl+c: hand back whatever the junior had
-            asking = team.junior_task(text, feedback, rnd)
-            self._add_meta(f"👥 junior **{who(junior)}** · attempt {rnd}")
-            answer, steps = await self._agent_text(junior, asking, state)
-            if not answer:
-                if self._stop.is_set():
-                    return answer
-                self._add_meta(f"🧑‍🏫 junior had no idea — **{who(senior)}** takes control")
-                return (await self._agent_text(senior, text, state))[0] or answer
+        self._add_meta(f"👥 parallel: **{who(junior)}** (local) + **{who(senior)}** (cloud) both started")
 
-            if self._stop.is_set():
-                return answer
-            # "reviewing…" is pure transience: it is always superseded by the
-            # verdict a moment later, so it goes on the live status line instead
-            # of adding a card per round to the transcript.
-            keep = self._status_text
-            self._set_status(f"🧑‍🏫 senior {who(senior)} is reviewing…")
-            reply = await self._call_text(senior, team.review_messages(text, answer, steps), state)
-            self._set_status(keep)
-            kind, detail = team.verdict(reply)
-            if kind == "approve":
-                self._add_meta("✅ senior approved the junior's work")
-                return answer
-            if kind == "takeover":
-                if self._stop.is_set():
-                    return answer
-                self._add_meta("🧑‍🏫 senior takes control")
-                return (await self._agent_text(senior, text, state))[0] or answer
-            feedback = detail
-            self._add_meta("🧑‍🏫 senior → junior: " + " ".join(detail.split())[:200])
+        # Both begin at once; the junior keeps going to completion in the
+        # background without blocking the senior's faster answer.
+        junior_task = asyncio.create_task(
+            self._agent_text(junior, text, state, use_tools=False))
+        senior_answer = (await self._agent_text(senior, text, state))[0] or ""
 
         if self._stop.is_set():
-            return answer
-        self._add_meta("🧑‍🏫 junior out of attempts — senior takes control")
-        return (await self._agent_text(senior, text, state))[0] or answer
+            junior_task.cancel()
+            return senior_answer
+
+        self._add_meta(f"🧑‍🏫 senior **{who(senior)}** finished — local still working…")
+
+        async def _junior_followup():
+            import llamacpp_service as svc
+            # The senior already answered, so the idle watchdog would otherwise
+            # unload the local model while it is still working. Keep it warm.
+            try:
+                while not junior_task.done():
+                    svc.touch()
+                    await asyncio.sleep(20)
+            except Exception:
+                pass
+            try:
+                junior_answer = (await junior_task)[0] or ""
+            except Exception:
+                junior_answer = ""
+            if junior_answer and junior_answer.strip():
+                self._add_meta(
+                    f"💻 local **{who(junior)}** also finished (offline): "
+                    + " ".join(junior_answer.strip().split())[:160])
+
+        self.run_worker(_junior_followup(), exclusive=False)
+
+        return senior_answer
 
     async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
         """Apply one agent event on the app thread (see ``_ask``)."""
@@ -1593,7 +1601,7 @@ class ForgeApp(App):
         self._stick_chat_bottom()
         self._refresh_activity()
 
-    async def _run_agent(self, on_event, backend=None, session=None):
+    async def _run_agent(self, on_event, backend=None, session=None, use_tools=True):
         """The agent's ``turn`` is blocking, so it runs in a thread.
 
         ``backend``/``session`` default to the current ones; team mode passes its
@@ -1610,7 +1618,7 @@ class ForgeApp(App):
             try:
                 ag = agent_mod.Agent(
                     backend, session,
-                    use_tools=True,
+                    use_tools=use_tools,
                     native_tools=agent_mod.supports_native_tools(backend),
                     approve=self._approve_blocking,
                     persist=lambda: providers.save(self.cfg),
