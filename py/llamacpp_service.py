@@ -977,7 +977,26 @@ def start(model=None, ctx_size=None):
         model_ref = model or cfg.get("model")
         model_path = resolve_model(model_ref)
         if not model_path or not os.path.isfile(model_path):
-            return {"running": False, "error": "model not found: {}".format(model_ref)}
+            # The saved model moved or was deleted - a renamed/updated GGUF is the
+            # usual story. Auto-start used to die right here with "model not
+            # found", which left llama.cpp permanently off after a reboot until the
+            # user hand-picked a model again. Prefer the LARGEST model on disk
+            # instead (the flagship the machine was built around), and say so, so
+            # the server still comes up. (Newest-by-mtime was tried and picked an
+            # old re-downloaded model over the one actually in use.)
+            try:
+                candidates = sorted(_list_gguf_files(),
+                                    key=lambda p: os.path.getsize(p), reverse=True)
+            except Exception:
+                candidates = []
+            if candidates:
+                model_path = candidates[0]
+                _log("saved model {!r} is gone; starting {!r} instead".format(
+                    model_ref, os.path.basename(model_path)))
+            else:
+                return {"running": False,
+                        "error": "model not found: {} (and no other .gguf files "
+                                 "are available)".format(model_ref)}
 
         # Remote mode (Docker → host llama-server): when LLAMA_HOST is set, the
         # container just connects to the server running ON THE HOST. It never needs

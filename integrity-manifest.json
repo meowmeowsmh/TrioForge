@@ -33,7 +33,7 @@
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_cpp.py": "1a2f1339acf99d6f38629c33d5a9b1e9627483412dadf5a698d491c41df8bec7",
   "py/llama_installer.py": "376ce0bf8f23f2c84dc4287c840a6f2ab58fe7f51f496fa3c2bc26e6fae5802e",
-  "py/llamacpp_service.py": "71a377ad0e189286137d97c75ccc45cc66c93a349a8c743ef7e7b7a21e85d42a",
+  "py/llamacpp_service.py": "5f7102ed30abfc41547577e4cc4528a258fbcbb6d9ed39f9926189afd662e8d2",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/memory.py": "0b74df6bfa5b1167a3cdbd611ba4b9fdc2141b2b22b3840dd2b5ab1bb720a111",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-02T15:49:01",
- "note": "baseline: name the memory trigger words"
+ "generated": "2026-10-02T16:15:01",
+ "note": "auto-start falls back when the saved model is gone"
 }
