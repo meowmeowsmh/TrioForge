@@ -290,6 +290,8 @@ All optional environment variables; the app works out of the box.
 | `TRIOFORGE_CTX_SIZE` | llama.cpp context window (tokens) | `16384` |
 | `TRIOFORGE_IDLE_UNLOAD` | Seconds idle before unloading a model; `0` keeps it | `300` |
 | `TRIOFORGE_SKIP_RAM_CHECK` | `1` = load even if it won't fit in RAM | *(unset)* |
+| `TRIOFORGE_KV_QUANT` | KV cache precision (`q8_0`, `f16`, …); split loads default to `q8_0` | *(auto)* |
+| `TRIOFORGE_BASH_TIMEOUT` | Seconds a `bash` tool call may run — raise it for builds/installs | `120` |
 | `TRIOFORGE_FFMPEG` | Explicit ffmpeg path (else `tools/ffmpeg`, then `PATH`) | *(auto)* |
 | `TRIOFORGE_TRANSCRIBE_WORKERS` | Parallel audio chunks | `4` |
 | `LLAMA_SERVER` | Explicit llama-server path | *(auto)* |

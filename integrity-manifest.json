@@ -55,7 +55,7 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "e90fc7c1c67d718173c357e6eaca90432f138a8f02cb85a2f4d9e8c3e9593edd",
-  "py/tui/README.md": "70e23ad6102d6191e29ecc92dc4405c7411dbe2bcec36cc30c96dcaa1678bb10",
+  "py/tui/README.md": "fc8db022d14512f964b6c5e0f2e48a09ca805cb96d30dc12c36456011d1cff09",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "615ccefc27d9d8858bb914a2679da890b05abc2daae16406975f0c8d1d7ffbdf",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T01:23:18",
- "note": "bash timeout env-tunable"
+ "generated": "2026-10-03T03:29:36",
+ "note": "README + CHANGELOG for recent fixes"
 }

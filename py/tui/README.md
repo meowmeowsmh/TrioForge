@@ -406,6 +406,21 @@ same, so nobody "simplifies" them back:
   was a particular trap: `py/features/openai_api.py` is TrioForge *serving* an
   OpenAI-shaped API from local models, the opposite direction. A config written
   against that list is migrated automatically, and says what it changed.
+- **Tool output is secret-redacted.** The agent can read any file it can see, and
+  in team mode the junior's findings are reviewed by a cloud model. `execute()`
+  masks `sk-…` keys, bearer tokens, `api_key`/`password`/`secret` assignments and
+  private-key blocks before anything reaches a model's context.
+- **The model is kept warm during a turn.** The idle watchdog unloads a local
+  model after 5 minutes of no request, but a team turn can go minutes without one
+  (the cloud senior is thinking, or a tool is running). The tick touches
+  llama.cpp while busy, so the unload only ever happens *between* turns — it was
+  unloading the junior mid-turn and the next request died with "connection
+  refused".
+- **A saved model path is a preference, not a requirement.** A path recorded on
+  another machine, or a model renamed in place, used to leave llama.cpp
+  permanently off ("model not found"). `start()` now auto-scans the model roots
+  and runs the best model that fits (fits-in-VRAM > splits GPU+CPU > neither),
+  largest within a tier, skipping vision projectors.
 
 ## Hardware and model fit
 

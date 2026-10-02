@@ -28,6 +28,42 @@ The agent gains a ninth tool, `memory` (`remember` / `recall` / `lookup` /
 and the plain UI through the shared command table. `duckdb` is imported lazily:
 without it, everything else still runs and only memory reports how to install it.
 
+### Local model: stop leaking, load what fits, and auto-scan
+
+The local-model path had three failure modes that each looked like "llama.cpp
+won't run":
+
+- `stop()` only killed the child *that process* started, so every restart leaked
+  a llama-server holding ~6 GB of RAM and VRAM — which is what later made loads
+  "fail" for lack of memory. It now kills whatever holds the port (after
+  confirming it is llama-server) and verifies the port is free before saying so.
+- the RAM guard judged the whole file size against free RAM, refusing a model
+  that fits across **both** GPU and CPU. A tested `_plan_load` now decides it:
+  fits-in-VRAM, splits GPU+CPU, or genuinely refuses. Split loads quantise the KV
+  cache to `q8_0` by default.
+- a saved model path that went stale (or was recorded on another machine) left
+  the server permanently off. `start()` now auto-scans the model roots and runs
+  the best model that fits, so the app works per-machine with no hand-edited
+  config.
+
+### Security and correctness (audited, each with a test)
+
+- `bash` timeout no longer orphans the command's child processes; the cap is
+  tunable via `TRIOFORGE_BASH_TIMEOUT`.
+- dangerous tools are denied when no approval callback is wired.
+- memory writes are atomic against a crash (row + filter), and over-long keys are
+  handled consistently.
+- tool output is secret-redacted before it reaches a model — and in team mode,
+  before it is sent to the cloud senior.
+
+### TUI polish
+
+- the mood face no longer clips off-screen, the "Thinking…" title no longer keeps
+  its focus highlight, and streamed answers re-render at a throttled rate instead
+  of flickering per token.
+- typing `/q` pleads on Enter only, holds 2.5 s, and a second `ctrl+q` leaves at
+  once.
+
 ## [1.4.0] — cross-platform, and the terminal client (`forge`)
 
 **The headline: local AI now works on whichever machine you sit down at** — Apple,
