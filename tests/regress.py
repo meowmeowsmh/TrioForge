@@ -158,6 +158,10 @@ def test_memory_is_optin() -> None:
     assert "MEMORY IS OPT-IN" in prompt, "the rule is gone"
     assert "Never record anything on your own initiative" in prompt
     assert "explicitly asks you to remember" in prompt
+    # the shorthand the user actually types must be a recognised trigger
+    for word in ('"remember"', '"rmb"', '"note this down"'):
+        assert word in prompt, word
+    assert "is NOT an instruction to store" in prompt   # wraps across a line
     # the old wording that invited auto-saving must not come back
     assert "When the user states something lasting" not in prompt
 
