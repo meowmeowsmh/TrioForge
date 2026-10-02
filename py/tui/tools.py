@@ -168,6 +168,13 @@ def _kill_tree(pid: int) -> None:
 def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
     if not command.strip():
         return "error: command is empty"
+    # The 120s default protects against a hung command, but a real coding task -
+    # a build, an install, a test run - legitimately takes longer. Offline coding
+    # is exactly where those happen, so make the cap env-tunable.
+    try:
+        timeout = max(5, int(os.environ.get("TRIOFORGE_BASH_TIMEOUT", "120") or 120))
+    except ValueError:
+        timeout = 120
     cwd = _resolve(working_dir) if working_dir else Path.cwd()
     if not cwd.is_dir():
         return f"error: not a directory: {cwd}"
@@ -178,14 +185,16 @@ def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
         proc = subprocess.Popen(
             command, shell=True, cwd=cwd, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True)
-        out, _ = proc.communicate(timeout=120)
+        out, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_tree(proc.pid)
         try:
             proc.kill()
         except Exception:
             pass
-        return "error: command exceeded the 120s limit (its process tree was killed)"
+        return (f"error: command exceeded the {timeout}s limit "
+                f"(its process tree was killed; set TRIOFORGE_BASH_TIMEOUT higher "
+                f"for long builds/installs)")
     except OSError as exc:
         return f"error: {exc}"
     out = (out or "").strip() or "(no output)"
