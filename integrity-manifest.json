@@ -60,7 +60,7 @@
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "e028dd3cac9e1c3126009e0e32a18cdf0266c99e24a401e0a360b1f48646ddb9",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
-  "py/tui/backend.py": "e28fb5eb58dc17117a8a5da03a5770843dbb06b5dcd193affe9256b184241b33",
+  "py/tui/backend.py": "469216f90801937164911a51d17458ef1722166320ed2416ef3dd0ae19a7afd6",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
   "py/tui/commands.py": "484ab5731cc1cc85974389323c7be38e0867bede6f892de83207eacee5a28e0d",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T03:46:39",
- "note": "clean senior prompt spacing"
+ "generated": "2026-10-03T04:02:52",
+ "note": "cap local generation at max_tokens"
 }

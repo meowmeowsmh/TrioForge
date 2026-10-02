@@ -16,6 +16,7 @@ Two implementations:
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Iterable, Iterator
 
@@ -93,6 +94,14 @@ def _iter_sse(response) -> Iterator[tuple[str, str]]:
                 yield "content", piece
 
 
+# A local model with no cap generates until it fills the whole context. A weak
+# 9B that never emits its end-of-stream token rambles at ~10 tok/s for 20+
+# minutes - a turn that looks like "16m 0s, ~0 tok". Cap every generation so a
+# turn can never run away; 2048 tokens is a full page and plenty for one
+# tool-calling round or one answer (the code itself goes into files, not chat).
+MAX_TOKENS = int(os.environ.get("TRIOFORGE_MAX_TOKENS", "2048") or 2048)
+
+
 class OpenAICompatBackend(Backend):
     """Talks to an OpenAI-compatible endpoint, streaming by default."""
 
@@ -137,6 +146,7 @@ class OpenAICompatBackend(Backend):
             "messages": messages,
             "stream": True,
             "temperature": self.temperature,
+            "max_tokens": MAX_TOKENS,
         }
         if getattr(self, "tools", None):
             body["tools"] = self.tools
