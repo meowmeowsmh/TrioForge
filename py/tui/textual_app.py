@@ -1279,6 +1279,8 @@ class ForgeApp(App):
 
     def action_auto_route(self) -> None:
         """ctrl+a - route the typed message, or open the pool picker when empty."""
+        if self._busy:
+            return
         area = self.query_one("#prompt", PromptArea)
         text = (area.text or "").strip()
         if not text:
@@ -1294,9 +1296,16 @@ class ForgeApp(App):
 
     @on(PromptArea.Submitted, "#prompt")
     def _submitted(self, event: PromptArea.Submitted) -> None:
+        # Busy = a turn is running. The gemini chat TUI disables its input while
+        # the model responds; forge used to CLEAR the prompt here and then drop
+        # the message on the floor, so a message typed during a long turn was
+        # silently erased. Keep the text and do nothing instead - the prompt is
+        # re-enabled (and refocused) when the turn ends.
+        if self._busy:
+            return
         text = (event.value or "").strip()
         self.query_one("#prompt", PromptArea).text = ""
-        if not text or self._busy:
+        if not text:
             return
         if text.startswith("/"):
             self._command(text)
@@ -1351,6 +1360,11 @@ class ForgeApp(App):
         self._busy = True
         self._stop.clear()      # a new turn is never born cancelled
         self._set_mood("thinking")
+        # Disable the prompt while the turn runs (like the gemini TUI): typing is
+        # still possible but Enter cannot send, so a queued message is never
+        # eaten mid-generation. Re-enabled in the finally block below.
+        prompt = self.query_one("#prompt", PromptArea)
+        prompt.disabled = True
         started = time.time()
         team = self._team_mode and self._is_local()
         # In team mode the answer card is created at the END: mounting it first
@@ -1472,7 +1486,14 @@ class ForgeApp(App):
                 except Exception:  # noqa: BLE001 - cosmetic, never fatal
                     pass
             self._refresh()
-            self.query_one("#prompt", PromptArea).focus()
+            # Re-enable the prompt and hand focus back, so the user can type the
+            # next message immediately after the answer lands.
+            try:
+                prompt = self.query_one("#prompt", PromptArea)
+                prompt.disabled = False
+                prompt.focus()
+            except Exception:  # noqa: BLE001 - never fatal
+                pass
 
     # ------------------------------------------------------------------- team
     async def _call_text(self, backend, messages, state, limit: int = 700) -> str:

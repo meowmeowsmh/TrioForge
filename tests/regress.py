@@ -261,6 +261,22 @@ async def _tui_checks() -> None:
         assert "from-bot" in app._add_plain("x").classes
         print("  meta lines are not bot bubbles -> OK")
 
+        # busy guard: a submitted message during a running turn must NOT be
+        # erased (the gemini chat TUI disables its input; forge used to clear
+        # the prompt and drop the message). Disable the prompt, submit, and the
+        # text must survive untouched.
+        prompt = app.query_one("#prompt", ta.PromptArea)
+        prompt.text = "queued while busy"
+        app._busy = True
+        prompt.disabled = True
+        # simulate the submit handler's guard directly
+        before = prompt.text
+        app._submitted(ta.PromptArea.Submitted(prompt, before))
+        assert prompt.text == before, "busy submit erased the queued message"
+        prompt.disabled = False
+        app._busy = False
+        print("  busy submit keeps the queued message -> OK")
+
         # a split load warns, a fitting one does not
         import llamacpp_service as svc
         app.session.model = "nemotron"

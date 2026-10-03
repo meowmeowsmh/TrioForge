@@ -70,7 +70,7 @@
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
   "py/tui/session.py": "aad4788c73244b32fe3b0b11c48706041782171fe88b4ecb333b3951d9f7fceb",
   "py/tui/team.py": "5f06063e381fb96c277f6aa7c469ac2a5115aa36606f28c54859e6f14bbd6a91",
-  "py/tui/textual_app.py": "98ff7ae18d7674c9e664e3ca7b3cc2dff0a4244e3e50791879425b05d8660da1",
+  "py/tui/textual_app.py": "de5a6e25da52b1aed6175db93dfe00efe2c50471eca8cfe23b87bfd0572819fe",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "19fdaf3b86ddda13434c4bca86b9a4dbe465038509310d71f1fc6a1ff1c05329",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T16:28:42",
- "note": "agent prompt: verify-not-declare + motion-not-recap"
+ "generated": "2026-10-03T16:35:36",
+ "note": "disable prompt while busy (gemini tui pattern)"
 }
