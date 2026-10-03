@@ -3,7 +3,22 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
+## [1.4.5] — memory, hybrid-GPU fixes, and /set token
+
+### The sidebar shows the GPU working in real time
+
+The right-hand "Machine" panel no longer prints a frozen `1.1/8.0GB free` that
+looked broken while a turn ran. The primary GPU line now reads live through NVML
+(in-process, with an `nvidia-smi` fallback) and shows `6.9/8.0GB 98%` — memory
+used plus utilisation — refreshing on every sidebar redraw. An integrated GPU is
+labelled `shares RAM` instead of a misleading shared-memory size.
+
+### /set token caps the reply length and the context window
+
+`/set token <max> [context]` sets how many tokens one answer may produce and the
+context window handed to llama.cpp (applied on the next model load). Both values
+persist in `~/.config/forge/config.json`; `/set token` with no argument shows the
+current limits. Defaults: 2048 output / 16384 context.
 
 ### Hybrid laptops report every GPU again, not just the integrated one
 
