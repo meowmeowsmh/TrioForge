@@ -421,19 +421,28 @@ All git-ignored. **Model weights are never committed** (`/models/`, `*.gguf`, `*
 
 ```
 TrioForge/
-├── py/                       # all Python
-│   ├── app.py                # Flask app + chat/routes
-│   ├── llamacpp_service.py   # llama-server lifecycle + GPU resolution
-│   ├── llama_installer.py    # ⚡ auto-install llama.cpp
-│   ├── setup_check.py        # GPU backend detection
-│   ├── hardware.py           # cross-platform CPU/RAM/GPU detection
-│   ├── llama_cpp.py          # stdlib-only llama_cpp (terminal)
-│   ├── providers/ · features/ · tools/   # providers, notes/corkboard, launcher/updater/window/voice
-│   └── tui/                  # the terminal client (forge/trioforge)
-├── docker/                   # Dockerfile, compose, application.sh
-├── .github/workflows/        # CI incl. real Windows + Apple Silicon smoke tests
-├── templates/ · static/      # frontend
-├── TrioForge.bat · run.sh    # launchers (Windows / Linux-macOS-WSL)
+├── py/                              # all Python
+│   ├── app.py                       # Flask web app (chat, routes, API)
+│   ├── llamacpp_service.py          # llama-server lifecycle + GPU resolution
+│   ├── llama_installer.py           # ⚡ auto-install the right llama.cpp build
+│   ├── setup_check.py               # GPU backend detection (CUDA/ROCm/Vulkan/CPU)
+│   ├── hardware.py                  # cross-platform CPU/RAM/GPU detection
+│   ├── llama_cpp.py                 # stdlib-only llama_cpp driver (terminal)
+│   ├── memory.py · rag.py           # agent memory + document search
+│   ├── comfyui_service.py           # image/video generation via ComfyUI
+│   ├── video_to_text.py · voice_service.py · generate_image.py · ffmpeg_installer.py
+│   ├── personas.py · plugin_loader.py · backup_store.py · edits_store.py
+│   ├── providers/                   # LLM provider definitions
+│   ├── features/                    # notes, corkboard, viewer, model browser, OpenAI API
+│   ├── tools/                       # launcher, updater, integrity, shortcuts, autostart
+│   └── tui/                         # the terminal client (forge / trioforge)
+├── tools/                           # dev checks (JS/HTML + undefined-names) + llama.cpp builds
+├── tests/                           # the regression suite (tests/regress.py)
+├── docker/                          # Dockerfile, compose, application.sh
+├── .github/workflows/               # CI incl. real Windows + Apple Silicon smoke tests
+├── templates/ · static/             # frontend (Jinja + JS/CSS)
+├── forge · forge.cmd · TrioForge.bat · run.sh   # launchers (Linux/macOS · Windows)
+├── install.sh · install.ps1 · setup.sh · deps.sh  # one-time setup
 ├── models/ · video_model/ · universal_models_to_text/   # your GGUFs (git-ignored)
 └── requirements.txt · requirements-ml.txt · pyproject.toml · README.md · LICENSE
 ```
