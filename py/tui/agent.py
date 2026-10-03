@@ -29,8 +29,27 @@ from . import tools as TL
 from .backend import BackendError
 
 MAX_STEPS = 12          # tool-calling rounds in one turn
-APPROVE_ALL = "all"     # the user chose "yes, and stop asking"
+APPROVE_ALL = "all"     # the user chose "yes, stop asking"
 BAD_ARGS = "__invalid_arguments__"  # marks a call whose JSON did not parse
+
+#: Tools that only LOOK at things. A round made only of these changes nothing,
+#: so a model that keeps picking them is not working - it is stalling.
+READ_ONLY_TOOLS = frozenset({"view", "grep", "glob", "ls"})
+
+#: How many read-only rounds in a row before the loop intervenes. The observed
+#: failure: a task to fix one button produced seven straight view/grep rounds
+#: (including grep for the single letter "x") and never a single write. A weak
+#: model will not read its way to a decision, and the turn ended with nothing.
+READ_ONLY_NUDGE_AT = 3
+
+#: Injected as a user message when the model stalls, so the next round is an
+#: instruction to act rather than another look around.
+STALL_NUDGE = (
+    "STOP READING. You have inspected {n} rounds without changing anything, and "
+    "the user is waiting. Act now: apply the fix with write/edit using what you "
+    "already know. If you are certain nothing needs changing, say so in one line "
+    "and stop. Do not view, grep or glob again."
+)
 
 # Adapted from Crush's internal/agent/templates/coder.md.tpl. The rules are kept
 # because they are what makes an agent behave; the parts about MCP, LSP, skills
@@ -91,7 +110,9 @@ These override everything else.
 13. READ ONCE, THEN WRITE. The point of reading is to change something. Once you
     have found the bug and the fix, apply it with write/edit IMMEDIATELY - do not
     re-read a file you already saw this turn, and do not spend the whole turn
-    investigating. A turn that only reads and never writes has failed.
+    investigating. At most 2-3 reads before your first change. Never grep for a
+    single letter or a bare word like "x" to "find" something: that is flailing,
+    not searching. A turn that only reads and never writes has failed.
 </critical_rules>
 
 {tools}
@@ -231,6 +252,7 @@ class Agent:
         """
         result = Turn()
         messages = self._messages()
+        read_only_rounds = 0
 
         for step_no in range(MAX_STEPS):
             if should_stop and should_stop():
@@ -284,6 +306,20 @@ class Agent:
 
             if result.stopped:
                 break
+
+            # Count rounds that only looked. A round containing any acting tool
+            # (write/edit/bash) resets the streak - the model is working.
+            if calls and all(name in READ_ONLY_TOOLS for name, _a in calls):
+                read_only_rounds += 1
+            else:
+                read_only_rounds = 0
+
+            if read_only_rounds >= READ_ONLY_NUDGE_AT and step_no < MAX_STEPS - 1:
+                # Say it in the transcript too, so the stall is visible rather
+                # than looking like the model is thinking hard.
+                on_event("stall", {"rounds": read_only_rounds})
+                messages.append({"role": "user",
+                                 "content": STALL_NUDGE.format(n=read_only_rounds)})
 
             if self.persist:
                 self.persist()

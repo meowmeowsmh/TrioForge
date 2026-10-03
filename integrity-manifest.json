@@ -59,7 +59,7 @@
   "py/tui/README.md": "b1cca4e34ec0781b1ff613bfabbc626807dfd175e313083e5f3990b663c13f3a",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "495206a258b72a75be8b2ee089ba96ef0b656a40368ff80f86a069357eb9712b",
+  "py/tui/agent.py": "5fb8c7d3130fc957e5fed518ec3aefacb02013b7e989fef1dc985c1da2f6c9da",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "6d43a7ee66aa14ec27ca6461e0012b17c95eabaef56ce38432eac6eb45fdbb15",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -72,7 +72,7 @@
   "py/tui/router.py": "5262e56a7d9f1e3981f507caf92b4be042e065acb0fae86f780f51c72554229c",
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
-  "py/tui/textual_app.py": "b24583f82c0eb155c84e4936510dce9710f0b661c97207028832f251842f7bf6",
+  "py/tui/textual_app.py": "3bcb23023d42ee8bf8d2c151dfa08d497aa301cd2759b72852c8afc90d4f58c3",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "d7316f95a6f58e1cb601a1a3b1b95afbb1bd5fdd0b4a6b795205e844bedb8d9e",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -107,6 +107,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T22:30:05",
- "note": "router: repair verbs route complex"
+ "generated": "2026-10-03T22:52:32",
+ "note": "agent: read-only stall detector"
 }

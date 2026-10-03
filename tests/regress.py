@@ -112,6 +112,47 @@ def test_agent_wire_ids() -> None:
     print("  tool_call_id matches the assistant message -> OK")
 
 
+# ---------------------------------------------------------------------------
+# agent — a model that only reads must be told to act (the observed stall:
+# seven view/grep rounds on a one-button fix, and never a single write)
+# ---------------------------------------------------------------------------
+def test_agent_read_only_stall() -> None:
+    _title("agent read-only stall")
+    from tui.agent import Agent, READ_ONLY_NUDGE_AT, STALL_NUDGE
+    from tui.session import Session
+
+    class ReadOnlyBackend:
+        """Always asks to view a file - never writes. The flailing model."""
+        model = "fake"
+        where = "local"
+        tools = []
+
+        def __init__(self):
+            self.seen = []          # every user message the agent sent
+
+        def stream(self, messages):
+            self.seen = [m for m in messages if m.get("role") == "user"]
+            # a text-protocol read call, so native tools are irrelevant
+            yield "content", '```tool\n{"name": "view", "args": {"file_path": "x.py"}}\n```'
+            yield "finish", "stop"
+
+    be = ReadOnlyBackend()
+    events = []
+    ag = Agent(be, Session(model="f", where="local", system="s"),
+               use_tools=True, native_tools=False,
+               approve=lambda *a: True, persist=None)
+    ag.turn(lambda kind, payload: events.append(kind))
+
+    # the nudge fired, and it told the model to stop reading and act
+    nudges = [m["content"] for m in be.seen if "STOP READING" in m.get("content", "")]
+    assert nudges, "a pure read-only loop was never nudged"
+    assert "apply the fix with write/edit" in nudges[0]
+    assert "stall" in events, "the stall was not reported to the UI"
+    assert READ_ONLY_NUDGE_AT >= 2, "nudging after one read is too eager"
+    assert "Do not view, grep or glob again" in STALL_NUDGE
+    print("  read-only loop gets nudged to act, stall reported -> OK")
+
+
 def test_known_facts() -> None:
     _title("known facts in the system prompt")
     import memory
@@ -572,6 +613,7 @@ def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
+             test_agent_read_only_stall,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
              test_plan_load, test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

@@ -1716,6 +1716,12 @@ class ForgeApp(App):
             await self._finish_tool_card(payload["name"], payload["output"],
                                          payload.get("denied", False))
             self._set_mood("thinking")
+        elif kind == "stall":
+            # The loop caught the model reading without acting and told it to
+            # stop. Say so, so a stall reads as a stall and not as "thinking".
+            self._add_meta(
+                f"⏸ {payload['rounds']} rounds of reading with no change — "
+                "told it to apply the fix now")
         elif kind == "error":
             await self._ensure_card(state).update(
                 f"**request failed** — {payload['message']}")
