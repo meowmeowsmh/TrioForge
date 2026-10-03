@@ -1249,14 +1249,26 @@ class ForgeApp(App):
         cloud_provider, cloud_url, cloud_model = self._cloud_target()
         if cloud is not None:
             cloud_provider, cloud_url, cloud_model = cloud
-        if not local_model and self.cfg.provider == "local":
-            local_model = self.cfg.model
+        if not local_model:
+            # The pool may hold NO local entry (the user picked cloud models
+            # only). A local route then has no model of its own, so fall back to
+            # the configured one - and if even that is unset, ask the machine
+            # rather than routing to a nameless "default".
+            local_model = self.cfg.model or auto_model(self.cfg.base_url,
+                                                       self.cfg.api_key) or ""
         decision = router.decide(
             text, cloud_provider=cloud_provider, cloud_url=cloud_url,
             cloud_model=cloud_model, local_model=local_model)
 
         self.cfg.provider = decision["provider"]
         model = decision.get("model") or ""
+        if not model and decision["provider"] == "local":
+            # An empty decision must NEVER erase the configured model. It used
+            # to: a pool with no local entry returned "" for a local route, and
+            # saving that wrote model:"" to disk - the gguf path was gone for
+            # good and every later launch showed the model as "default".
+            model = self.cfg.model or auto_model(self.cfg.base_url,
+                                                 self.cfg.api_key) or ""
         if decision["provider"] == "local" and model:
             # The routing pool holds the picker's SHORT name ("gemma-3-12b-it"),
             # but llama.cpp needs a real path: resolve_model() treats a bare name
@@ -1266,8 +1278,11 @@ class ForgeApp(App):
             found = lm.find(model)
             if found:
                 model = found.path
-        self.cfg.model = model
-        self.session.model = model
+        if model:
+            # Only ever assign a real model; an empty one leaves the config and
+            # the session exactly as they were.
+            self.cfg.model = model
+            self.session.model = model
         if not isinstance(self.backend, EchoBackend):
             self.backend = self._backend_for(decision["provider"], self.cfg.model)
             self.real_backend = self.backend

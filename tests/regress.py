@@ -351,6 +351,31 @@ async def _tui_checks() -> None:
         assert "READ ONCE, THEN WRITE" in seeded.messages[-1].content
         print("  team session carries history, wrapped task last -> OK")
 
+        # routing must NEVER erase the configured model. The bug: a pool with no
+        # local entry returned model="" for a local route, which was saved to
+        # disk - the gguf path was gone for good and every launch showed
+        # "default". Force a local route with an empty local model and check the
+        # config survives.
+        from tui import router as _router
+        saved_pool, saved_model = app._route_pool, app.cfg.model
+        app.cfg.model = "D:\\models\\gemma-4-12B-it-qat-UD.gguf"
+        app._route_pool = ["deepseek:deepseek-flash"]      # no local: entry
+        _real_reachable = _router.reachable
+        _router.reachable = lambda url, timeout=3.0: False  # force the local route
+        try:
+            app._route("hello")
+        finally:
+            _router.reachable = _real_reachable
+        assert app.cfg.model == "D:\\models\\gemma-4-12B-it-qat-UD.gguf", \
+            "routing to local erased the configured model: {!r}".format(app.cfg.model)
+        import json as _json
+        from tui.providers import CONFIG_FILE
+        _on_disk = _json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        assert _on_disk.get("model") == "D:\\models\\gemma-4-12B-it-qat-UD.gguf", \
+            "an empty model was written to disk: {!r}".format(_on_disk.get("model"))
+        app._route_pool, app.cfg.model = saved_pool, saved_model
+        print("  routing never erases the configured model -> OK")
+
         # a split load warns, a fitting one does not
         import llamacpp_service as svc
         app.session.model = "nemotron"

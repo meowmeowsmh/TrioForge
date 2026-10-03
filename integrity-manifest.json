@@ -72,7 +72,7 @@
   "py/tui/router.py": "5262e56a7d9f1e3981f507caf92b4be042e065acb0fae86f780f51c72554229c",
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
-  "py/tui/textual_app.py": "3bcb23023d42ee8bf8d2c151dfa08d497aa301cd2759b72852c8afc90d4f58c3",
+  "py/tui/textual_app.py": "8bac22348e5a8309d1344c5f1d77585ca697bb86799c5abe258555d6d7bf2e00",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "d7316f95a6f58e1cb601a1a3b1b95afbb1bd5fdd0b4a6b795205e844bedb8d9e",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -107,6 +107,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T22:52:32",
- "note": "agent: read-only stall detector"
+ "generated": "2026-10-03T22:56:01",
+ "note": "routing never erases the model"
 }
