@@ -170,7 +170,12 @@ class Agent:
 
     def _messages(self) -> list[dict]:
         msgs = [{"role": "system", "content": self.system_prompt()}]
-        msgs.extend(m.as_dict() for m in self.session.messages)
+        # Sliding window over the conversation: the system prompt is always
+        # first, and only the most recent turns follow. Without this a long
+        # session keeps growing and the model drifts off into its own old
+        # answers instead of answering the current message.
+        from .session import window
+        msgs.extend(m.as_dict() for m in window(self.session.messages))
         return msgs
 
     # -------------------------------------------------------------------- gate

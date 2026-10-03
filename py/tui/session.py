@@ -6,7 +6,49 @@ payload a model expects. It does no I/O, so it is easy to test.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+
+
+def _env_limit(name: str, default: int, floor: int) -> int:
+    """Read an int env var, clamped so a typo cannot disable the window."""
+    try:
+        return max(floor, int(os.environ.get(name, "") or default))
+    except ValueError:
+        return default
+
+
+def window(messages, max_messages=None, max_chars=None):
+    """The recent slice of a conversation the model should actually see.
+
+    A sliding window over the history: keep the newest messages and drop the
+    oldest, so a long session does not feed the model its own stale turns and
+    send it drifting off-task. Two limits, in this order:
+
+    1. message count - at most ``max_messages`` of the newest are kept;
+    2. character budget - oldest-first messages are trimmed until the total fits
+       ``max_chars`` (about 4 chars per token), so one giant pasted file cannot
+       crowd out the current turn.
+
+    The newest message is never dropped, and the caller prepends the system
+    prompt - the window only ever applies to the conversation, never to it.
+    ``messages`` is read, not mutated.
+
+    Tune with TRIOFORGE_CONTEXT_MESSAGES / TRIOFORGE_CONTEXT_CHARS.
+    """
+    if max_messages is None:
+        max_messages = _env_limit("TRIOFORGE_CONTEXT_MESSAGES", 12, 4)
+    if max_chars is None:
+        max_chars = _env_limit("TRIOFORGE_CONTEXT_CHARS", 24000, 4000)
+    if not messages:
+        return list(messages)
+    recent = list(messages[-max_messages:])
+    total = sum(len(m.content) for m in recent)
+    drop = 0
+    while total > max_chars and drop < len(recent) - 1:
+        total -= len(recent[drop].content)
+        drop += 1
+    return recent[drop:]
 
 
 @dataclass
@@ -55,11 +97,16 @@ class Session:
         return ""
 
     def payload(self) -> list[dict]:
-        """The message list in OpenAI wire format, system prompt first."""
+        """The message list in OpenAI wire format, system prompt first.
+
+        The conversation is passed through :func:`window`, so only the recent
+        history reaches the model - old turns are sliced out and the model stays
+        on the current task instead of drifting off its own stale answers.
+        """
         out: list[dict] = []
         if self.system:
             out.append({"role": "system", "content": self.system})
-        out.extend(m.as_dict() for m in self.messages)
+        out.extend(m.as_dict() for m in window(self.messages))
         return out
 
     def transcript(self) -> str:

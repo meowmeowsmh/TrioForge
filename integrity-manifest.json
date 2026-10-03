@@ -58,7 +58,7 @@
   "py/tui/README.md": "c3f7167b39fab2e84f75b1e55eec5a549b99a9a3dc317d634d2ce570a9bd399a",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "e028dd3cac9e1c3126009e0e32a18cdf0266c99e24a401e0a360b1f48646ddb9",
+  "py/tui/agent.py": "0920135b8d4aece959f09042838ffde6b7bf8f946d775411f32c204d1d04329a",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "0371be98b528ee0cc7de4eab1de430a9230d04cbfb9b7ca62139a2fde3bfefd6",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -68,7 +68,7 @@
   "py/tui/providers.py": "f5d33ad21e913da20f33c05dc54a1f678b2572efab2853a6829264ec51be127a",
   "py/tui/render.py": "9b825f569c9cd55ba00e06cbb49d196c674678e75f8fc71bec0c89069a82bca5",
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
-  "py/tui/session.py": "7f1570f2f69077deef8b18e0311ee9b545dd0ee63d0408f2488bf84bf3bd873e",
+  "py/tui/session.py": "aad4788c73244b32fe3b0b11c48706041782171fe88b4ecb333b3951d9f7fceb",
   "py/tui/team.py": "79e7c95af4724ae3b6b8f6bd8ba7b5ceea1f016feb46714e0a34cbd01c90b44c",
   "py/tui/textual_app.py": "7611b10694e0e1c1ec72d6062ad5bf8b3b9698abf36a457e1c599cdbd716530a",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T05:18:02",
- "note": "baseline after team-mode + readability fixes"
+ "generated": "2026-10-03T15:28:04",
+ "note": "sliding-window conversation memory"
 }

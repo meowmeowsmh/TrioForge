@@ -314,12 +314,43 @@ def test_team_directives() -> None:
 
 
 # ---------------------------------------------------------------------------
+# session — the sliding window (a long session must not feed the model its
+# own stale turns)
+# ---------------------------------------------------------------------------
+def test_session_window() -> None:
+    _title("session sliding window")
+    from tui.session import Message, window
+
+    msgs = [Message("user", f"u{i}") for i in range(10)]
+
+    # count limit keeps the newest, drops the oldest
+    got = window(msgs, max_messages=4, max_chars=10 ** 9)
+    assert [m.content for m in got] == ["u6", "u7", "u8", "u9"], got
+
+    # character budget trims oldest-first but NEVER drops the newest message
+    got = window(msgs, max_messages=10, max_chars=6)
+    assert got[-1].content == "u9", got
+    assert sum(len(m.content) for m in got) <= 6, got
+
+    # a short conversation passes through untouched (and is not mutated)
+    short = [Message("user", "hi"), Message("assistant", "yo")]
+    before = [m.content for m in short]
+    got = window(short, max_messages=12, max_chars=24000)
+    assert [m.content for m in got] == ["hi", "yo"]
+    assert [m.content for m in short] == before, "mutated input"
+
+    # the system prompt is NOT part of the window: a caller prepends it
+    assert window([], max_messages=4, max_chars=100) == []
+    print("  count + char budget, newest kept, system untouched -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_known_facts, test_memory_is_optin, test_plan_load,
-             test_team_directives]
+             test_team_directives, test_session_window]
     failed = []
     for t in tests:
         try:
