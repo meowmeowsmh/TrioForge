@@ -202,6 +202,11 @@ def test_agent_verify_and_preamble() -> None:
     assert "NARRATE THE TASK, NOT THE PLUMBING" in prompt
     assert "not narrate" in prompt
 
+    # read-once-then-write: the observed failure where the senior made 20
+    # read-only calls and never wrote a fix
+    assert "READ ONCE, THEN WRITE" in prompt
+    assert "A turn that only reads and never writes has failed" in prompt
+
     # the terminal is not a browser: wide markdown tables don't align there
     assert "prefer short" in ta.DEFAULT_SYSTEM
     assert "over wide Markdown tables" in ta.DEFAULT_SYSTEM
@@ -363,6 +368,13 @@ def test_team_directives() -> None:
     assert "Give the COMPLETE answer inline" in junior
     assert "not a list of files" in junior
     assert "Do not ask the user for clarification" in junior
+
+    # the read-once-then-write rule: the senior must not burn its whole turn
+    # investigating (the observed failure: 20 read-only tool calls, zero writes,
+    # final answer was just its opening preamble line)
+    assert "READ ONCE, THEN WRITE" in senior
+    assert "Do not re-read a file you already saw" in senior
+    assert "the deliverable is the fixed file" in senior
     print("  senior=do-the-work, junior=full-inline-answer -> OK")
 
 

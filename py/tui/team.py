@@ -33,6 +33,10 @@ SENIOR_TASK_DIRECTIVE = (
     "listing unrelated folders, no probing free space. Go straight to the named "
     "location, make the files, and report. On Windows the shell is cmd.exe - use "
     "dir/mkdir/echo, not PowerShell cmdlets (Select-Object, Format-Table).\n\n"
+    "READ ONCE, THEN WRITE: read only enough to find the fix, then apply it with "
+    "write/edit. Do not re-read a file you already saw this turn, and do not "
+    "spend the whole turn investigating - the deliverable is the fixed file, not "
+    "the investigation.\n\n"
 )
 
 #: What the JUNIOR is asked. It runs read-only (no write tools), so the finished
