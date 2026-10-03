@@ -207,33 +207,31 @@ hints + code shape + length), `reachable()` is one TCP connect, and `decide()`
 applies offline → local, complex → cloud, else local. No network call is made to
 choose the model, so routing itself costs nothing and works offline.
 
-### Team mode — the senior/junior pair (`/team`)
+### Team mode — every model works (`/team`)
 
-Auto-route picks **one** model per message. Team mode is the other thing: they work
-together, at once. `/team` turns it on (persisted, shown as `TEAM MODE ON` in the sidebar).
+Auto-route picks **one** model per message. Team mode is the other thing: every
+model in the routing pool works the same task, at once. `/team` turns it on
+(persisted, shown as `TEAM MODE ON` in the sidebar).
 
 ```
-junior (local, llama.cpp)  ─┐  both start on the same task
-senior (cloud)             ─┘
+pool: local gemma + deepseek-chat + ...   all start on the same task
         │
-        ├── senior ships first ......... its answer is the deliverable
-        └── junior keeps going offline .. its answer is appended as a note
+        ├── first finished answer ships ... it is the deliverable
+        └── the rest keep going ........... their answers are appended as notes
 ```
 
-- **Both are real workers**, not a browse-and-describes pair. The only split is
-  who writes files: the senior has the write tools (so it creates and runs the
-  finished work), while the junior runs **read-only** so two agents never clobber
-  the same paths — it puts its full answer inline instead.
-- The senior is told to produce the *actual result* — real files with real
-  content, run and reported — never an empty folder, a list, a plan, or a
-  question handed back. The junior is told to give its complete answer inline.
-- It only applies to a **local** turn — a cloud turn is already the senior.
-- The exchange is visible in the transcript (`🧑‍🏫 senior … finished` /
-  `💻 local … also finished`), and the senior's tool calls are drawn as usual,
-  so you can watch them work as a pair.
+- **No senior, no junior** — every model is a peer with the same tools and the
+  same directive, and each one does the real job. There is no read-only second
+  opinion and no rank: a model either ships the work or it doesn't.
+- Every model is told the same thing: produce the *actual result* — real files
+  with real content, run and reported — never an empty folder, a list, a plan,
+  or a question handed back.
+- It only applies to a **local** turn — a cloud turn is already one model.
+- The exchange is visible in the transcript (`✅ <model> finished first` /
+  `💬 <model> also finished`), and each peer's tool calls are drawn as usual.
 
-The directives live in `py/tui/team.py` (`senior_task()`, `junior_opinion()`),
-so they can be tested without a model.
+The directive lives in `py/tui/team.py` (`task_directive()`), so it can be
+tested without a model.
 
 ### Copying an answer out
 
@@ -407,14 +405,14 @@ same, so nobody "simplifies" them back:
   OpenAI-shaped API from local models, the opposite direction. A config written
   against that list is migrated automatically, and says what it changed.
 - **Tool output is secret-redacted.** The agent can read any file it can see, and
-  in team mode the junior's findings are reviewed by a cloud model. `execute()`
+  in team mode a local peer's findings are reviewed by a cloud model. `execute()`
   masks `sk-…` keys, bearer tokens, `api_key`/`password`/`secret` assignments and
   private-key blocks before anything reaches a model's context.
 - **The model is kept warm during a turn.** The idle watchdog unloads a local
   model after 5 minutes of no request, but a team turn can go minutes without one
-  (the cloud senior is thinking, or a tool is running). The tick touches
+  (a cloud peer is thinking, or a tool is running). The tick touches
   llama.cpp while busy, so the unload only ever happens *between* turns — it was
-  unloading the junior mid-turn and the next request died with "connection
+  unloading the local model mid-turn and the next request died with "connection
   refused".
 - **A saved model path is a preference, not a requirement.** A path recorded on
   another machine, or a model renamed in place, used to leave llama.cpp

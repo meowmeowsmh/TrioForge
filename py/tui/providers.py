@@ -134,7 +134,7 @@ class Config:
     # ctrl+a auto-route: on/off, and which "provider:model" keys are in the pool.
     route_enabled: bool = False
     route_pool: list = field(default_factory=list)
-    # Senior/junior pair: the local model works, the cloud model guides it.
+    # Team mode: every model in the pool does the same task; first answer ships.
     team_enabled: bool = False
     providers: dict[str, dict] = field(default_factory=lambda: json.loads(
         json.dumps(DEFAULT_PROVIDERS)))

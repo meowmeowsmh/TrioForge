@@ -202,7 +202,7 @@ def test_agent_verify_and_preamble() -> None:
     assert "NARRATE THE TASK, NOT THE PLUMBING" in prompt
     assert "not narrate" in prompt
 
-    # read-once-then-write: the observed failure where the senior made 20
+    # read-once-then-write: the observed failure where a model made 20
     # read-only calls and never wrote a fix
     assert "READ ONCE, THEN WRITE" in prompt
     assert "A turn that only reads and never writes has failed" in prompt
@@ -290,7 +290,7 @@ async def _tui_checks() -> None:
         app._busy = False
         print("  busy submit keeps the queued message -> OK")
 
-        # team sessions carry recent history: the throwaway session the senior
+        # team sessions carry recent history: the throwaway session a team peer
         # runs on must be seeded with the conversation BEFORE the current turn,
         # so "the just now folder" resolves instead of "which folder?"
         import asyncio as _aio
@@ -302,7 +302,7 @@ async def _tui_checks() -> None:
         from tui.session import window
         for m in window(app.session.messages[:-1]):
             seeded.messages.append(m)
-        seeded.add_user(_team.senior_task("fix the x in that folder"))
+        seeded.add_user(_team.task_directive("fix the x in that folder"))
         # history is present AND the wrapped task is the last message
         assert any("D:\\reseller-shop" in m.content for m in seeded.messages), \
             "team session lost the earlier 'D:\\reseller-shop' context"
@@ -361,41 +361,41 @@ def _last_card(app):
 
 
 # ---------------------------------------------------------------------------
-# team — the senior/junior directives (a parallel pair must be told to WORK)
+# team — one directive for every peer (no senior/junior; whoever is inside
+# does the job)
 # ---------------------------------------------------------------------------
 def test_team_directives() -> None:
     _title("team directives")
     from tui import team
 
     task = "create a new folder for the project"
-    senior = team.senior_task(task)
-    junior = team.junior_opinion(task)
+    directive = team.task_directive(task)
 
-    # both wrap the user's actual words, not replace them
-    assert senior.endswith(task) and junior.endswith(task)
+    # wraps the user's actual words, not replace them
+    assert directive.endswith(task)
 
-    # the senior is authoritative and has write tools: it must make the REAL
-    # thing, not an empty folder / a list / a plan / a question back. This is
-    # the exact regression: it once got the bare prompt and replied "Created
+    # every model gets the SAME do-the-work instruction: make the REAL thing,
+    # not an empty folder / a list / a plan / a question back. This is the
+    # exact regression: it once got the bare prompt and replied "Created
     # <empty folder>. Done." with zero code.
     for phrase in ("Do this task yourself now", "write/edit to create",
                    "bash to run and verify", "not an empty folder, a list, a plan",
                    "Do not ask the user for clarification"):
-        assert phrase in senior, phrase
+        assert phrase in directive, phrase
 
-    # the junior is read-only, so its finished work must be inline in the text
-    assert "Answer this task yourself, now" in junior
-    assert "Give the COMPLETE answer inline" in junior
-    assert "not a list of files" in junior
-    assert "Do not ask the user for clarification" in junior
-
-    # the read-once-then-write rule: the senior must not burn its whole turn
+    # the read-once-then-write rule: a model must not burn its whole turn
     # investigating (the observed failure: 20 read-only tool calls, zero writes,
     # final answer was just its opening preamble line)
-    assert "READ ONCE, THEN WRITE" in senior
-    assert "Do not re-read a file you already saw" in senior
-    assert "the deliverable is the fixed file" in senior
-    print("  senior=do-the-work, junior=full-inline-answer -> OK")
+    assert "READ ONCE, THEN WRITE" in directive
+    assert "Do not re-read a file you already saw" in directive
+    assert "the deliverable is the fixed file" in directive
+
+    # no senior/junior left anywhere in the module's API
+    assert not hasattr(team, "senior_task")
+    assert not hasattr(team, "junior_opinion")
+    assert not hasattr(team, "SENIOR_TASK_DIRECTIVE")
+    assert not hasattr(team, "JUNIOR_OPINION_DIRECTIVE")
+    print("  one directive for all peers, senior/junior gone -> OK")
 
 
 # ---------------------------------------------------------------------------

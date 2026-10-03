@@ -547,7 +547,7 @@ def _redact(text: str) -> str:
 
     The agent can read any file it can see, including a config that holds API
     keys. Redacting here means a key the model happened to view can never be
-    echoed back into its context - and in team mode, sent on to the cloud senior.
+    echoed back into its context - and in team mode, sent on to a cloud peer.
     """
     if not isinstance(text, str) or not text:
         return text

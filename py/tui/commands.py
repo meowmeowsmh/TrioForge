@@ -64,7 +64,7 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/auto", "tui"),
         Cmd("/route <prompt>", "send one prompt and show the routing decision",
             "/route explain this error", "tui"),
-        Cmd("/team", "the senior/junior pair: local works, cloud guides",
+        Cmd("/team", "every model in the pool works the task; first answer ships",
             "/team", "tui"),
         Cmd("/copy [n]", "copy an answer (n = how many answers back)", "/copy 2"),
     ]),

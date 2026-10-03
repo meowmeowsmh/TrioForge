@@ -719,8 +719,8 @@ class ForgeApp(App):
         now = time.time()
         # While a turn is running, keep the local llama.cpp warm. The idle watchdog
         # unloads it after ~5 minutes of no model request, but a long turn never
-        # asks the local model while the SENIOR is reasoning on the cloud, or while
-        # a bash tool is running - so the watchdog unloaded the junior mid-turn and
+        # asks the local model while a cloud peer is reasoning, or while a bash
+        # tool is running - so the watchdog unloaded the local model mid-turn and
         # the next request died with "WinError 10061 ... actively refused". Marking
         # it in use here (every tick while busy) means the unload can only ever
         # happen between turns, never inside one.
@@ -1368,7 +1368,7 @@ class ForgeApp(App):
         started = time.time()
         team = self._team_mode and self._is_local()
         # In team mode the answer card is created at the END: mounting it first
-        # put the reply above the junior/senior steps that produced it.
+        # put the reply above the peer steps that produced it.
         card = None if team else self._add("", "bot")
         state = {"text": "", "reasoning": "", "card": card,
                  "think": None, "think_body": None,
@@ -1400,9 +1400,9 @@ class ForgeApp(App):
                 self._activity = ""
                 self._warn_if_slow_load()
 
-            # Team mode: the junior (local) does the work and the senior (cloud)
-            # guides it, corrects it, and takes over if it is lost. Only makes
-            # sense on the local side - a cloud turn is already the senior.
+            # Team mode: every model in the pool does the same task, first
+            # finished answer ships. Only applies on a local turn; a cloud turn
+            # is already a single model.
             if team:
                 answer = await self._team_turn(text, state)
                 # The team loop bails at its next await once ctrl+c is pressed,
@@ -1420,16 +1420,16 @@ class ForgeApp(App):
                     self.session.add_assistant(answer)
                     self._replies.append(answer)
                     self._add(
-                        f"{answer}\n\n_team · junior + senior · "
-                        f"{time.time() - started:.1f}s_", "bot", force_scroll=True)
+                        f"{answer}\n\n_team · {time.time() - started:.1f}s_",
+                        "bot", force_scroll=True)
                     self._set_mood("happy")
                     return
-                # The team produced nothing - most often the cloud senior's key is
-                # missing or invalid. Mount a clear note and STOP: falling through
-                # to the non-team path here crashes, because team mode never
-                # created the content card that path updates.
-                self._add("_the team produced no answer — the cloud senior's key is "
-                          "probably missing or invalid (set the provider key, e.g. "
+                # The team produced nothing - most often a cloud key is missing
+                # or invalid. Mount a clear note and STOP: falling through to the
+                # non-team path here crashes, because team mode never created the
+                # content card that path updates.
+                self._add("_the team produced no answer — a provider key is "
+                          "probably missing or invalid (set it, e.g. "
                           "DEEPSEEK_API_KEY, or pick another provider)_", "bot",
                           force_scroll=True)
                 self._set_mood("sad")
@@ -1506,18 +1506,18 @@ class ForgeApp(App):
                 if kind == "content":
                     parts.append(text)
                     if sum(len(p) for p in parts) > limit * 4:
-                        break           # a senior that rambles is not worth waiting for
+                        break           # a model that rambles is not worth waiting for
             return "".join(parts).strip()
 
         try:
             out = await asyncio.to_thread(work)
-        except Exception:  # noqa: BLE001 - an unreachable senior must not stop the work
+        except Exception:  # noqa: BLE001 - an unreachable model must not stop the work
             return ""
         state["tokens"] = state.get("tokens", 0) + max(0, len(out) // 4)
         return out
 
     def _team_event(self, kind: str, payload: dict) -> None:
-        """Show the junior's tool calls, so you can see it actually working.
+        """Show a team peer's tool calls, so you can see it actually working.
 
         Called from the agent's WORKER THREAD (``turn()`` runs in an executor),
         so every widget call has to be handed to the app thread - mounting from
@@ -1542,13 +1542,12 @@ class ForgeApp(App):
 
         Runs on a throwaway session: a half-finished attempt must not become part
         of the conversation the user keeps. ``use_tools=False`` gives a read-only
-        model (it can still read, but cannot write/edit/bash) - used for the
-        parallel junior, so it and the senior never clobber the same files.
+        model (it can still read, but cannot write/edit/bash).
 
         The throwaway session IS seeded with the recent conversation (same
         sliding window the main loop uses), so a follow-up like "the just now
         folder" resolves to the folder the user actually meant - without this the
-        senior had no history and asked "which folder?" forever.
+        model had no history and asked "which folder?" forever.
         """
         from .session import Session, window
         sess = Session(model=getattr(backend, "model", ""),
@@ -1558,7 +1557,7 @@ class ForgeApp(App):
         # already holds this turn's raw user message as its last entry, but the
         # task here is the WRAPPED team directive - so copy everything except
         # that last message, then append the wrapped task below. Without this the
-        # senior had zero history and asked "which folder?" forever.
+        # model had zero history and asked "which folder?" forever.
         for m in window(self.session.messages[:-1]):
             sess.messages.append(m)
         sess.add_user(task)
@@ -1576,30 +1575,33 @@ class ForgeApp(App):
         return text, list(turn.steps)
 
     async def _team_turn(self, text: str, state) -> str:
-        """Parallel team: the local junior and the cloud senior start at once.
+        """Team mode: every model in the pool works the task as a peer.
 
-        The senior is fast and strong, so it is authoritative: its answer ships
-        the moment it is ready and the turn returns. The junior (offline, slower)
-        runs alongside and its independent answer is appended as a note when it
-        lands, but it never blocks the deliverable. No relay, no review loop -
-        this is "both models working on the task in the fastest way".
-
-        The junior runs without write tools: two agents writing the same files in
-        parallel would overwrite each other, so the senior is the only one that
-        changes files. The junior is the offline second opinion.
+        No senior, no junior - every model gets the same directive and its own
+        tools, and they all start at once. The first finished answer ships and
+        the turn returns; the rest keep going in the background and their answers
+        are appended as notes when they land. This is the DeepSeek Harness idea:
+        named models, no rank - whatever AI is inside does the job.
         """
         import asyncio
 
         from . import localmodels as lm
 
-        junior_model, cloud = self._pool_models()
-        cloud_provider, _url, cloud_model = self._cloud_target()
-        if cloud:
-            cloud_provider, _url, cloud_model = cloud
-        found = lm.find(junior_model) if junior_model else None
-        junior = self._backend_for(
-            "local", found.path if found else (junior_model or self.cfg.model))
-        senior = self._backend_for(cloud_provider, cloud_model)
+        peers = []                       # [(label, backend)]
+        for key in self._route_pool:
+            if key.startswith("local:"):
+                name = key.split(":", 1)[1]
+                found = lm.find(name) if name else None
+                model = found.path if found else (name or self.cfg.model)
+                peers.append(("local", self._backend_for("local", model)))
+            elif ":" in key:
+                provider, _, model = key.partition(":")
+                if self.cfg.providers.get(provider, {}).get("base_url"):
+                    peers.append((provider, self._backend_for(provider, model)))
+        if not peers:
+            # Nothing in the pool: fall back to the current backend so team mode
+            # still does something rather than returning empty.
+            peers.append((self.cfg.provider, self.backend))
 
         def who(backend):
             name = getattr(backend, "model", "") or ""
@@ -1608,46 +1610,68 @@ class ForgeApp(App):
             return name or "model"
 
         self._set_mood("thinking")
-        self._add_meta(f"👥 parallel: **{who(junior)}** (local) + **{who(senior)}** (cloud) both started")
+        names = " + ".join(f"**{who(b)}**" for _l, b in peers)
+        self._add_meta(f"👥 team: {names} all started")
 
-        # Both begin at once; the junior keeps going to completion in the
-        # background without blocking the senior's faster answer. Each gets its
-        # own directive: the senior must produce the finished work (it has the
-        # write tools), the junior a complete inline answer (it is read-only).
-        junior_task = asyncio.create_task(
-            self._agent_text(junior, team.junior_opinion(text), state,
-                             use_tools=False))
-        senior_answer = (await self._agent_text(
-            senior, team.senior_task(text), state))[0] or ""
+        # Launch every peer at once; the first to finish ships.
+        tasks = {asyncio.create_task(self._agent_text(
+            b, team.task_directive(text), state)): (label, b)
+            for label, b in peers}
 
+        first = None
+        while tasks and first is None:
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED)
+            for t in done:
+                label, b = tasks.pop(t)
+                try:
+                    answer = (t.result())[0] or ""
+                except Exception:
+                    answer = ""
+                if answer.strip():
+                    first = (label, b, answer)
+                    break
+            # keep only the still-running peers for the followup notes
+            tasks = {t: v for t, v in tasks.items() if not t.done()}
+
+        if first is None:
+            return ""
+
+        first_label, first_backend, answer = first
         if self._stop.is_set():
-            junior_task.cancel()
-            return senior_answer
+            for t in tasks:
+                t.cancel()
+            return answer
 
-        self._add_meta(f"🧑‍🏫 senior **{who(senior)}** finished — local still working…")
+        self._add_meta(f"✅ **{who(first_backend)}** finished first")
 
-        async def _junior_followup():
+        async def _followups():
             import llamacpp_service as svc
-            # The senior already answered, so the idle watchdog would otherwise
-            # unload the local model while it is still working. Keep it warm.
-            try:
-                while not junior_task.done():
+            # Keep the local server warm while the other peers still run, so the
+            # idle watchdog cannot unload a model mid-turn.
+            while tasks:
+                try:
                     svc.touch()
-                    await asyncio.sleep(20)
-            except Exception:
-                pass
-            try:
-                junior_answer = (await junior_task)[0] or ""
-            except Exception:
-                junior_answer = ""
-            if junior_answer and junior_answer.strip():
-                self._add_meta(
-                    f"💻 local **{who(junior)}** also finished (offline): "
-                    + " ".join(junior_answer.strip().split())[:160])
+                except Exception:
+                    pass
+                done, _ = await asyncio.wait(
+                    list(tasks), timeout=20,
+                    return_when=asyncio.FIRST_COMPLETED)
+                for t in done:
+                    _l, b = tasks.pop(t)
+                    try:
+                        note = (t.result())[0] or ""
+                    except Exception:
+                        note = ""
+                    if note.strip():
+                        self._add_meta(
+                            f"💬 **{who(b)}** also finished: "
+                            + " ".join(note.strip().split())[:160])
 
-        self.run_worker(_junior_followup(), exclusive=False)
+        if tasks:
+            self.run_worker(_followups(), exclusive=False)
 
-        return senior_answer
+        return answer
 
     async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
         """Apply one agent event on the app thread (see ``_ask``)."""
@@ -1704,7 +1728,7 @@ class ForgeApp(App):
         """The agent's ``turn`` is blocking, so it runs in a thread.
 
         ``backend``/``session`` default to the current ones; team mode passes its
-        own so a junior's attempt can run on a throwaway session.
+        own so each peer's attempt can run on a throwaway session.
         """
         import asyncio
 
@@ -1875,8 +1899,8 @@ class ForgeApp(App):
             self.cfg.team_enabled = self._team_mode
             providers.save(self.cfg)
             self._add_meta(
-                "team mode " + ("ON — the junior (local) does the work and the "
-                                "senior (cloud) guides, corrects and takes over"
+                "team mode " + ("ON — every model in the pool does the task, "
+                                "first finished answer ships"
                                 if self._team_mode else "OFF — one model per message"))
             self._refresh()
             return
