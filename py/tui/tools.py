@@ -193,10 +193,14 @@ def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
         # stdin=DEVNULL: a command must not be able to read (or hijack) the TTY
         # the TUI is drawing on. Popen (not run) so a timeout can kill the whole
         # tree: run() only killed the shell and left its children running.
+        #
+        # text=True would decode with the locale's cp1252, turning a tool's UTF-8
+        # box-drawing output into mojibake ("â”‚") - decode as UTF-8 instead, with
+        # replace so a bad byte can never crash the turn.
         proc = subprocess.Popen(
             command, shell=True, cwd=cwd, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True)
-        out, _ = proc.communicate(timeout=timeout)
+            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        raw, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_tree(proc.pid)
         try:
@@ -208,7 +212,12 @@ def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
                 f"for long builds/installs)")
     except OSError as exc:
         return f"error: {exc}"
-    out = (out or "").strip() or "(no output)"
+    out = raw.decode("utf-8", errors="replace").strip() or "(no output)"
+    # Clean BEFORE truncating. fastfetch prints a sixel image as one DCS string
+    # ("\x1bP...\x1b\") hundreds of KB long; truncating first cuts that string in
+    # half, so _clean's regex can no longer see it and the whole image payload
+    # reached the model as garbage. Strip escapes on the full text, then bound it.
+    out = _clean(out)
     return _truncate(f"<cwd>{cwd}</cwd>\nexit={proc.returncode}\n{out}")
 
 

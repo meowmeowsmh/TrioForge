@@ -375,12 +375,47 @@ def test_write_empty_args() -> None:
 
 
 # ---------------------------------------------------------------------------
+# tools — bash output must be cleaned BEFORE truncation, or a sixel image
+# (fastfetch) dumps its whole payload into the model's context
+# ---------------------------------------------------------------------------
+def test_bash_clean_before_truncate() -> None:
+    _title("bash output cleaning")
+    from tui.tools import _clean, _truncate
+
+    # A sixel image is ONE DCS string: "\x1bPq...\x1b\". fastfetch prints the
+    # image (~900KB) and THEN the readable text. Truncating first drops the
+    # closing "\x1b\" (it sits far past both ends of the kept head+tail), so the
+    # regex cannot match the whole string and the raw payload reaches the model.
+    esc = "\x1b"
+    sixel = esc + 'Pq"1;1;100;100#0;2;0;0;0#1;2;0;0;20' + "x" * 10000 + esc + "\\"
+    # text AFTER the image, like fastfetch's box-drawing readout - longer than
+    # half MAX_OUTPUT so the image's terminator is not in the truncation tail
+    raw = sixel + ("Y" * 5000)
+    assert raw.startswith(esc + "Pq\"") and raw.count(esc) >= 2
+
+    # clean-then-truncate (the fixed order) drops the whole sixel string
+    cleaned = _clean(raw)
+    assert 'q"1;1' not in cleaned and esc not in cleaned, cleaned[:80]
+
+    # the reverse order - truncate first - is the bug: the closing ESC\ is gone,
+    # so the DCS intro is stripped but the sixel payload ("q\"1;1...") survives
+    # and reaches the model as garbage
+    bad = _clean(_truncate(raw))
+    assert 'q"1;1' in bad, "truncate-first no longer leaks sixel - re-check the guard"
+
+    # utf-8 decode must not produce cp1252 mojibake
+    assert "\u00e2" not in _clean("box \u2502 char")
+    print("  sixel stripped before truncate, utf-8 not cp1252 -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_known_facts, test_memory_is_optin, test_plan_load,
-             test_team_directives, test_session_window, test_write_empty_args]
+             test_team_directives, test_session_window, test_write_empty_args,
+             test_bash_clean_before_truncate]
     failed = []
     for t in tests:
         try:

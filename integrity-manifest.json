@@ -72,7 +72,7 @@
   "py/tui/team.py": "5f06063e381fb96c277f6aa7c469ac2a5115aa36606f28c54859e6f14bbd6a91",
   "py/tui/textual_app.py": "7611b10694e0e1c1ec72d6062ad5bf8b3b9698abf36a457e1c599cdbd716530a",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
-  "py/tui/tools.py": "b54d25fd8c13fba855ec5da2988968f5950f84a533cc55012f8c8719ff8172df",
+  "py/tui/tools.py": "19fdaf3b86ddda13434c4bca86b9a4dbe465038509310d71f1fc6a1ff1c05329",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
   "py/version.py": "27251b04e8e0ec25c4abb4cff91d3c788b41f0e287a432289e3e7525f3f77515",
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T15:53:11",
- "note": "write tool args + token cap + focus fixes"
+ "generated": "2026-10-03T16:22:38",
+ "note": "bash output cleaned before truncate"
 }
