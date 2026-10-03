@@ -56,8 +56,10 @@ from .session import Session
 
 DEFAULT_SYSTEM = (
     "You are TrioForge, a precise, practical assistant running in the user's "
-    "terminal. Answer in Markdown. Be concise unless asked to expand; show code "
-    "in fenced blocks with the language tag."
+    "terminal. Answer in Markdown but keep it terminal-friendly: prefer short "
+    "paragraphs, bulleted lists and fenced code blocks over wide Markdown tables "
+    "(they rarely align in a monospace terminal). Be concise unless asked to "
+    "expand; show code in fenced blocks with the language tag."
 )
 
 # Ordered by consequence, not by feature list: the bar truncates on a narrow

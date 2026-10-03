@@ -172,6 +172,35 @@ def test_memory_is_optin() -> None:
 
 
 # ---------------------------------------------------------------------------
+# agent — the system prompt tells the model to verify, not declare, and to
+# open with motion instead of recap (ported from DeepSeek-TUI's base prompt)
+# ---------------------------------------------------------------------------
+def test_agent_verify_and_preamble() -> None:
+    _title("agent verify + preamble rules")
+    from tui import agent as A
+    from tui import textual_app as ta
+
+    prompt = A.SYSTEM_PROMPT
+    # the exact failure seen live: write said "created ... (0 lines)" and the
+    # model still declared the task done. Verify-before-declare must be in the
+    # prompt, and it must name the tool output, not just the exit code.
+    assert "VERIFY, DON'T DECLARE" in prompt
+    assert "read its OUTPUT, not just the" in prompt
+    assert "exit=0 (no output)" in prompt
+
+    # the "which project? what do you want?" garbage: the model must open with
+    # an action line and never recap or ask what it can infer.
+    assert "OPEN WITH MOTION, NOT RECAP" in prompt
+    assert "repeat the user's request back" in prompt
+    assert "pick the obvious default and proceed" in prompt
+
+    # the terminal is not a browser: wide markdown tables don't align there
+    assert "prefer short" in ta.DEFAULT_SYSTEM
+    assert "over wide Markdown tables" in ta.DEFAULT_SYSTEM
+    print("  verify-not-declare, motion-not-recap, terminal formatting -> OK")
+
+
+# ---------------------------------------------------------------------------
 # llamacpp_service — where the weights will live
 # ---------------------------------------------------------------------------
 def test_plan_load() -> None:
@@ -413,9 +442,9 @@ def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
-             test_known_facts, test_memory_is_optin, test_plan_load,
-             test_team_directives, test_session_window, test_write_empty_args,
-             test_bash_clean_before_truncate]
+             test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
+             test_plan_load, test_team_directives, test_session_window,
+             test_write_empty_args, test_bash_clean_before_truncate]
     failed = []
     for t in tests:
         try:
