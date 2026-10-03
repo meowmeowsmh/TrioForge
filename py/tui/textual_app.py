@@ -321,6 +321,27 @@ def _short_gpu(name: str) -> str:
     return name[:34] or "GPU"
 
 
+def _gpu_inuse_note(d: dict) -> str:
+    """The live "used/total + util%" line for the primary (in-use) GPU.
+
+    Reads NVML in-process so the figure moves on every sidebar redraw, instead of
+    the static "free" number that looked frozen while the card worked. Falls back
+    to the ``specs()`` figure (used derived from free) when NVML does not answer.
+    """
+    live = None
+    try:
+        import hardware
+        live = hardware.gpu_live()
+    except Exception:  # noqa: BLE001 - a live read is a nicety, never fatal
+        live = None
+    if live and live.get("total"):
+        used = live["used"] / (1024 ** 3)
+        total = live["total"] / (1024 ** 3)
+        return f"{used:.1f}/{total:.1f}GB {live['util']}%"
+    used = max(0.0, d.get("total_gb", 0) - d.get("free_gb", 0))
+    return f"{used:.1f}/{d['total_gb']:.1f}GB"
+
+
 class PromptArea(TextArea):
     """Multi-line prompt: Enter sends the message, ctrl+j inserts a newline.
 
@@ -600,19 +621,19 @@ class ForgeApp(App):
                 for d in devices:
                     if d.get("in_use"):
                         mark, style = "-> ", T.GREEN
-                        note = f"{d['free_gb']:.1f}/{d['total_gb']:.1f}GB free"
+                        note = _gpu_inuse_note(d)
                     elif d.get("adds_memory"):
                         mark, style = "   ", T.FG
                         note = f"{d['free_gb']:.1f}/{d['total_gb']:.1f}GB idle"
                     else:
                         mark, style = "   ", T.GREY
-                        # "iGPU · no VRAM" rather than "shares system RAM": the
-                        # longer phrase both overflowed the 33-column pane (mark(3)
-                        # + name(14) + space leaves 15) and, once shortened, still
-                        # did not say WHAT the card is. The question it produced was
-                        # literally "do radeon don't have a vram or something" - so
-                        # say it. `--specs` keeps the full wording and the numbers.
-                        note = "iGPU · no VRAM"
+                        # An integrated GPU's "memory" is system RAM that is
+                        # ALREADY counted in the RAM line above - llama.cpp even
+                        # reports the whole shared GTT (7-8 GB) as its "total",
+                        # which would double-count it as VRAM. So name what it
+                        # does (shares RAM) instead of printing a misleading size.
+                        # `--specs` keeps the full wording and the numbers.
+                        note = "shares RAM"
                     out.append(f"{mark}{_short_gpu(d['name'])[:14]:<14} ", style=style)
                     out.append(f"{note}\n", style=T.GREY)
                 out.append("\n")
@@ -782,7 +803,7 @@ class ForgeApp(App):
             return "local model not found: {}".format(model)
 
         try:
-            result = svc.start(model)
+            result = svc.start(model, ctx_size=self.cfg.ctx_size or None)
         except Exception as exc:            # noqa: BLE001
             return "could not start llama.cpp: {}".format(exc)
         if not result.get("running"):
@@ -1235,7 +1256,8 @@ class ForgeApp(App):
         return OpenAICompatBackend(
             base_url=url, model=model, api_key=key,
             timeout=getattr(self.args, "timeout", 120.0),
-            temperature=getattr(self.args, "temperature", 0.7))
+            temperature=getattr(self.args, "temperature", 0.7),
+            max_tokens=self.cfg.max_tokens)
 
     def _route(self, text: str) -> dict:
         """Decide local vs cloud for ``text`` and point the app at the winner.
@@ -2059,7 +2081,8 @@ class ForgeApp(App):
                 base_url=self.cfg.base_url, model=self.cfg.model,
                 api_key=self.cfg.api_key,
                 timeout=getattr(self.args, "timeout", 120.0),
-                temperature=getattr(self.args, "temperature", 0.7))
+                temperature=getattr(self.args, "temperature", 0.7),
+                max_tokens=self.cfg.max_tokens)
             self.real_backend = self.backend
         providers.save(self.cfg)
         self._add(f"_model → **{name}**_", "bot")
@@ -2087,7 +2110,8 @@ class ForgeApp(App):
                 base_url=self.cfg.base_url, model="",
                 api_key=self.cfg.api_key,
                 timeout=getattr(self.args, "timeout", 120.0),
-                temperature=getattr(self.args, "temperature", 0.7))
+                temperature=getattr(self.args, "temperature", 0.7),
+                max_tokens=self.cfg.max_tokens)
             self.real_backend = self.backend
         providers.save(self.cfg)
         self._add(f"_provider → **{choice}**  ({self.cfg.base_url})_", "bot")
@@ -2640,7 +2664,8 @@ def run(args) -> int:
         backend = OpenAICompatBackend(
             base_url=cfg.base_url, model=model or "", api_key=cfg.api_key,
             timeout=getattr(args, "timeout", 120.0),
-            temperature=getattr(args, "temperature", 0.7))
+            temperature=getattr(args, "temperature", 0.7),
+            max_tokens=cfg.max_tokens)
 
     session = Session(
         model=model or getattr(backend, "name", "?"),

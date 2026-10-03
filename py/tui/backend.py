@@ -158,12 +158,15 @@ class OpenAICompatBackend(Backend):
     """Talks to an OpenAI-compatible endpoint, streaming by default."""
 
     def __init__(self, base_url: str, model: str, api_key: str = "",
-                 timeout: float = 120.0, temperature: float = 0.7):
+                 timeout: float = 120.0, temperature: float = 0.7,
+                 max_tokens: int = 0):
         self.base_url = base_url.rstrip("/")
         self.model = model or "default"
         self.api_key = api_key
         self.timeout = timeout
         self.temperature = temperature
+        # 0 = "use the built-in default" so an unset config never overrides it.
+        self.max_tokens = max_tokens or 0
         self.name = model or "default"
         self.where = self.base_url
         # Set by the agent when it wants native tool calling. Left empty for
@@ -202,7 +205,8 @@ class OpenAICompatBackend(Backend):
             "messages": self._wire(messages),
             "stream": True,
             "temperature": self.temperature,
-            "max_tokens": MAX_TOKENS_WITH_TOOLS if tools_on else MAX_TOKENS,
+            "max_tokens": self.max_tokens
+            or (MAX_TOKENS_WITH_TOOLS if tools_on else MAX_TOKENS),
         }
         if tools_on:
             body["tools"] = self.tools

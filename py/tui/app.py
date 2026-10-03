@@ -272,6 +272,7 @@ def run(args) -> int:
             api_key=cfg.api_key,
             timeout=getattr(args, "timeout", 120.0),
             temperature=getattr(args, "temperature", 0.7),
+            max_tokens=cfg.max_tokens,
         )
 
     session = Session(

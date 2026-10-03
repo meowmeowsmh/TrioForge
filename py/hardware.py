@@ -282,29 +282,49 @@ def _llamacpp_devices():
     return devices, "llama.cpp --list-devices"
 
 
-def _nvidia():
+def _nvidia_devices():
+    """Every NVIDIA GPU NVML can see, or [] when the driver does not answer.
+
+    NVML is the accurate source for the marketing name and live free VRAM. When
+    the loaded kernel module and the userspace library do not match (a version
+    skew after a driver update), nvmlInit raises DriverNotLoaded even though the
+    card still works - so callers must not read [] as "no NVIDIA card".
+    """
     try:
         import warnings
         warnings.filterwarnings("ignore", message=".*pynvml package is deprecated.*")
         import pynvml
         pynvml.nvmlInit()
         try:
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            try:
-                name = pynvml.nvmlDeviceGetName(handle)
-                if isinstance(name, bytes):
-                    name = name.decode("utf-8", "replace")
-            except Exception:
-                name = "NVIDIA GPU"
-            return {"name": name, "total": int(mem.total), "free": int(mem.free)}
+            out = []
+            for index in range(pynvml.nvmlDeviceGetCount()):
+                try:
+                    handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+                    mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    try:
+                        name = pynvml.nvmlDeviceGetName(handle)
+                        if isinstance(name, bytes):
+                            name = name.decode("utf-8", "replace")
+                    except Exception:
+                        name = "NVIDIA GPU"
+                    out.append({"name": name, "total": int(mem.total),
+                                "free": int(mem.free)})
+                except Exception:
+                    continue
+            return out
         finally:
             try:
                 pynvml.nvmlShutdown()
             except Exception:
                 pass
     except Exception:
-        return None
+        return []
+
+
+def _nvidia():
+    """First NVIDIA GPU via NVML, or None - kept for the non-Linux fallbacks."""
+    devices = _nvidia_devices()
+    return devices[0] if devices else None
 
 
 def _apple_unified(total_ram):
@@ -340,28 +360,195 @@ def _apple_discrete():
     return None
 
 
-def _linux_drm():
-    """AMD/Intel on Linux: the DRM sysfs nodes carry VRAM total and used."""
-    best = None
-    for total_path in sorted(glob.glob("/sys/class/drm/card*/device/mem_info_vram_total")):
-        try:
-            with open(total_path, encoding="utf-8") as fh:
-                total = int(fh.read().strip())
-        except (OSError, ValueError):
+def _read(path):
+    """Read a sysfs text file to a stripped string, '' on any failure."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def _pci_bar_vram(device_dir):
+    """NVIDIA VRAM: the largest 64-bit prefetchable BAR in ``resource``.
+
+    The proprietary NVIDIA driver does not publish ``mem_info_vram_*`` (that node
+    is amdgpu/i915), so the card's VRAM must come from its PCIe BAR - the same
+    number ``lspci -v`` prints next to "Memory at ... (64-bit, prefetchable)".
+    """
+    best = 0
+    try:
+        with open(device_dir + "resource", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                try:
+                    start, end, flags = int(parts[0], 16), int(parts[1], 16), int(parts[2], 16)
+                except ValueError:
+                    continue
+                # IORESOURCE_MEM=0x200, PREFETCH=0x2000, MEM_64=0x100000.
+                if (flags & 0x200) and (flags & 0x2000) and (flags & 0x100000):
+                    best = max(best, end - start + 1)
+    except OSError:
+        return 0
+    return best
+
+
+def _nvidia_name_from_proc(slot):
+    """The marketing name the NVIDIA driver itself reports, or ''.
+
+    /proc/driver/nvidia/gpus/<pci-slot>/information carries "Model: NVIDIA ..."
+    and stays readable even when nvidia-smi/NVML fail from a driver version skew.
+    """
+    try:
+        path = "/proc/driver/nvidia/gpus/{}/information".format(slot)
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("Model:"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+
+# Only the bare cardN directory is a card; cardN-HDMI-A-1 & friends also carry a
+# ``device`` symlink back to the same PCI device and must not be counted again.
+_CARD_RE = re.compile(r"^card\d+$")
+
+
+def _linux_drm_devices():
+    """Every GPU the Linux DRM layer knows about, with a name and VRAM.
+
+    One entry per /sys/class/drm/cardN. amdgpu/i915 publish VRAM via
+    ``mem_info_vram_total``; NVIDIA's driver reports its marketing name under
+    /proc/driver/nvidia and its VRAM as a PCI BAR, which this reads instead.
+    Returns a list of {"label","name","vendor","total","free","backend",
+    "integrated","approx"}; a card whose memory cannot be sized is skipped.
+    """
+    devices = []
+    for device_dir in sorted(glob.glob("/sys/class/drm/card*/device/")):
+        card = os.path.basename(os.path.dirname(device_dir.rstrip("/")))
+        if not _CARD_RE.match(card):
             continue
+        vendor_id = _read(device_dir + "vendor").lower()
+        vendor = _PCI_VENDOR.get(vendor_id)
+        if not vendor:
+            continue                       # virtual/unknown card (e.g. virtio-gpu)
+        slot = os.path.basename(os.path.realpath(device_dir.rstrip("/")))
+
+        vram_total = _read(device_dir + "mem_info_vram_total")
+        vram_used = _read(device_dir + "mem_info_vram_used")
+        gtt_total = _read(device_dir + "mem_info_gtt_total")
+        total = int(vram_total) if vram_total.isdigit() else 0
+        used = int(vram_used) if vram_used.isdigit() else 0
+
+        if total <= 0 and vendor == "nvidia":
+            total = _pci_bar_vram(device_dir)
+            used = 0                       # free is unknown without NVML
         if total <= 0:
             continue
-        used = 0
-        used_path = total_path.replace("_total", "_used")
-        try:
-            with open(used_path, encoding="utf-8") as fh:
-                used = int(fh.read().strip())
-        except (OSError, ValueError):
-            used = 0
-        if best is None or total > best["total"]:
-            best = {"name": "GPU (DRM)", "total": total,
-                    "free": max(0, total - used), "path": total_path}
-    return best
+
+        # Name: the driver's own answer first, then the generic sysfs label.
+        name = _nvidia_name_from_proc(slot) if vendor == "nvidia" else ""
+        if not name:
+            name = _read(device_dir + "product_name")
+        if not name and vendor == "amd":
+            # An AMD APU's iGPU is "Radeon Graphics" in the CPU brand string and
+            # shares system RAM, so its GTT (system-RAM backing) dwarfs the small
+            # visible-VRAM window.
+            name = "AMD Radeon Graphics" if (gtt_total.isdigit()
+                                             and int(gtt_total) > total) else ""
+        if not name:
+            name = _read(device_dir + "label")
+        if not name:
+            name = {"nvidia": "NVIDIA GPU", "amd": "AMD GPU",
+                    "intel": "Intel GPU"}.get(vendor, "GPU")
+
+        # Integrated = the "VRAM" is really a slice of system RAM. The name says
+        # "Radeon Graphics"/"Raphael" for AMD APUs, and GTT (system RAM backing)
+        # far larger than the VRAM window is the sysfs-level confirmation.
+        integrated = _integrated(name)
+        if vendor == "amd" and gtt_total.isdigit() and int(gtt_total) > total:
+            integrated = True
+
+        devices.append({
+            "label": "drm-{}".format(slot),
+            "name": name,
+            "vendor": vendor,
+            "total": total,
+            "free": max(0, total - used),
+            "backend": "DRM",
+            "integrated": integrated,
+            "approx": used == 0,
+        })
+    return devices
+
+
+def _linux_gpus(llama_devices):
+    """Complete Linux GPU inventory: DRM sysfs, overlaid with llama.cpp + NVML.
+
+    ``llama_devices`` may be [] or may list only what the current build's backend
+    can reach. A hybrid laptop whose NVIDIA driver is version-skewed is invisible
+    to Vulkan, so llama.cpp reports only the AMD iGPU and the discrete card would
+    silently vanish ("1 GPU" where there are 2). The DRM sysfs list is the
+    physical inventory, so it is the base; llama.cpp's and NVML's answers override
+    name/free/backend where they can actually see a card.
+    """
+    base = _linux_drm_devices()
+    if not base:
+        return list(llama_devices)         # container/WSL: no DRM nodes to read
+
+    def _overlay(target, src):
+        if src.get("name"):
+            target["name"] = src["name"]
+        if src.get("total"):
+            target["total"] = src["total"]
+        if src.get("free") is not None:
+            target["free"] = src["free"]
+        target["backend"] = src.get("backend", target["backend"])
+        if src.get("label"):
+            target["label"] = src["label"]
+        target["approx"] = False
+
+    # NVML first: the accurate NVIDIA name and live free figure, when the driver
+    # answers. Match to NVIDIA cards by order.
+    nv_iter = iter(_nvidia_devices())
+    for d in base:
+        if d["vendor"] == "nvidia":
+            nv = next(nv_iter, None)
+            if nv:
+                _overlay(d, dict(nv, backend="CUDA"))
+
+    # Then llama.cpp's view. Match by vendor and name overlap, falling back to the
+    # first unmatched same-vendor card; a loader device with no sysfs twin is kept
+    # so nothing the loader CAN use is dropped.
+    unmatched = []
+    for ld in llama_devices:
+        target = None
+        for sd in base:
+            if sd["vendor"] != ld["vendor"] or sd.get("_matched"):
+                continue
+            if ld["name"].lower() in sd["name"].lower() \
+                    or sd["name"].lower() in ld["name"].lower():
+                target = sd
+                break
+        if target is None:
+            for sd in base:
+                if sd["vendor"] == ld["vendor"] and not sd.get("_matched"):
+                    target = sd
+                    break
+        if target is not None:
+            target["_matched"] = True
+            _overlay(target, ld)
+        else:
+            ld["integrated"] = _integrated(ld["name"])
+            unmatched.append(ld)
+
+    merged = base + unmatched
+    for d in merged:
+        d.pop("_matched", None)
+    return merged
 
 
 def _windows_wmi():
@@ -456,53 +643,141 @@ def gpu(refresh=False):
     return result
 
 
+_live_cache = {"at": 0.0, "value": None}
+_LIVE_TTL = 1.0
+
+
+def _nvidia_smi_live():
+    """Live NVIDIA memory + utilisation parsed from ``nvidia-smi`` (fallback).
+
+    Used when NVML is unavailable (old pynvml against a new driver, or a sandbox
+    without /dev/nvidiactl). ``nvidia-smi --query-gpu`` is the one NVIDIA tool
+    already proven to answer, so it is the reliable second source.
+    """
+    out = _run(["nvidia-smi",
+                "--query-gpu=memory.used,memory.total,utilization.gpu",
+                "--format=csv,noheader,nounits"], timeout=5).strip()
+    if not out:
+        return None
+    line = out.splitlines()[0]
+    parts = [p.strip() for p in line.split(",")]
+    if len(parts) < 3 or not all(p.isdigit() for p in parts[:3]):
+        return None
+    used, total, util = int(parts[0]) * _MIB, int(parts[1]) * _MIB, int(parts[2])
+    if total <= 0:
+        return None
+    return {"used": used, "total": total, "free": max(0, total - used), "util": util}
+
+
+def gpu_live():
+    """Live NVIDIA memory + utilisation for the sidebar.
+
+    ``gpu()`` spawns ``llama-server --list-devices``, so it is capped at a 5 s
+    TTL. This reads NVML in-process (fast) and falls back to ``nvidia-smi``, so
+    the sidebar can ask on every 2 s redraw and the figure actually moves while
+    the card works. Returns {"used","total","free","util"} (bytes, percent 0-100)
+    or None when no source answers - callers then fall back to ``gpu()``.
+    """
+    now = time.time()
+    if _live_cache["value"] is not None and now - _live_cache["at"] < _LIVE_TTL:
+        return _live_cache["value"]
+    value = None
+    try:
+        import warnings
+        warnings.filterwarnings("ignore", message=".*pynvml package is deprecated.*")
+        import pynvml
+        pynvml.nvmlInit()
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            value = {"used": int(mem.used), "total": int(mem.total),
+                     "free": int(mem.free), "util": int(util.gpu)}
+        finally:
+            try:
+                pynvml.nvmlShutdown()
+            except Exception:
+                pass
+    except Exception:
+        value = None
+    if value is None:
+        value = _nvidia_smi_live()
+    _live_cache["at"] = now
+    _live_cache["value"] = value
+    return value
+
+
+def _summarise_devices(devices, notes, source):
+    """Turn a device list into the ``gpu()`` result shape.
+
+    Shared by the llama.cpp path and the Linux sysfs path. It picks ONE primary
+    device to judge fit on - never the sum. On a hybrid laptop the iGPU's "VRAM"
+    is system RAM, so adding it to the dGPU's invents memory that does not exist
+    (measured here: AMD 610M 7.8 GB + RTX 5060 8.0 GB was reported as 15.8 GB,
+    which would have called a 12 GB model "gpu"). Prefer a dedicated card, then
+    the largest one.
+    """
+    for d in devices:
+        d.setdefault("integrated", False)
+    dedicated = [d for d in devices if not d["integrated"]]
+    primary = max(dedicated or devices, key=lambda d: d["total"])
+    shared = primary["integrated"] or primary.get("vendor") == "apple"
+    # Say which one is actually used, and why the others are not, so the choice
+    # can be shown rather than merely made. Two different questions, and
+    # conflating them is what made "1 of 2" useless: can llama.cpp offload to
+    # this device at all (yes - it was listed), and does doing so add memory (no,
+    # for an APU, because its "VRAM" is the system RAM already counted above).
+    for d in devices:
+        d["primary"] = d is primary
+        d["usable"] = True
+        d["adds_memory"] = not d["integrated"]
+    if len(devices) > 1:
+        notes.append(
+            "{} GPUs present ({}); fit is judged on {} alone - the others are "
+            "not added, because an integrated GPU shares system RAM".format(
+                len(devices), ", ".join(d["name"] for d in devices),
+                primary["name"]))
+    if shared:
+        notes.append("{} shares memory with the CPU (unified)".format(primary["name"]))
+    return {
+        "name": primary["name"],
+        "vendor": primary["vendor"],
+        "backend": primary.get("backend", ""),
+        "total": primary["total"],
+        "free": primary["free"],
+        "unified": shared,
+        "multi": len(devices) > 1,
+        "devices": devices,
+        "source": source,
+        "approximate": any(d.get("approx") for d in devices),
+        "notes": notes,
+    }
+
+
 def _probe_gpu():
     notes = []
     devices, why = _llamacpp_devices()
-    if devices:
-        # Judge on ONE device - never the sum. On a hybrid laptop the iGPU's
-        # "VRAM" is system RAM, so adding it to the dGPU's invents memory that
-        # does not exist (measured here: AMD 610M 7.8 GB + RTX 5060 8.0 GB was
-        # reported as 15.8 GB, which would have called a 12 GB model "gpu").
-        # Prefer a dedicated card, then the largest one.
-        dedicated = [d for d in devices if not _integrated(d["name"])]
-        primary = max(dedicated or devices, key=lambda d: d["total"])
-        shared = _integrated(primary["name"]) or primary["vendor"] == "apple"
-        # Say which one is actually used, and why the others are not, so the
-        # choice can be shown rather than merely made.
-        for d in devices:
-            d["primary"] = d is primary
-            d["integrated"] = _integrated(d["name"])
-            # Two different questions, and conflating them is what made "1 of 2"
-            # useless: can llama.cpp offload to this device at all (yes - it just
-            # listed it), and does doing so add memory (no, for an APU, because
-            # its "VRAM" is the system RAM already counted above).
-            d["usable"] = True
-            d["adds_memory"] = not d["integrated"]
-        if len(devices) > 1:
-            notes.append(
-                "{} GPUs present ({}); fit is judged on {} alone - the others are "
-                "not added, because an integrated GPU shares system RAM".format(
-                    len(devices), ", ".join(d["name"] for d in devices),
-                    primary["name"]))
-        if shared:
-            notes.append("{} shares memory with the CPU (unified)".format(primary["name"]))
-        return {
-            "name": primary["name"],
-            "vendor": primary["vendor"],
-            "backend": primary["backend"],
-            "total": primary["total"],
-            "free": primary["free"],
-            "unified": shared,
-            "multi": len(devices) > 1,
-            "devices": devices,
-            "source": "llama.cpp --list-devices",
-            "approximate": False,
-            "notes": notes,
-        }
-    notes.append(why)
 
     info = system()
+
+    # Linux: enumerate every GPU from sysfs (NVIDIA included) and overlay the
+    # loader's and NVML's answers. This is where a hybrid NVIDIA + AMD-APU laptop
+    # is seen as "2 GPUs": when the NVIDIA driver is version-skewed, llama.cpp's
+    # Vulkan sees only the AMD iGPU (or nothing) and the discrete card would
+    # otherwise be reported as absent.
+    if info["os"] == "Linux":
+        linux = _linux_gpus(devices)
+        if linux:
+            for d in linux:
+                d.setdefault("integrated", _integrated(d["name"]))
+            return _summarise_devices(linux, notes, "Linux DRM sysfs")
+
+    if devices:
+        for d in devices:
+            d["integrated"] = _integrated(d["name"])
+        return _summarise_devices(devices, notes, "llama.cpp --list-devices")
+    notes.append(why)
+
     alt = None
     if info["os"] == "Darwin" and info.get("apple_silicon"):
         alt = _apple_unified(ram()["total"])
@@ -517,10 +792,6 @@ def _probe_gpu():
         alt = _apple_discrete()
         if alt:
             alt.update(vendor="unknown", backend="Metal", unified=False)
-    if alt is None and info["os"] == "Linux":
-        alt = _linux_drm()
-        if alt:
-            alt.update(vendor=_vendor_of(alt.get("name", "")), backend="DRM", unified=False)
     if alt is None and info["os"] == "Windows":
         alt = _windows_wmi()
         if alt:

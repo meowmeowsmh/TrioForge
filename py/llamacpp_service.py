@@ -770,6 +770,13 @@ def _free_vram_bytes():
     try:
         import hardware
         total = hardware.gpu()
+        if total.get("approximate"):
+            # The figure is an estimate (e.g. an NVIDIA PCIe BAR read because the
+            # driver does not answer), NOT a live free pool a working backend
+            # confirmed it can use. Planning offload onto it would promise GPU
+            # layers that never land there - the whole model ends up in RAM while
+            # the RAM budget was already spent on the imaginary GPU half.
+            return None
         free = total.get("free") or 0
         if free:
             return int(free)

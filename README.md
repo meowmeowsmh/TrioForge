@@ -261,6 +261,16 @@ Shift+Enter can't work — a terminal sends the same byte as Enter — so `ctrl+
 
 The agent gets the same thing as a tool, so "remember my llama port is 8080" works in plain English. Nothing leaves your machine, and the vault is `sqlite_data/memory.duckdb`.
 
+**`/set token` caps the reply length and the context window:**
+
+```bash
+/set token                 # show the current limits
+/set token 4096            # cap replies at 4096 tokens
+/set token 4096 8192       # cap replies AND use an 8192-token context window
+```
+
+The reply cap takes effect on the very next message; the context window applies the next time the local model loads (it needs a llama-server restart). Defaults are 2048 output tokens and a 16384-token context — `0` falls back to the built-in default, and `TRIOFORGE_CTX_SIZE` still overrides the context for one-off runs.
+
 ---
 
 ## ✨ Features

@@ -49,6 +49,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/provider deepseek"),
         Cmd("/base-url [url]", "show or set the endpoint",
             "/base-url http://127.0.0.1:8080/v1"),
+        Cmd("/set token <max> [context]", "cap the reply length and set the context window",
+            "/set token 4096 8192"),
     ]),
     ("keys", [
         Cmd("/key [value]", "show or set the key for the CURRENT provider",
@@ -503,6 +505,60 @@ def _system(ctx, arg: str) -> None:
     render.ok("system prompt set")
 
 
+# Built-in token defaults, so /set token can name what it falls back to.
+_DEFAULT_MAX_TOKENS = 2048
+_DEFAULT_CTX_SIZE = 16384
+
+
+def _set_token(ctx, arg: str) -> None:
+    """``/set token <max> [context]`` - cap the reply length and the window.
+
+    ``max`` is the most tokens a single answer may produce (0 for no override).
+    ``context`` is the history window passed to llama.cpp on the next load; it is
+    optional, and changing it takes effect the next time the local model starts.
+
+    Dispatched as "/set" (so "/set token 4096" arrives with "token" still in the
+    argument) and as "/token" directly, so both spellings work.
+    """
+    arg = arg.strip()
+    if arg.lower().startswith("token"):
+        arg = arg[len("token"):].strip()
+    if not arg:
+        max_out = ctx.cfg.max_tokens or _DEFAULT_MAX_TOKENS
+        ctx_size = ctx.cfg.ctx_size or _DEFAULT_CTX_SIZE
+        render.table("token limits", [
+            ("max output", f"{max_out} tokens"
+             + ("" if ctx.cfg.max_tokens else " (default)")),
+            ("context", f"{ctx_size} tokens"
+             + ("" if ctx.cfg.ctx_size else " (default)")),
+        ])
+        render.info("usage: /set token <max> [context]")
+        return
+    parts = arg.split()
+    try:
+        max_out = int(parts[0])
+        ctx_size = int(parts[1]) if len(parts) > 1 else (ctx.cfg.ctx_size or 0)
+    except ValueError:
+        render.error("usage: /set token <max> [context]  — e.g. /set token 4096 8192")
+        return
+    if max_out < 1:
+        render.error("max output tokens must be at least 1")
+        return
+    ctx.cfg.max_tokens = max_out
+    if len(parts) > 1:
+        if ctx_size < 1:
+            render.error("context must be at least 1")
+            return
+        ctx.cfg.ctx_size = ctx_size
+    providers.save(ctx.cfg)
+    _apply(ctx)
+    if len(parts) > 1:
+        render.ok(f"max output → {max_out} tokens · context → {ctx_size} tokens "
+                  "(context applies next model load)")
+    else:
+        render.ok(f"max output → {max_out} tokens")
+
+
 def _clear(ctx, arg: str) -> None:
     n = len(ctx.session.messages)
     ctx.session.clear()
@@ -564,7 +620,7 @@ def _start(ctx, arg: str) -> None:
         render.error(f"cannot reach TrioForge's server manager: {exc}")
         return
     try:
-        res = svc.start(model=m.path)
+        res = svc.start(model=m.path, ctx_size=ctx.cfg.ctx_size or None)
     except Exception as exc:  # noqa: BLE001
         render.error(f"failed to start: {exc}")
         return
@@ -887,6 +943,7 @@ _TABLE = {
     "/copy": _copy, "/yank": _copy,
     "/provider": _provider, "/provider-add": _provider_add,
     "/key": _key, "/keys": _keys, "/status": _status, "/base-url": _base_url,
+    "/set": _set_token, "/token": _set_token,
     "/system": _system, "/clear": _clear, "/history": _history,
     "/save": _save, "/echo": _echo, "/start": _start,
     "/quit": _quit, "/exit": _quit, "/q": _quit,
@@ -906,6 +963,7 @@ def _apply(ctx) -> None:
         api_key=ctx.cfg.api_key,
         timeout=getattr(ctx.args, "timeout", 120.0),
         temperature=getattr(ctx.args, "temperature", 0.7),
+        max_tokens=ctx.cfg.max_tokens,
     )
     ctx.real_backend = ctx.backend
 

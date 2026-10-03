@@ -136,6 +136,10 @@ class Config:
     route_pool: list = field(default_factory=list)
     # Team mode: every model in the pool does the same task; first answer ships.
     team_enabled: bool = False
+    # Token limits. 0 means "use the built-in default" so an unset value never
+    # forces a number on a machine the user did not configure.
+    max_tokens: int = 0       # cap on the reply length (output tokens)
+    ctx_size: int = 0         # context window (history kept), passed to llama.cpp
     providers: dict[str, dict] = field(default_factory=lambda: json.loads(
         json.dumps(DEFAULT_PROVIDERS)))
 
@@ -256,6 +260,8 @@ def load(path: Path | None = None) -> Config:
         route_enabled=bool(data.get("route_enabled", False)),
         route_pool=list(data.get("route_pool") or []),
         team_enabled=bool(data.get("team_enabled", False)),
+        max_tokens=int(data.get("max_tokens", 0) or 0),
+        ctx_size=int(data.get("ctx_size", 0) or 0),
     )
     merged = json.loads(json.dumps(DEFAULT_PROVIDERS))
     for name, entry in (data.get("providers") or {}).items():
@@ -288,6 +294,8 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "route_enabled": cfg.route_enabled,
         "route_pool": cfg.route_pool,
         "team_enabled": cfg.team_enabled,
+        "max_tokens": cfg.max_tokens,
+        "ctx_size": cfg.ctx_size,
         "providers": cfg.providers,
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     try:

@@ -5,6 +5,24 @@ GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
 ## [Unreleased]
 
+### Hybrid laptops report every GPU again, not just the integrated one
+
+On Linux, `py/hardware.py` only enumerated cards that publish an `amdgpu`/`i915`
+`mem_info_vram_total` node, so a hybrid NVIDIA + AMD-APU machine showed just the
+integrated Radeon (or nothing) and hid the discrete card entirely. Detection now
+builds the inventory from `/sys/class/drm/card*` directly:
+
+- **NVIDIA** VRAM is read from the card's 64-bit prefetchable PCIe BAR (there is
+  no `mem_info_vram_*` node), and its marketing name from
+  `/proc/driver/nvidia/gpus/*/information` — both stay readable even when the
+  driver is version-skewed and `nvidia-smi`/NVML fail with `DriverNotLoaded`
+- **AMD/Intel** keep reading `mem_info_vram_*`, and an APU iGPU (GTT far larger
+  than its visible VRAM window) is correctly marked as sharing system RAM
+- the loader's `--list-devices` answer and NVML are overlaid where they can see a
+  card, so a Vulkan build that only lists the iGPU no longer makes the RTX card
+  vanish — the sidebar and `/specs` now say "2 GPUs" with the discrete card as
+  primary
+
 ### The agent has a memory — DuckDB behind a Bloom filter
 
 `py/memory.py` gives the agent facts that outlive a session ("my llama port is
