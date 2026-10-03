@@ -57,7 +57,7 @@
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "e90fc7c1c67d718173c357e6eaca90432f138a8f02cb85a2f4d9e8c3e9593edd",
   "py/tui/README.md": "b1cca4e34ec0781b1ff613bfabbc626807dfd175e313083e5f3990b663c13f3a",
-  "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
+  "py/tui/__init__.py": "adfa20e30949127a5e63c0d4c602bc15d5d274b7fb21d151be9a40386ee0d261",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "5fb8c7d3130fc957e5fed518ec3aefacb02013b7e989fef1dc985c1da2f6c9da",
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
@@ -76,10 +76,10 @@
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "d7316f95a6f58e1cb601a1a3b1b95afbb1bd5fdd0b4a6b795205e844bedb8d9e",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
-  "py/version.py": "27251b04e8e0ec25c4abb4cff91d3c788b41f0e287a432289e3e7525f3f77515",
+  "py/version.py": "f9190a9462d0bd015c3724064f2d52d8ffe87f3a34874ebf042c86ab55efa586",
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "0515ee7ac978c01f1128ed2574d7ad2ceb6c34b69e99243499d9cf7f1004087b",
+  "pyproject.toml": "cdedb71fd628d8b7bb545c6af6eb3fd65e30e80dbf661b9fbb7f035fc1d516f6",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
   "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
   "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
@@ -107,6 +107,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-04T04:42:03",
- "note": "GPU detection + /set token + live VRAM sidebar"
+ "generated": "2026-10-04T04:55:07",
+ "note": "v1.4.5 release"
 }
