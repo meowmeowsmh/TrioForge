@@ -543,6 +543,31 @@ def test_history_persists() -> None:
 
 
 # ---------------------------------------------------------------------------
+# router — a repair task must go to the cloud model, not the weak local one
+# ---------------------------------------------------------------------------
+def test_router_repair_is_complex() -> None:
+    _title("router repair -> complex")
+    from tui.router import classify
+
+    # The observed failure: "fix the X button" classified simple, so auto-route
+    # sent it to the local gemma, which read files and never wrote a fix.
+    for task in ("fix the x button nothing is clickable make it work",
+                 "why is the shop broken",
+                 "fix a bug in my code",
+                 "repair the broken shop",
+                 "the app is not working",
+                 "debug the crash"):
+        verdict, reasons = classify(task)
+        assert verdict == "complex", (task, verdict, reasons)
+
+    # small talk still stays simple, and the grammar fix stays simple even
+    # though "fix" is now a complex hint - the grammar hint must win
+    assert classify("hello")[0] == "simple"
+    assert classify("fix the grammar in this sentence")[0] == "simple"
+    print("  repair verbs route complex, grammar/hello stay simple -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -550,7 +575,7 @@ def main() -> int:
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
              test_plan_load, test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
-             test_history_persists]
+             test_history_persists, test_router_repair_is_complex]
     failed = []
     for t in tests:
         try:

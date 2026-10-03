@@ -31,6 +31,14 @@ _COMPLEX_HINTS = (
     "neural net", "train a", "derivative", "integral", "linear algebra",
     "matrix", "solve", "equation", "debug", "why is this failing",
     "explain this code", "time complexity", "big o",
+    # Repair and coding verbs. Without these, "fix the X button", "the shop is
+    # broken", "make it work" all classified as simple and went to the weak
+    # local model - which read files and never wrote the fix, so the user saw
+    # "who is coding?" and a turn full of nothing. A repair needs a model that
+    # can actually edit code.
+    "fix", "broken", "not working", "doesn't work", "does not work",
+    "make it work", "repair", "won't work", "is not working", "crash",
+    "error", "exception", "failing", "failure",
 )
 
 # --- "simple": a small local model is plenty --------------------------------
