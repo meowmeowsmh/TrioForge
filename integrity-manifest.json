@@ -58,7 +58,7 @@
   "py/tui/README.md": "c3f7167b39fab2e84f75b1e55eec5a549b99a9a3dc317d634d2ce570a9bd399a",
   "py/tui/__init__.py": "2eb0cb8cfab4161edae2c9371504e2981488542455c2e81064f508853a5e9aad",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "4de18a1320f086fad32f0ce3afa1ded23d3f6c4c14da4fd5e475e1385921b44c",
+  "py/tui/agent.py": "9295963eb344e6f44750128faa8b4e0efad99b426218458bc474ccb11cfae236",
   "py/tui/app.py": "fcfbf9a22155026bb33cca4c6d164939ca50472546502488b5f6ef8a0d123eee",
   "py/tui/backend.py": "86d6b4bc6cc888be874f664be2ac34e625999e5b1a95f28d92e80143c20efd9c",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -105,6 +105,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T16:35:36",
- "note": "disable prompt while busy (gemini tui pattern)"
+ "generated": "2026-10-03T16:43:09",
+ "note": "port Codewhale truthfulness + task-not-plumbing rules"
 }

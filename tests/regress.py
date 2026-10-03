@@ -187,12 +187,20 @@ def test_agent_verify_and_preamble() -> None:
     assert "VERIFY, DON'T DECLARE" in prompt
     assert "read its OUTPUT, not just the" in prompt
     assert "exit=0 (no output)" in prompt
+    # "never present a partial result as the whole" + the three-way handback,
+    # ported from Codewhale's "Truthful completion" constitution clause
+    assert "what you did NOT verify" in prompt
+    assert "Never present a partial result as the whole" in prompt
 
     # the "which project? what do you want?" garbage: the model must open with
     # an action line and never recap or ask what it can infer.
     assert "OPEN WITH MOTION, NOT RECAP" in prompt
     assert "repeat the user's request back" in prompt
     assert "pick the obvious default and proceed" in prompt
+
+    # narrate the task, not the tool plumbing (Codewhale's output-formatting law)
+    assert "NARRATE THE TASK, NOT THE PLUMBING" in prompt
+    assert "not narrate" in prompt
 
     # the terminal is not a browser: wide markdown tables don't align there
     assert "prefer short" in ta.DEFAULT_SYSTEM
