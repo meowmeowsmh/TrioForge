@@ -55,9 +55,15 @@ def window(messages, max_messages=None, max_chars=None):
 class Message:
     role: str  # "system" | "user" | "assistant"
     content: str
+    #: The model's thinking for an assistant message. DeepSeek demands it back
+    #: on later requests that carry tools; the backend strips it for others.
+    reasoning: str = ""
 
     def as_dict(self) -> dict:
-        return {"role": self.role, "content": self.content}
+        d = {"role": self.role, "content": self.content}
+        if self.reasoning:
+            d["reasoning_content"] = self.reasoning
+        return d
 
 
 @dataclass
@@ -76,8 +82,8 @@ class Session:
         self.messages.append(Message("user", text))
         self._changed()
 
-    def add_assistant(self, text: str) -> None:
-        self.messages.append(Message("assistant", text))
+    def add_assistant(self, text: str, reasoning: str = "") -> None:
+        self.messages.append(Message("assistant", text, reasoning))
         self._changed()
 
     def drop_last(self) -> None:

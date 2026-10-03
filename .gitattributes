@@ -9,3 +9,8 @@
 
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# The reverse for shell scripts: with core.autocrlf=true a Windows checkout gave
+# them CRLF, and bash run from WSL/Git Bash then dies on "bash\r".
+*.sh  text eol=lf
+forge text eol=lf

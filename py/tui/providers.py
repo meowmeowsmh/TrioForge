@@ -73,7 +73,7 @@ DEFAULT_PROVIDERS: dict[str, dict] = {
         "api_key": "${DEEPSEEK_API_KEY}",
         "label": "DeepSeek",
         "note": "Hosted DeepSeek models. Cheap, strong at code. Key from platform.deepseek.com.",
-        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "models": ["deepseek-flash", "deepseek-v4-pro"],
     },
     "claude": {
         "base_url": "https://api.anthropic.com/v1",

@@ -14,6 +14,7 @@ wheels/
 # Virtual environments
 .venv/
 .venv-linux/
+.venv-broken-*/
 venv/
 env/
 ENV/

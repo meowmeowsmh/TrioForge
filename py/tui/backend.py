@@ -99,7 +99,16 @@ def _iter_sse(response) -> Iterator[tuple[str, str]]:
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
+        # A hosted API that fails AFTER the 200 (rate limit, overload, a
+        # rejected request) sends an error object instead of choices. Dropping
+        # it silently left an empty turn with no hint of what went wrong.
+        if isinstance(obj, dict) and obj.get("error") and not obj.get("choices"):
+            err = obj["error"]
+            msg = err.get("message") if isinstance(err, dict) else str(err)
+            raise BackendError(friendly_error(f"stream error: {msg}"))
         for choice in obj.get("choices", []):
+            if choice.get("finish_reason"):
+                yield "finish", choice["finish_reason"]
             delta = choice.get("delta") or {}
             for field in ("reasoning_content", "reasoning", "thinking"):
                 piece = delta.get(field)
@@ -137,6 +146,13 @@ MAX_TOKENS = int(os.environ.get("TRIOFORGE_MAX_TOKENS", "2048") or 2048)
 # `tools` and would otherwise ramble.
 MAX_TOKENS_WITH_TOOLS = int(os.environ.get("TRIOFORGE_MAX_TOKENS_TOOLS", "16384") or 16384)
 
+# What a request falls back to when a provider rejects max_tokens as too big
+# (older DeepSeek chat models cap output at 8192).
+SAFE_MAX_TOKENS = 8192
+
+# Extra attempts for a 429/5xx, a dropped connection, or a 400 that _adapt fixed.
+RETRIES = 3
+
 
 class OpenAICompatBackend(Backend):
     """Talks to an OpenAI-compatible endpoint, streaming by default."""
@@ -154,6 +170,9 @@ class OpenAICompatBackend(Backend):
         # providers (or models) that cannot do it - gemma-3-12b ignores `tools`
         # entirely and needs the text protocol instead.
         self.tools: list[dict] = []
+        self.is_deepseek = "deepseek.com" in self.base_url
+        # Set after DeepSeek rejected a request for missing reasoning_content.
+        self.thinking_off = False
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
@@ -180,7 +199,7 @@ class OpenAICompatBackend(Backend):
         tools_on = bool(getattr(self, "tools", None))
         body = {
             "model": self.model,
-            "messages": messages,
+            "messages": self._wire(messages),
             "stream": True,
             "temperature": self.temperature,
             "max_tokens": MAX_TOKENS_WITH_TOOLS if tools_on else MAX_TOKENS,
@@ -188,33 +207,75 @@ class OpenAICompatBackend(Backend):
         if tools_on:
             body["tools"] = self.tools
             body["tool_choice"] = "auto"
+        if self.thinking_off:
+            body["thinking"] = {"type": "disabled"}
         url = f"{self.base_url}/chat/completions"
-        try:
-            with httpx.stream("POST", url, json=body, headers=self._headers(),
-                              timeout=self.timeout) as r:
-                if r.status_code == 503:
-                    # The model is still loading. Wait for it rather than failing
-                    # the user's very first message.
-                    detail = r.read().decode("utf-8", "replace")[:200]
-                    if "load" in detail.lower():
-                        wait_ready(self.base_url, timeout=min(self.timeout, 600.0))
-                        # fall through to a single retry
-                        with httpx.stream("POST", url, json=body,
-                                          headers=self._headers(),
-                                          timeout=self.timeout) as r2:
-                            if r2.status_code >= 400:
-                                d2 = r2.read().decode("utf-8", "replace")[:400]
-                                raise BackendError(friendly_error(f"HTTP {r2.status_code}: {d2}"))
-                            yield from _iter_sse(r2)
+        waited_for_load = False
+        for attempt in range(RETRIES + 1):
+            emitted = False
+            try:
+                with httpx.stream("POST", url, json=body, headers=self._headers(),
+                                  timeout=self.timeout) as r:
+                    if r.status_code < 400:
+                        for item in _iter_sse(r):
+                            emitted = True
+                            yield item
                         return
-                if r.status_code >= 400:
+                    status = r.status_code
                     detail = r.read().decode("utf-8", "replace")[:400]
-                    raise BackendError(friendly_error(f"HTTP {r.status_code}: {detail}"))
-                yield from _iter_sse(r)
-        except BackendError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise BackendError(friendly_error(str(exc))) from exc
+            except BackendError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                # A dropped connection can be retried only before anything was
+                # shown - after that a retry would duplicate the answer.
+                if emitted or attempt == RETRIES:
+                    raise BackendError(friendly_error(str(exc))) from exc
+                time.sleep(2 ** attempt)
+                continue
+
+            if status == 503 and "load" in detail.lower() and not waited_for_load:
+                # The model is still loading. Wait for it rather than failing
+                # the user's very first message.
+                waited_for_load = True
+                wait_ready(self.base_url, timeout=min(self.timeout, 600.0))
+                continue
+            if attempt < RETRIES and self._adapt(body, status, detail):
+                continue
+            if status in (429, 500, 502, 503, 504) and attempt < RETRIES:
+                time.sleep(2 ** attempt)
+                continue
+            raise BackendError(friendly_error(f"HTTP {status}: {detail}"))
+
+    def _wire(self, messages: list[dict]) -> list[dict]:
+        """The messages as this endpoint accepts them.
+
+        DeepSeek's thinking mode REQUIRES every earlier assistant message's
+        ``reasoning_content`` back when tools are on, and answers HTTP 400
+        without it. Other providers may reject the unknown field, so it is only
+        sent to DeepSeek.
+        """
+        if self.is_deepseek and not self.thinking_off:
+            return messages
+        return [{k: v for k, v in m.items() if k != "reasoning_content"}
+                if "reasoning_content" in m else m for m in messages]
+
+    def _adapt(self, body: dict, status: int, detail: str) -> bool:
+        """Fix the request for a 400 we know how to fix. True = retry."""
+        if status != 400:
+            return False
+        low = detail.lower()
+        if self.is_deepseek and "reasoning" in low and "thinking" not in body:
+            # History restored from disk (or trimmed by the window) has no
+            # reasoning to pass back. Thinking off makes the API stop demanding
+            # it; sticky for this backend so later requests do not fail first.
+            self.thinking_off = True
+            body["thinking"] = {"type": "disabled"}
+            body["messages"] = self._wire(body["messages"])
+            return True
+        if "max_tokens" in low and body.get("max_tokens", 0) > SAFE_MAX_TOKENS:
+            body["max_tokens"] = SAFE_MAX_TOKENS
+            return True
+        return False
 
 
 class EchoBackend(Backend):

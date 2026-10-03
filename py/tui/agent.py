@@ -30,6 +30,7 @@ from .backend import BackendError
 
 MAX_STEPS = 12          # tool-calling rounds in one turn
 APPROVE_ALL = "all"     # the user chose "yes, and stop asking"
+BAD_ARGS = "__invalid_arguments__"  # marks a call whose JSON did not parse
 
 # Adapted from Crush's internal/agent/templates/coder.md.tpl. The rules are kept
 # because they are what makes an agent behave; the parts about MCP, LSP, skills
@@ -110,6 +111,9 @@ class Step:
 class Turn:
     text: str = ""
     reasoning: str = ""
+    #: Reasoning of the last model call only - what belongs with the final
+    #: answer when it is saved to the session.
+    last_reasoning: str = ""
     steps: list[Step] = field(default_factory=list)
     #: True when the user cancelled: text/steps hold whatever arrived first.
     stopped: bool = False
@@ -232,9 +236,10 @@ class Agent:
             if should_stop and should_stop():
                 result.stopped = True
                 break
-            content, reasoning, calls, stopped = self._one_request(
+            content, reasoning, calls, stopped, truncated = self._one_request(
                 messages, on_event, should_stop)
             result.reasoning += reasoning
+            result.last_reasoning = reasoning
             result.text += content
             if stopped:
                 result.stopped = True
@@ -245,7 +250,7 @@ class Agent:
 
             # Record the assistant's tool request so the model sees its own
             # reasoning on the next round.
-            messages.append(self._assistant_message(content, calls))
+            messages.append(self._assistant_message(content, calls, reasoning))
 
             for _i, (name, args) in enumerate(calls):
                 if should_stop and should_stop():
@@ -254,7 +259,16 @@ class Agent:
                 summary = TL.TOOLS[name].summary(args) if name in TL.TOOLS else name
                 on_event("tool_start", {"name": name, "args": args,
                                         "summary": summary})
-                if not self._permitted(name, args):
+                if BAD_ARGS in args:
+                    # Running the tool with {} is what made write/edit fail
+                    # in confusing ways; tell the model what really happened.
+                    output = ("error: the arguments of this call were not valid "
+                              "JSON" + (" - your reply was cut off at the output "
+                              "limit" if truncated else "") + ". Nothing ran. "
+                              "Send the call again; for a big file, write a "
+                              "smaller first version and add the rest with edit.")
+                    on_event("tool_end", {"name": name, "output": output})
+                elif not self._permitted(name, args):
                     output = "error: the user denied permission for this tool"
                     on_event("tool_end", {"name": name, "output": output,
                                           "denied": True})
@@ -280,12 +294,17 @@ class Agent:
     # --------------------------------------------------------------- one round
     def _one_request(self, messages: list[dict], on_event,
                      should_stop: Callable[[], bool] | None = None
-                     ) -> tuple[str, str, list[tuple[str, dict]], bool]:
-        """One model call. Returns (content, reasoning, tool calls, stopped)."""
+                     ) -> tuple[str, str, list[tuple[str, dict]], bool, bool]:
+        """One model call.
+
+        Returns (content, reasoning, tool calls, stopped, truncated) -
+        ``truncated`` is True when the reply hit the output-token limit.
+        """
         content: list[str] = []
         reasoning: list[str] = []
         partial: dict[int, dict] = {}
         stopped = False
+        truncated = False
 
         self.backend.tools = TL.schemas() if (self.use_tools and self.native_tools) else []
         try:
@@ -301,6 +320,8 @@ class Agent:
                 elif kind == "content":
                     content.append(payload)
                     on_event("content", {"text": payload})
+                elif kind == "finish":
+                    truncated = payload == "length"
                 elif kind == "tool_call":
                     # Fragments arrive per index; name once, arguments in pieces.
                     idx = payload.get("index", 0)
@@ -311,7 +332,7 @@ class Agent:
                         slot["arguments"] += payload["arguments"]
         except BackendError as exc:
             on_event("error", {"message": str(exc)})
-            return "".join(content), "".join(reasoning), [], stopped
+            return "".join(content), "".join(reasoning), [], stopped, truncated
 
         text = "".join(content)
         calls: list[tuple[str, dict]] = []
@@ -325,8 +346,8 @@ class Agent:
             try:
                 args = json.loads(slot["arguments"] or "{}")
             except json.JSONDecodeError:
-                args = {}
-            calls.append((name, args if isinstance(args, dict) else {}))
+                args = {BAD_ARGS: slot["arguments"]}
+            calls.append((name, args if isinstance(args, dict) else {BAD_ARGS: ""}))
 
         # Otherwise the text protocol.
         if not calls and self.use_tools:
@@ -334,21 +355,28 @@ class Agent:
             if calls:
                 text = TL.strip_text_calls(text)
 
-        return text, "".join(reasoning), calls, stopped
+        return text, "".join(reasoning), calls, stopped, truncated
 
     # ------------------------------------------------------------- wire format
-    def _assistant_message(self, content: str, calls: list[tuple[str, dict]]) -> dict:
+    def _assistant_message(self, content: str, calls: list[tuple[str, dict]],
+                           reasoning: str = "") -> dict:
         """How the model's tool request is echoed back to it."""
         if self.native_tools:
-            return {
+            msg = {
                 "role": "assistant",
                 "content": content or "",
                 "tool_calls": [
                     {"id": f"call_{i}", "type": "function", "function": {
-                        "name": n, "arguments": json.dumps(a)}}
+                        "name": n,
+                        "arguments": "{}" if BAD_ARGS in a else json.dumps(a)}}
                     for i, (n, a) in enumerate(calls)
                 ],
             }
+            # DeepSeek's thinking mode answers 400 to the next request without
+            # this; the backend strips it for providers that do not want it.
+            if reasoning:
+                msg["reasoning_content"] = reasoning
+            return msg
         # Text protocol: the blocks ARE the assistant message.
         blocks = "\n".join(
             "```tool\n" + json.dumps({"name": n, "args": a}) + "\n```"

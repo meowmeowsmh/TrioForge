@@ -1103,7 +1103,7 @@ class ForgeApp(App):
             if entry.get("base_url"):
                 model = (entry.get("models") or [""])[0]
                 return name, entry["base_url"], model
-        return "deepseek", "https://api.deepseek.com/v1", "deepseek-chat"
+        return "deepseek", "https://api.deepseek.com/v1", "deepseek-v4-pro"
 
     def _live_provider_models(self) -> dict:
         """{provider: [models it actually offers]} - cached, BLOCKING.
@@ -1449,7 +1449,7 @@ class ForgeApp(App):
                 self._set_mood("neutral")
                 return
             if final:
-                self.session.add_assistant(final)
+                self.session.add_assistant(final, turn.last_reasoning)
                 # Kept so the answer can be copied without selecting it by hand.
                 self._replies.append(final)
                 # The route note names the destination AND why; fall back to the

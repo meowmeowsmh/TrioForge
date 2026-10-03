@@ -38,6 +38,9 @@ MAX_OUTPUT = 3_000           # characters of tool output kept
 # 5.4 GB local model. Keep the ceiling low so tool output is a summary, not a
 # directory dump.
 DEFAULT_READ_LIMIT = 400     # lines, like Crush's default read limit
+# view gets a bigger budget than other tools: reading the code is the point, and
+# a model that only sees a slice of a file cannot edit it.
+VIEW_MAX_OUTPUT = int(os.environ.get("TRIOFORGE_VIEW_CHARS", "16000") or 16000)
 
 
 def _truncate(text: str, limit: int = MAX_OUTPUT) -> str:
@@ -100,9 +103,26 @@ def t_view(file_path: str = "", offset: int = 1, limit: int = DEFAULT_READ_LIMIT
     start = max(1, int(offset or 1))
     end = min(len(lines), start - 1 + max(1, int(limit or DEFAULT_READ_LIMIT)))
     width = len(str(end))
-    body = "\n".join(f"{i:>{width}}  {lines[i - 1]}" for i in range(start, end + 1))
-    more = "" if end >= len(lines) else f"\n... ({len(lines) - end} more lines)"
-    return _truncate(f"# {p}  ({len(lines)} lines)\n{body}{more}")
+    # Cut at a line boundary and say where to resume. The generic head+tail
+    # _truncate dropped the MIDDLE of any file past ~60 lines, so the model
+    # never saw the code it was asked to edit and its old_string never matched.
+    out, used, last = [], 0, start - 1
+    for i in range(start, end + 1):
+        row = f"{i:>{width}}  {lines[i - 1]}"
+        if out and used + len(row) > VIEW_MAX_OUTPUT:
+            break
+        out.append(row)
+        used += len(row) + 1
+        last = i
+    body = "\n".join(out)
+    if last < end:
+        more = (f"\n... (output limit reached at line {last}; view again with "
+                f"offset={last + 1} to read on)")
+    elif end < len(lines):
+        more = f"\n... ({len(lines) - end} more lines)"
+    else:
+        more = ""
+    return f"# {p}  ({len(lines)} lines)\n{body}{more}"
 
 
 def t_write(file_path: str = "", content: str = "", **_kw) -> str:
@@ -535,8 +555,12 @@ def _clean(text):
 _SECRET_RES = [
     re.compile(r"sk-[A-Za-z0-9_-]{12,}", re.I),
     re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9_\-\.]{10,}"),
+    # Only a literal value: quoted, or bare with a digit and no dots/parens. The
+    # old pattern also ate code like `api_key = os.environ.get(...)`, so the
+    # model's edit old_string (copied from a view) no longer matched the file.
     re.compile(r"(?i)\b(api[_-]?key|apikey|secret|password|token|authorization)"
-               r"\s*[:=]\s*[\"']?[A-Za-z0-9_\-\.]{10,}"),
+               r"\s*[:=]\s*(?:[\"'][A-Za-z0-9_\-\.]{10,}[\"']"
+               r"|(?=[A-Za-z0-9_\-]*\d)[A-Za-z0-9_\-]{16,}(?![\w.(]))"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
                re.S),
 ]

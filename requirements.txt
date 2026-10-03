@@ -48,6 +48,9 @@ duckdb>=1.1.0
 rich>=13.7.0
 prompt_toolkit>=3.0.43
 textual>=0.80.0
+# The terminal client's model transport (py/tui/backend.py). It used to arrive
+# only as a side effect of groq/google-genai, so a change there could drop it.
+httpx>=0.27.0
 
 # ── Semantic search / embeddings (OPTIONAL — app runs without) ──
 # These pull in torch + the CUDA toolkit (~2 GB), so they are NOT installed by
