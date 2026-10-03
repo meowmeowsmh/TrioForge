@@ -106,6 +106,8 @@ def t_view(file_path: str = "", offset: int = 1, limit: int = DEFAULT_READ_LIMIT
 
 
 def t_write(file_path: str = "", content: str = "", **_kw) -> str:
+    if not file_path or not file_path.strip():
+        return "error: write needs a file_path (and content)"
     p = _resolve(file_path)
     # A directory path resolves to the folder itself (the agent's cwd is often
     # the home dir), and write_text on it raised a raw "Permission denied" that
@@ -442,8 +444,12 @@ _register(Tool(
 
 _register(Tool(
     "bash",
-    "Run a shell command. Prefer the grep/glob/ls/view tools over shelling out to "
-    "find/grep/cat/ls. Each call runs in a fresh shell - no state persists.",
+    "Run a shell command. On Windows the shell is cmd.exe, so use cmd syntax "
+    "(dir, type, mkdir, del, echo, copy) - PowerShell cmdlets like Get-ChildItem, "
+    "Select-Object, Format-Table or Out-String will FAIL unless wrapped as "
+    "\"powershell -Command \\\"...\\\"\". Prefer the grep/glob/ls/view tools over "
+    "shelling out to find/grep/cat/ls. Each call runs in a fresh shell - no state "
+    "persists.",
     _obj({"command": {"type": "string"},
           "working_dir": {"type": "string"}}, ["command"]),
     t_bash, danger=True,

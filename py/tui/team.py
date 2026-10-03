@@ -28,6 +28,11 @@ SENIOR_TASK_DIRECTIVE = (
     "an empty folder, a list, a plan, or a description of what you would do. Do "
     "not ask the user for clarification and do not stop at a first guess: create "
     "the thing, run it, and report what you made with file paths and evidence.\n\n"
+    "FOCUS: if the user names a place (e.g. \"on D:\" or \"in a new folder\"), "
+    "build there and stay there. Do not wander: no enumerating every drive, no "
+    "listing unrelated folders, no probing free space. Go straight to the named "
+    "location, make the files, and report. On Windows the shell is cmd.exe - use "
+    "dir/mkdir/echo, not PowerShell cmdlets (Select-Object, Format-Table).\n\n"
 )
 
 #: What the JUNIOR is asked. It runs read-only (no write tools), so the finished

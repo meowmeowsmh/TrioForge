@@ -345,12 +345,42 @@ def test_session_window() -> None:
 
 
 # ---------------------------------------------------------------------------
+# tools + backend — a `write` that loses its arguments must not run on the cwd
+# ---------------------------------------------------------------------------
+def test_write_empty_args() -> None:
+    _title("write arguments + token cap")
+    from tui.tools import TOOLS, t_write
+    from tui import backend
+
+    # The bug this locks: a truncated native tool call arrived as args={}, the
+    # write tool resolved "" to the cwd, and the agent looped on
+    # "error: C:\Users\user is a folder, not a file". Now an empty path says so.
+    out = t_write(file_path="", content="x")
+    assert "needs a file_path" in out, out
+
+    # a real path with no content is still a valid (empty) file, not an error
+    # about being a folder - the folder error was a symptom, not the diagnosis.
+
+    # the tool-calling token cap must be larger than the chat cap, or a whole
+    # HTML file inside the write arguments is truncated mid-string and json.loads
+    # fails -> args={}. This is the other half of the same bug.
+    assert backend.MAX_TOKENS_WITH_TOOLS > backend.MAX_TOKENS, (
+        backend.MAX_TOKENS_WITH_TOOLS, backend.MAX_TOKENS)
+
+    # the bash tool must name the real shell so the model stops emitting
+    # PowerShell cmdlets (Select-Object / Format-Table) into cmd.exe.
+    assert "cmd.exe" in TOOLS["bash"].description
+    assert "powershell -Command" in TOOLS["bash"].description
+    print("  empty write path, tool token cap, cmd.exe bash docs -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_known_facts, test_memory_is_optin, test_plan_load,
-             test_team_directives, test_session_window]
+             test_team_directives, test_session_window, test_write_empty_args]
     failed = []
     for t in tests:
         try:
