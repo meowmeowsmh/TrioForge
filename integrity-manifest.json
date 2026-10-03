@@ -64,13 +64,14 @@
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
   "py/tui/commands.py": "484ab5731cc1cc85974389323c7be38e0867bede6f892de83207eacee5a28e0d",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
+  "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "7522f4b119bcfffacae261249d1343cf1f28c97a64dfd02eee9619d3f8087eec",
   "py/tui/providers.py": "f5d33ad21e913da20f33c05dc54a1f678b2572efab2853a6829264ec51be127a",
   "py/tui/render.py": "9b825f569c9cd55ba00e06cbb49d196c674678e75f8fc71bec0c89069a82bca5",
   "py/tui/router.py": "016f8d81811fd9a0b5a88fe9693a00ff645554a57425c13cda31c035b14b4f87",
-  "py/tui/session.py": "aad4788c73244b32fe3b0b11c48706041782171fe88b4ecb333b3951d9f7fceb",
+  "py/tui/session.py": "3d74b469ab0f176990d7d40319e5de7e239e0acb643336d5496b74cde6cbfc54",
   "py/tui/team.py": "7bf9fc1fbc2d3c56b8428956fc1ca2356a8e2f43601ec6854349add33bd27957",
-  "py/tui/textual_app.py": "f4097b0711e87bdbbe295947ad68474cac35151a6e0d8ab178d0629fc4a56006",
+  "py/tui/textual_app.py": "4ec8deac701fc87bb05440c1b9fba144efd3313ab769b903f85b46c48f58cab0",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "19fdaf3b86ddda13434c4bca86b9a4dbe465038509310d71f1fc6a1ff1c05329",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -105,6 +106,6 @@
   "templates/index.html": "34dce9b9dc89697feb3904bd1aeafce749be1262a71dc6ac65e1ac5fef94d6cb",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-03T17:33:07",
- "note": "team session seeds conversation history"
+ "generated": "2026-10-03T17:46:00",
+ "note": "tui history persistence"
 }

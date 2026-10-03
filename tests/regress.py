@@ -494,13 +494,63 @@ def test_bash_clean_before_truncate() -> None:
 
 
 # ---------------------------------------------------------------------------
+# history — the TUI transcript persists across restarts, so forge stops
+# forgetting what it was working on
+# ---------------------------------------------------------------------------
+def test_history_persists() -> None:
+    _title("tui history persistence")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["TRIOFORGE_HISTORY_DB"] = str(Path(tmp) / "hist.db")
+        # fresh import so DB_PATH picks up the env override
+        import importlib
+        import tui.history as hist
+        importlib.reload(hist)
+
+        from tui.session import Session, Message
+
+        # a session that persists itself via on_change
+        changes = []
+
+        def hook(s):
+            changes.append(len(s.messages))
+
+        s = Session()
+        s.on_change = hook
+        s.add_user("make me a shop in D:\\reseller-shop")
+        s.add_assistant("created D:\\reseller-shop")
+        assert changes == [1, 2], "on_change did not fire per mutation"
+
+        # wire it to the real store and reload in a FRESH session
+        s2 = Session()
+        s2.on_change = lambda s: hist.save(s.messages)
+        s2.add_user("make me a shop in D:\\reseller-shop")
+        s2.add_assistant("created D:\\reseller-shop")
+
+        got = hist.load()
+        assert got == [("user", "make me a shop in D:\\reseller-shop"),
+                       ("assistant", "created D:\\reseller-shop")], got
+
+        # clear persists as empty, and drop_last removes the trailing message
+        s2.add_user("fix the x")
+        s2.drop_last()
+        assert hist.load()[-1] == ("assistant", "created D:\\reseller-shop")
+        s2.clear()
+        assert hist.load() == []
+    os.environ.pop("TRIOFORGE_HISTORY_DB", None)
+    print("  history survives save/load, clear and drop_last -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
              test_plan_load, test_team_directives, test_session_window,
-             test_write_empty_args, test_bash_clean_before_truncate]
+             test_write_empty_args, test_bash_clean_before_truncate,
+             test_history_persists]
     failed = []
     for t in tests:
         try:

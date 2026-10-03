@@ -66,22 +66,38 @@ class Session:
     where: str = ""
     system: str = ""
     messages: list[Message] = field(default_factory=list)
+    #: Optional callback fired after add_user / add_assistant / clear, receiving
+    #: ``self``. The full-screen UI sets it to persist the transcript to disk;
+    #: the throwaway team sessions leave it None so they never write.
+    on_change: object | None = field(default=None, repr=False)
 
     # ---------------------------------------------------------------- writes
     def add_user(self, text: str) -> None:
         self.messages.append(Message("user", text))
+        self._changed()
 
     def add_assistant(self, text: str) -> None:
         self.messages.append(Message("assistant", text))
+        self._changed()
 
     def drop_last(self) -> None:
         """Remove the trailing message - used when a request fails, so the
         failed turn is not resent on the next attempt."""
         if self.messages:
             self.messages.pop()
+            self._changed()
 
     def clear(self) -> None:
         self.messages.clear()
+        self._changed()
+
+    def _changed(self) -> None:
+        if self.on_change is None:
+            return
+        try:
+            self.on_change(self)
+        except Exception:  # noqa: BLE001 - persistence must never break a turn
+            pass
 
     # ---------------------------------------------------------------- reads
     @property

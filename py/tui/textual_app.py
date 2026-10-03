@@ -52,7 +52,7 @@ from . import faces, localmodels, providers, team, theme as T
 from .backend import (EchoBackend, OpenAICompatBackend, auto_model,
                       fetch_models)
 from .commands import COMMANDS  # built once so the first ctrl+p is instant
-from .session import Session
+from .session import Message as SessionMessage, Session
 
 DEFAULT_SYSTEM = (
     "You are TrioForge, a precise, practical assistant running in the user's "
@@ -2602,5 +2602,14 @@ def run(args) -> int:
         where=cfg.base_url if not isinstance(backend, EchoBackend) else backend.where,
         system=args.system if args.system is not None else DEFAULT_SYSTEM,
     )
+    # Restore the last conversation, then keep it persisted. This is what makes
+    # "it keeps forgetting" stop: the transcript outlives the process.
+    from . import history
+    for role, content in history.load():
+        if role == "user":
+            session.messages.append(SessionMessage("user", content))
+        elif role == "assistant":
+            session.messages.append(SessionMessage("assistant", content))
+    session.on_change = lambda s: history.save(s.messages)
     ForgeApp(args, cfg, backend, session).run()
     return 0
