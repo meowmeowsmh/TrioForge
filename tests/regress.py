@@ -290,6 +290,26 @@ async def _tui_checks() -> None:
         app._busy = False
         print("  busy submit keeps the queued message -> OK")
 
+        # team sessions carry recent history: the throwaway session the senior
+        # runs on must be seeded with the conversation BEFORE the current turn,
+        # so "the just now folder" resolves instead of "which folder?"
+        import asyncio as _aio
+        app.session.add_user("make me a shop in D:\\reseller-shop")
+        app.session.add_assistant("created D:\\reseller-shop")
+        app.session.add_user("now fix the x in that folder")   # current raw msg
+        from tui import team as _team, session as _sess
+        seeded = _sess.Session(system=app.session.system)
+        from tui.session import window
+        for m in window(app.session.messages[:-1]):
+            seeded.messages.append(m)
+        seeded.add_user(_team.senior_task("fix the x in that folder"))
+        # history is present AND the wrapped task is the last message
+        assert any("D:\\reseller-shop" in m.content for m in seeded.messages), \
+            "team session lost the earlier 'D:\\reseller-shop' context"
+        assert seeded.messages[-1].content.endswith("fix the x in that folder")
+        assert "READ ONCE, THEN WRITE" in seeded.messages[-1].content
+        print("  team session carries history, wrapped task last -> OK")
+
         # a split load warns, a fitting one does not
         import llamacpp_service as svc
         app.session.model = "nemotron"

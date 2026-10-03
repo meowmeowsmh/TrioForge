@@ -1544,11 +1544,23 @@ class ForgeApp(App):
         of the conversation the user keeps. ``use_tools=False`` gives a read-only
         model (it can still read, but cannot write/edit/bash) - used for the
         parallel junior, so it and the senior never clobber the same files.
+
+        The throwaway session IS seeded with the recent conversation (same
+        sliding window the main loop uses), so a follow-up like "the just now
+        folder" resolves to the folder the user actually meant - without this the
+        senior had no history and asked "which folder?" forever.
         """
-        from .session import Session
+        from .session import Session, window
         sess = Session(model=getattr(backend, "model", ""),
                        where=getattr(backend, "where", ""),
                        system=self.session.system)
+        # Seed with the recent history BEFORE the current turn. The main session
+        # already holds this turn's raw user message as its last entry, but the
+        # task here is the WRAPPED team directive - so copy everything except
+        # that last message, then append the wrapped task below. Without this the
+        # senior had zero history and asked "which folder?" forever.
+        for m in window(self.session.messages[:-1]):
+            sess.messages.append(m)
         sess.add_user(task)
         def on_event(kind, payload):
             # Count content as it streams, so the sidebar's token counter moves
