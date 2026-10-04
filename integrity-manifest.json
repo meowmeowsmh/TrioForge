@@ -58,7 +58,7 @@
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "e90fc7c1c67d718173c357e6eaca90432f138a8f02cb85a2f4d9e8c3e9593edd",
   "py/tui/README.md": "b1cca4e34ec0781b1ff613bfabbc626807dfd175e313083e5f3990b663c13f3a",
-  "py/tui/__init__.py": "2a3f16af5f8424330509ad909effb7bef05d88eb9d41c0706a7c700b4ed3c566",
+  "py/tui/__init__.py": "f4d30a61705a052cf210c01b2c0670b2a1c4a0b5f999a7bc7eab65c596e9fd31",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "5fb8c7d3130fc957e5fed518ec3aefacb02013b7e989fef1dc985c1da2f6c9da",
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
@@ -77,10 +77,10 @@
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "d7316f95a6f58e1cb601a1a3b1b95afbb1bd5fdd0b4a6b795205e844bedb8d9e",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
-  "py/version.py": "01067f969cab90d5766a044232dcab9a0d20ff9b9a2a692548e93dc5f5156bfb",
+  "py/version.py": "0e4c26753c424e73f6de416fd8310debc8bbc0ff804a910f9d17084e67e0581e",
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "156c91add1683691cbc906069cf0db0db10fc9ec589907d7990e6e497c673b36",
+  "pyproject.toml": "7278bbef163e8ad999cb0f4faf08a3ac6180a8666a49d0b013c0363f2c44851f",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
   "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
   "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
@@ -108,6 +108,6 @@
   "templates/index.html": "9e181274d3a9874f5bd14ad226aa130fe056f3c7f6dfc133d48016bb9ed035a5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T03:05:29",
- "note": "design run multi-language"
+ "generated": "2026-10-05T03:17:28",
+ "note": "v1.4.7 design studio + database"
 }

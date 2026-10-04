@@ -3,6 +3,31 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.4.7] — the design studio: live preview, files, and a database that remembers
+
+### A brief becomes a working prototype, live
+
+The new **Design Studio** turns a one-line brief into a project and renders it live:
+
+- **live preview + code side by side**, with the page no longer truncated mid-CSS
+  (the generation budget lifted from 8k to 65k tokens)
+- a **Files tab** beside Preview, showing projects as folders (`index.html` +
+  `style.css` / `app.js`) instead of a flat pile of html files
+- **Python projects**: a brief can produce `main.py` + modules + `requirements.txt`,
+  and a **live terminal** runs them — and speaks the project's language
+
+### Designs survive a reload (database)
+
+Design briefs and their generated files are now written to the database, so closing
+the chat no longer loses the whole design — a stored design re-renders its live
+preview from history.
+
+### Token counter and window
+
+- the token counter shows **total tokens consumed**, and "thinking" during reasoning
+  instead of a misleading `0.0 tok/s`
+- the desktop window restores itself when WebView2 collapses it to a sliver
+
 ## [1.4.6] — the desktop app actually opens, and a real DeepSeek model picker
 
 ### The desktop app opens one window that shows up
