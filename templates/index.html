@@ -1841,6 +1841,29 @@ video.tf-video {
       </div>
     </div>
 
+    <!-- Design Studio panel (right side): OpenDesign-style live preview + code -->
+    <div id="designStudioPanel" style="display:none; position:fixed; top:60px; right:0; width:min(600px, 94vw); bottom:60px; z-index:5200; background:#0d0d13; border-left:1px solid #333; box-shadow:-4px 0 20px rgba(0,0,0,0.5); flex-direction:column;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-bottom:1px solid #222; flex-wrap:wrap;">
+        <strong style="font-size:14px; color:#3fb950;">🎨 Design Studio</strong>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button id="designTabPreview" onclick="designTab('preview')" style="background:#238636; border:1px solid #238636; color:#fff; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">👁 Preview</button>
+          <button id="designTabCode" onclick="designTab('code')" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">📝 Code</button>
+          <button onclick="designOpenExternal()" title="Open in browser" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">↗</button>
+          <button onclick="designDownload()" title="Download HTML" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">⬇</button>
+          <button onclick="toggleDesignStudio()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
+        </div>
+      </div>
+      <div id="designPreviewBody" style="flex:1; overflow:hidden; background:#fff;">
+        <iframe id="designPreviewFrame" sandbox="allow-scripts allow-modals allow-forms allow-popups" title="Design preview" style="width:100%; height:100%; border:0; background:#fff;" src="about:blank"></iframe>
+      </div>
+      <div id="designCodeBody" style="flex:1; overflow:auto; padding:12px; display:none;">
+        <pre style="margin:0;"><code id="designCodeBlock" class="language-html" style="font-size:12px;"></code></pre>
+      </div>
+      <div style="padding:8px 14px; border-top:1px solid #222; font-size:11px; color:#8b949e;">
+        Type a brief in 🎨 mode, or tick “♻️ Refine current design” and type a follow-up to edit this prototype.
+      </div>
+    </div>
+
     <!-- Restore picker modal: select which saved edits to load -->
     <div id="restorePicker" style="display:none; position:fixed; top:12vh; right:0; width:min(440px, 92vw); bottom:12vh; z-index:6000; background:#0d0d13; border-left:1px solid #1f6feb; box-shadow:-4px 0 20px rgba(0,0,0,0.6); flex-direction:column;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222;">
@@ -3827,6 +3850,55 @@ function designPreset(brief) {
     msgInput.value = brief;
     msgInput.focus();
 }
+// ── Design Studio panel (OpenDesign-style preview + code on the right) ──
+var designCurrentUrl = '';
+var designCurrentId = 'design.html';
+function toggleDesignStudio() {
+    var p = document.getElementById('designStudioPanel');
+    if (!p) return;
+    p.style.display = (p.style.display === 'flex') ? 'none' : 'flex';
+}
+function designTab(which) {
+    var prev = document.getElementById('designPreviewBody');
+    var code = document.getElementById('designCodeBody');
+    if (prev) prev.style.display = (which === 'preview') ? '' : 'none';
+    if (code) code.style.display = (which === 'code') ? '' : 'none';
+    var pBtn = document.getElementById('designTabPreview');
+    var cBtn = document.getElementById('designTabCode');
+    if (pBtn) pBtn.style.background = (which === 'preview') ? '#238636' : '#1c1c26';
+    if (cBtn) cBtn.style.background = (which === 'code') ? '#238636' : '#1c1c26';
+}
+function renderDesignStudio(d) {
+    designCurrentUrl = d.url || '';
+    designCurrentId = d.id || 'design.html';
+    var frame = document.getElementById('designPreviewFrame');
+    if (frame) frame.src = d.url || 'about:blank';
+    var codeEl = document.getElementById('designCodeBlock');
+    if (codeEl) {
+        var shown = d.html || '';
+        if (typeof hljs !== 'undefined') {
+            try { codeEl.innerHTML = hljs.highlight(shown, { language: 'html' }).value; }
+            catch (e) { codeEl.textContent = shown; }
+        } else {
+            codeEl.textContent = shown;
+        }
+    }
+    designTab('preview');
+    var p = document.getElementById('designStudioPanel');
+    if (p) p.style.display = 'flex';
+}
+function designOpenExternal() {
+    if (designCurrentUrl) window.open(designCurrentUrl, '_blank');
+}
+function designDownload() {
+    if (!designCurrentUrl) return;
+    var a = document.createElement('a');
+    a.href = designCurrentUrl;
+    a.download = designCurrentId;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
 function generateDesignChat(text) {
     if (!text || !text.trim()) return;
     if (busy) return;
@@ -3865,15 +3937,15 @@ function generateDesignChat(text) {
         }
         designCurrentHtml = d.html || '';
         if (typeof loadApiKey === 'function' && KEY_PROVIDERS.indexOf(provider) !== -1) saveApiKey(provider, apiKey);
+        // Put the live preview + code in the right-hand Design Studio panel.
+        renderDesignStudio(d);
         bodyEl.innerHTML =
-            '<iframe sandbox="allow-scripts allow-modals allow-forms allow-popups" ' +
-            'src="' + d.url + '" title="Design preview" ' +
-            'style="width:100%; height:520px; border:1px solid #333; border-radius:8px; background:#fff;"></iframe>' +
-            '<div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">' +
-            '<button type="button" onclick="window.open(\'' + d.url + '\',\'_blank\')" style="background:#238636; border:0; color:#fff; border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer;">↗ Open in browser</button>' +
-            '<a href="' + d.url + '" download="' + (d.id || 'design.html') + '" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:6px 12px; font-size:12px; text-decoration:none;">⬇ Download HTML</a>' +
-            '<span style="font-size:11px; color:#8b949e;">Type a follow-up and tick “♻️ Refine current design” to edit this prototype.</span>' +
-            '</div>';
+            '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">' +
+            '<span style="color:#7ee787;">✅ Design ready — preview + code are live in the 🎨 Design Studio on the right.</span>' +
+            '<button type="button" onclick="toggleDesignStudio()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">👁 Show/hide</button>' +
+            '<button type="button" onclick="designOpenExternal()" style="background:#238636; border:0; color:#fff; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">↗ Browser</button>' +
+            '</div>' +
+            '<div style="color:#8b949e; font-size:11px; margin-top:6px;">Type a follow-up with “♻️ Refine current design” ticked to edit this prototype in place.</div>';
         var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
         smoothScrollToBottom();
     })
