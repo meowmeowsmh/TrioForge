@@ -3,6 +3,41 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.4.6] — the desktop app actually opens, and a real DeepSeek model picker
+
+### The desktop app opens one window that shows up
+
+Double-clicking the app used to leave nothing on screen while TrioForge processes
+piled up in Task Manager. Two faults combined:
+
+- the "a window is already open" marker was written *after* the server was spawned
+  and the window created — and with a plain write — so every impatient click started
+  another full window process, six servers racing for one port and six WebView2
+  engines fighting over one locked profile folder
+- "the window is ready" meant *the form object exists*, not *a visible window is on
+  screen*; pywebview only shows the form after WebView2 finishes initialising, so
+  when that wedged, every watchdog concluded the app was healthy while you stared at
+  an empty desktop
+
+The window slot is now claimed atomically at the top of start-up, readiness means a
+real visible window, a lingering hidden form is asked to show itself, and a window
+that never appears retries once with a fresh profile and then hands you the app in
+your browser instead of lingering invisibly. The recorded hang also expires after a
+day and clears when a window paints, so one bad night no longer docks the GPU
+forever.
+
+### The DeepSeek dropdown shows the actual models
+
+The DeepSeek provider now presents its harness-style catalogue instead of raw ids:
+
+- **DeepSeek-V41-Flash** — text + image, 1M-token context
+- **DeepSeek-V4-Pro** — text, 1M-token context, with an Off / Low / High / Max
+  reasoning-effort selector that rides to the API as `reasoning_effort`
+
+An info line shows the selected model's name, context window and input modalities,
+the 👁 vision badge and image routing come from the catalogue's capabilities, and a
+new `/providers/model_catalog` endpoint serves the metadata.
+
 ## [1.4.5] — memory, hybrid-GPU fixes, and /set token
 
 ### The sidebar shows the GPU working in real time
