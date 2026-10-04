@@ -605,13 +605,28 @@ def _start(ctx, arg: str) -> None:
             return
     else:
         from . import wizard
-        rows = [(x.name, f"{x.size_gb:.1f} GB  ·  {x.caps_label}") for x in models]
+        rows = localmodels.rows()
         try:
             idx = wizard.choose("load which offline model?", rows, default=0)
         except wizard.Cancelled:
             render.warn("cancelled")
             return
         m = models[idx]
+
+    # Say up front when this model cannot live entirely in VRAM, so a slow reply
+    # is explained before it happens rather than discovered as "why is it 1 tok/s".
+    try:
+        import hardware
+        verdict = hardware.fit(m.size_gb)
+        if verdict == "split":
+            render.warn(f"{m.name} is {m.size_gb:.1f} GB — bigger than your VRAM, "
+                        "so it will split GPU+CPU and run several times slower")
+        elif verdict == "cpu":
+            render.warn(f"no VRAM headroom for {m.name} — it will run on CPU only")
+        elif verdict == "too_big":
+            render.warn(f"{m.name} is too big for your memory — it may not load")
+    except Exception:  # noqa: BLE001 - hardware probing must never block a load
+        pass
 
     render.info(f"loading {m.name} ({m.size_gb:.1f} GB) — this takes a while")
     try:

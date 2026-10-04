@@ -2039,7 +2039,11 @@ class ForgeApp(App):
 
         # local .gguf files first - they are the ones that need no key
         for m in localmodels.available():
-            options.append((m.name, f"{m.size_gb:.1f} GB · {m.caps_label} · local"))
+            bits = [f"{m.size_gb:.1f} GB", m.caps_label, "local"]
+            badge = localmodels.fit_badge(m.size_gb)
+            if badge:
+                bits.append(badge)
+            options.append((m.name, " · ".join(bits)))
             seen.add(m.name)
 
         # then whatever the current endpoint offers
@@ -2187,8 +2191,13 @@ class ForgeApp(App):
 
     async def _start_flow(self) -> None:
         """TUI /start: pick an offline .gguf and load it into llama-server."""
-        options = [(m.name, f"{m.size_gb:.1f} GB · {m.caps_label}")
-                   for m in localmodels.available()]
+        options = []
+        for m in localmodels.available():
+            bits = [f"{m.size_gb:.1f} GB", m.caps_label]
+            badge = localmodels.fit_badge(m.size_gb)
+            if badge:
+                bits.append(badge)
+            options.append((m.name, " · ".join(bits)))
         if not options:
             self._add("_no offline .gguf models found_", "bot")
             return
@@ -2236,8 +2245,13 @@ class ForgeApp(App):
     async def _resolve_arg(self, cmd: str, spec: dict):
         """Ask for a command's argument. Returns the string, or None if cancelled."""
         if spec.get("mode") == "local":
-            options = [(m.name, f"{m.size_gb:.1f} GB · {m.caps_label}")
-                       for m in localmodels.available()]
+            options = []
+            for m in localmodels.available():
+                bits = [f"{m.size_gb:.1f} GB", m.caps_label]
+                badge = localmodels.fit_badge(m.size_gb)
+                if badge:
+                    bits.append(badge)
+                options.append((m.name, " · ".join(bits)))
             if not options:
                 self._add("_no local .gguf models found_", "bot")
                 return None

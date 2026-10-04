@@ -3,6 +3,21 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.4.8] — the model picker tells you what will actually fit
+
+### The picker shows the fit before you load it
+
+`ctrl+l`, `/models` and `/start` now badge every offline model with its fit verdict,
+computed from the live hardware spec — so a model that cannot live entirely in VRAM
+is flagged *before* it is loaded instead of discovered as "why is this 1 tok/s":
+
+- `fits in VRAM` — the whole model and its cache sit on the GPU
+- `split GPU+CPU (slower)` — bigger than the card, so part runs on the CPU
+- `CPU only` / `too big` — no offload, or it will not fit at all
+
+`/start` also prints a one-line warning naming the model and the reason when it is
+going to split or run on CPU, so a slow reply is explained up front.
+
 ## [1.4.7] — the design studio: live preview, files, and a database that remembers
 
 ### A brief becomes a working prototype, live

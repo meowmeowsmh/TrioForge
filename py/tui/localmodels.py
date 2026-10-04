@@ -93,6 +93,24 @@ def find(name: str) -> LocalModel | None:
     return None
 
 
+def fit_badge(size_gb: float) -> str:
+    """A short "will this fit?" verdict for the picker, '' when unknown.
+
+    Reads the same ``hardware.fit`` the ``/specs`` table uses, so the badge and the
+    verdict always agree. Cached inside hardware.py, so a list of a dozen models
+    costs one probe.
+    """
+    if size_gb <= 0:
+        return ""
+    try:
+        import hardware
+        verdict = hardware.fit(size_gb)
+    except Exception:  # noqa: BLE001 - a missing hardware module is not fatal
+        return ""
+    return {"gpu": "fits in VRAM", "split": "split GPU+CPU (slower)",
+            "cpu": "CPU only", "too_big": "too big"}.get(verdict, "")
+
+
 def rows() -> list[tuple[str, str]]:
     """(name, description) pairs for the picker."""
     out = []
@@ -100,5 +118,8 @@ def rows() -> list[tuple[str, str]]:
         bits = [f"{m.size_gb:.1f} GB", m.caps_label]
         if m.projector:
             bits.append("vision projector paired")
+        badge = fit_badge(m.size_gb)
+        if badge:
+            bits.append(badge)
         out.append((m.name, "  ·  ".join(bits)))
     return out
