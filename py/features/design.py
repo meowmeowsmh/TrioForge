@@ -33,6 +33,9 @@ DESIGNS_DIR = root_path("static", "uploads", "generated", "designs")
 # mid-CSS; 65,536 finished it (finish_reason="stop") with room to spare.
 DESIGN_MAX_TOKENS = 65536
 
+# Providers whose design output should badge as ☁️ API rather than 🖥️ Local.
+_API_KINDS = {"deepseek", "groq", "claude", "gemini", "openrouter", "huggingface"}
+
 # Condensed from OpenDesign's design-brief skill: resolve the brief into concrete
 # design tokens (palette / typography / layout / mood / density) BEFORE writing, and
 # emit one complete HTML document. The discipline is what stops "make it
@@ -209,6 +212,7 @@ def generate():
     model = (data.get("model") or "").strip()
     api_key = sanitize_api_key(data.get("api_key", None))
     existing_html = (data.get("existing_html") or "").strip()
+    conversation_id = (data.get("conversation_id") or "").strip()
 
     try:
         provider = get_provider(provider_name, api_key or None)
@@ -270,4 +274,21 @@ def generate():
         return jsonify({"error": "Could not save the generated design."}), 500
 
     url = "/static/uploads/generated/designs/" + name
+
+    # Persist into the conversation so a design survives a reload. The HTML already
+    # lives in static/uploads (permanent); this writes the brief + a bot message whose
+    # meta.design lets the UI re-render the live preview from history.
+    if conversation_id:
+        try:
+            from app import add_message
+            add_message(conversation_id, "user", prompt)
+            add_message(
+                conversation_id,
+                "bot",
+                "🎨 Design generated — open in the 🎨 Design Studio to edit.",
+                meta={"design": url, "kind": "api" if provider_name in _API_KINDS else "local"},
+            )
+        except Exception as exc:
+            logger.warning("design conversation save failed: %s", exc)
+
     return jsonify({"ok": True, "url": url, "id": name, "html": html})

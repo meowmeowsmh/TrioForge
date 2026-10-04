@@ -948,6 +948,35 @@ def test_workspace_path_guard() -> None:
     print("  drive-root folder resolves, traversal blocked -> OK")
 
 
+def test_design_persists_in_conversation() -> None:
+    _title("a design is saved in the chat")
+    import app as forge_app
+
+    # The bug: the design generator wrote its HTML to static/uploads but NEVER wrote a
+    # message, so after a reload the brief and the result were gone from the chat for
+    # good. Everything the UI needs to re-render the preview must round-trip through
+    # the database, including meta.design.
+    cid = forge_app.create_conversation("regress-design")
+    url = "/static/uploads/generated/designs/design-test.html"
+    try:
+        assert forge_app.add_message(cid, "user", "make me a coffee shop page") is True
+        assert forge_app.add_message(
+            cid, "bot", "Design generated", meta={"design": url, "kind": "api"}) is True
+
+        msgs = forge_app.get_messages(cid)
+        assert len(msgs) == 2, msgs
+        assert msgs[0]["role"] == "user" and "coffee shop" in msgs[0]["text"]
+        bot = msgs[-1]
+        assert bot["role"] == "bot"
+        assert (bot.get("meta") or {}).get("design") == url, bot.get("meta")
+    finally:
+        try:
+            forge_app.delete_conversation(cid)
+        except Exception:
+            pass
+    print("  brief + result + meta.design survive a reload -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -959,7 +988,8 @@ def main() -> int:
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
-             test_deepseek_catalog, test_design_feature, test_workspace_path_guard]
+             test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
+             test_design_persists_in_conversation]
     failed = []
     for t in tests:
         try:

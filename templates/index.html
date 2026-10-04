@@ -4055,9 +4055,48 @@ function openWsFile(path) {
     })
     .catch(function(e) { alert('Could not read file: ' + e); });
 }
+function openSavedDesign(url) {
+    // Load a stored design back into the Design Studio (preview + code).
+    designCurrentUrl = url;
+    designCurrentId = (url.split('/').pop() || 'design.html');
+    var frame = document.getElementById('designPreviewFrame');
+    if (frame) frame.src = url;
+    fetch(url)
+      .then(function(r) { return r.text(); })
+      .then(function(t) {
+          designCurrentHtml = t;
+          var codeEl = document.getElementById('designCodeBlock');
+          if (codeEl) {
+              if (typeof hljs !== 'undefined') {
+                  try { codeEl.innerHTML = hljs.highlight(t, { language: 'html' }).value; }
+                  catch (e) { codeEl.textContent = t; }
+              } else {
+                  codeEl.textContent = t;
+              }
+          }
+      })
+      .catch(function() {});
+    var p = document.getElementById('designStudioPanel');
+    if (p) p.style.display = 'flex';
+    designTab('preview');
+}
 function generateDesignChat(text) {
     if (!text || !text.trim()) return;
     if (busy) return;
+    // A design belongs to a conversation too: without one the brief and the result
+    // were never written to the database, so a reload lost the whole design. Create
+    // the chat first if this is a fresh session, exactly like a normal send does.
+    if (!currentConv) {
+        fetch('/conversations', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(cd) {
+                currentConv = cd.id;
+                if (typeof loadConversations === 'function') loadConversations();
+                generateDesignChat(text);
+            })
+            .catch(function() { generateDesignChat(text); });
+        return;
+    }
     var refine = document.getElementById('designRefine').checked && designCurrentHtml;
     var provider = providerSelect.value;
     var model = modelSelect.value;
@@ -4080,7 +4119,8 @@ function generateDesignChat(text) {
             provider: provider,
             model: model,
             api_key: apiKey,
-            existing_html: refine ? designCurrentHtml : ''
+            existing_html: refine ? designCurrentHtml : '',
+            conversation_id: currentConv || ''
         })
     })
     .then(function(r) { return r.json(); })
@@ -4104,6 +4144,8 @@ function generateDesignChat(text) {
             '<div style="color:#8b949e; font-size:11px; margin-top:6px;">Type a follow-up with “♻️ Refine current design” ticked to edit this prototype in place.</div>';
         var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
         smoothScrollToBottom();
+        // The brief + result are now in the database, so refresh the sidebar.
+        if (typeof loadConversations === 'function') loadConversations();
     })
     .catch(function(e) {
         busy = false;
@@ -4688,6 +4730,37 @@ function renderMsg(role, entry, msgIndex) {
     if (entry.meta && entry.meta.audio) {
         // Same big player as everywhere else, so old clips scrub as easily as new.
         div.appendChild(tfAudioPlayer(entry.meta.audio, true));
+    }
+    if (entry.meta && entry.meta.design) {
+        // A stored design re-renders its live preview from history, so reloading the
+        // page does not lose what you made.
+        var durl = entry.meta.design;
+        var dframe = document.createElement('iframe');
+        dframe.setAttribute('sandbox', 'allow-scripts allow-modals allow-forms allow-popups');
+        dframe.src = durl;
+        dframe.title = 'Design preview';
+        dframe.style.cssText = 'width:100%; height:440px; border:1px solid #333; border-radius:8px; ' +
+            'background:#fff; margin-bottom:8px;';
+        div.appendChild(dframe);
+        var dbar = document.createElement('div');
+        dbar.style.cssText = 'display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;';
+        var openBtn = document.createElement('button');
+        openBtn.textContent = '🎨 Open in Studio';
+        openBtn.style.cssText = 'background:#1c1c26;border:1px solid #333;color:#e1e4e8;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;';
+        openBtn.onclick = function() { openSavedDesign(durl); };
+        var browBtn = document.createElement('button');
+        browBtn.textContent = '↗ Browser';
+        browBtn.style.cssText = 'background:#238636;border:0;color:#fff;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;';
+        browBtn.onclick = function() { window.open(durl, '_blank'); };
+        var dlLink = document.createElement('a');
+        dlLink.textContent = '⬇ HTML';
+        dlLink.href = durl;
+        dlLink.setAttribute('download', '');
+        dlLink.style.cssText = 'background:#1c1c26;border:1px solid #333;color:#e1e4e8;border-radius:6px;padding:5px 10px;font-size:12px;text-decoration:none;';
+        dbar.appendChild(openBtn);
+        dbar.appendChild(browBtn);
+        dbar.appendChild(dlLink);
+        div.appendChild(dbar);
     }
     if (entry.meta && entry.meta.reasoning) {
         renderThinkingBlock(div, entry.meta.reasoning);

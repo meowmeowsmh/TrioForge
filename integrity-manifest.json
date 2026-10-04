@@ -20,7 +20,7 @@
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
   "py/features/cork_board.py": "cde6c56b506e9e73b0da97ea36e29dc0b6298fc228ee9dc2b2c56d4891a11f16",
-  "py/features/design.py": "1db3c29e8c49fce1aafec33ba942ae9298e030f8ce919b66bb0fff90d5e7138a",
+  "py/features/design.py": "af0d52f751730d118243f8d7085ff8175fddc8792f675924ee674329c3e91ffa",
   "py/features/model_browser.py": "054366993bf07b092c99ed7db1c4d856ccfcfbffdc5237a6db87b5fcb87c15ef",
   "py/features/notes.py": "9b722781f471c1f11eabddbc1d94f76134d9be040033f2860c577f82a61de65b",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
@@ -105,9 +105,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "2e023922f10f6b4c80c44a7aff2745402fa6c54d49a97912594d43fae800da8a",
+  "templates/index.html": "c98ac0e4b15edb875cc72bac771d0b31c4238ca2140e8bb917772b1fa33b0a9a",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T02:00:48",
- "note": "workspace file explorer"
+ "generated": "2026-10-05T02:15:23",
+ "note": "design persists in conversation"
 }
