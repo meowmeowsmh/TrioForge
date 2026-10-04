@@ -45,6 +45,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/models"),
         Cmd("/start [name]", "load a local .gguf into llama-server",
             "/start gemma-3-12b-it"),
+        Cmd("/download <query>", "search Hugging Face and download a GGUF model",
+            "/download qwen 7b"),
         Cmd("/provider [name]", "list providers, or switch to one",
             "/provider deepseek"),
         Cmd("/base-url [url]", "show or set the endpoint",
@@ -656,6 +658,53 @@ def _start(ctx, arg: str) -> None:
         render.error(f"could not start: {res.get('error', 'unknown error')}")
 
 
+def _download(ctx, arg: str) -> None:
+    """/download <query> — search Hugging Face and download a GGUF model."""
+    from . import model_download, wizard
+
+    query = arg.strip()
+    if not query:
+        render.error("usage: /download <search query>  —  e.g. /download qwen 7b")
+        return
+
+    render.info(f"searching Hugging Face for GGUF models matching {query!r}…")
+    results = model_download.search(query)
+    if not results:
+        render.warn("no GGUF models found — try a shorter or different query")
+        return
+
+    rows = [(repo, f"{dl:,} downloads" if dl else "") for repo, dl in results[:20]]
+    try:
+        idx = wizard.choose("pick a model repo", rows, default=0)
+    except wizard.Cancelled:
+        render.warn("cancelled")
+        return
+    repo = results[idx][0]
+
+    render.info(f"listing GGUF files in {repo}…")
+    repo_files = model_download.files(repo)
+    if not repo_files:
+        render.warn("no .gguf files in that repo")
+        return
+
+    rows = [(name, f"{size:.2f} GB") for name, size in repo_files[:20]]
+    try:
+        fidx = wizard.choose("pick a file to download", rows, default=0)
+    except wizard.Cancelled:
+        render.warn("cancelled")
+        return
+    filename = repo_files[fidx][0]
+
+    render.info(f"downloading {filename}… (this can take a while)")
+    try:
+        path = model_download.download(repo, filename)
+    except Exception as exc:  # noqa: BLE001 - a failed pull is not fatal
+        render.error(f"download failed: {exc}")
+        return
+    render.ok(f"downloaded → {path}")
+    render.info("load it with /start <name>, or pick it with ctrl+l")
+
+
 def _echo(ctx, arg: str) -> None:
     if isinstance(ctx.backend, EchoBackend):
         ctx.backend = ctx.real_backend
@@ -961,6 +1010,7 @@ _TABLE = {
     "/set": _set_token, "/token": _set_token,
     "/system": _system, "/clear": _clear, "/history": _history,
     "/save": _save, "/echo": _echo, "/start": _start,
+    "/download": _download, "/pull": _download,
     "/quit": _quit, "/exit": _quit, "/q": _quit,
     "/memory": _memory, "/mem": _memory,
 }

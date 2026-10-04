@@ -163,6 +163,14 @@ llama.cpp loads a text `.gguf`; vision/video models also need a **projector** (`
 
 **Memory:** the GPU comes first (all layers offloaded when it fits); what won't fit is refused with an explanation; the model unloads 5 minutes after the last request (`TRIOFORGE_IDLE_UNLOAD=<seconds>`).
 
+**Download a model from the terminal** — the `/download` command searches Hugging Face and pulls the GGUF into `models/` for you:
+
+```bash
+/download qwen 7b            # search HF for GGUF models, pick a repo + file
+```
+
+It lists the repo's `.gguf` files with their sizes (model first, then any `mmproj` projector), then downloads the one you pick. Same folder the web UI's download uses, so llama.cpp sees it either way. Load it with `/start <name>`.
+
 ---
 
 ## ⌨️ The terminal client — `forge`

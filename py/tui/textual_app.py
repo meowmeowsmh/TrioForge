@@ -1920,6 +1920,9 @@ class ForgeApp(App):
         if name == "/start" and not arg:
             self.run_worker(self._start_flow(), exclusive=False)
             return
+        if name in ("/download", "/pull"):
+            self.run_worker(self._download_flow(arg), exclusive=False)
+            return
         if name == "/keys" and not arg:
             self.run_worker(self._keys_flow(), exclusive=False)
             return
@@ -2205,6 +2208,55 @@ class ForgeApp(App):
         if not choice:
             return
         self._command(f"/start {choice}")
+
+    async def _download_flow(self, query: str) -> None:
+        """TUI /download: search Hugging Face, pick a repo + file, then pull it."""
+        from . import model_download
+
+        query = (query or "").strip()
+        if not query:
+            self._add("_usage: /download <search query>  —  e.g. /download qwen 7b_", "bot")
+            return
+
+        self._add(f"_searching Hugging Face for GGUF models matching {query!r}…_", "bot")
+        import asyncio
+        try:
+            results = await asyncio.to_thread(model_download.search, query)
+        except Exception as exc:  # noqa: BLE001
+            self._add(f"_search failed: {exc}_", "bot")
+            return
+        if not results:
+            self._add("_no GGUF models found — try a shorter or different query_", "bot")
+            return
+
+        repo_opts = [(r, f"{dl:,} downloads" if dl else "") for r, dl in results[:20]]
+        repo = await self.push_screen_wait(Picker("pick a model repo", repo_opts))
+        if not repo:
+            return
+
+        self._add(f"_listing GGUF files in {repo}…_", "bot")
+        try:
+            repo_files = await asyncio.to_thread(model_download.files, repo)
+        except Exception as exc:  # noqa: BLE001
+            self._add(f"_listing failed: {exc}_", "bot")
+            return
+        if not repo_files:
+            self._add("_no .gguf files in that repo_", "bot")
+            return
+
+        file_opts = [(n, f"{s:.2f} GB") for n, s in repo_files[:20]]
+        filename = await self.push_screen_wait(Picker("pick a file to download", file_opts))
+        if not filename:
+            return
+
+        self._add(f"_downloading {filename}… (this can take a while)_", "bot")
+        try:
+            path = await asyncio.to_thread(model_download.download, repo, filename)
+        except Exception as exc:  # noqa: BLE001
+            self._add(f"_download failed: {exc}_", "bot")
+            return
+        self._add(f"_downloaded → {path}_", "bot")
+        self._add("_load it with /start, or pick it with ctrl+l_", "bot")
 
     def action_palette(self) -> None:
         """ctrl+p - searchable command palette, instead of remembering names."""
