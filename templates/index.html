@@ -1621,6 +1621,7 @@ video.tf-video {
         <button class="clear-btn" id="imageGenBtn" onclick="selectImageGen()" title="Generate an image (OpenRouter / Gemini / ComfyUI)">🖼️</button>
         <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
         <button class="clear-btn" id="audioGenBtn" onclick="selectAudioGen()" title="Generate audio (ComfyUI text-to-audio / music / TTS)" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">🎵</button>
+        <button class="clear-btn" id="designBtn" onclick="selectDesignGen()" title="Design — type a brief and get an HTML prototype with live preview (OpenDesign-style)" style="border-color:rgba(63,185,80,0.45); color:#3fb950;">🎨</button>
         <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
 
         <!-- Weather toggle is an ICON, so it lives in this centered icon row. -->
@@ -1754,6 +1755,21 @@ video.tf-video {
       </span>
       <button id="audioRefreshBtn" title="Re-scan ComfyUI audio workflows" onclick="loadAudioWorkflows()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">↻</button>
       <span id="audioStatus" style="font-size:11px; color:#8b949e;">Text-to-audio via ComfyUI (Stable Audio / ACE-Step / MiniMax Music…). Type your prompt below and press Enter.</span>
+    </div>
+
+    <!-- Design (OpenDesign-style prototype) panel -->
+    <div id="designGenPanel" style="display:none; padding:10px 40px; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(13,17,23,0.5);">
+      <span style="font-size:13px; font-weight:600; color:#3fb950;">🎨 Design:</span>
+      <button type="button" onclick="hideDesignPanel()" title="Close design mode" style="background:transparent; border:1px solid #333; color:#8b949e; border-radius:6px; padding:4px 8px; font-size:12px; cursor:pointer;">✕</button>
+      <button type="button" onclick="designPreset('A SaaS landing page — clean, minimal, dark mode, Inter font, no animations. Hero, features, pricing, footer.')" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">Landing page</button>
+      <button type="button" onclick="designPreset('An analytics dashboard — dense and data-focused, navy_and_white palette, two-column layout with sidebar, cards for charts.')" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">Dashboard</button>
+      <button type="button" onclick="designPreset('An HTML pitch deck (5 slides) — bold, editorial, serif display type, generous whitespace. Use arrow keys to move between slides.')" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">Pitch deck</button>
+      <button type="button" onclick="designPreset('A personal profile card — playful, coral accent, rounded corners, avatar as SVG initials.')" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;">Profile card</button>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#e1e4e8; cursor:pointer; user-select:none; margin-left:auto;">
+        <input type="checkbox" id="designRefine" style="cursor:pointer;"/>
+        ♻️ Refine current design
+      </label>
+      <span style="font-size:11px; color:#8b949e;">Type your design brief below and press Enter — the result previews live in the chat.</span>
     </div>
 
     <!-- RAG document-chat panel -->
@@ -3667,21 +3683,26 @@ function refreshStats() {
 }
 // ── ComfyUI image + video generation panels ────────────────────────
 var gen_mode = 'image';
+var design_mode = false;      // 🎨 design generator active
+var designCurrentHtml = '';   // last generated HTML, for "Refine"
 function showImageGenPanel() {
     document.getElementById('imageGenPanel').style.display = 'flex';
     document.getElementById('videoGenPanel').style.display = 'none';
     document.getElementById('audioGenPanel').style.display = 'none';
+    hideDesignPanel();
     if (typeof loadImageModels === 'function') loadImageModels();
 }
 function showVideoGenPanel() {
     document.getElementById('videoGenPanel').style.display = 'flex';
     document.getElementById('imageGenPanel').style.display = 'none';
+    hideDesignPanel();
     if (typeof loadVideoModels === 'function') loadVideoModels();
 }
 function showAudioGenPanel() {
     document.getElementById('audioGenPanel').style.display = 'flex';
     document.getElementById('imageGenPanel').style.display = 'none';
     document.getElementById('videoGenPanel').style.display = 'none';
+    hideDesignPanel();
     if (typeof loadAudioWorkflows === 'function') loadAudioWorkflows();
 }
 function hideImageGenPanel() {
@@ -3791,6 +3812,82 @@ function selectAudioGen() {
     var panel = document.getElementById('audioGenPanel');
     if (panel) panel.style.display = 'flex';
     loadAudioWorkflows();
+}
+// ── 🎨 Design generator (OpenDesign-style brief → live HTML prototype) ──
+function selectDesignGen() {
+    if (design_mode) { hideDesignPanel(); return; }   // toggle off
+    design_mode = true;
+    var panel = document.getElementById('designGenPanel');
+    if (panel) panel.style.display = 'flex';
+    document.getElementById('imageGenPanel').style.display = 'none';
+    document.getElementById('videoGenPanel').style.display = 'none';
+    document.getElementById('audioGenPanel').style.display = 'none';
+    msgInput.focus();
+}
+function hideDesignPanel() {
+    design_mode = false;
+    var panel = document.getElementById('designGenPanel');
+    if (panel) panel.style.display = 'none';
+}
+function designPreset(brief) {
+    msgInput.value = brief;
+    msgInput.focus();
+}
+function generateDesignChat(text) {
+    if (!text || !text.trim()) return;
+    if (busy) return;
+    var refine = document.getElementById('designRefine').checked && designCurrentHtml;
+    var provider = providerSelect.value;
+    var model = modelSelect.value;
+    var apiKey = apiKeyInput.value;
+    busy = true;
+    renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
+    msgInput.value = '';
+    msgInput.style.height = '46px';
+    pending = [];
+    attachments.innerHTML = '';
+    var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
+    var bodyEl = botDiv.querySelector('.body');
+    bodyEl.innerHTML = '<div class="loading-spinner"></div><div style="color:#8b949e; font-size:12px; margin-top:8px;">🎨 Designing…</div>';
+    smoothScrollToBottom();
+    fetch('/api/design/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            prompt: text.trim(),
+            provider: provider,
+            model: model,
+            api_key: apiKey,
+            existing_html: refine ? designCurrentHtml : ''
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        busy = false;
+        if (d.error) {
+            bodyEl.textContent = '❌ ' + formatAiError(provider, d.error);
+            smoothScrollToBottom();
+            return;
+        }
+        designCurrentHtml = d.html || '';
+        if (typeof loadApiKey === 'function' && KEY_PROVIDERS.indexOf(provider) !== -1) saveApiKey(provider, apiKey);
+        bodyEl.innerHTML =
+            '<iframe sandbox="allow-scripts allow-modals allow-forms allow-popups" ' +
+            'src="' + d.url + '" title="Design preview" ' +
+            'style="width:100%; height:520px; border:1px solid #333; border-radius:8px; background:#fff;"></iframe>' +
+            '<div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">' +
+            '<button type="button" onclick="window.open(\'' + d.url + '\',\'_blank\')" style="background:#238636; border:0; color:#fff; border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer;">↗ Open in browser</button>' +
+            '<a href="' + d.url + '" download="' + (d.id || 'design.html') + '" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:6px 12px; font-size:12px; text-decoration:none;">⬇ Download HTML</a>' +
+            '<span style="font-size:11px; color:#8b949e;">Type a follow-up and tick “♻️ Refine current design” to edit this prototype.</span>' +
+            '</div>';
+        var ts = botDiv.querySelector('.ts'); if (ts) ts.textContent = new Date().toLocaleTimeString();
+        smoothScrollToBottom();
+    })
+    .catch(function(e) {
+        busy = false;
+        bodyEl.textContent = '❌ ' + (e.message || 'Design generation failed');
+        smoothScrollToBottom();
+    });
 }
 function loadAudioWorkflows() {
     var sel = document.getElementById('audioWorkflowSelect');
@@ -5109,6 +5206,11 @@ function closeRestore() {
 function doSend() {
     var text = msgInput.value.trim();
     if ((!text && pending.length === 0) || busy) return;
+    // 🎨 Design generator: brief → live HTML prototype (any chat provider/model).
+    if (design_mode) {
+        generateDesignChat(text);
+        return;
+    }
     // ComfyUI image/video (Gemini or ComfyUI backend): route to the right generator.
     if (providerSelect.value === 'comfyui' || providerSelect.value === 'comfyui-video' || providerSelect.value === 'comfyui-audio') {
         if (gen_mode === 'audio') { generateAudioChat(text); }

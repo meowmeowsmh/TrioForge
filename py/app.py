@@ -155,6 +155,7 @@ from features.screen_ask import screen_bp
 from features.openai_api import openai_bp
 from features.model_browser import models_bp
 from features.browser_choice import browser_bp, open_url as open_in_browser
+from features.design import design_bp
 import personas
 import comfyui_service
 import rag
@@ -198,6 +199,7 @@ app.register_blueprint(screen_bp)
 app.register_blueprint(openai_bp)
 app.register_blueprint(models_bp)
 app.register_blueprint(browser_bp)
+app.register_blueprint(design_bp)
 
 # â”€â”€ Plugins (loaded best-effort at startup) â”€â”€
 try:

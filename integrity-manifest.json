@@ -12,7 +12,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "de0241a64d2cd2ee9a19207ee0e3540d27d6bcac57620190c17beeaea712d998",
+  "py/app.py": "110a926ba64db630f2ea354d3758a48699650ba0f194180546e552a99befd457",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -20,6 +20,7 @@
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
   "py/features/cork_board.py": "cde6c56b506e9e73b0da97ea36e29dc0b6298fc228ee9dc2b2c56d4891a11f16",
+  "py/features/design.py": "bc1e3b3658ce3f077f268573f5b9f075b5d22838c63c2eba411920a47f1d8f67",
   "py/features/model_browser.py": "054366993bf07b092c99ed7db1c4d856ccfcfbffdc5237a6db87b5fcb87c15ef",
   "py/features/notes.py": "9b722781f471c1f11eabddbc1d94f76134d9be040033f2860c577f82a61de65b",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
@@ -104,9 +105,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "8a093d5ecf0e4522b0f7a77b309a6b719bcb25c7130fb4f20d56e7ee03260239",
+  "templates/index.html": "4d7facc903ffb955d7763686c5650f56dfb5eed2c547a28d112587f8f7d7f763",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-04T18:52:06",
- "note": "release 1.4.6"
+ "generated": "2026-10-04T21:51:02",
+ "note": "design generator feature"
 }

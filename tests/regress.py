@@ -850,6 +850,36 @@ def test_deepseek_catalog() -> None:
     print("  named entries, 1M context, image flag, effort map -> OK")
 
 
+def test_design_feature() -> None:
+    _title("design generator")
+    from features.design import _extract_html, _wrap_html, _model_answer
+
+    # HTML extraction from every shape a model actually returns.
+    assert _extract_html("```html\n<div>hi</div>\n```") == "<div>hi</div>"
+    assert _extract_html("<!doctype html><html></html>") == "<!doctype html><html></html>"
+    frag = "<style>body{}</style><div>x</div>"
+    assert _extract_html(frag) == frag, "a tag-leading fragment must keep its <style>"
+    assert _extract_html("intro text\n<div class=\"x\">a</div>") == "<div class=\"x\">a</div>"
+    assert _extract_html("just prose, no tags") is None
+
+    # _wrap_html leaves a document alone and shells a fragment.
+    assert _wrap_html("<!doctype html><html></html>").startswith("<!doctype html>")
+    wrapped = _wrap_html("<div>x</div>")
+    assert wrapped.startswith("<!doctype html>") and "<body><div>x</div></body>" in wrapped
+
+    # Thinking models put the answer in content OR reasoning_content.
+    class _Reasoned:
+        def generate_raw(self, messages, **kw):
+            return {"content": "", "reasoning_content": "<div>reasoned</div>"}
+    assert _model_answer(_Reasoned(), [], "", "") == "<div>reasoned</div>"
+
+    class _Plain:
+        def generate_raw(self, messages, **kw):
+            return {"content": "<div>plain</div>", "reasoning_content": "think"}
+    assert _model_answer(_Plain(), [], "", "") == "<div>plain</div>"
+    print("  extractor, wrap, reasoning fallback -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -861,7 +891,7 @@ def main() -> int:
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
-             test_deepseek_catalog]
+             test_deepseek_catalog, test_design_feature]
     failed = []
     for t in tests:
         try:
