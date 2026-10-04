@@ -248,12 +248,17 @@ case "$MODE" in
         exit 0
         ;;
     update)
-        # The image is rebuilt by CI on every push to main, so updating is a pull
-        # plus a recreate. Data lives in the bind mounts, so nothing is lost.
+        # This compose file BUILDS from the local clone (no prebuilt image), so an
+        # update is: pull the newest code, rebuild, recreate. The bind mounts hold
+        # your data, so nothing is lost. CI still publishes ghcr.io/...:latest for
+        # people who use the `docker run` one-liner instead.
         echo ""
-        echo "[TrioForge] Pulling the newest image..."
+        echo "[TrioForge] Pulling the newest code..."
+        git -C "$ROOT" pull --ff-only 2>&1 || \
+            echo "[TrioForge] (git pull skipped — uncommitted changes, or not a git checkout)"
+        echo "[TrioForge] Rebuilding the image..."
         cd docker
-        $COMPOSE pull || echo "[TrioForge] No published image to pull (built locally)."
+        $COMPOSE build
         $COMPOSE up -d --remove-orphans
         echo ""
         echo "[TrioForge] Updated and running. Open http://localhost:$HOST_PORT"
