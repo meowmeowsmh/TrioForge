@@ -633,6 +633,191 @@ def test_router_repair_is_complex() -> None:
     print("  repair verbs route complex, grammar/hello stay simple -> OK")
 
 
+def test_window_slot_is_exclusive() -> None:
+    _title("one app window only")
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path as _P
+
+    from tools import app_window
+
+    # The reported failure: double-clicking the desktop app six times started six
+    # window processes, because the "a window is already open" marker was written
+    # seconds late AND with a plain write_text - so simultaneous clicks all saw an
+    # empty slot and all won it. Six processes then fought over one port and one
+    # locked WebView2 profile, and the app never appeared at all.
+    with tempfile.TemporaryDirectory() as tmp:
+        marker = _P(tmp) / "app_window.pid"
+        real = app_window.window_pid_file
+        app_window.window_pid_file = lambda: marker
+        try:
+            # A LIVE owner must win, and everybody else must back off.
+            child = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(60)"])
+            try:
+                marker.write_text("{}  0\n".format(child.pid), encoding="utf-8")
+                path, already_open = app_window.claim_window_slot("http://127.0.0.1:5003")
+                assert (path, already_open) == (None, True), (path, already_open)
+                assert str(child.pid) in marker.read_text(encoding="utf-8"), \
+                    "the loser overwrote the live owner's marker"
+            finally:
+                child.kill()
+                child.wait(timeout=20)
+
+            # A dead owner is stale: the next launch must take the slot over, or the
+            # app could never start again after a crash.
+            path, already_open = app_window.claim_window_slot("http://127.0.0.1:5003")
+            assert already_open is False, already_open
+            assert path == marker, (path, marker)
+            parts = marker.read_text(encoding="utf-8").split()
+            assert int(parts[0]) == os.getpid(), parts
+            assert len(parts) >= 3 and parts[2].isdigit(), parts
+
+            # An unreadable/garbage marker must never lock the user out of their app.
+            marker.write_text("not a pid\n", encoding="utf-8")
+            path, already_open = app_window.claim_window_slot("")
+            assert already_open is False and path == marker, (path, already_open)
+        finally:
+            app_window.window_pid_file = real
+
+    # Structural guard for the original defect: the slot must be claimed BEFORE the
+    # slow work (spawning the server, creating the window), not after it.
+    src = (_P(app_window.__file__).read_text(encoding="utf-8"))
+    body = src[src.index("def main("):]
+    # Comments are stripped first: the explanation of this very fix names both calls,
+    # and a comment is not a call site.
+    code = "\n".join(line for line in body.splitlines()
+                     if not line.lstrip().startswith("#"))
+    claim = code.index("claim_window_slot(")
+    assert claim < code.index("_spawn_server("), "slot claimed after the server spawn"
+    assert claim < code.index("create_window("), "slot claimed after create_window"
+    print("  exclusive slot: live owner wins, stale owner replaced -> OK")
+
+
+def test_window_ready_means_visible() -> None:
+    _title("window readiness = a visible window")
+    import threading
+    import time as _time
+
+    from tools import app_window
+
+    # The reported failure: six double-clicks left six TrioForge processes, none of
+    # which ever showed a window. pywebview creates the WinForms form first and only
+    # Show()s it after WebView2 initialises; when that wedged, the form object existed
+    # for ever, `_window_ready` was already True (it only checked window.native), so
+    # the hang, blank and fallback watchdogs all concluded the app was healthy - and
+    # the process sat invisible in Task Manager instead of falling back to a browser.
+    saved = {name: getattr(app_window, name) for name in
+             ("_find_own_window_hwnd", "apply_window_icon", "hang_watchdog",
+              "blank_page_watchdog")}
+    started = []
+    icons = []
+
+    class _FakeWindow:
+        def __init__(self):
+            self.native = object()          # the form EXISTS from the first moment
+            self.shown = 0
+
+        def show(self):
+            self.shown += 1
+
+    try:
+        app_window.apply_window_icon = lambda window, ico: icons.append(ico) or True
+        app_window.hang_watchdog = lambda get_handle, url, **kw: started.append("hang")
+        app_window.blank_page_watchdog = lambda get_handle, url, **kw: started.append("blank")
+        app_window._find_own_window_hwnd = lambda: 0
+
+        win = _FakeWindow()
+        app_window._window_ready = False
+        ok = app_window.apply_icon_when_ready(win, Path("x.ico"), "http://127.0.0.1:5003",
+                                             timeout=0.8)
+        assert ok is False, "a form that was never shown must not count as ready"
+        assert app_window._window_ready is False, \
+            "readiness must stay false, or no watchdog ever fires"
+        assert win.shown >= 1, "a lingering hidden form must be asked to show itself"
+        assert started == [], started
+
+        # A real, visible window: readiness flips and both watchdogs start, with the
+        # OS handle (no pythonnet IntPtr to mis-convert).
+        app_window._find_own_window_hwnd = lambda: 4242
+        app_window._window_ready = False
+        ok = app_window.apply_icon_when_ready(win, Path("x.ico"), "http://127.0.0.1:5003",
+                                             timeout=1.0)
+        assert ok is True and app_window._window_ready is True, (ok, app_window._window_ready)
+        assert started == ["hang", "blank"], started
+
+        # Icon work assigns WinForms properties from a non-UI thread, which blocks for
+        # ever against a UI thread stuck in WebView2 init. Readiness must not wait on it.
+        blocked = threading.Event()
+        app_window.apply_window_icon = lambda window, ico: blocked.wait(30)
+        app_window._window_ready = False
+        began = _time.time()
+        ok = app_window.apply_icon_when_ready(win, Path("x.ico"), "http://127.0.0.1:5003",
+                                             timeout=1.0)
+        took = _time.time() - began
+        assert ok is True and took < 3.0, (ok, took)
+        blocked.set()
+
+        # And the fallback must actually rescue the user when no window ever shows:
+        # one clean retry with a fresh profile, then the browser - never a silent,
+        # invisible process left behind.
+        import webbrowser
+        events = []
+        real_exit, real_execv = os._exit, os.execv
+        real_open = webbrowser.open
+        real_rotate = app_window.rotate_profile
+        app_window._window_ready = False
+        os.environ.pop("TRIOFORGE_WINDOW_RETRIED", None)
+        try:
+            os._exit = lambda code: events.append(("exit", code))
+            os.execv = lambda path, argv: events.append(("execv", None))
+            webbrowser.open = lambda url: events.append(("browser", url))
+            app_window.rotate_profile = lambda storage: events.append(("rotate", storage))
+            app_window.fallback_watchdog("http://127.0.0.1:5003", timeout=0.2,
+                                         storage=Path("profile"))
+            assert ("rotate", Path("profile")) in events, events
+            assert ("execv", None) in events, events
+            assert os.environ.get("TRIOFORGE_WINDOW_RETRIED") == "1", \
+                "the retry must not be able to loop for ever"
+            events[:] = []
+            os.environ["TRIOFORGE_WINDOW_RETRIED"] = "1"
+            app_window.fallback_watchdog("http://127.0.0.1:5003", timeout=0.2,
+                                         storage=Path("profile"))
+            assert ("browser", "http://127.0.0.1:5003") in events, events
+            assert ("exit", 1) in events, events
+        finally:
+            os._exit, os.execv = real_exit, real_execv
+            webbrowser.open = real_open
+            app_window.rotate_profile = real_rotate
+            os.environ.pop("TRIOFORGE_WINDOW_RETRIED", None)
+    finally:
+        for name, value in saved.items():
+            setattr(app_window, name, value)
+        app_window._window_ready = False
+    # A hang must not dock the GPU for ever: the marker this machine was carrying was
+    # eighteen days old and still forcing SwiftShader (CPU) rendering on every launch.
+    import tempfile as _tempfile
+    with _tempfile.TemporaryDirectory() as tmp:
+        marker = Path(tmp) / "window_hung.txt"
+        real_marker = app_window.hang_marker
+        app_window.hang_marker = lambda: marker
+        try:
+            os.environ.pop("TRIOFORGE_WINDOW_HARDWARE", None)
+            os.environ.pop("TRIOFORGE_WINDOW_SOFTWARE", None)
+            assert app_window.hardware_gpu_allowed() is True, "no marker: hardware"
+            marker.write_text("1 hung\n", encoding="utf-8")
+            assert app_window.hardware_gpu_allowed() is False, "fresh hang: software"
+            old = _time.time() - (app_window.HANG_MEMORY_SECONDS + 60)
+            os.utime(str(marker), (old, old))
+            assert app_window.hardware_gpu_allowed() is True, "stale hang must expire"
+            app_window.clear_hang_marker()
+            assert not marker.exists(), "a painted window must clear the hang memory"
+        finally:
+            app_window.hang_marker = real_marker
+
+    print("  hidden form is not ready, visible window is, icons cannot block it -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -642,7 +827,8 @@ def main() -> int:
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
              test_plan_load, test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
-             test_history_persists, test_router_repair_is_complex]
+             test_history_persists, test_router_repair_is_complex,
+             test_window_slot_is_exclusive, test_window_ready_means_visible]
     failed = []
     for t in tests:
         try:

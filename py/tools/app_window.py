@@ -20,6 +20,7 @@ Exit codes: 0 closed normally, 3 pywebview is not installed, 4 could not open.
 """
 
 import argparse
+import atexit
 import os
 import sys
 import threading
@@ -86,37 +87,63 @@ def user_data_dir() -> Path:
     return Path(base) / "TrioForge" / "webview"
 
 
-def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 15.0) -> bool:
-    """Wait for the native window, then put the icon on it and start watching it.
+def _wait_for_visible_window(timeout: float, window=None) -> int:
+    """Wait for a real, VISIBLE top-level window; nudge a hidden form to show itself.
 
-    webview.start(func=...) runs before the GUI window exists, so the first attempt
-    finds window.native = None. Poll for it, apply the icon twice (the form's handle
-    is not always realised on the very first frame), and report what happened. This is
-    also the moment we know the window is real, so it is where the hang watchdog and
-    the fallback watchdog get their proof - both need `url` and the real handle.
+    ``window.native`` is NOT proof of a window: pywebview creates the WinForms form
+    first and only calls ``Show()`` once WebView2 finishes initialising. When that
+    initialisation wedges, the form object exists for ever while nothing is ever drawn
+    - and every guard that trusted ``native`` declared the app healthy while the user
+    stared at an empty desktop. That is the "double-click does nothing, Task Manager
+    fills up with TrioForge" report: an invisible process per click, none of which
+    could be seen, focused or closed. So: ask for a visible window, and if only the
+    form exists, ask the form to show itself.
     """
-    global _window_ready
     import time
     deadline = time.time() + timeout
-    while time.time() < deadline:
-        if getattr(window, "native", None) is not None:
-            break
+    nudged = False
+    while True:
+        hwnd = _find_own_window_hwnd()
+        if hwnd:
+            return hwnd
+        if time.time() >= deadline:
+            return 0
+        if window is not None and not nudged and getattr(window, "native", None) is not None:
+            nudged = True
+            try:
+                window.show()
+                print("[window] the form existed but was never shown - asked it to show")
+            except Exception as exc:
+                print("[window] could not show the window: {}: {}".format(
+                    type(exc).__name__, exc))
         time.sleep(0.25)
-    else:
-        print("[icon] native window never appeared")
+
+
+def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 24.0) -> bool:
+    """Wait for the VISIBLE window, then put the icon on it and start watching it.
+
+    webview.start(func=...) runs before the GUI window exists, so the first attempt
+    finds window.native = None. This is also the only moment we know the window is
+    really on screen, so it is where the hang watchdog and the blank watchdog get
+    their proof: both need a handle that exists, and the fallback watchdog needs the
+    honest answer to "did a window appear at all" - which is why readiness is a
+    visible window here and not merely a native form object.
+    """
+    global _window_ready
+    hwnd = _wait_for_visible_window(timeout, window)
+    if not hwnd:
+        print("[icon] no visible window after {}s - leaving it to the fallback "
+              "watchdog".format(int(timeout)))
         return False
 
     _window_ready = True
     try:
         import threading as _th
 
+        # The visible top-level handle, straight from the OS - no pythonnet IntPtr to
+        # mis-convert (that silent failure once made the watchdog check nothing at all).
         def _handle():
-            form = window.native.TopLevelControl or window.native
-            raw = form.Handle
-            # pythonnet hands back a System.IntPtr, and int() refuses it. The watchdog
-            # used to swallow that failure, so it silently checked nothing at all -
-            # which is why a window could sit at "not responding" for a minute.
-            return int(raw.ToInt64()) if hasattr(raw, "ToInt64") else int(raw)
+            return hwnd
 
         _th.Thread(target=hang_watchdog, args=(_handle, url), daemon=True).start()
         print("[window] watching for hangs (a frozen window is handed to your browser)")
@@ -125,10 +152,18 @@ def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 15.
               "handed to your browser)")
     except Exception as _exc:
         print("[window] hang watchdog not started:", _exc)
-    ok = apply_window_icon(window, ico)
-    time.sleep(1.0)
-    apply_window_icon(window, ico)          # second pass: the handle is up by now
-    return ok
+
+    # Icon work assigns WinForms properties from a non-UI thread, which marshals onto
+    # the UI thread - and blocks for ever if that thread is stuck in WebView2 init.
+    # Readiness must never depend on it, so it gets its own thread.
+    def _icons():
+        import time
+        apply_window_icon(window, ico)
+        time.sleep(1.0)
+        apply_window_icon(window, ico)      # second pass: handle realised by now
+
+    threading.Thread(target=_icons, daemon=True).start()
+    return True
 
 
 def window_pid_file() -> Path:
@@ -142,13 +177,125 @@ def window_pid_file() -> Path:
     return user_data_dir().parent / "app_window.pid"
 
 
+def _pid_is_our_app(pid: int) -> bool:
+    """True when `pid` really is a TrioForge/pywebview process, not a reused pid.
+
+    The marker outlives a killed window and Windows reuses pids, so the number alone
+    is not proof. Returns True when the check cannot be made - a failure here must
+    never stop the app from starting.
+    """
+    if os.name != "nt" or not pid:
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x1000, False, int(pid))     # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            size = wintypes.DWORD(32768)
+            buf = ctypes.create_unicode_buffer(size.value)
+            if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                name = os.path.basename(buf.value).lower()
+                return name in ("pythonw.exe", "python.exe", "triorforge.exe")
+        finally:
+            k32.CloseHandle(handle)
+    except Exception:
+        pass
+    return True
+
+
+def claim_window_slot(url: str = "") -> tuple:
+    """Claim the single app-window slot atomically. -> (path_or_None, already_open)
+
+    This is the fix for "double-click does nothing and Task Manager fills up with
+    TrioForge". Two separate faults made one click lethal:
+
+    1. The marker used to be written just before ``webview.start()`` - after
+       ``_spawn_server()`` and ``create_window()``, seconds later. The launcher's
+       "a window is already open" guard reads this marker, so in that gap every
+       impatient double-click started ANOTHER complete window process.
+    2. Even written early, a plain ``write_text`` is not a claim: six clicks landing
+       inside the same second all saw an empty slot and all wrote the file. Six
+       processes then raced for port 5003 and fought over one locked WebView2 profile
+       folder - so none of them ever painted, which is exactly what was reported.
+
+    So the write is an ``O_CREAT|O_EXCL`` create (only one process can win it), and a
+    loser that finds a LIVE owner backs off instead of joining the stampede. A marker
+    left by a killed window is stale: it is taken over, not obeyed.
+    """
+    marker = window_pid_file()
+    payload = "{} {} {}\n".format(os.getpid(), url or "", int(time.time()))
+    for _ in range(2):
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(str(marker), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            pid = 0
+            try:
+                pid = int(marker.read_text(encoding="utf-8").strip().split()[0])
+            except Exception:
+                pid = 0
+            if pid and pid != os.getpid() and pid_alive(pid) and _pid_is_our_app(pid):
+                return None, True              # a live window owns it: back off
+            try:
+                marker.unlink()                # stale from a killed window: take over
+            except Exception:
+                return None, False             # cannot clear it; start anyway
+            continue
+        except Exception:
+            return None, False                 # no usable marker; never block the app
+        try:
+            os.write(fd, payload.encode("utf-8"))
+        finally:
+            os.close(fd)
+        return marker, False
+    return None, True
+
+
+def focus_existing_window(pid: int) -> bool:
+    """Raise the window that already owns the slot, so a click is never a no-op."""
+    if os.name != "nt" or not pid:
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        found = []
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def callback(hwnd, _lparam):
+            owner = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value == int(pid) and user32.IsWindowVisible(hwnd):
+                found.append(hwnd)
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(callback), 0)
+        if not found:
+            return False
+        hwnd = found[0]
+        user32.ShowWindow(hwnd, 9)             # SW_RESTORE: un-minimise
+        user32.ShowWindow(hwnd, 5)             # SW_SHOW
+        user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        return False
+
+
 def hang_marker() -> Path:
     """Records that the window hung, so the next start can avoid the same cause."""
     return user_data_dir().parent / "window_hung.txt"
 
 
+# How long a recorded hang keeps the app on software rendering. Long enough to survive
+# the retry right after a bad launch, short enough that a driver fix is not punished
+# for ever.
+HANG_MEMORY_SECONDS = 24 * 3600
+
+
 def hardware_gpu_allowed() -> bool:
-    """False once the window has hung: the next start uses software rendering.
+    """False after a recent hang: the next start uses software rendering.
 
     A hung WebView2 window is almost always its renderer or GPU process stalling - and
     this machine's GPU driver has already failed a Vulkan allocation for llama.cpp, so
@@ -157,12 +304,34 @@ def hardware_gpu_allowed() -> bool:
     produced a window that never painted at all (blank white, or black), while
     SwiftShader drew the whole interface correctly. Stability beats decoration - but
     only if the page is actually drawn.
+
+    The memory EXPIRES. It used to be permanent, so a single bad night left the app on
+    CPU rendering for ever: the marker on this machine was eighteen days old and still
+    docking the GPU. A driver problem that has been fixed (by an update, a reboot, or
+    just one unlucky process) must not punish every later launch.
     """
     if os.environ.get("TRIOFORGE_WINDOW_HARDWARE", "").strip() in ("1", "true", "on"):
         return True
     if os.environ.get("TRIOFORGE_WINDOW_SOFTWARE", "").strip() in ("1", "true", "on"):
         return False
-    return not hang_marker().is_file()
+    marker = hang_marker()
+    if not marker.is_file():
+        return True
+    try:
+        if time.time() - marker.stat().st_mtime > HANG_MEMORY_SECONDS:
+            return True
+    except Exception:
+        return True
+    return False
+
+
+def clear_hang_marker() -> None:
+    """Forget the last hang: a window that painted proves the current path works."""
+    try:
+        hang_marker().unlink()
+        print("[window] the window painted normally - hardware rendering allowed again")
+    except Exception:
+        pass
 
 
 def note_hang(reason: str) -> None:
@@ -347,6 +516,10 @@ def blank_page_watchdog(get_handle, url: str, timeout: float = 22.0) -> None:
     time.sleep(12.0)                               # let the page draw first
     frac = _window_fraction_blank(hwnd)
     print("[window] blank-pixel fraction: {:.0f}%".format(frac * 100))
+    if frac < 0.95 and hardware_gpu_allowed():
+        # A window on the hardware path that actually painted is the proof the driver
+        # is fine again - hand the GPU back instead of staying on SwiftShader for ever.
+        clear_hang_marker()
     if frac >= 0.95:
         note_hang("window painted blank (white/black) for ~{}s".format(int(timeout)))
         print("[window] the window is blank (the page runs but nothing painted) - "
@@ -466,7 +639,10 @@ def rotate_profile(storage: Path) -> bool:
 
 APP_ID = "TrioForge.Desktop"
 
-# Set once the native window really exists (the icon callback is the proof).
+# Set once a real, VISIBLE window is on screen - not when the form object merely
+# exists. Every watchdog keys off this, so it must never be a guess: a form that was
+# never shown used to satisfy it, which is how invisible TrioForge processes piled up
+# while the app looked like it would not launch at all.
 _window_ready = False
 _hang_check_error_logged = False
 
@@ -740,6 +916,36 @@ def main() -> int:
     # Task Manager as a separate anonymous entry instead of nesting under TrioForge.
     claim_app_identity()
 
+    # Then claim the WINDOW SLOT, before any slow work. This marker is what the
+    # launcher's "a window is already open" guard reads, so it must exist the moment
+    # this process does: it used to be written just before webview.start() - AFTER
+    # _spawn_server() and create_window(), i.e. several seconds later. In that gap the
+    # guard saw no marker at all, so every impatient double-click started ANOTHER
+    # complete window process: six clicks meant six processes, six servers racing for
+    # port 5003, and six WebView2 instances fighting over one locked profile folder -
+    # so none of them ever painted, which is the "double-click does nothing, Task
+    # Manager fills up" report. The claim is also exclusive (O_CREAT|O_EXCL), so even
+    # clicks landing in the same second cannot all win it.
+    pid_file, already_open = claim_window_slot(args.url or "")
+    if already_open:
+        prior = 0
+        try:
+            prior = int(window_pid_file().read_text(encoding="utf-8").strip().split()[0])
+        except Exception:
+            prior = 0
+        print("[window] TrioForge is already opening or open (pid {}) - raising it "
+              "instead of starting a second window".format(prior or "?"))
+        focus_existing_window(prior)
+        return 0
+    if pid_file is not None:
+        def _drop_pid_file():
+            try:
+                pid_file.unlink()
+            except Exception:
+                pass
+
+        atexit.register(_drop_pid_file)
+
     try:
         import webview
     except Exception:
@@ -877,13 +1083,8 @@ def main() -> int:
                 start_kwargs["storage_path"] = str(storage)
             except Exception:
                 pass
-        try:
-            pid_file = window_pid_file()
-            pid_file.parent.mkdir(parents=True, exist_ok=True)
-            pid_file.write_text("{} {} {}\n".format(os.getpid(), url, int(time.time())),
-                                encoding="utf-8")
-        except Exception:
-            pid_file = None
+        # The pid file was already claimed at the top of main(); see there for why
+        # it cannot wait until this point.
 
         # Own identity + own icon before the window appears: the host process is
         # pythonw.exe, so without this the taskbar and Alt-Tab say "Python".
@@ -891,8 +1092,10 @@ def main() -> int:
         register_app_id(ico)
         set_process_app_id()
         print("[icon] .ico = {} (exists: {})".format(ico, ico.is_file()))
-        # If the window never shows, the user still gets the app (in a browser).
-        threading.Thread(target=fallback_watchdog, args=(url, 25.0, storage), daemon=True).start()
+        # If the window never shows, the user still gets the app (in a browser). The
+        # timeout sits just past the visible-window wait above, so a slow-but-real
+        # start wins the race and only a window that truly never appeared falls back.
+        threading.Thread(target=fallback_watchdog, args=(url, 30.0, storage), daemon=True).start()
         try:
             try:
                 webview.start(**start_kwargs,
