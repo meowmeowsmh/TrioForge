@@ -46,7 +46,7 @@
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "27df446aaacdab083b25a595c42190bb2bea0c425c6c6fa49426201b935da31c",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/tools/app_window.py": "7f9e3d7839a6557f21c524bc63fdd7652b5d3b12e693d291ca936e1289876cee",
+  "py/tools/app_window.py": "b15626b457050c66f22f3e2bc5977687a28101f75bb5a298aaedec993236eeb6",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
   "py/tools/browser_picker.py": "a77ec789f9194dcdc64ab783857c8e757f2b101a9cc9df9325105186df9b30b7",
   "py/tools/ensure_deps.py": "4ec807a9023ac32c6505e23e90773a8f0ee12ed3a9cc976a9a11e54800cff729",
@@ -108,6 +108,6 @@
   "templates/index.html": "4d7facc903ffb955d7763686c5650f56dfb5eed2c547a28d112587f8f7d7f763",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-04T21:51:02",
- "note": "design generator feature"
+ "generated": "2026-10-04T22:14:00",
+ "note": "window collapse watchdog"
 }

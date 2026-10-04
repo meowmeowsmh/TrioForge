@@ -119,7 +119,8 @@ def _wait_for_visible_window(timeout: float, window=None) -> int:
         time.sleep(0.25)
 
 
-def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 24.0) -> bool:
+def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 24.0,
+                          width: int = 1320, height: int = 880) -> bool:
     """Wait for the VISIBLE window, then put the icon on it and start watching it.
 
     webview.start(func=...) runs before the GUI window exists, so the first attempt
@@ -150,6 +151,9 @@ def apply_icon_when_ready(window, ico: Path, url: str = "", timeout: float = 24.
         _th.Thread(target=blank_page_watchdog, args=(_handle, url), daemon=True).start()
         print("[window] watching for a blank window (a page that never paints is "
               "handed to your browser)")
+        _th.Thread(target=size_watchdog, args=(window, _handle, width, height),
+                   daemon=True).start()
+        print("[window] watching for a collapsed window (restored automatically)")
     except Exception as _exc:
         print("[window] hang watchdog not started:", _exc)
 
@@ -403,6 +407,60 @@ def hang_watchdog(get_handle, url: str, hung_seconds: int = 20, interval: float 
                 _hang_check_error_logged = True
                 print("[window] hang check failed: {}: {}".format(type(exc).__name__, exc))
             hung = 0.0
+
+
+def size_watchdog(window, get_handle, width: int, height: int, interval: float = 3.0) -> None:
+    """Restore the window when WebView2 collapses it to a sliver.
+
+    On this machine the embedded window sometimes shrinks to ~160x28 AFTER it has
+    already painted - a WebView2/GPU quirk, not a user action. A 160x28 window is
+    invisible in practice, which is the "double-click, nothing appears" report that
+    survived every other fix. A user minimisation (IsIconic) is left alone, so this
+    never fights a deliberate Minimise.
+    """
+    import time
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    while True:
+        time.sleep(interval)
+        if not _window_ready:
+            continue
+        try:
+            hwnd = get_handle()
+        except Exception:
+            continue
+        if not hwnd:
+            continue
+        try:
+            r = wintypes.RECT()
+            if not user32.GetWindowRect(wintypes.HWND(int(hwnd)), ctypes.byref(r)):
+                continue
+            w, h = r.right - r.left, r.bottom - r.top
+            if w >= 300 and h >= 300:
+                continue
+            if bool(user32.IsIconic(wintypes.HWND(int(hwnd)))):
+                continue                       # the user minimised it - respect that
+            # Collapsed by the engine, not by the user: put the size back.
+            try:
+                window.resize(int(width), int(height))
+                try:
+                    window.show()
+                except Exception:
+                    pass
+                print("[window] window collapsed to {}x{} - restored {}x{}".format(
+                    w, h, width, height))
+            except Exception:
+                try:
+                    SWP_NOZORDER = 0x0004
+                    user32.SetWindowPos(wintypes.HWND(int(hwnd)), 0, 0, 0,
+                                        int(width), int(height), SWP_NOZORDER)
+                    print("[window] Win32 resize to {}x{}".format(width, height))
+                except Exception as exc:
+                    print("[window] could not restore size: {}: {}".format(
+                        type(exc).__name__, exc))
+        except Exception as exc:
+            print("[window] size check failed: {}: {}".format(type(exc).__name__, exc))
 
 
 def _window_fraction_blank(hwnd: int) -> float:
@@ -1099,13 +1157,17 @@ def main() -> int:
         try:
             try:
                 webview.start(**start_kwargs,
-                              func=lambda: apply_icon_when_ready(window, ico, url),
+                              func=lambda: apply_icon_when_ready(
+                                  window, ico, url,
+                                  width=args.width, height=args.height),
                               icon=str(ico))
             except TypeError as exc:
                 # An older/newer pywebview that does not accept one of these.
                 print("[icon] start() rejected an argument ({}); retrying without them".format(exc))
                 webview.start(**start_kwargs,
-                              func=lambda: apply_icon_when_ready(window, ico, url))
+                              func=lambda: apply_icon_when_ready(
+                                  window, ico, url,
+                                  width=args.width, height=args.height))
         finally:
             try:
                 if pid_file:

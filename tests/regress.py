@@ -709,7 +709,7 @@ def test_window_ready_means_visible() -> None:
     # the process sat invisible in Task Manager instead of falling back to a browser.
     saved = {name: getattr(app_window, name) for name in
              ("_find_own_window_hwnd", "apply_window_icon", "hang_watchdog",
-              "blank_page_watchdog")}
+              "blank_page_watchdog", "size_watchdog")}
     started = []
     icons = []
 
@@ -725,6 +725,7 @@ def test_window_ready_means_visible() -> None:
         app_window.apply_window_icon = lambda window, ico: icons.append(ico) or True
         app_window.hang_watchdog = lambda get_handle, url, **kw: started.append("hang")
         app_window.blank_page_watchdog = lambda get_handle, url, **kw: started.append("blank")
+        app_window.size_watchdog = lambda window, get_handle, w, h, **kw: started.append("size")
         app_window._find_own_window_hwnd = lambda: 0
 
         win = _FakeWindow()
@@ -744,7 +745,7 @@ def test_window_ready_means_visible() -> None:
         ok = app_window.apply_icon_when_ready(win, Path("x.ico"), "http://127.0.0.1:5003",
                                              timeout=1.0)
         assert ok is True and app_window._window_ready is True, (ok, app_window._window_ready)
-        assert started == ["hang", "blank"], started
+        assert started == ["hang", "blank", "size"], started
 
         # Icon work assigns WinForms properties from a non-UI thread, which blocks for
         # ever against a UI thread stuck in WebView2 init. Readiness must not wait on it.
