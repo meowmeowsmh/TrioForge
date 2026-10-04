@@ -4039,7 +4039,7 @@ function renderDesignStudio(d) {
     designCurrentUrl = d.url || '';
     designCurrentId = d.id || 'project';
     var runBtn = document.getElementById('designRunBtn');
-    if (runBtn) runBtn.style.display = designCurrentProject ? '' : 'none';
+    if (runBtn) runBtn.style.display = _hasRunnableScript() ? '' : 'none';
     var frame = document.getElementById('designPreviewFrame');
     if (frame) frame.src = d.url || 'about:blank';
     var codeEl = document.getElementById('designCodeBlock');
@@ -4059,13 +4059,13 @@ function renderDesignStudio(d) {
 function openSavedProject(project) {
     // Open a saved code project (no web preview) in the studio: list its files, show code.
     designCurrentProject = project;
-    var runBtn = document.getElementById('designRunBtn');
-    if (runBtn) runBtn.style.display = '';
     fetch('/api/design/artifacts/' + encodeURIComponent(project))
       .then(function(r) { return r.json(); })
       .then(function(pd) {
           designProjectFiles = pd.files || [];
           designCurrentUrl = '';
+          var runBtn = document.getElementById('designRunBtn');
+          if (runBtn) runBtn.style.display = _hasRunnableScript() ? '' : 'none';
           var codeEl = document.getElementById('designCodeBlock');
           if (designProjectFiles.length) {
               var first = designProjectFiles[0];
@@ -4100,13 +4100,21 @@ function toggleDesignRun() {
     if (body.style.display === 'flex') { designTab('code'); return; }
     startDesignRun();
 }
+function _isRunnableScript(p) {
+    return /\.(py|js|mjs|cjs|ts|mts|cts|sh)$/i.test(p);
+}
+function _hasRunnableScript() {
+    return (designProjectFiles || []).some(function(f) { return _isRunnableScript(f.path); });
+}
 function _designEntryFile() {
-    // Prefer main.py; otherwise the first .py file in the open project.
-    var py = (designProjectFiles || []).map(function(f){ return f.path; })
-        .filter(function(p){ return /\.py$/i.test(p); });
-    if (py.indexOf('main.py') !== -1) return 'main.py';
-    if (py.indexOf('app.py') !== -1) return 'app.py';
-    return py[0] || 'main.py';
+    // Prefer a conventional entry name, then any runnable script, then main.py.
+    var scripts = (designProjectFiles || []).map(function(f){ return f.path; })
+        .filter(_isRunnableScript);
+    if (!scripts.length) return '';
+    var pref = ['main.py', 'app.py', 'main.js', 'index.js', 'main.ts', 'app.ts', 'index.ts',
+                'main.mjs', 'main.cjs', 'main.sh'];
+    for (var i = 0; i < pref.length; i++) if (scripts.indexOf(pref[i]) !== -1) return pref[i];
+    return scripts[0];
 }
 function startDesignRun() {
     if (!designCurrentProject) { alert('No project open. Open one from 📁 Files first.'); return; }

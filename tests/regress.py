@@ -1060,6 +1060,24 @@ def test_design_run_terminal() -> None:
     print("  run, poll output, send input round-trip -> OK")
 
 
+def test_design_runner_languages() -> None:
+    _title("run language detection")
+    from features import design as design_mod
+
+    # Python uses our own interpreter; node/js/ts use node (installed here); sh uses
+    # bash; and anything without a runtime on this machine is refused with None rather
+    # than failing cryptically.
+    assert design_mod._runner_for("main.py") is not None
+    assert design_mod._runner_for("main.js") is not None
+    assert design_mod._runner_for("main.ts") is not None
+    assert design_mod._runner_for("index.mjs") is not None
+    assert design_mod._runner_for("MainActivity.kt") is None      # android
+    assert design_mod._runner_for("app.java") is None
+    assert design_mod._runner_for("main.rs") is None
+    assert design_mod._runner_for("index.html") is None           # web -> iframe, not terminal
+    print("  py/js/ts runnable, android/java/rust/html refused cleanly -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -1073,7 +1091,7 @@ def main() -> int:
              test_window_slot_is_exclusive, test_window_ready_means_visible,
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
              test_design_persists_in_conversation, test_design_artifacts_listing,
-             test_design_run_terminal]
+             test_design_run_terminal, test_design_runner_languages]
     failed = []
     for t in tests:
         try:

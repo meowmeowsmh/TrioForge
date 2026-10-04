@@ -48,6 +48,29 @@ _RUNS = {}
 _RUNS_LOCK = threading.Lock()
 _RUN_TIMEOUT_SECONDS = 120
 
+
+def _runner_for(entry):
+    """The command prefix that runs a file of a given extension, or None.
+
+    Only languages whose runtime is actually installed on this machine get a runner;
+    an android/kotlin/rust project is refused with a clear message instead of a
+    cryptic "command not found". Web pages are not run here - they preview in an iframe.
+    """
+    ext = entry.rsplit(".", 1)[-1].lower() if "." in entry else ""
+    if ext in ("py", "pyw"):
+        return [sys.executable, "-u"]
+    if ext in ("js", "mjs", "cjs", "ts", "mts", "cts"):
+        import shutil
+        if shutil.which("node"):
+            return ["node"]                # Node 22+ runs .ts by stripping types
+        return None
+    if ext == "sh":
+        import shutil
+        if shutil.which("bash"):
+            return ["bash"]
+        return None
+    return None
+
 # Condensed from OpenDesign's design-brief skill: resolve the brief into concrete
 # design tokens BEFORE writing. The discipline is what stops "make it professional"
 # from producing a vague, broken page - and the same care now applies to code projects.
@@ -330,10 +353,13 @@ def run_project():
     if not os.path.isfile(entry_path):
         return jsonify({"error": "Entry file not found: {}".format(entry)}), 404
 
-    # Only Python (or any text script runnable by the interpreter) is executed. A
-    # binary/asset is never a runnable entry point.
-    if not entry.lower().endswith((".py", ".pyw")):
-        return jsonify({"error": "Only Python files can be run (got {})".format(entry)}), 400
+    # Pick the right interpreter for the entry file's language. Web projects (html)
+    # preview in an iframe and are never run here; a mobile/native project has no
+    # runner on this machine and is honestly refused rather than failing cryptically.
+    cmd = _runner_for(entry)
+    if cmd is None:
+        return jsonify({"error": "No runner for '{}'. Supported in the terminal: "
+                                 ".py .js .mjs .cjs .ts .mts .cts .sh".format(entry)}), 400
 
     # Cap concurrency so an abandoned tab cannot pile up processes.
     with _RUNS_LOCK:
@@ -345,7 +371,7 @@ def run_project():
 
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-u", os.path.basename(entry_path)],
+            cmd + [os.path.basename(entry_path)],
             cwd=base, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True,
             encoding="utf-8", errors="replace",
