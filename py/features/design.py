@@ -14,9 +14,13 @@
 
 import os
 import re
+import sys
 import time
 import uuid
+import queue
 import logging
+import threading
+import subprocess
 
 from flask import Blueprint, request, jsonify
 
@@ -36,6 +40,13 @@ DESIGN_MAX_TOKENS = 65536
 
 # Providers whose design output should badge as ☁️ API rather than 🖥️ Local.
 _API_KINDS = {"deepseek", "groq", "claude", "gemini", "openrouter", "huggingface"}
+
+# Live run sessions: a Python project can be executed in the studio and driven
+# line-by-line from the browser, so a tic-tac-toe game is actually playable rather
+# than a static block of code. Each session keeps its subprocess + an output queue.
+_RUNS = {}
+_RUNS_LOCK = threading.Lock()
+_RUN_TIMEOUT_SECONDS = 120
 
 # Condensed from OpenDesign's design-brief skill: resolve the brief into concrete
 # design tokens BEFORE writing. The discipline is what stops "make it professional"
@@ -304,6 +315,129 @@ def project_files(name):
                           "url": "/static/uploads/generated/designs/{}/{}".format(name, rel)})
     files.sort(key=lambda f: f["path"])
     return jsonify({"project": name, "files": files})
+
+
+@design_bp.route("/run", methods=["POST"])
+def run_project():
+    """Start a project's entry file as a subprocess and drive it over polling."""
+    data = request.get_json(silent=True) or {}
+    project = _safe_rel(data.get("project") or "")
+    entry = _safe_rel(data.get("entry") or "main.py")
+    base = os.path.join(DESIGNS_DIR, project)
+    if not project or not os.path.isdir(base):
+        return jsonify({"error": "Project not found: {}".format(project)}), 404
+    entry_path = os.path.join(base, entry)
+    if not os.path.isfile(entry_path):
+        return jsonify({"error": "Entry file not found: {}".format(entry)}), 404
+
+    # Only Python (or any text script runnable by the interpreter) is executed. A
+    # binary/asset is never a runnable entry point.
+    if not entry.lower().endswith((".py", ".pyw")):
+        return jsonify({"error": "Only Python files can be run (got {})".format(entry)}), 400
+
+    # Cap concurrency so an abandoned tab cannot pile up processes.
+    with _RUNS_LOCK:
+        for sid, run in list(_RUNS.items()):
+            if run["proc"].poll() is not None:
+                _RUNS.pop(sid, None)
+        if len(_RUNS) >= 8:
+            return jsonify({"error": "Too many runs; stop one first."}), 429
+
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-u", os.path.basename(entry_path)],
+            cwd=base, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True,
+            encoding="utf-8", errors="replace",
+        )
+    except Exception as exc:
+        return jsonify({"error": "Could not start the program: {}".format(exc)}), 500
+
+    out = queue.Queue()
+    sid = uuid.uuid4().hex[:12]
+
+    def _reader():
+        try:
+            for line in iter(proc.stdout.readline, ""):
+                out.put(line)
+        except Exception:
+            pass
+        finally:
+            out.put(None)                       # EOF sentinel
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
+
+    threading.Thread(target=_reader, daemon=True).start()
+    with _RUNS_LOCK:
+        _RUNS[sid] = {"proc": proc, "out": out, "project": project, "entry": entry}
+
+    # A watchdog kills a run left dangling (the poller tab closed, the game hung).
+    def _watchdog():
+        time.sleep(_RUN_TIMEOUT_SECONDS)
+        with _RUNS_LOCK:
+            run = _RUNS.get(sid)
+        if run and run["proc"].poll() is None:
+            try:
+                run["proc"].kill()
+            except Exception:
+                pass
+
+    threading.Thread(target=_watchdog, daemon=True).start()
+    return jsonify({"ok": True, "session": sid, "project": project, "entry": entry})
+
+
+@design_bp.route("/run/<sid>/output", methods=["GET"])
+def run_output(sid):
+    with _RUNS_LOCK:
+        run = _RUNS.get(sid)
+    if run is None:
+        return jsonify({"error": "No such run", "done": True}), 404
+    chunks = []
+    done = False
+    try:
+        while True:
+            item = run["out"].get_nowait()
+            if item is None:
+                done = True
+                break
+            chunks.append(item)
+    except queue.Empty:
+        pass
+    alive = run["proc"].poll() is None
+    return jsonify({"chunks": chunks, "done": done, "alive": alive})
+
+
+@design_bp.route("/run/<sid>/input", methods=["POST"])
+def run_input(sid):
+    data = request.get_json(silent=True) or {}
+    line = data.get("line", "")
+    with _RUNS_LOCK:
+        run = _RUNS.get(sid)
+    if run is None:
+        return jsonify({"error": "No such run"}), 404
+    proc = run["proc"]
+    if proc.poll() is not None:
+        return jsonify({"error": "The program has ended"}), 400
+    try:
+        proc.stdin.write(line + "\n")
+        proc.stdin.flush()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True})
+
+
+@design_bp.route("/run/<sid>/stop", methods=["POST"])
+def run_stop(sid):
+    with _RUNS_LOCK:
+        run = _RUNS.pop(sid, None)
+    if run and run["proc"].poll() is None:
+        try:
+            run["proc"].kill()
+        except Exception:
+            pass
+    return jsonify({"ok": True})
 
 
 @design_bp.route("/generate", methods=["POST"])

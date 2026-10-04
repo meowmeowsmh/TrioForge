@@ -1867,6 +1867,7 @@ video.tf-video {
           <button id="designTabFiles" onclick="designTab('files')" title="Folder — the HTML files this studio saved" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">📁 Files</button>
           <button id="designTabPreview" onclick="designTab('preview')" style="background:#238636; border:1px solid #238636; color:#fff; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">👁 Preview</button>
           <button id="designTabCode" onclick="designTab('code')" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">📝 Code</button>
+          <button id="designRunBtn" onclick="toggleDesignRun()" title="Run a Python project in a live terminal" style="display:none; background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">▶ Run</button>
           <button onclick="designOpenExternal()" title="Open in browser" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">↗</button>
           <button onclick="designDownload()" title="Download HTML" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">⬇</button>
           <button onclick="toggleDesignStudio()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
@@ -1874,6 +1875,20 @@ video.tf-video {
       </div>
       <div id="designPreviewBody" style="flex:1; overflow:hidden; background:#fff;">
         <iframe id="designPreviewFrame" sandbox="allow-scripts allow-modals allow-forms allow-popups" title="Design preview" style="width:100%; height:100%; border:0; background:#fff;" src="about:blank"></iframe>
+      </div>
+      <div id="designRunBody" style="flex:1; display:none; flex-direction:column; background:#0a0a0f;">
+        <div style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #222; flex-wrap:wrap;">
+          <span id="designRunStatus" style="font-size:12px; color:#8b949e;">▶ Run a Python project</span>
+          <button onclick="stopDesignRun()" id="designRunStop" style="display:none; background:#1c1c26; border:1px solid #333; color:#f0883e; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">⏹ Stop</button>
+          <span style="flex:1;"></span>
+          <span style="font-size:11px; color:#5a5a6a;">type into the input line and press Enter</span>
+        </div>
+        <pre id="designRunOutput" style="flex:1; margin:0; overflow:auto; padding:10px 12px; color:#e6edf3; font:12px/1.5 'JetBrains Mono', Consolas, monospace; white-space:pre-wrap;"></pre>
+        <div style="display:flex; gap:6px; padding:8px 12px; border-top:1px solid #222; align-items:center;">
+          <span style="color:#3fb950; font:12px monospace;">$</span>
+          <input id="designRunInput" placeholder="Enter a move or command…" autocomplete="off" autocorrect="off" spellcheck="false"
+                 style="flex:1; background:transparent; border:none; outline:none; color:#e6edf3; font:12px/1.5 'JetBrains Mono', Consolas, monospace;">
+        </div>
       </div>
       <div id="designCodeBody" style="flex:1; overflow:auto; padding:12px; display:none;">
         <pre style="margin:0;"><code id="designCodeBlock" class="language-html" style="font-size:12px;"></code></pre>
@@ -3877,6 +3892,7 @@ function designPreset(brief) {
 var designCurrentUrl = '';
 var designCurrentId = 'design.html';
 var designProjectFiles = [];   // the files of the project currently open in the studio
+var designCurrentProject = ''; // the project folder currently open (for ▶ Run)
 function toggleDesignStudio() {
     var p = document.getElementById('designStudioPanel');
     if (!p) return;
@@ -3886,9 +3902,11 @@ function designTab(which) {
     var prev = document.getElementById('designPreviewBody');
     var code = document.getElementById('designCodeBody');
     var files = document.getElementById('designFilesBody');
+    var run = document.getElementById('designRunBody');
     if (prev) prev.style.display = (which === 'preview') ? '' : 'none';
     if (code) code.style.display = (which === 'code') ? '' : 'none';
     if (files) files.style.display = (which === 'files') ? '' : 'none';
+    if (run) run.style.display = (which === 'run') ? 'flex' : 'none';
     if (which === 'files') designLoadFiles();
     var pBtn = document.getElementById('designTabPreview');
     var cBtn = document.getElementById('designTabCode');
@@ -4017,8 +4035,11 @@ function designLoadFiles() {
 }
 function renderDesignStudio(d) {
     designProjectFiles = d.files || [];
+    designCurrentProject = d.project || '';
     designCurrentUrl = d.url || '';
     designCurrentId = d.id || 'project';
+    var runBtn = document.getElementById('designRunBtn');
+    if (runBtn) runBtn.style.display = designCurrentProject ? '' : 'none';
     var frame = document.getElementById('designPreviewFrame');
     if (frame) frame.src = d.url || 'about:blank';
     var codeEl = document.getElementById('designCodeBlock');
@@ -4037,6 +4058,9 @@ function renderDesignStudio(d) {
 }
 function openSavedProject(project) {
     // Open a saved code project (no web preview) in the studio: list its files, show code.
+    designCurrentProject = project;
+    var runBtn = document.getElementById('designRunBtn');
+    if (runBtn) runBtn.style.display = '';
     fetch('/api/design/artifacts/' + encodeURIComponent(project))
       .then(function(r) { return r.json(); })
       .then(function(pd) {
@@ -4067,6 +4091,114 @@ function designDownload() {
     a.click();
     a.remove();
 }
+// ── ▶ Run: execute a Python project and play it from the browser ──
+var designRunSession = null;
+var designRunTimer = null;
+function toggleDesignRun() {
+    var body = document.getElementById('designRunBody');
+    if (!body) return;
+    if (body.style.display === 'flex') { designTab('code'); return; }
+    startDesignRun();
+}
+function _designEntryFile() {
+    // Prefer main.py; otherwise the first .py file in the open project.
+    var py = (designProjectFiles || []).map(function(f){ return f.path; })
+        .filter(function(p){ return /\.py$/i.test(p); });
+    if (py.indexOf('main.py') !== -1) return 'main.py';
+    if (py.indexOf('app.py') !== -1) return 'app.py';
+    return py[0] || 'main.py';
+}
+function startDesignRun() {
+    if (!designCurrentProject) { alert('No project open. Open one from 📁 Files first.'); return; }
+    var out = document.getElementById('designRunOutput');
+    var statusEl = document.getElementById('designRunStatus');
+    var stopBtn = document.getElementById('designRunStop');
+    out.textContent = '';
+    statusEl.textContent = '▶ Starting…';
+    stopBtn.style.display = '';
+    designTab('run');
+    fetch('/api/design/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: designCurrentProject, entry: _designEntryFile() })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            statusEl.textContent = '❌ ' + d.error;
+            out.textContent = d.error + '\n';
+            stopBtn.style.display = 'none';
+            return;
+        }
+        designRunSession = d.session;
+        statusEl.textContent = '▶ Running ' + (d.entry || 'main.py') + ' — enter input below.';
+        document.getElementById('designRunInput').focus();
+        if (designRunTimer) clearInterval(designRunTimer);
+        designRunTimer = setInterval(designPollOutput, 300);
+        designPollOutput();
+    })
+    .catch(function(e) {
+        statusEl.textContent = '❌ Could not start: ' + e;
+        stopBtn.style.display = 'none';
+    });
+}
+function designPollOutput() {
+    if (!designRunSession) return;
+    fetch('/api/design/run/' + designRunSession + '/output')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          var out = document.getElementById('designRunOutput');
+          var statusEl = document.getElementById('designRunStatus');
+          if (d.error && d.done) {
+              if (designRunTimer) { clearInterval(designRunTimer); designRunTimer = null; }
+              statusEl.textContent = '⏹ Ended';
+              document.getElementById('designRunStop').style.display = 'none';
+              designRunSession = null;
+              return;
+          }
+          if (d.chunks && d.chunks.length) {
+              out.textContent += d.chunks.join('');
+              out.scrollTop = out.scrollHeight;
+          }
+          if (d.done || d.alive === false) {
+              if (designRunTimer) { clearInterval(designRunTimer); designRunTimer = null; }
+              statusEl.textContent = '⏹ Program ended';
+              document.getElementById('designRunStop').style.display = 'none';
+              designRunSession = null;
+          }
+      })
+      .catch(function() {});
+}
+function stopDesignRun() {
+    if (designRunSession) {
+        fetch('/api/design/run/' + designRunSession + '/stop', { method: 'POST' });
+    }
+    if (designRunTimer) { clearInterval(designRunTimer); designRunTimer = null; }
+    designRunSession = null;
+    document.getElementById('designRunStatus').textContent = '⏹ Stopped';
+    document.getElementById('designRunStop').style.display = 'none';
+}
+function designRunKey(ev) {
+    if (ev.key !== 'Enter') return;
+    var inp = document.getElementById('designRunInput');
+    var line = inp.value;
+    inp.value = '';
+    if (!designRunSession) { startDesignRun(); return; }
+    var out = document.getElementById('designRunOutput');
+    out.textContent += '$ ' + line + '\n';
+    fetch('/api/design/run/' + designRunSession + '/input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ line: line })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.error) { out.textContent += '[error] ' + d.error + '\n'; } })
+    .catch(function() {});
+}
+document.addEventListener('DOMContentLoaded', function() {
+    var inp = document.getElementById('designRunInput');
+    if (inp) inp.addEventListener('keydown', designRunKey);
+});
 // ── 📁 Workspace file explorer (left): where your files actually live ──
 // The forge works in its own sandbox; this panel is how YOU see the folder, open a
 // file and read the code. Nothing here generates anything - it only shows what exists.

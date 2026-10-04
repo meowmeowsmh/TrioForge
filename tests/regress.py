@@ -1017,6 +1017,49 @@ def test_design_artifacts_listing() -> None:
     print("  project folders + loose html, newest first -> OK")
 
 
+def test_design_run_terminal() -> None:
+    _title("run a generated program")
+    import time
+    import tempfile
+    import app as forge_app
+    from features import design as design_mod
+
+    saved_dir = design_mod.DESIGNS_DIR
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            design_mod.DESIGNS_DIR = tmp
+            proj = os.path.join(tmp, "p1")
+            os.makedirs(proj)
+            with open(os.path.join(proj, "main.py"), "w", encoding="utf-8") as f:
+                f.write("print('hello')\nx = input('? ')\nprint('got', x)\n")
+
+            with forge_app.app.test_client() as client:
+                r = client.post("/api/design/run", json={"project": "p1", "entry": "main.py"})
+                assert r.status_code == 200, r.status_code
+                sid = r.get_json()["session"]
+
+                def poll_until(fragment):
+                    acc = ""
+                    for _ in range(60):
+                        o = client.get("/api/design/run/" + sid + "/output").get_json()
+                        acc += "".join(o.get("chunks", []))
+                        if fragment in acc:
+                            return acc
+                        time.sleep(0.1)
+                    return acc
+
+                out = poll_until("?")
+                assert "hello" in out, out
+                assert client.post("/api/design/run/" + sid + "/input",
+                                   json={"line": "yes"}).status_code == 200
+                out = poll_until("got yes")
+                assert "got yes" in out, out
+                client.post("/api/design/run/" + sid + "/stop")
+    finally:
+        design_mod.DESIGNS_DIR = saved_dir
+    print("  run, poll output, send input round-trip -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -1029,7 +1072,8 @@ def main() -> int:
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
-             test_design_persists_in_conversation, test_design_artifacts_listing]
+             test_design_persists_in_conversation, test_design_artifacts_listing,
+             test_design_run_terminal]
     failed = []
     for t in tests:
         try:
