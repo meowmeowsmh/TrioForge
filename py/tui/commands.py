@@ -45,6 +45,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/models"),
         Cmd("/start [name]", "load a local .gguf into llama-server",
             "/start gemma-3-12b-it"),
+        Cmd("/search <query>", "search Hugging Face for GGUF models (browse only)",
+            "/search qwen 7b"),
         Cmd("/download <query>", "search Hugging Face and download a GGUF model",
             "/download qwen 7b"),
         Cmd("/provider [name]", "list providers, or switch to one",
@@ -705,6 +707,24 @@ def _download(ctx, arg: str) -> None:
     render.info("load it with /start <name>, or pick it with ctrl+l")
 
 
+def _search(ctx, arg: str) -> None:
+    """/search <query> — search Hugging Face for GGUF models (browse, no download)."""
+    from . import model_download
+
+    query = arg.strip()
+    if not query:
+        render.error("usage: /search <query>  —  e.g. /search qwen 7b")
+        return
+    render.info(f"searching Hugging Face for GGUF models matching {query!r}…")
+    results = model_download.search(query)
+    if not results:
+        render.warn("no GGUF models found — try a shorter or different query")
+        return
+    render.table(f"GGUF models matching {query!r}",
+                 [(repo, f"{dl:,} downloads" if dl else "") for repo, dl in results[:20]])
+    render.info("download one with /download <query>")
+
+
 def _echo(ctx, arg: str) -> None:
     if isinstance(ctx.backend, EchoBackend):
         ctx.backend = ctx.real_backend
@@ -1011,6 +1031,7 @@ _TABLE = {
     "/system": _system, "/clear": _clear, "/history": _history,
     "/save": _save, "/echo": _echo, "/start": _start,
     "/download": _download, "/pull": _download,
+    "/search": _search, "/find": _search,
     "/quit": _quit, "/exit": _quit, "/q": _quit,
     "/memory": _memory, "/mem": _memory,
 }

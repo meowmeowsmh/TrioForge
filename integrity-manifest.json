@@ -64,7 +64,7 @@
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
   "py/tui/backend.py": "387ba89a60465033ea591c06fe2eadca4e97410fb5cde727d62649debb043f17",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
-  "py/tui/commands.py": "33ddb60af641a367d55ea7e4a8041380ffd54cb467c2af1f6a1daaa017c592b4",
+  "py/tui/commands.py": "660851c3b3af3aebd421b253d7ed0cda9819bf0b443671866159e1125300b6e8",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
@@ -109,6 +109,6 @@
   "templates/index.html": "9e181274d3a9874f5bd14ad226aa130fe056f3c7f6dfc133d48016bb9ed035a5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T03:39:01",
- "note": "add /download model search+download command"
+ "generated": "2026-10-05T03:43:52",
+ "note": "add /search browse command"
 }
