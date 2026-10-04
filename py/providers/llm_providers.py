@@ -1516,7 +1516,15 @@ def deepseek_reasoning_effort(thinking) -> str:
 
 
 class DeepSeekProvider(LLMProvider):
-    MAX_OUTPUT_TOKENS = 8192  # DeepSeek chat API caps output here
+    # Normal chat keeps a sane ceiling, but the ceiling itself must NOT be 8192:
+    # these models are thinkers, and a thinking model spends max_tokens on its
+    # reasoning BEFORE it writes any answer. Measured on one landing-page prompt:
+    # with max_tokens=8192 the model spent 6,937 tokens reasoning, ran out at
+    # finish_reason="length", and returned 3,579 chars of HTML cut off in the middle
+    # of the stylesheet. With max_tokens=65536 the same prompt finished cleanly
+    # (finish_reason="stop") with a complete 40,944-char page and 169 CSS rules.
+    DEFAULT_MAX_TOKENS = 8192
+    MAX_OUTPUT_TOKENS = 65536
 
     # Curated backup merged with the live scan. The live /v1/models endpoint returns
     # exactly `deepseek-flash` and `deepseek-v4-pro`; these backups keep the dropdown

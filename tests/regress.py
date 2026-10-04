@@ -853,7 +853,9 @@ def test_deepseek_catalog() -> None:
 
 def test_design_feature() -> None:
     _title("design generator")
-    from features.design import _extract_html, _wrap_html, _model_answer
+    from features.design import (
+        _extract_html, _wrap_html, _model_answer, _looks_unstyled, DESIGN_MAX_TOKENS,
+    )
 
     # HTML extraction from every shape a model actually returns.
     assert _extract_html("```html\n<div>hi</div>\n```") == "<div>hi</div>"
@@ -863,10 +865,36 @@ def test_design_feature() -> None:
     assert _extract_html("intro text\n<div class=\"x\">a</div>") == "<div class=\"x\">a</div>"
     assert _extract_html("just prose, no tags") is None
 
+    # The model's "Here is your page:" preamble must NOT end up in the file: in front
+    # of the doctype it renders as visible text in quirks mode.
+    out = _extract_html("Sure! Here is the page:\n\n<!doctype html><html><body>x</body></html>")
+    assert out.startswith("<!doctype html>") and "Sure!" not in out, out[:60]
+
+    # A <style> block above <body> must survive extraction: slicing from <body> threw
+    # the whole stylesheet away and produced a structured but completely unstyled page.
+    css = "".join(".c%d{color:#%03d}" % (i, i) for i in range(12))
+    out = _extract_html("Here you go:\n<style>" + css + "</style>\n<body><header>x</header></body>")
+    assert "<style>" in out and "{" in out, "the stylesheet was dropped"
+    wrapped = _wrap_html(out)
+    assert wrapped.index("<style>") < wrapped.index("<body>"), "styles belong in the head"
+
+    # Trailing commentary after the document is trimmed.
+    out = _extract_html("<!doctype html><html><body>x</body></html>\n\nWant changes?")
+    assert out.endswith("</html>"), out[-25:]
+
     # _wrap_html leaves a document alone and shells a fragment.
     assert _wrap_html("<!doctype html><html></html>").startswith("<!doctype html>")
     wrapped = _wrap_html("<div>x</div>")
     assert wrapped.startswith("<!doctype html>") and "<body><div>x</div></body>" in wrapped
+
+    # A page with structure but no real stylesheet is detected (and retried).
+    assert _looks_unstyled("<body><div class='a'></div></body>") is True
+    assert _looks_unstyled("<style>" + css + "</style><body>x</body>") is False
+    assert _looks_unstyled('<link rel="stylesheet" href="x.css">') is False
+
+    # The design budget must clear a thinking model's reasoning PLUS a whole page:
+    # 8192 truncated a landing page mid-stylesheet, so keep it generous.
+    assert DESIGN_MAX_TOKENS >= 32768, DESIGN_MAX_TOKENS
 
     # Thinking models put the answer in content OR reasoning_content.
     class _Reasoned:

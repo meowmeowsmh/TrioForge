@@ -20,7 +20,7 @@
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
   "py/features/cork_board.py": "cde6c56b506e9e73b0da97ea36e29dc0b6298fc228ee9dc2b2c56d4891a11f16",
-  "py/features/design.py": "bc1e3b3658ce3f077f268573f5b9f075b5d22838c63c2eba411920a47f1d8f67",
+  "py/features/design.py": "1db3c29e8c49fce1aafec33ba942ae9298e030f8ce919b66bb0fff90d5e7138a",
   "py/features/model_browser.py": "054366993bf07b092c99ed7db1c4d856ccfcfbffdc5237a6db87b5fcb87c15ef",
   "py/features/notes.py": "9b722781f471c1f11eabddbc1d94f76134d9be040033f2860c577f82a61de65b",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
@@ -42,7 +42,7 @@
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "3cbe70d93c453fb97b2ad18e3c7ba76b013aaf9e81c839b0951a7de22fc3dab0",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/providers/llm_providers.py": "246e06f04170d150697469c2d3067a93c24bc486ef5d7689c020f7a8459766b2",
+  "py/providers/llm_providers.py": "3559d3b0c0cf686bbb1d390f9fe37bc800ccf7ff124329a14ee50801a1496321",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "27df446aaacdab083b25a595c42190bb2bea0c425c6c6fa49426201b935da31c",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -108,6 +108,6 @@
   "templates/index.html": "ed69f165ad1d5693270a089f7a6b149f1b8e21c9874d019c132fb96802a927b6",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T01:01:39",
- "note": "design studio preview+code panel"
+ "generated": "2026-10-05T01:22:36",
+ "note": "design quality: token budget + extraction"
 }
