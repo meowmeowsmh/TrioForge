@@ -145,6 +145,7 @@ from providers.llm_providers import (
     describe_or_extract_file,
     sanitize_api_key,
     ProviderError,
+    deepseek_reasoning_effort,
 )
 from features.notes import notes_bp, upsert_note
 from features.cork_board import corkboard_bp, upsert_pin, add_link
@@ -1781,6 +1782,24 @@ def get_provider_models():
     api_key = sanitize_api_key(data.get('api_key', None))
     models = _cached_models(provider_name, api_key or 'None')
     return jsonify({'models': models})
+
+
+@app.route('/providers/model_catalog', methods=['POST'])
+def get_provider_model_catalog():
+    """Metadata-rich model list for the DeepSeek picker (name, description, context
+    window, input modalities, reasoning/effort). Falls back to the plain list for
+    providers without a catalogue, so the frontend always has something to render."""
+    data = request.get_json() or {}
+    provider_name = data.get('provider', 'ollama')
+    api_key = sanitize_api_key(data.get('api_key', None))
+    provider = providers.get(provider_name)
+    if provider is not None and hasattr(provider, 'model_catalog'):
+        try:
+            return jsonify({'models': provider.model_catalog(api_key=api_key)})
+        except Exception:
+            pass
+    return jsonify({'models': _cached_models(provider_name, api_key or 'None')})
+
 
 
 # Model lists CHANGE while the app runs: you pull a model in Ollama, download a
@@ -4799,6 +4818,7 @@ def chat_stream():
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
+        thinking = data.get('thinking') or ''
 
         provider_name = data.get('provider', 'ollama')
         # Only llama.cpp gets native audio input; other providers get the audio
@@ -5038,6 +5058,14 @@ def chat_stream():
                         except Exception:
                             stream_model = model
                     payload = {"model": stream_model, "messages": messages, "stream": True, "temperature": 0.7}
+                    # DeepSeek reasoning effort (off/low/high/max -> reasoning_effort).
+                    # Only sent when the UI chose an effort, so the workspace default
+                    # (via the non-streaming path) and the model's own default are
+                    # left untouched otherwise.
+                    if provider_name == "deepseek" and thinking:
+                        effort = deepseek_reasoning_effort(thinking)
+                        if effort:
+                            payload["reasoning_effort"] = effort
                     # Give the model room to finish: a reasoning-heavy model (e.g.
                     # VideoGuard / Qwen3.5) spends a lot of its budget on
                     # reasoning_content, and if max_tokens is too small it runs out

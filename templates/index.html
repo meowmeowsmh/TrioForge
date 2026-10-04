@@ -1654,6 +1654,12 @@ video.tf-video {
         <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
         <input id="modelSearchInput" type="text" placeholder="🔍 filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
         <select id="modelSelect" class="model-select" title="Select model"></select>
+        <select id="reasoningEffortSelect" class="model-select" title="Reasoning effort (DeepSeek reasoning models)" style="display:none;">
+          <option value="off">Reasoning: Off</option>
+          <option value="low">Reasoning: Low</option>
+          <option value="high" selected>Reasoning: High</option>
+          <option value="max">Reasoning: Max</option>
+        </select>
         <select id="ctxSelect" class="model-select" title="llama.cpp context length — the number of tokens the model can remember (restarts llama-server when changed)" style="display:none;">
           <option value="2048">Context: 2K</option>
           <option value="4096">Context: 4K</option>
@@ -1922,6 +1928,8 @@ var attachments = document.getElementById('attachments');
 var convList    = document.getElementById('convList');
 var modelSelect = document.getElementById('modelSelect');
 var ctxSelect = document.getElementById('ctxSelect');
+var reasoningEffortSelect = document.getElementById('reasoningEffortSelect');
+var deepseekCatalog = {};   // model id -> metadata entry from /providers/model_catalog
 var providerSelect = document.getElementById('providerSelect');
 var apiKeyInput = document.getElementById('apiKeyInput');
 var visionBadge = document.getElementById('visionBadge');
@@ -2740,7 +2748,11 @@ function loadModels() {
     var provider = providerSelect.value;
     var apiKey = apiKeyInput.value;
     var myReq = ++loadModelsReq;
-    fetch('/providers/models', {
+    // DeepSeek gets its metadata-rich catalogue (names, context window, input
+    // modalities, reasoning/effort) from the harness-style catalog; every other
+    // provider keeps the plain id list.
+    var endpoint = (provider === 'deepseek') ? '/providers/model_catalog' : '/providers/models';
+    fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: provider, api_key: apiKey })
@@ -2751,13 +2763,21 @@ function loadModels() {
             if (data.error) { status.textContent = '⚠️ ' + formatAiError(provider, data.error); return; }
             var current = modelSelect.value;
             modelSelect.innerHTML = '';
+            deepseekCatalog = {};
+            var isRich = !!(data.models && data.models[0] && typeof data.models[0] === 'object');
             if (data.models && data.models.length) {
                 data.models.forEach(m => {
                     var opt = document.createElement('option');
-                    opt.value = m; opt.textContent = m;
+                    if (isRich) {
+                        opt.value = m.id; opt.textContent = m.name || m.id;
+                        deepseekCatalog[m.id] = m;
+                    } else {
+                        opt.value = m; opt.textContent = m;
+                    }
                     modelSelect.appendChild(opt);
                 });
-                modelSelect.value = (current && data.models.includes(current)) ? current : data.models[0];
+                var ids = data.models.map(function(m){ return isRich ? m.id : m; });
+                modelSelect.value = (current && ids.indexOf(current) !== -1) ? current : ids[0];
                 if (typeof filterModelSel === 'function') filterModelSel();
             } else {
                 var opt = document.createElement('option');
@@ -2801,11 +2821,37 @@ function loadModels() {
             }
             if (provider === 'deepseek' && modelSelect.value) {
                 checkDeepSeekStatus();
+                updateDeepSeekModelInfo();
             } else {
                 document.getElementById('modelInfo').textContent = '';
+                reasoningEffortSelect.style.display = 'none';
             }
         })
         .catch(err => { status.textContent = '⚠️ Could not load models: ' + err; });
+}
+
+// Show the DeepSeek model's metadata (name, context window, input modalities) and
+// reveal the reasoning-effort selector only for models that declare reasoning.
+function updateDeepSeekModelInfo() {
+    var infoEl = document.getElementById('modelInfo');
+    var model = modelSelect.value;
+    var entry = deepseekCatalog[model];
+    if (!entry) { infoEl.textContent = ''; reasoningEffortSelect.style.display = 'none'; return; }
+    var bits = [entry.name || model];
+    if (entry.contextWindow) bits.push((entry.contextWindow >= 1000 ? (entry.contextWindow / 1000) + 'K' : entry.contextWindow) + ' context');
+    bits.push((entry.inputModalities || ['text']).join('+'));
+    infoEl.textContent = 'DeepSeek · ' + bits.join(' · ');
+    infoEl.style.display = '';
+    if (entry.description) infoEl.title = entry.description;
+    var efforts = (entry.reasoning && entry.reasoning.efforts) || null;
+    if (efforts && efforts.length) {
+        reasoningEffortSelect.style.display = '';
+        var want = entry.reasoning.defaultEffort || 'high';
+        var ok = efforts.some(function(e){ return e.id === reasoningEffortSelect.value; });
+        if (!ok) reasoningEffortSelect.value = want;
+    } else {
+        reasoningEffortSelect.style.display = 'none';
+    }
 }
 
 var voicePollTimer = null;
@@ -3120,7 +3166,8 @@ modelSelect.addEventListener('change', function() {
     if (provider === 'llamacpp') {
         startLlamacpp(model);
     }
-    document.getElementById('modelInfo').textContent = '';
+    if (provider === 'deepseek') updateDeepSeekModelInfo();
+    else document.getElementById('modelInfo').textContent = '';
 });
 
 ctxSelect.addEventListener('change', function() {
@@ -5192,7 +5239,10 @@ function actuallySend(text) {
             ctx_size: parseInt(ctxSelect.value, 10) || null,
             api_key: apiKey,
             persona: personaPayload().persona,
-            persona_custom: personaPayload().persona_custom
+            persona_custom: personaPayload().persona_custom,
+            thinking: (provider === 'deepseek' && reasoningEffortSelect.style.display !== 'none')
+                ? (reasoningEffortSelect.value || '')
+                : ''
         })
     })
     .then(response => {

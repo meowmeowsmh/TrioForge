@@ -818,6 +818,38 @@ def test_window_ready_means_visible() -> None:
     print("  hidden form is not ready, visible window is, icons cannot block it -> OK")
 
 
+def test_deepseek_catalog() -> None:
+    _title("deepseek model catalogue")
+    from providers.llm_providers import (
+        DeepSeekProvider, deepseek_reasoning_effort, model_supports_vision,
+    )
+
+    # The harness's advisory catalogue: named, metadata-rich entries, not bare ids.
+    cat = {m["id"]: m for m in DeepSeekProvider().model_catalog()}
+    assert set(cat) == {"deepseek-flash", "deepseek-v4-pro"}, set(cat)
+    assert cat["deepseek-flash"]["name"] == "DeepSeek-V41-Flash"
+    assert cat["deepseek-flash"]["contextWindow"] == 1_000_000
+    assert "image" in cat["deepseek-flash"]["inputModalities"], \
+        "flash is text+image in the harness"
+    assert cat["deepseek-v4-pro"]["name"] == "DeepSeek-V4-Pro"
+    assert cat["deepseek-v4-pro"]["reasoning"]["defaultEffort"] == "high"
+    efforts = [e["id"] for e in cat["deepseek-v4-pro"]["reasoning"]["efforts"]]
+    assert efforts == ["off", "low", "high", "max"], efforts
+
+    # UI effort ids map onto the /v1 reasoning_effort the endpoint accepts.
+    assert deepseek_reasoning_effort("off") is None
+    assert deepseek_reasoning_effort("low") == "low"
+    assert deepseek_reasoning_effort("mid") == "medium"
+    assert deepseek_reasoning_effort("high") == "high"
+    assert deepseek_reasoning_effort("max") == "high"
+    assert deepseek_reasoning_effort("") is None
+
+    # Capability (vision badge / image routing) comes from the catalogue.
+    assert model_supports_vision("deepseek", "deepseek-flash") is True
+    assert model_supports_vision("deepseek", "deepseek-v4-pro") is False
+    print("  named entries, 1M context, image flag, effort map -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -828,7 +860,8 @@ def main() -> int:
              test_plan_load, test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
-             test_window_slot_is_exclusive, test_window_ready_means_visible]
+             test_window_slot_is_exclusive, test_window_ready_means_visible,
+             test_deepseek_catalog]
     failed = []
     for t in tests:
         try:

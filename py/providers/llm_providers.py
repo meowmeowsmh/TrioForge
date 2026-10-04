@@ -150,6 +150,12 @@ def sanitize_api_key(key: Optional[str]) -> Optional[str]:
 def model_supports_vision(provider_name: str, model_name: str) -> bool:
     if not model_name:
         return False
+    # DeepSeek capability comes from the catalogue (the harness advertises
+    # `deepseek-flash` as text+image), not from a keyword list.
+    if provider_name == "deepseek":
+        entry = DEEPSEEK_MODEL_CATALOG.get(model_name)
+        if entry is not None:
+            return "image" in (entry.get("inputModalities") or [])
     known = VISION_MODELS.get(provider_name, set())
     if provider_name in ("groq", "huggingface", "claude"):
         # exact match (case-insensitive) for known vision models
@@ -1457,15 +1463,68 @@ class GroqProvider(LLMProvider):
             raise ProviderError(f"Groq vision API error: {e}")
 
 
+# DeepSeek model catalogue, mirroring the DeepSeek Harness's advisory entries
+# (packages/llm/llm-deepseek/src/models.ts + model-info.ts). The UI renders these as
+# named, metadata-rich options instead of a bare dropdown of raw ids, and the reasoning
+# entry drives the effort selector. `inputModalities` decides the 👁 vision badge and
+# whether image questions route to this model.
+DEEPSEEK_MODEL_CATALOG = {
+    "deepseek-flash": {
+        "name": "DeepSeek-V41-Flash",
+        "description": "Fast, low-cost model for everyday chat, coding and image understanding.",
+        "contextWindow": 1_000_000,
+        "inputModalities": ["text", "image"],
+        "reasoning": None,
+    },
+    "deepseek-v4-pro": {
+        "name": "DeepSeek-V4-Pro",
+        "description": "Stronger agentic coding, knowledge, and difficult reasoning; suited to "
+                       "complex or quality-critical tasks at higher cost.",
+        "contextWindow": 1_000_000,
+        "inputModalities": ["text"],
+        "reasoning": {
+            "efforts": [
+                {"id": "off", "name": "Off",
+                 "description": "Use for simple tasks that do not need reasoning."},
+                {"id": "low", "name": "Low",
+                 "description": "Prefer for routine or latency-sensitive tasks."},
+                {"id": "high", "name": "High",
+                 "description": "The default balance for most tasks."},
+                {"id": "max", "name": "Max",
+                 "description": "Reserve for the hardest quality-first tasks."},
+            ],
+            "defaultEffort": "high",
+        },
+    },
+}
+
+# Reasoning effort as the DeepSeek /v1/chat/completions endpoint accepts it
+# (reasoning_effort: low|medium|high). The harness's off/low/high/max vocabulary is
+# mapped onto those wire values; "off" means "do not send the key", "max" uses the
+# endpoint's ceiling.
+DEEPSEEK_REASONING_EFFORT_WIRE = {
+    "off": None, "low": "low", "mid": "medium", "medium": "medium",
+    "high": "high", "max": "high",
+}
+
+
+def deepseek_reasoning_effort(thinking) -> str:
+    """Return the DeepSeek reasoning_effort wire value for a UI effort id (or None)."""
+    if not thinking:
+        return None
+    return DEEPSEEK_REASONING_EFFORT_WIRE.get(str(thinking).strip().lower(), "high")
+
+
 class DeepSeekProvider(LLMProvider):
-    # DeepSeek text models + the vision model (deepseek-v4-flash-vision-exp).
     MAX_OUTPUT_TOKENS = 8192  # DeepSeek chat API caps output here
 
-    # Curated backup merged with the live scan.
+    # Curated backup merged with the live scan. The live /v1/models endpoint returns
+    # exactly `deepseek-flash` and `deepseek-v4-pro`; these backups keep the dropdown
+    # populated before a key is entered, and carry the same canonical ids so the
+    # catalogue entries above always match.
     _BACKUP_MODELS = [
-        "deepseek-v4-flash",
+        "deepseek-flash",
         "deepseek-v4-pro",
-        "deepseek-v4-flash-vision-exp",
     ]
 
     def __init__(self, api_key: Optional[str] = None):
@@ -1498,6 +1557,28 @@ class DeepSeekProvider(LLMProvider):
         except Exception as e:
             logger.warning("Failed to fetch DeepSeek models: %s", e)
             return backup
+
+    def model_catalog(self, api_key: Optional[str] = None) -> List[dict]:
+        """The model list as metadata-rich entries for the UI's DeepSeek picker.
+
+        Only catalogue entries that also appear in the current model list are returned
+        (a live id the catalogue does not know is shown as a bare text-only fallback,
+        so nothing the endpoint offers ever disappears from the dropdown).
+        """
+        available = self.list_models(api_key=api_key)
+        out: List[dict] = []
+        for mid in available:
+            entry = DEEPSEEK_MODEL_CATALOG.get(mid)
+            if entry:
+                out.append({"id": mid, **entry})
+            else:
+                out.append({
+                    "id": mid, "name": mid, "description": "DeepSeek model.",
+                    "contextWindow": None, "inputModalities": ["text"],
+                    "reasoning": None,
+                })
+        return out
+
 
     def get_status(self) -> dict:
         """Check DeepSeek API reachability and classify the failure clearly
@@ -1540,6 +1621,17 @@ class DeepSeekProvider(LLMProvider):
 
     def get_model_info(self, model_id: str) -> dict:
         """Return description, capabilities, and pricing for a given DeepSeek model."""
+        cat = DEEPSEEK_MODEL_CATALOG.get(model_id)
+        if cat:
+            return {
+                "name": cat["name"],
+                "description": cat["description"],
+                "contextWindow": cat["contextWindow"],
+                "capabilities": (["Image analysis"] if "image" in cat["inputModalities"] else [])
+                                + ["Reasoning", "Multilingual"],
+                "reasoning": cat["reasoning"],
+                "pricing": {},
+            }
         info = {
             "deepseek-chat": {
                 "description": "General‑purpose chat (R1 / V3) – best for reasoning, conversation, and complex tasks.",
@@ -1597,7 +1689,9 @@ class DeepSeekProvider(LLMProvider):
         }
         thinking = kwargs.get("thinking")
         if thinking:
-            payload["reasoning_effort"] = {"low": "low", "mid": "medium", "high": "high"}.get(thinking, "high")
+            effort = deepseek_reasoning_effort(thinking)
+            if effort:
+                payload["reasoning_effort"] = effort
         tools = kwargs.get("tools")
         if tools:
             payload["tools"] = tools
