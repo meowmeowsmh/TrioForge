@@ -5485,14 +5485,12 @@ function actuallySend(text) {
 function finalizeStats(usage) {
     clearInterval(speedInterval);
     var tokenSpeedSpan = document.getElementById('tokenSpeed');
-    var tokens = usage.tokens || tokenCount;
+    var input = usage.input_tokens || 0;
+    var think = usage.reasoning_tokens || Math.round(liveReasoningChars / 4);
+    var out = usage.tokens || tokenCount;
+    var total = input + think + out;
     var secs = usage.duration_sec || ((Date.now() - startTimeToken) / 1000);
-    var speed = secs > 0 ? (tokens / secs).toFixed(1) : '?';
-    if (liveReasoningChars > 0) {
-        tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens | ${secs.toFixed(1)}s | 🧠 ${liveReasoningChars.toLocaleString()} chars reasoning`;
-    } else {
-        tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokens} tokens | ${secs.toFixed(1)}s`;
-    }
+    tokenSpeedSpan.textContent = `⏱️ ${secs.toFixed(1)}s · ~${total.toLocaleString()} tokens total (in ${input} + think ${think} + out ${out})`;
 }
 
 var recordBtn = document.getElementById('recordBtn');

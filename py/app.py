@@ -4987,7 +4987,7 @@ def chat_stream():
                 if tool_reasoning:
                     yield f"data: {json_dumps({'reasoning': tool_reasoning})}\n\n"
                 yield f"data: {json_dumps({'token': tool_final_text})}\n\n"
-                yield f"data: {json_dumps({'done': True, 'full_response': tool_final_text, 'usage': {}, 'reasoning': tool_reasoning})}\n\n"
+                yield f"data: {json_dumps({'done': True, 'full_response': tool_final_text, 'usage': {'tokens': _estimate_tokens(tool_final_text), 'input_tokens': _estimate_tokens(final_prompt), 'reasoning_tokens': _estimate_tokens(tool_reasoning), 'duration_sec': 0}, 'reasoning': tool_reasoning})}\n\n"
                 store_images, store_files = _user_attachments(images, files, videos)
                 add_message(conv_id, "user", user_message, store_images, store_files)
                 add_message(conv_id, "bot", tool_final_text, [], [], meta=_bot_meta(provider_name, model, tool_reasoning))
@@ -4998,7 +4998,7 @@ def chat_stream():
                 if audio_reasoning:
                     yield f"data: {json_dumps({'reasoning': audio_reasoning})}\n\n"
                 yield f"data: {json_dumps({'token': audio_final_text})}\n\n"
-                yield f"data: {json_dumps({'done': True, 'full_response': audio_final_text, 'usage': {}, 'reasoning': audio_reasoning})}\n\n"
+                yield f"data: {json_dumps({'done': True, 'full_response': audio_final_text, 'usage': {'tokens': _estimate_tokens(audio_final_text), 'input_tokens': _estimate_tokens(final_prompt), 'reasoning_tokens': _estimate_tokens(audio_reasoning), 'duration_sec': 0}, 'reasoning': audio_reasoning})}\n\n"
                 store_images, store_files = _user_attachments(images, files, videos)
                 add_message(conv_id, "user", user_message, store_images, store_files)
                 add_message(conv_id, "bot", audio_final_text, [], [], meta=_bot_meta(provider_name, model, audio_reasoning))
@@ -5101,7 +5101,7 @@ def chat_stream():
                         if not got_content and thinking_acc and not full_response:
                             full_response = thinking_acc
                             yield f"data: {json_dumps({'token': full_response})}\n\n"
-                        yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {'tokens': _estimate_tokens(full_response), 'duration_sec': 0}, 'reasoning': thinking_acc})}\n\n"
+                        yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {'tokens': _estimate_tokens(full_response), 'input_tokens': _estimate_tokens(final_prompt), 'reasoning_tokens': _estimate_tokens(thinking_acc), 'duration_sec': 0}, 'reasoning': thinking_acc})}\n\n"
                     except Exception as e:
                         detail = str(e)
                         if provider_name == "llamacpp":
