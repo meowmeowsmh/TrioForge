@@ -399,7 +399,40 @@ TrioForge.bat --install-autostart      # also: ./run.sh --install-autostart
 
 ## 🐳 Docker
 
-Recommended for a Linux server / WSL2 / NAS — and it builds **on Apple Silicon (arm64) and Linux x86_64 from the same `Dockerfile`** (`python:3.12-slim` is multi-arch, and the image has a healthcheck on `TRIOFORGE_PORT`). The prebuilt image (CI-built on every push) is the one-liner at the top. From a clone: `./docker/application.sh` (checks Docker, creates host folders, builds, starts). Host llama.cpp runs in **remote mode** via `LLAMA_HOST=host.docker.internal`; ComfyUI and Ollama likewise run on the host. See the [Start](#-start) section for the exact commands.
+Recommended for a Linux server / WSL2 / NAS — and one `Dockerfile` builds on **Apple Silicon (arm64) and Linux x86_64** (`python:3.12-slim` is multi-arch, and the image has a healthcheck on `TRIOFORGE_PORT`). The prebuilt image (CI-built on every push) is the one-liner at the top of this README.
+
+### Install Docker (Linux, first time only)
+
+1. Remove any broken Docker repo — a wrong `docker.com` URL 404s `apt update` and blocks everything:
+
+   ```bash
+   sudo rm -f /etc/apt/sources.list.d/docker.list
+   ```
+
+2. Install from Ubuntu's own repo (Ubuntu 24.04 / Mint 22 call the plugin `docker-compose-v2`):
+
+   ```bash
+   sudo apt update
+   sudo apt install -y docker.io docker-compose-v2
+   ```
+
+3. Add yourself to the `docker` group and activate it without logging out:
+
+   ```bash
+   sudo usermod -aG docker $USER
+   newgrp docker
+   ```
+
+   macOS: `brew install --cask docker` (Docker Desktop), then skip these steps.
+
+### Start it
+
+```bash
+cd TrioForge              # from the PROJECT ROOT, not inside docker/
+./docker/application.sh
+```
+
+Then open **http://localhost:5002**. `application.sh` checks Docker, creates the host folders, builds on first run, and starts. Host llama.cpp runs in **remote mode** via `LLAMA_HOST=host.docker.internal`; ComfyUI and Ollama likewise run on the host.
 
 ---
 
