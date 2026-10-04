@@ -1864,6 +1864,7 @@ video.tf-video {
       <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-bottom:1px solid #222; flex-wrap:wrap;">
         <strong style="font-size:14px; color:#3fb950;">🎨 Design Studio</strong>
         <div style="display:flex; gap:6px; align-items:center;">
+          <button id="designTabFiles" onclick="designTab('files')" title="Folder — the HTML files this studio saved" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">📁 Files</button>
           <button id="designTabPreview" onclick="designTab('preview')" style="background:#238636; border:1px solid #238636; color:#fff; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">👁 Preview</button>
           <button id="designTabCode" onclick="designTab('code')" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">📝 Code</button>
           <button onclick="designOpenExternal()" title="Open in browser" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">↗</button>
@@ -1876,6 +1877,10 @@ video.tf-video {
       </div>
       <div id="designCodeBody" style="flex:1; overflow:auto; padding:12px; display:none;">
         <pre style="margin:0;"><code id="designCodeBlock" class="language-html" style="font-size:12px;"></code></pre>
+      </div>
+      <div id="designFilesBody" style="flex:1; overflow:auto; padding:10px 12px; display:none;">
+        <div id="designFilesPath" style="font-size:11px; color:#8b949e; margin-bottom:8px; word-break:break-all;"></div>
+        <div id="designFilesList"></div>
       </div>
       <div style="padding:8px 14px; border-top:1px solid #222; font-size:11px; color:#8b949e;">
         Type a brief in 🎨 mode, or tick “♻️ Refine current design” and type a follow-up to edit this prototype.
@@ -3879,12 +3884,65 @@ function toggleDesignStudio() {
 function designTab(which) {
     var prev = document.getElementById('designPreviewBody');
     var code = document.getElementById('designCodeBody');
+    var files = document.getElementById('designFilesBody');
     if (prev) prev.style.display = (which === 'preview') ? '' : 'none';
     if (code) code.style.display = (which === 'code') ? '' : 'none';
+    if (files) files.style.display = (which === 'files') ? '' : 'none';
+    if (which === 'files') designLoadFiles();
     var pBtn = document.getElementById('designTabPreview');
     var cBtn = document.getElementById('designTabCode');
+    var fBtn = document.getElementById('designTabFiles');
     if (pBtn) pBtn.style.background = (which === 'preview') ? '#238636' : '#1c1c26';
     if (cBtn) cBtn.style.background = (which === 'code') ? '#238636' : '#1c1c26';
+    if (fBtn) fBtn.style.background = (which === 'files') ? '#238636' : '#1c1c26';
+}
+// The 📁 tab: every HTML the studio has ever saved, newest first, so a design is
+// findable even after the chat has scrolled away.
+function _dsFmtSize(n) {
+    if (!n) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+}
+function designLoadFiles() {
+    var box = document.getElementById('designFilesList');
+    var pathEl = document.getElementById('designFilesPath');
+    if (!box) return;
+    box.innerHTML = '<div style="color:#8b949e; font-size:12px;">Loading…</div>';
+    fetch('/api/design/artifacts')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          if (pathEl) pathEl.textContent = '📂 ' + (d.folder || '') + '  ·  ' + (d.count || 0) + ' file(s)';
+          box.innerHTML = '';
+          var files = d.files || [];
+          if (!files.length) {
+              box.innerHTML = '<div style="color:#8b949e; font-size:12px;">No saved designs yet. ' +
+                  'Type a brief in 🎨 mode and press Enter.</div>';
+              return;
+          }
+          files.forEach(function(f) {
+              var row = document.createElement('div');
+              row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:7px 9px; ' +
+                  'border:1px solid #222; border-radius:7px; margin-bottom:6px; cursor:pointer;';
+              row.onmouseenter = function() { row.style.borderColor = '#3fb950'; };
+              row.onmouseleave = function() { row.style.borderColor = '#222'; };
+              var when = new Date((f.mtime || 0) * 1000).toLocaleString();
+              row.innerHTML =
+                  '<span>📄</span>' +
+                  '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + f.id + '</span>' +
+                  '<span style="color:#8b949e; font-size:10px;">' + _dsFmtSize(f.size) + '</span>' +
+                  '<span style="color:#5a5a6a; font-size:10px;">' + when + '</span>';
+              row.title = f.id;
+              row.onclick = function() {
+                  openSavedDesign(f.url);
+                  designTab('preview');
+              };
+              box.appendChild(row);
+          });
+      })
+      .catch(function(e) {
+          box.innerHTML = '<div style="color:#f85149; font-size:12px;">Could not list designs: ' + e + '</div>';
+      });
 }
 function renderDesignStudio(d) {
     designCurrentUrl = d.url || '';

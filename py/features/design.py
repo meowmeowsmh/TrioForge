@@ -201,6 +201,37 @@ def _wrap_html(html):
     )
 
 
+@design_bp.route("/artifacts", methods=["GET"])
+def artifacts():
+    """List the saved design files - the folder the Design Studio writes into.
+
+    Every page generated from the chat lands in ``static/uploads/generated/designs``;
+    this is what the 📁 button in the studio header browses, so a design can be found
+    again after the chat scrolls away.
+    """
+    items = []
+    try:
+        names = os.listdir(DESIGNS_DIR)
+    except Exception:
+        names = []
+    for name in names:
+        if not name.lower().endswith((".html", ".htm")):
+            continue
+        path = os.path.join(DESIGNS_DIR, name)
+        try:
+            st = os.stat(path)
+        except Exception:
+            continue
+        items.append({
+            "id": name,
+            "url": "/static/uploads/generated/designs/" + name,
+            "size": st.st_size,
+            "mtime": st.st_mtime,
+        })
+    items.sort(key=lambda it: it["mtime"], reverse=True)
+    return jsonify({"folder": DESIGNS_DIR, "count": len(items), "files": items})
+
+
 @design_bp.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json(silent=True) or {}

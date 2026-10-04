@@ -977,6 +977,28 @@ def test_design_persists_in_conversation() -> None:
     print("  brief + result + meta.design survive a reload -> OK")
 
 
+def test_design_artifacts_listing() -> None:
+    _title("design artifacts folder")
+    import app as forge_app
+
+    # The 📁 tab in the studio header lists the folder the studio writes into, so a
+    # design stays findable after the chat has scrolled away.
+    with forge_app.app.test_client() as client:
+        r = client.get("/api/design/artifacts")
+        assert r.status_code == 200, r.status_code
+        d = r.get_json()
+        assert isinstance(d.get("folder"), str) and d["folder"], d
+        files = d.get("files")
+        assert isinstance(files, list), files
+        assert d.get("count") == len(files), (d.get("count"), len(files))
+        mtimes = [f["mtime"] for f in files]
+        assert mtimes == sorted(mtimes, reverse=True), "newest first"
+        for f in files:
+            assert f["id"].lower().endswith((".html", ".htm")), f
+            assert f["url"] == "/static/uploads/generated/designs/" + f["id"], f
+    print("  folder path, html only, newest first -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -989,7 +1011,7 @@ def main() -> int:
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
-             test_design_persists_in_conversation]
+             test_design_persists_in_conversation, test_design_artifacts_listing]
     failed = []
     for t in tests:
         try:
