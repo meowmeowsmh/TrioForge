@@ -906,7 +906,22 @@ def test_design_feature() -> None:
         def generate_raw(self, messages, **kw):
             return {"content": "<div>plain</div>", "reasoning_content": "think"}
     assert _model_answer(_Plain(), [], "", "") == "<div>plain</div>"
-    print("  extractor, wrap, reasoning fallback -> OK")
+
+    # Multi-file project parsing: a Python program becomes main.py + requirements.txt,
+    # a webpage becomes index.html, and a bare HTML doc is wrapped as index.html.
+    from features.design import _parse_project, _safe_rel, _files_quality
+    files = _parse_project(
+        "```index.html\n<!doctype html><html><body>x</body></html>\n```\n"
+        "```style.css\nbody{color:red}\n```\n"
+        "```main.py\nimport random\nprint('hi')\n```")
+    assert [p for p, _ in files] == ["index.html", "style.css", "main.py"], files
+    py = _parse_project("```main.py\nimport pygame\ndef main():\n    print('tick')\n```\n"
+                        "```requirements.txt\npygame==2.5.2\n```")
+    assert [p for p, _ in py] == ["main.py", "requirements.txt"], py
+    assert _files_quality(py) == "good"
+    assert _parse_project("Sure! <!doctype html><html><body>x</body></html>")[0][0] == "index.html"
+    assert _safe_rel("../../etc/passwd") == "etc/passwd", _safe_rel("../../etc/passwd")
+    print("  extractor, wrap, reasoning fallback, multi-file parse -> OK")
 
 
 def test_workspace_path_guard() -> None:
@@ -981,22 +996,25 @@ def test_design_artifacts_listing() -> None:
     _title("design artifacts folder")
     import app as forge_app
 
-    # The 📁 tab in the studio header lists the folder the studio writes into, so a
-    # design stays findable after the chat has scrolled away.
+    # The 📁 tab lists the projects the studio has written - folders for multi-file
+    # projects, plus any legacy loose html files - newest first.
     with forge_app.app.test_client() as client:
         r = client.get("/api/design/artifacts")
         assert r.status_code == 200, r.status_code
         d = r.get_json()
         assert isinstance(d.get("folder"), str) and d["folder"], d
-        files = d.get("files")
-        assert isinstance(files, list), files
-        assert d.get("count") == len(files), (d.get("count"), len(files))
-        mtimes = [f["mtime"] for f in files]
-        assert mtimes == sorted(mtimes, reverse=True), "newest first"
-        for f in files:
-            assert f["id"].lower().endswith((".html", ".htm")), f
-            assert f["url"] == "/static/uploads/generated/designs/" + f["id"], f
-    print("  folder path, html only, newest first -> OK")
+        projects = d.get("projects")
+        loose = d.get("files")
+        assert isinstance(projects, list) and isinstance(loose, list), d
+        assert d.get("count") == len(projects) + len(loose), (d.get("count"), len(projects), len(loose))
+        pm = [p["mtime"] for p in projects]
+        assert pm == sorted(pm, reverse=True), "projects newest first"
+        for p in projects:
+            assert p["is_dir"] is True and isinstance(p["name"], str) and p["count"] >= 0
+        for f in loose:
+            assert f["name"].lower().endswith((".html", ".htm")), f
+            assert f["url"] == "/static/uploads/generated/designs/" + f["name"], f
+    print("  project folders + loose html, newest first -> OK")
 
 
 # ---------------------------------------------------------------------------

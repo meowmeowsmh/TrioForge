@@ -3876,6 +3876,7 @@ function designPreset(brief) {
 // ── Design Studio panel (OpenDesign-style preview + code on the right) ──
 var designCurrentUrl = '';
 var designCurrentId = 'design.html';
+var designProjectFiles = [];   // the files of the project currently open in the studio
 function toggleDesignStudio() {
     var p = document.getElementById('designStudioPanel');
     if (!p) return;
@@ -3896,13 +3897,45 @@ function designTab(which) {
     if (cBtn) cBtn.style.background = (which === 'code') ? '#238636' : '#1c1c26';
     if (fBtn) fBtn.style.background = (which === 'files') ? '#238636' : '#1c1c26';
 }
-// The 📁 tab: every HTML the studio has ever saved, newest first, so a design is
-// findable even after the chat has scrolled away.
 function _dsFmtSize(n) {
     if (!n) return '';
     if (n < 1024) return n + ' B';
     if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
     return (n / 1048576).toFixed(1) + ' MB';
+}
+function _dsLang(path) {
+    var ext = (path.split('.').pop() || '').toLowerCase();
+    return ({ js: 'javascript', py: 'python', ts: 'typescript', json: 'json', css: 'css',
+              md: 'markdown', sh: 'bash', yml: 'yaml', yaml: 'yaml', html: 'xml', htm: 'xml' })[ext] || 'plaintext';
+}
+function _dsHighlight(el, text, lang) {
+    if (typeof hljs !== 'undefined') {
+        try { el.innerHTML = hljs.highlight(text, { language: lang }).value; }
+        catch (e) { el.textContent = text; }
+    } else {
+        el.textContent = text;
+    }
+    el.className = 'language-' + lang;
+}
+function _dsOpenFile(url, path) {
+    // Load one file into Code, and into Preview when it is HTML.
+    var isHtml = /\.(html?|htm)$/i.test(path || '');
+    designCurrentUrl = url || '';
+    designCurrentId = (url || '').split('/').pop() || 'file';
+    if (isHtml) {
+        var frame = document.getElementById('designPreviewFrame');
+        if (frame) frame.src = url;
+    }
+    fetch(url)
+      .then(function(r) { return r.text(); })
+      .then(function(t) {
+          var codeEl = document.getElementById('designCodeBlock');
+          if (codeEl) _dsHighlight(codeEl, t, _dsLang(path || ''));
+      })
+      .catch(function() {});
+    var p = document.getElementById('designStudioPanel');
+    if (p) p.style.display = 'flex';
+    designTab(isHtml ? 'preview' : 'code');
 }
 function designLoadFiles() {
     var box = document.getElementById('designFilesList');
@@ -3912,15 +3945,57 @@ function designLoadFiles() {
     fetch('/api/design/artifacts')
       .then(function(r) { return r.json(); })
       .then(function(d) {
-          if (pathEl) pathEl.textContent = '📂 ' + (d.folder || '') + '  ·  ' + (d.count || 0) + ' file(s)';
+          if (pathEl) pathEl.textContent = '📂 ' + (d.folder || '') + '  ·  ' + (d.count || 0) + ' item(s)';
           box.innerHTML = '';
-          var files = d.files || [];
-          if (!files.length) {
+          var projects = d.projects || [];
+          var loose = d.files || [];
+          if (!projects.length && !loose.length) {
               box.innerHTML = '<div style="color:#8b949e; font-size:12px;">No saved designs yet. ' +
                   'Type a brief in 🎨 mode and press Enter.</div>';
               return;
           }
-          files.forEach(function(f) {
+          projects.forEach(function(pr) {
+              var row = document.createElement('div');
+              row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:7px 9px; ' +
+                  'border:1px solid #222; border-radius:7px; margin-bottom:6px; cursor:pointer;';
+              row.onmouseenter = function() { row.style.borderColor = '#3fb950'; };
+              row.onmouseleave = function() { row.style.borderColor = '#222'; };
+              var when = new Date((pr.mtime || 0) * 1000).toLocaleString();
+              row.innerHTML =
+                  '<span class="ds-folder-ico">📁</span>' +
+                  '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + pr.name + '</span>' +
+                  '<span style="color:#8b949e; font-size:10px;">' + pr.count + ' file(s)</span>' +
+                  '<span style="color:#5a5a6a; font-size:10px;">' + when + '</span>';
+              row.title = pr.name;
+              var childBox = null;
+              row.onclick = function() {
+                  if (childBox) { childBox.remove(); childBox = null; return; }
+                  childBox = document.createElement('div');
+                  childBox.innerHTML = '<div style="color:#8b949e; font-size:12px; padding:4px 18px;">Loading…</div>';
+                  box.insertBefore(childBox, row.nextSibling);
+                  fetch('/api/design/artifacts/' + encodeURIComponent(pr.name))
+                    .then(function(r) { return r.json(); })
+                    .then(function(pd) {
+                        childBox.innerHTML = '';
+                        (pd.files || []).forEach(function(f) {
+                            var fr = document.createElement('div');
+                            fr.style.cssText = 'display:flex; gap:7px; align-items:center; padding:5px 10px 5px 26px; ' +
+                                'cursor:pointer; border-radius:5px;';
+                            fr.onmouseenter = function() { fr.style.background = '#1c1c26'; };
+                            fr.onmouseleave = function() { fr.style.background = 'transparent'; };
+                            fr.innerHTML =
+                                '<span>📄</span>' +
+                                '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + f.path + '</span>' +
+                                '<span style="color:#5a5a6a; font-size:10px;">' + _dsFmtSize(f.size) + '</span>';
+                            fr.onclick = function(ev) { ev.stopPropagation(); _dsOpenFile(f.url, f.path); };
+                            childBox.appendChild(fr);
+                        });
+                    })
+                    .catch(function() { childBox.innerHTML = '<div style="color:#f85149; font-size:12px; padding:4px 18px;">Failed.</div>'; });
+              };
+              box.appendChild(row);
+          });
+          loose.forEach(function(f) {
               var row = document.createElement('div');
               row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:7px 9px; ' +
                   'border:1px solid #222; border-radius:7px; margin-bottom:6px; cursor:pointer;';
@@ -3929,14 +4004,10 @@ function designLoadFiles() {
               var when = new Date((f.mtime || 0) * 1000).toLocaleString();
               row.innerHTML =
                   '<span>📄</span>' +
-                  '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + f.id + '</span>' +
+                  '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + f.name + '</span>' +
                   '<span style="color:#8b949e; font-size:10px;">' + _dsFmtSize(f.size) + '</span>' +
                   '<span style="color:#5a5a6a; font-size:10px;">' + when + '</span>';
-              row.title = f.id;
-              row.onclick = function() {
-                  openSavedDesign(f.url);
-                  designTab('preview');
-              };
+              row.onclick = function() { _dsOpenFile(f.url, f.name); };
               box.appendChild(row);
           });
       })
@@ -3945,23 +4016,44 @@ function designLoadFiles() {
       });
 }
 function renderDesignStudio(d) {
+    designProjectFiles = d.files || [];
     designCurrentUrl = d.url || '';
-    designCurrentId = d.id || 'design.html';
+    designCurrentId = d.id || 'project';
     var frame = document.getElementById('designPreviewFrame');
     if (frame) frame.src = d.url || 'about:blank';
     var codeEl = document.getElementById('designCodeBlock');
-    if (codeEl) {
-        var shown = d.html || '';
-        if (typeof hljs !== 'undefined') {
-            try { codeEl.innerHTML = hljs.highlight(shown, { language: 'html' }).value; }
-            catch (e) { codeEl.textContent = shown; }
-        } else {
-            codeEl.textContent = shown;
-        }
+    if (d.html) {
+        if (codeEl) _dsHighlight(codeEl, d.html, 'html');
+    } else if (designProjectFiles.length) {
+        var first = designProjectFiles[0];
+        fetch(first.url)
+          .then(function(r) { return r.text(); })
+          .then(function(t) { if (codeEl) _dsHighlight(codeEl, t, _dsLang(first.path)); })
+          .catch(function() {});
     }
-    designTab('preview');
+    designTab(d.url ? 'preview' : 'code');
     var p = document.getElementById('designStudioPanel');
     if (p) p.style.display = 'flex';
+}
+function openSavedProject(project) {
+    // Open a saved code project (no web preview) in the studio: list its files, show code.
+    fetch('/api/design/artifacts/' + encodeURIComponent(project))
+      .then(function(r) { return r.json(); })
+      .then(function(pd) {
+          designProjectFiles = pd.files || [];
+          designCurrentUrl = '';
+          var codeEl = document.getElementById('designCodeBlock');
+          if (designProjectFiles.length) {
+              var first = designProjectFiles[0];
+              fetch(first.url)
+                .then(function(r) { return r.text(); })
+                .then(function(t) { if (codeEl) _dsHighlight(codeEl, t, _dsLang(first.path)); });
+          }
+          var p = document.getElementById('designStudioPanel');
+          if (p) p.style.display = 'flex';
+          designTab('code');
+      })
+      .catch(function(e) { alert('Could not open project: ' + e); });
 }
 function designOpenExternal() {
     if (designCurrentUrl) window.open(designCurrentUrl, '_blank');
@@ -4819,6 +4911,19 @@ function renderMsg(role, entry, msgIndex) {
         dbar.appendChild(browBtn);
         dbar.appendChild(dlLink);
         div.appendChild(dbar);
+    }
+    if (entry.meta && entry.meta.design_project) {
+        // A saved code project (Python, etc.) - no web preview, just a button back
+        // into the studio where its files live.
+        var pr = entry.meta.design_project;
+        var pbar = document.createElement('div');
+        pbar.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
+        var pbtn = document.createElement('button');
+        pbtn.textContent = '📁 Open project in Studio';
+        pbtn.style.cssText = 'background:#1c1c26;border:1px solid #333;color:#e1e4e8;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;';
+        pbtn.onclick = function() { openSavedProject(pr); };
+        pbar.appendChild(pbtn);
+        div.appendChild(pbar);
     }
     if (entry.meta && entry.meta.reasoning) {
         renderThinkingBlock(div, entry.meta.reasoning);

@@ -2,14 +2,15 @@
 #
 #   POST /api/design/generate
 #       {"prompt": "...", "provider": "deepseek", "model": "deepseek-flash",
-#        "api_key": "...", "existing_html": "..."}   # existing_html = refine
-#       -> {"ok": true, "url": "/static/uploads/generated/designs/<id>.html",
-#           "id": "...", "html": "..."}
+#        "api_key": "...", "existing_html": "..."}
+#       -> {"ok": true, "project": "project-<ts>-<id>",
+#           "files": [{"path": "index.html", "url": "..."}, ...],
+#           "url": "<main html url or null>", "html": "<main html text>"}
 #
-# The model is asked to produce ONE self-contained HTML file (inline CSS, real
-# content, no build step) and the app saves it and returns a URL the GUI renders in
-# a sandboxed <iframe> with live preview + refine. This is OpenDesign's "prototype
-# composer with live preview", reduced to a single button and one prompt.
+# The model now produces a PROJECT: one or more files (a webpage is index.html +
+# optional style.css/app.js; a Python program is main.py + modules + requirements.txt).
+# Every generation lands in its own folder under static/uploads/generated/designs, so
+# the 📁 Files tab shows folders, not a flat pile of html files.
 
 import os
 import re
@@ -37,45 +38,38 @@ DESIGN_MAX_TOKENS = 65536
 _API_KINDS = {"deepseek", "groq", "claude", "gemini", "openrouter", "huggingface"}
 
 # Condensed from OpenDesign's design-brief skill: resolve the brief into concrete
-# design tokens (palette / typography / layout / mood / density) BEFORE writing, and
-# emit one complete HTML document. The discipline is what stops "make it
-# professional" from producing a vague, broken page.
+# design tokens BEFORE writing. The discipline is what stops "make it professional"
+# from producing a vague, broken page - and the same care now applies to code projects.
 DESIGN_SYSTEM_PROMPT = (
-    "You are a senior product-design engineer and front-end architect. You turn a "
-    "plain-language design brief into ONE finished, production-quality, self-contained "
-    "HTML page.\n\n"
-    "STEP 1 - resolve the design system before you write any markup:\n"
+    "You are a senior product-design engineer and software architect. You turn a "
+    "plain-language brief into a finished, self-contained project.\n\n"
+    "STEP 1 - decide what kind of project the brief asks for:\n"
+    "- a WEB PAGE or prototype -> build it as HTML/CSS/JS.\n"
+    "- a PROGRAM (a game, a script, a tool, 'python tic-tac-toe', etc.) -> write the "
+    "code. If the user names a language use it, otherwise Python. List any libraries "
+    "it needs in requirements.txt.\n\n"
+    "STEP 2 - for a WEB PAGE, resolve the design system first:\n"
     "- palette (light_clean #FFFFFF/#F8FAFC/#0F172A, monochrome_dark #09090B/#18181B/#FAFAFA, "
     "navy_and_white #0F172A/#1E293B/#F8FAFC, earth_tones #FFFBEB/#FEF3C7/#451A03)\n"
     "- accent (coral #F97316, electric_blue #3B82F6, emerald #10B981, muted_sage #84A98C)\n"
-    "- typography scale (display / body / small) and a mono face\n"
-    "- spacing scale, radii, and one shadow level\n"
-    "- layout model and density (section spacing 48px compact / 72px balanced / 96px spacious)\n"
-    "Emit those choices as CSS custom properties in :root and use ONLY those tokens.\n\n"
-    "STEP 2 - write the page. It must be a COMPLETE, finished page, not a sketch:\n"
-    "1. Output ONLY the HTML. The very first characters must be <!doctype html>. No "
-    "preamble, no explanation, no markdown fences, nothing after </html>.\n"
-    "2. One <style> block in the <head> with a REAL stylesheet: at least 120 lines of "
-    "CSS covering the reset, tokens, layout, every component, and responsive rules. "
-    "A page whose classes have no CSS is a failed answer.\n"
-    "3. Semantic HTML5: header/nav/main/section/article/footer, one h1, real landmarks, "
-    "aria-label on nav and icon-only controls, alt/aria-hidden on decorative SVG. No div soup.\n"
-    "4. Style every component you emit: header with sticky/blur, nav links with hover and "
-    ":focus-visible, hero with a clear type hierarchy and a primary + secondary CTA, "
-    "feature cards, and a footer. Buttons and links need hover, active and :focus-visible states.\n"
-    "5. Responsive for real: mobile-first with at least two breakpoints (640px, 1024px). "
-    "Grid or flex layouts, fluid type with clamp(), and any mobile menu must be styled and "
-    "usable, never a bare unhidden list.\n"
-    "6. Content: real, specific, well-written copy for the brief. Never lorem ipsum, never "
-    "'Feature 1 / Feature 2'. Real names, real numbers, real labels.\n"
-    "7. Self-contained: no build step and no external JS libraries. Inline SVG / CSS "
-    "gradients instead of images. Google Fonts via <link> are allowed, always with a "
-    "system-font fallback stack.\n"
-    "8. Craft details: max-width container, consistent vertical rhythm, WCAG AA contrast, "
-    "cursor:pointer on interactive elements, smooth transitions (150-250ms), and no layout "
-    "shift. Respect prefers-reduced-motion if you animate.\n"
-    "9. For a 'refine' instruction, edit the provided HTML and return the whole file again "
-    "with everything not mentioned left intact.\n"
+    "- typography scale, spacing scale, radii, one shadow level\n"
+    "Emit those as CSS custom properties in :root and use ONLY those tokens. Write a "
+    "REAL stylesheet (at least 120 lines), semantic HTML5, hover/:focus-visible states, "
+    "and real responsive breakpoints (640px, 1024px). Real content, never lorem ipsum.\n\n"
+    "STEP 3 - for a PROGRAM, write clean, runnable code: real logic (no TODOs or stubs), "
+    "sensible names, a working entry point in main.py, and comments only where they help. "
+    "If it needs libraries, list them in requirements.txt (name==version).\n\n"
+    "OUTPUT FORMAT (critical - this is parsed, not read):\n"
+    "Emit each file as a fenced code block whose first line is EXACTLY the file path. "
+    "Nothing else on that line, no language tag, no prose between blocks:\n"
+    "```index.html\n"
+    "<!doctype html>...\n"
+    "```\n"
+    "```main.py\n"
+    "import ...\n"
+    "```\n"
+    "A webpage's index.html is the file the Preview shows. Never wrap the whole answer "
+    "in one big fence, and never write anything outside a file block.\n"
 )
 
 
@@ -90,18 +84,12 @@ def _extract_html(text):
     t = (text or "").strip()
     if not t:
         return None
-
-    # 0) If the answer is fenced, take the largest fenced block.
     fences = re.findall(r"```(?:html|htm|html5)?\s*\n?(.*?)```", t, re.S | re.I)
     if fences:
         t = max(fences, key=len).strip()
         if not t:
             return None
-
     low = t.lower()
-
-    # 1) Start at the document, or at the FIRST structural tag - whichever comes first.
-    #    Starting at <body> when a <style> sits above it is the bug that lost the CSS.
     starts = [low.find(n) for n in ("<!doctype", "<html", "<head", "<style", "<body")]
     starts = [i for i in starts if i != -1]
     if starts:
@@ -111,8 +99,6 @@ def _extract_html(text):
         if not m:
             return None
         t = t[m.start():].strip()
-
-    # 2) Drop anything the model wrote after the document (closing commentary).
     low = t.lower()
     end = low.rfind("</html>")
     if end != -1:
@@ -125,11 +111,7 @@ def _extract_html(text):
 
 
 def _looks_unstyled(html):
-    """True when the page has structure but essentially no stylesheet.
-
-    A prototype whose classes carry no CSS renders as unstyled browser defaults, which
-    is exactly the 'the code quality is terrible' report. Used to retry once.
-    """
+    """True when the page has structure but essentially no stylesheet."""
     low = html.lower()
     if "<link" in low and "stylesheet" in low:
         return False
@@ -137,17 +119,75 @@ def _looks_unstyled(html):
     return css.count("{") < 8
 
 
+def _safe_rel(path):
+    """Sanitize a model-supplied file path into a safe relative path."""
+    p = (path or "").replace("\\", "/").strip().strip("'\"").lstrip("./")
+    parts = [seg for seg in p.split("/") if seg and seg not in (".", "..")]
+    return "/".join(parts) or "file.txt"
+
+
+def _looks_python(text):
+    return bool(re.search(r"^\s*(import\s+\w+|from\s+\w+\s+import|def\s+\w+\s*\(|"
+                          r"class\s+\w+|print\s*\()", text, re.M))
+
+
+# A fenced file block: ```path<newline>content```
+_FENCE_RE = re.compile(r"```([^\s`][^`\n]*?)\s*\n(.*?)```", re.S)
+
+
+def _parse_project(text):
+    """Turn the model's answer into [(relative_path, content), ...]."""
+    t = (text or "").strip()
+    if not t:
+        return []
+
+    files, seen = [], set()
+    for m in _FENCE_RE.finditer(t):
+        info = m.group(1).strip()
+        if "." not in info:                      # a language tag, not a file path
+            continue
+        rel = _safe_rel(info)
+        content = m.group(2).rstrip("\n")
+        if rel in seen or not content.strip():
+            continue
+        seen.add(rel)
+        files.append((rel, content))
+
+    if files:
+        return files
+
+    # No fenced files: the whole answer is one document.
+    html = _extract_html(t)
+    if html:
+        return [("index.html", html)]
+
+    m = re.search(r"```(?:python|py|html|js|css)?\s*\n(.*?)```", t, re.S | re.I)
+    if m and m.group(1).strip():
+        body = m.group(1).strip()
+        return [("main.py" if _looks_python(body) else "index.html", body)]
+    return []
+
+
+def _files_quality(files):
+    """'good' or 'bad' - bad means the caller should retry once."""
+    if not files:
+        return "bad"
+    main = next((c for p, c in files if p.lower().endswith((".html", ".htm"))), None)
+    if main is not None:
+        return "bad" if _looks_unstyled(main) else "good"
+    # A code project just needs real content, not a length threshold: a tic-tac-toe is
+    # short and still complete.
+    total = sum(len(c) for _, c in files)
+    return "good" if total > 40 else "bad"
+
 
 def _model_answer(provider, messages, model, api_key, max_tokens=DESIGN_MAX_TOKENS):
     """Run the model and return the actual answer text.
 
-    Thinking models (DeepSeek-V4 Flash/Pro) put their chain-of-thought in
-    ``reasoning_content`` and the answer in ``content`` — but occasionally the answer
-    lands in ``reasoning_content`` with an empty ``content`` (the same case the chat
-    stream already papers over). Read the raw message so neither field is lost.
-
-    ``max_tokens`` is generous on purpose: a thinking model spends this budget on its
-    reasoning FIRST, so a chat-sized budget leaves the page truncated mid-stylesheet.
+    Thinking models put their chain-of-thought in ``reasoning_content`` and the answer
+    in ``content``, but occasionally the answer lands in ``reasoning_content`` with an
+    empty ``content``. Read the raw message so neither field is lost. The token budget
+    is generous because a thinking model spends it on reasoning FIRST.
     """
     kwargs = {"model": model} if model else {}
     if api_key:
@@ -159,7 +199,7 @@ def _model_answer(provider, messages, model, api_key, max_tokens=DESIGN_MAX_TOKE
         try:
             raw = provider.generate_raw(messages, **kwargs)
         except TypeError:
-            kwargs.pop("max_tokens", None)        # provider takes no max_tokens
+            kwargs.pop("max_tokens", None)
             try:
                 raw = provider.generate_raw(messages, **kwargs)
             except Exception:
@@ -176,17 +216,11 @@ def _model_answer(provider, messages, model, api_key, max_tokens=DESIGN_MAX_TOKE
 
 
 def _wrap_html(html):
-    """Guarantee a standalone document without fighting the model's own styling.
-
-    A fragment keeps its own ``<style>`` blocks - they are moved into the head rather
-    than left in the body - and the only fallback CSS is a zero margin. An earlier
-    version injected ``background:#fff;color:#111``, which silently wrecked dark-mode
-    designs whenever the model's stylesheet had been dropped upstream.
-    """
+    """Guarantee a standalone document without fighting the model's own styling."""
     low = html.lower()
     if "<!doctype" in low or "<html" in low:
         if "<!doctype" not in low:
-            return "<!doctype html>\n" + html          # quirks mode otherwise
+            return "<!doctype html>\n" + html
         return html
     styles = re.findall(r"<style[^>]*>.*?</style>", html, re.S | re.I)
     body = html
@@ -201,35 +235,75 @@ def _wrap_html(html):
     )
 
 
+def _finalize_files(files):
+    out = []
+    for rel, content in files:
+        if rel.lower().endswith((".html", ".htm")):
+            content = _wrap_html(content)
+        out.append((rel, content))
+    return out
+
+
 @design_bp.route("/artifacts", methods=["GET"])
 def artifacts():
-    """List the saved design files - the folder the Design Studio writes into.
-
-    Every page generated from the chat lands in ``static/uploads/generated/designs``;
-    this is what the 📁 button in the studio header browses, so a design can be found
-    again after the chat scrolls away.
-    """
-    items = []
+    """List the saved design projects (folders), plus any legacy loose html files."""
+    projects, loose = [], []
     try:
         names = os.listdir(DESIGNS_DIR)
     except Exception:
         names = []
     for name in names:
-        if not name.lower().endswith((".html", ".htm")):
+        if name.startswith('.'):
             continue
-        path = os.path.join(DESIGNS_DIR, name)
+        p = os.path.join(DESIGNS_DIR, name)
         try:
-            st = os.stat(path)
+            st = os.stat(p)
         except Exception:
             continue
-        items.append({
-            "id": name,
-            "url": "/static/uploads/generated/designs/" + name,
-            "size": st.st_size,
-            "mtime": st.st_mtime,
-        })
-    items.sort(key=lambda it: it["mtime"], reverse=True)
-    return jsonify({"folder": DESIGNS_DIR, "count": len(items), "files": items})
+        if os.path.isdir(p):
+            try:
+                inner = [f for f in os.listdir(p) if not f.startswith('.')]
+            except Exception:
+                inner = []
+            main = next((f for f in inner if f.lower().endswith(('.html', '.htm'))), None)
+            projects.append({
+                "name": name, "is_dir": True, "mtime": st.st_mtime,
+                "count": len(inner), "main": main,
+                "url": ("/static/uploads/generated/designs/{}/{}".format(name, main)
+                        if main else None),
+            })
+        elif name.lower().endswith((".html", ".htm")):
+            loose.append({"name": name, "is_dir": False, "mtime": st.st_mtime,
+                          "size": st.st_size,
+                          "url": "/static/uploads/generated/designs/" + name})
+    projects.sort(key=lambda it: it["mtime"], reverse=True)
+    loose.sort(key=lambda it: it["mtime"], reverse=True)
+    return jsonify({"folder": DESIGNS_DIR, "count": len(projects) + len(loose),
+                    "projects": projects, "files": loose})
+
+
+@design_bp.route("/artifacts/<name>", methods=["GET"])
+def project_files(name):
+    """List the files inside one saved project folder."""
+    name = _safe_rel(name)
+    base = os.path.join(DESIGNS_DIR, name)
+    if not os.path.isdir(base):
+        return jsonify({"error": "Not a project folder: {}".format(name)}), 404
+    files = []
+    for root, _dirs, fns in os.walk(base):
+        for fn in fns:
+            if fn.startswith('.'):
+                continue
+            full = os.path.join(root, fn)
+            rel = os.path.relpath(full, base).replace('\\', '/')
+            try:
+                size = os.path.getsize(full)
+            except Exception:
+                size = 0
+            files.append({"path": rel, "size": size,
+                          "url": "/static/uploads/generated/designs/{}/{}".format(name, rel)})
+    files.sort(key=lambda f: f["path"])
+    return jsonify({"project": name, "files": files})
 
 
 @design_bp.route("/generate", methods=["POST"])
@@ -237,7 +311,7 @@ def generate():
     data = request.get_json(silent=True) or {}
     prompt = (data.get("prompt") or "").strip()
     if not prompt:
-        return jsonify({"error": "A design brief is required."}), 400
+        return jsonify({"error": "A brief is required."}), 400
 
     provider_name = (data.get("provider") or "deepseek").strip().lower()
     model = (data.get("model") or "").strip()
@@ -252,11 +326,11 @@ def generate():
 
     if existing_html:
         user_msg = (
-            "Refine the design below according to this instruction:\n\n"
-            f"{prompt}\n\nExisting HTML:\n```html\n{existing_html}\n```"
+            "Refine the project below according to this instruction:\n\n"
+            f"{prompt}\n\nExisting HTML:\n```index.html\n{existing_html}\n```"
         )
     else:
-        user_msg = f"Design brief:\n{prompt}"
+        user_msg = f"Brief:\n{prompt}"
 
     messages = [
         {"role": "system", "content": DESIGN_SYSTEM_PROMPT},
@@ -264,12 +338,8 @@ def generate():
     ]
 
     try:
-        best = None
+        best_files, best_q = None, "bad"
         last_exc = None
-        # Two attempts, because two different failures are common: a thinking model
-        # occasionally echoes its input instead of answering, and the first answer can
-        # come back as structure with no stylesheet. The second attempt is kept only if
-        # it is actually better (a styled page beats an unstyled one).
         for _ in range(2):
             try:
                 answer = _model_answer(provider, messages, model, api_key)
@@ -277,49 +347,68 @@ def generate():
                 last_exc = exc
                 logger.warning("design attempt failed (%s/%s): %s", provider_name, model, exc)
                 continue
-            candidate = _extract_html(answer)
-            if not candidate:
+            files = _parse_project(answer)
+            if not files:
                 continue
-            if best is None or (_looks_unstyled(best) and not _looks_unstyled(candidate)):
-                best = candidate
-            if not _looks_unstyled(candidate):
+            q = _files_quality(files)
+            if best_files is None or (best_q == "bad" and q == "good"):
+                best_files, best_q = files, q
+            if q == "good":
                 break
-        if best is None:
-            detail = f": {last_exc}" if last_exc else " (the model returned no HTML)"
-            return jsonify({"error": "The model did not produce a design" + detail}), 502
-        html = _wrap_html(best)
-        if _looks_unstyled(html):
-            logger.warning("design came back without a stylesheet (%s/%s)", provider_name, model)
+        if best_files is None:
+            detail = f": {last_exc}" if last_exc else " (the model returned nothing)"
+            return jsonify({"error": "The model did not produce a project" + detail}), 502
+        files = _finalize_files(best_files)
     except Exception as exc:
         logger.warning("design generation failed (%s/%s): %s", provider_name, model, exc)
         return jsonify({"error": f"The model failed: {exc}"}), 502
 
     os.makedirs(DESIGNS_DIR, exist_ok=True)
-    name = "design-{}-{}.html".format(int(time.time()), uuid.uuid4().hex[:6])
-    path = os.path.join(DESIGNS_DIR, name)
+    project = "project-{}-{}".format(int(time.time()), uuid.uuid4().hex[:6])
+    proj_dir = os.path.join(DESIGNS_DIR, project)
     try:
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(html)
+        os.makedirs(proj_dir, exist_ok=True)
     except Exception as exc:
-        logger.warning("could not save design artifact: %s", exc)
-        return jsonify({"error": "Could not save the generated design."}), 500
+        logger.warning("could not create project folder: %s", exc)
+        return jsonify({"error": "Could not create the project folder."}), 500
 
-    url = "/static/uploads/generated/designs/" + name
+    saved = []
+    try:
+        for rel, content in files:
+            rel = _safe_rel(rel)
+            dest = os.path.join(proj_dir, rel)
+            parent = os.path.dirname(dest)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(dest, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            saved.append({"path": rel,
+                          "url": "/static/uploads/generated/designs/{}/{}".format(project, rel)})
+    except Exception as exc:
+        logger.warning("could not save design files: %s", exc)
+        return jsonify({"error": "Could not save the generated files."}), 500
 
-    # Persist into the conversation so a design survives a reload. The HTML already
-    # lives in static/uploads (permanent); this writes the brief + a bot message whose
-    # meta.design lets the UI re-render the live preview from history.
+    main_url = next((s["url"] for s in saved if s["path"].lower().endswith((".html", ".htm"))), None)
+    main_html = next((c for p, c in files if p.lower().endswith((".html", ".htm"))), "")
+
+    # Persist into the conversation so a design survives a reload.
     if conversation_id:
         try:
             from app import add_message
             add_message(conversation_id, "user", prompt)
-            add_message(
-                conversation_id,
-                "bot",
-                "🎨 Design generated — open in the 🎨 Design Studio to edit.",
-                meta={"design": url, "kind": "api" if provider_name in _API_KINDS else "local"},
-            )
+            if main_url:
+                add_message(conversation_id, "bot",
+                            "🎨 Project generated — open in the 🎨 Design Studio.",
+                            meta={"design": main_url, "kind": "api" if provider_name in _API_KINDS else "local"})
+            else:
+                file_names = ", ".join(s["path"] for s in saved[:6])
+                add_message(conversation_id, "bot",
+                            "🎨 Project generated (" + file_names + ") — open in the 🎨 Design Studio.",
+                            meta={"design_project": project, "kind": "api" if provider_name in _API_KINDS else "local"})
         except Exception as exc:
             logger.warning("design conversation save failed: %s", exc)
 
-    return jsonify({"ok": True, "url": url, "id": name, "html": html})
+    resp = {"ok": True, "project": project, "files": saved, "url": main_url, "id": project}
+    if main_html:
+        resp["html"] = main_html
+    return jsonify(resp)
