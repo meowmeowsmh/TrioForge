@@ -2849,17 +2849,11 @@ function loadModels() {
 // Show the DeepSeek model's metadata (name, context window, input modalities) and
 // reveal the reasoning-effort selector only for models that declare reasoning.
 function updateDeepSeekModelInfo() {
-    var infoEl = document.getElementById('modelInfo');
+    // The metadata line is deliberately hidden; this only manages the
+    // reasoning-effort selector (shown for reasoning models only).
     var model = modelSelect.value;
     var entry = deepseekCatalog[model];
-    if (!entry) { infoEl.textContent = ''; reasoningEffortSelect.style.display = 'none'; return; }
-    var bits = [entry.name || model];
-    if (entry.contextWindow) bits.push((entry.contextWindow >= 1000 ? (entry.contextWindow / 1000) + 'K' : entry.contextWindow) + ' context');
-    bits.push((entry.inputModalities || ['text']).join('+'));
-    infoEl.textContent = 'DeepSeek · ' + bits.join(' · ');
-    infoEl.style.display = '';
-    if (entry.description) infoEl.title = entry.description;
-    var efforts = (entry.reasoning && entry.reasoning.efforts) || null;
+    var efforts = (entry && entry.reasoning && entry.reasoning.efforts) || null;
     if (efforts && efforts.length) {
         reasoningEffortSelect.style.display = '';
         var want = entry.reasoning.defaultEffort || 'high';
