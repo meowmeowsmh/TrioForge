@@ -4388,27 +4388,91 @@ def _resolve_workspace_file(wid, rel_path):
     if not os.path.isdir(base):
         return None, "Configured folder does not exist: {}".format(base)
     base_real = os.path.realpath(base)
+    # A workspace pointed at a drive ROOT ("D:\") already ends with a separator, so
+    # `base_real + os.sep` built "D:\\" and every real path under it failed the prefix
+    # check - the whole folder was denied, for the file tools as much as the browser.
+    prefix = base_real if base_real.endswith(os.sep) else base_real + os.sep
     target = os.path.realpath(os.path.join(base_real, rel_path or ""))
-    if target != base_real and not target.startswith(base_real + os.sep):
+    if target != base_real and not target.startswith(prefix):
         return None, "Access denied: path is outside the configured folder."
     return target, None
 
 
 @app.route('/api/workspace/files', methods=['GET'])
 def workspace_files():
+    """List one directory of the workspace folder (the left-hand file tree).
+
+    ``?path=<rel>`` browses a subfolder; the browser expands folder by folder instead
+    of walking the whole tree, so opening a big repo stays instant.
+    """
     wid = _current_workspace_id()
     base = _workspace_setting(wid, "folder", "") or ""
     if not base:
-        return jsonify({"error": "No folder configured for this workspace."}), 400
+        return jsonify({"error": "No folder configured for this workspace.",
+                        "folder": "", "files": []}), 400
     base = os.path.abspath(base)
     if not os.path.isdir(base):
-        return jsonify({"error": "Configured folder does not exist: {}".format(base)}), 400
+        return jsonify({"error": "Configured folder does not exist: {}".format(base),
+                        "folder": base, "files": []}), 400
+
+    rel = (request.args.get('path') or '').replace('\\', '/').strip('/')
+    target, err = _resolve_workspace_file(wid, rel)
+    if err:
+        return jsonify({"error": err, "folder": base, "files": []}), 400
+    if not os.path.isdir(target):
+        return jsonify({"error": "Not a folder: {}".format(rel), "folder": base, "files": []}), 400
+
+    try:
+        names = os.listdir(target)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "folder": base, "files": []}), 500
+
     items = []
-    for name in sorted(os.listdir(base)):
-        p = os.path.join(base, name)
-        items.append({"name": name, "is_dir": os.path.isdir(p),
-                      "size": os.path.getsize(p) if os.path.isfile(p) else 0})
-    return jsonify({"folder": base, "mode": _workspace_setting(wid, "folder_mode", "read"), "files": items})
+    for name in names:
+        if name.startswith('.'):
+            continue
+        p = os.path.join(target, name)
+        try:
+            is_dir = os.path.isdir(p)
+            size = os.path.getsize(p) if os.path.isfile(p) else 0
+        except Exception:
+            is_dir, size = False, 0
+        items.append({
+            "name": name,
+            "is_dir": is_dir,
+            "size": size,
+            "path": (rel + "/" + name) if rel else name,
+        })
+    # Folders first, then files, each alphabetically - how a file manager reads.
+    items.sort(key=lambda it: (not it["is_dir"], it["name"].lower()))
+    return jsonify({"folder": base, "path": rel,
+                    "mode": _workspace_setting(wid, "folder_mode", "read"),
+                    "files": items})
+
+
+@app.route('/api/workspace/raw', methods=['GET'])
+def workspace_raw_file():
+    """Serve one workspace file so the preview iframe can render it.
+
+    The workspace folder lives anywhere on disk, so its files are not under /static
+    and cannot be iframed directly. This streams just that one resolved file (never a
+    directory listing), with the traversal guard applied first.
+    """
+    wid = _current_workspace_id()
+    rel = (request.args.get('path') or '').replace('\\', '/').strip('/')
+    target, err = _resolve_workspace_file(wid, rel)
+    if err:
+        return jsonify({"error": err}), 400
+    if not os.path.isfile(target):
+        return jsonify({"error": "File not found: {}".format(rel)}), 404
+    import mimetypes
+    # No "; charset=" here: Flask adds the charset itself for text types, and passing
+    # one in produced "text/html; charset=utf-8; charset=utf-8".
+    kind = mimetypes.guess_type(target)[0] or 'text/plain'
+    try:
+        return send_file(target, mimetype=kind)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 # â”€â”€ Plugins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

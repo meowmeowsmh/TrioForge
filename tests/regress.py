@@ -909,6 +909,45 @@ def test_design_feature() -> None:
     print("  extractor, wrap, reasoning fallback -> OK")
 
 
+def test_workspace_path_guard() -> None:
+    _title("workspace path resolution")
+    import tempfile
+    import app as forge_app
+
+    saved = forge_app._workspace_setting
+
+    def with_folder(folder):
+        forge_app._workspace_setting = lambda wid, key, default=None: (
+            folder if key == "folder" else default)
+
+    try:
+        # A workspace pointed at a drive ROOT is the common case here (folder "D:\\"),
+        # and `base_real + os.sep` built "D:\\\\" - so EVERY real path under it failed
+        # the prefix check and the whole folder was denied, for the browser and the
+        # agent's own file tools alike.
+        root = "C:\\" if os.name == "nt" else os.sep
+        with_folder(root)
+        target, err = forge_app._resolve_workspace_file("default", "sub/file.txt")
+        assert err is None, err
+        assert target == os.path.realpath(os.path.join(root, "sub", "file.txt")), target
+        target, err = forge_app._resolve_workspace_file("default", "")
+        assert err is None and target == os.path.realpath(root), (target, err)
+
+        # A real escape from a normal folder must still be refused.
+        with tempfile.TemporaryDirectory() as tmp:
+            with_folder(tmp)
+            target, err = forge_app._resolve_workspace_file("default", "inside.txt")
+            assert err is None and target == os.path.realpath(os.path.join(tmp, "inside.txt"))
+            _, err = forge_app._resolve_workspace_file(
+                "default", os.path.join("..", "..", "escape.txt"))
+            assert err is not None, "path traversal must stay blocked"
+            _, err = forge_app._resolve_workspace_file("default", os.path.join("..", "escape.txt"))
+            assert err is not None, "path traversal must stay blocked"
+    finally:
+        forge_app._workspace_setting = saved
+    print("  drive-root folder resolves, traversal blocked -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -920,7 +959,7 @@ def main() -> int:
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
-             test_deepseek_catalog, test_design_feature]
+             test_deepseek_catalog, test_design_feature, test_workspace_path_guard]
     failed = []
     for t in tests:
         try:

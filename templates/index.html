@@ -1622,6 +1622,7 @@ video.tf-video {
         <button class="clear-btn" id="videoGenBtn" onclick="selectVideoGen()" title="Generate a video (OpenRouter / ComfyUI)">🎬</button>
         <button class="clear-btn" id="audioGenBtn" onclick="selectAudioGen()" title="Generate audio (ComfyUI text-to-audio / music / TTS)" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">🎵</button>
         <button class="clear-btn" id="designBtn" onclick="selectDesignGen()" title="Design — type a brief and get an HTML prototype with live preview (OpenDesign-style)" style="border-color:rgba(63,185,80,0.45); color:#3fb950;">🎨</button>
+        <button class="clear-btn" id="wsExplorerBtn" onclick="toggleWsExplorer()" title="Files — browse the workspace folder (see where your files are created)" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">📁</button>
         <button class="clear-btn" id="ragBtn" onclick="toggleRagPanel()" title="Document chat (RAG) — upload docs and ask questions about them" style="border-color:rgba(163,113,247,0.4); color:#a371f7;">📚</button>
 
         <!-- Weather toggle is an ICON, so it lives in this centered icon row. -->
@@ -1838,6 +1839,23 @@ video.tf-video {
       </div>
       <div id="liveCodeBody" style="flex:1; overflow-y:auto; padding:12px 14px; font-size:12px;">
         <div style="color:#8b949e;">Session only — new edits appear here as the agent makes them. Use ↺ Restore to load saved edits from the database.</div>
+      </div>
+    </div>
+
+    <!-- Workspace file explorer (left side): where your files actually live -->
+    <div id="wsExplorerPanel" style="display:none; position:fixed; top:60px; left:0; bottom:60px; width:min(340px, 84vw); z-index:5300; background:#0d0d13; border-right:1px solid #333; box-shadow:4px 0 20px rgba(0,0,0,0.5); flex-direction:column;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; border-bottom:1px solid #222;">
+        <strong style="font-size:14px; color:#58a6ff;">📁 Files</strong>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button onclick="loadWsTree()" title="Refresh" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 9px; font-size:12px; cursor:pointer;">↻</button>
+          <button onclick="toggleWorkspaceSettings()" title="Change the workspace folder" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 9px; font-size:12px; cursor:pointer;">⚙️</button>
+          <button onclick="toggleWsExplorer()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
+        </div>
+      </div>
+      <div id="wsRootPath" style="padding:8px 12px; border-bottom:1px solid #222; font-size:11px; color:#8b949e; word-break:break-all;"></div>
+      <div id="wsTree" style="flex:1; overflow:auto; padding:6px 4px; font-size:12px;"></div>
+      <div style="padding:8px 12px; border-top:1px solid #222; font-size:11px; color:#8b949e;">
+        Click a file to open it in 👁 Preview / 📝 Code on the right.
       </div>
     </div>
 
@@ -3898,6 +3916,144 @@ function designDownload() {
     document.body.appendChild(a);
     a.click();
     a.remove();
+}
+// ── 📁 Workspace file explorer (left): where your files actually live ──
+// The forge works in its own sandbox; this panel is how YOU see the folder, open a
+// file and read the code. Nothing here generates anything - it only shows what exists.
+var wsTreeLoaded = false;
+function toggleWsExplorer() {
+    var p = document.getElementById('wsExplorerPanel');
+    if (!p) return;
+    var open = (p.style.display === 'flex');
+    p.style.display = open ? 'none' : 'flex';
+    if (!open && !wsTreeLoaded) loadWsTree();
+}
+function _wsFmtSize(n) {
+    if (!n) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+}
+function loadWsTree() {
+    var box = document.getElementById('wsTree');
+    var root = document.getElementById('wsRootPath');
+    if (!box) return;
+    box.innerHTML = '<div style="color:#8b949e; padding:6px 8px;">Loading…</div>';
+    fetch('/api/workspace/files')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          if (d.error) {
+              if (root) root.textContent = d.folder || '';
+              box.innerHTML = '<div style="color:#f0883e; padding:6px 8px;">' + d.error +
+                  '<br><br>Open ⚙️ to set the folder TrioForge should work in.</div>';
+              return;
+          }
+          wsTreeLoaded = true;
+          if (root) root.textContent = '📂 ' + (d.folder || '');
+          box.innerHTML = '';
+          renderWsEntries(box, d.files || [], 0);
+      })
+      .catch(function(e) {
+          box.innerHTML = '<div style="color:#f85149; padding:6px 8px;">Could not list files: ' + e + '</div>';
+      });
+}
+function renderWsEntries(box, files, depth) {
+    if (!files.length) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'color:#5a5a6a; padding:4px 8px;';
+        empty.textContent = '(empty)';
+        box.appendChild(empty);
+        return;
+    }
+    files.forEach(function(f) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:3px 8px; ' +
+            'border-radius:5px; cursor:pointer; white-space:nowrap; padding-left:' + (8 + depth * 14) + 'px;';
+        row.onmouseenter = function() { row.style.background = '#1c1c26'; };
+        row.onmouseleave = function() { row.style.background = 'transparent'; };
+        var icon = document.createElement('span');
+        icon.textContent = f.is_dir ? '📁' : '📄';
+        var label = document.createElement('span');
+        label.textContent = f.name;
+        label.style.cssText = 'overflow:hidden; text-overflow:ellipsis; color:' +
+            (f.is_dir ? '#e1e4e8' : '#c9d1d9') + ';';
+        row.appendChild(icon);
+        row.appendChild(label);
+        if (!f.is_dir && f.size) {
+            var sz = document.createElement('span');
+            sz.textContent = _wsFmtSize(f.size);
+            sz.style.cssText = 'margin-left:auto; color:#5a5a6a; font-size:10px;';
+            row.appendChild(sz);
+        }
+        var childBox = null;
+        row.onclick = function(ev) {
+            ev.stopPropagation();
+            if (!f.is_dir) { openWsFile(f.path); return; }
+            if (childBox) {                 // collapse
+                childBox.remove();
+                childBox = null;
+                icon.textContent = '📁';
+                return;
+            }
+            icon.textContent = '📂';
+            childBox = document.createElement('div');
+            childBox.innerHTML = '<div style="color:#8b949e; padding:4px 8px;">Loading…</div>';
+            row.parentNode.insertBefore(childBox, row.nextSibling);
+            fetch('/api/workspace/files?path=' + encodeURIComponent(f.path))
+              .then(function(r) { return r.json(); })
+              .then(function(d) {
+                  childBox.innerHTML = '';
+                  if (d.error) {
+                      childBox.innerHTML = '<div style="color:#f85149; padding:4px 8px;">' + d.error + '</div>';
+                      return;
+                  }
+                  renderWsEntries(childBox, d.files || [], depth + 1);
+              })
+              .catch(function() {
+                  childBox.innerHTML = '<div style="color:#f85149; padding:4px 8px;">Failed to read folder.</div>';
+              });
+        };
+        box.appendChild(row);
+    });
+}
+function openWsFile(path) {
+    fetch('/api/workspace/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: path })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert(d.error); return; }
+        var text = d.content || '';
+        var ext = (path.split('.').pop() || '').toLowerCase();
+        var langs = { js: 'javascript', py: 'python', ts: 'typescript', json: 'json', css: 'css',
+                      md: 'markdown', sh: 'bash', yml: 'yaml', yaml: 'yaml', html: 'xml', htm: 'xml' };
+        var lang = langs[ext] || 'plaintext';
+        var codeEl = document.getElementById('designCodeBlock');
+        if (codeEl) {
+            codeEl.className = 'language-' + lang;
+            if (typeof hljs !== 'undefined') {
+                try { codeEl.innerHTML = hljs.highlight(text, { language: lang }).value; }
+                catch (e) { codeEl.textContent = text; }
+            } else {
+                codeEl.textContent = text;
+            }
+        }
+        var isHtml = /\.(html?|htm)$/i.test(path);
+        if (isHtml) {
+            // A workspace file is not under /static, so it is previewed through the
+            // raw endpoint that serves exactly this one resolved file.
+            designCurrentUrl = '/api/workspace/raw?path=' + encodeURIComponent(path);
+            designCurrentId = path.split('/').pop();
+            var frame = document.getElementById('designPreviewFrame');
+            if (frame) frame.src = designCurrentUrl;
+        }
+        var p = document.getElementById('designStudioPanel');
+        if (p) p.style.display = 'flex';
+        designTab(isHtml ? 'preview' : 'code');
+    })
+    .catch(function(e) { alert('Could not read file: ' + e); });
 }
 function generateDesignChat(text) {
     if (!text || !text.trim()) return;
