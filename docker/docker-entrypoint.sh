@@ -14,6 +14,12 @@ set -e
 SSL_ENV="${TRIOFORGE_SSL:-0}"
 if [ "$SSL_ENV" = "0" ]; then
     echo "🔓 Serving plain HTTP (set TRIOFORGE_SSL=1 for HTTPS)."
+    if [ "$#" -eq 0 ]; then
+        echo "This script is Docker's entrypoint — start the stack with"
+        echo "  ./docker/application.sh"
+        echo "instead of running it directly."
+        exit 0
+    fi
     exec "$@"
 fi
 

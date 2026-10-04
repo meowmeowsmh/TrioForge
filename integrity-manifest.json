@@ -4,9 +4,9 @@
   ".gitattributes": "f1741ec13cd048ee99d864bddeb48e2b7b6560d6517e446fd3f01df6a45a859b",
   "TrioForge.bat": "36bd0d4940f535b9831392947fd823bbd6b4be2e4def2d29bc26d514673a96a9",
   "docker/Dockerfile": "9847a616c1373cb622347e633647177e381bb7074b47cb7bb0b0e6f1c12f5889",
-  "docker/application.sh": "6d74e93eaadf6ed20e89154a5ed9ad9d2062e461772fa8d3b719b7efd4d27906",
+  "docker/application.sh": "9068b7b15c3975cf596add413b1465a80ebcef61d03eb7e79e766566bb0d3535",
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
-  "docker/docker-entrypoint.sh": "9580ec10b81bcec3e1eeca5b88b2b37c02e16416bc0b8dd500bbb7d9ad88a9e8",
+  "docker/docker-entrypoint.sh": "7c969f55b0b410e12f9369d5081364021f5ee92ecc11893d371c0dd833818f7b",
   "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
   "forge.cmd": "0455a8bab7f0eaa200aa316a9ba60b48fed2486505daabb176b38d68c9d2347c",
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
@@ -109,6 +109,6 @@
   "templates/index.html": "9e181274d3a9874f5bd14ad226aa130fe056f3c7f6dfc133d48016bb9ed035a5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T03:45:54",
- "note": "docker python 3.12 + /search + /download"
+ "generated": "2026-10-05T03:53:30",
+ "note": "docker: fix mint package name, executable scripts, entrypoint guard"
 }

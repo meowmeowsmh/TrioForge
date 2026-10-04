@@ -75,8 +75,9 @@ if ! command -v docker >/dev/null 2>&1; then
     echo "            brew install --cask docker      (or https://www.docker.com/products/docker-desktop)"
     echo "  Linux:  install Docker Engine + the compose plugin"
     echo "            https://docs.docker.com/engine/install/"
-    echo "          Debian/Ubuntu one-liner:"
-    echo "            sudo apt update && sudo apt install -y docker.io docker-compose-plugin"
+    echo "          Debian/Ubuntu/Mint one-liner (Ubuntu 24.04 ships the plugin as"
+    echo "          docker-compose-v2, not docker-compose-plugin):"
+    echo "            sudo apt update && sudo apt install -y docker.io docker-compose-v2"
     echo "            sudo usermod -aG docker \$USER   # then log out and back in"
     echo ""
     exit 1
@@ -89,7 +90,7 @@ elif command -v docker-compose >/dev/null 2>&1; then
 else
     echo "[TrioForge] Docker is installed, but Docker Compose is not."
     echo "  macOS:  it ships with Docker Desktop — make sure Docker Desktop is installed."
-    echo "  Linux:  sudo apt install -y docker-compose-plugin   (or 'docker-compose' for v1)"
+    echo "  Linux:  sudo apt install -y docker-compose-v2   (or 'docker-compose' for v1)"
     exit 1
 fi
 echo "[TrioForge] Using: $COMPOSE"
