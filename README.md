@@ -438,6 +438,18 @@ cd TrioForge              # from the PROJECT ROOT, not inside docker/
 
 Then open **http://localhost:5002**. `application.sh` checks Docker, creates the host folders, builds on first run, and starts. Host llama.cpp runs in **remote mode** via `LLAMA_HOST=host.docker.internal`; ComfyUI and Ollama likewise run on the host.
 
+### Back up, restore, and find models (these work even without Docker installed)
+
+```bash
+./docker/application.sh --backup                 # tar chats/notes/uploads to backups/
+./docker/application.sh --restore <backup.tar.gz>  # restore a backup
+./docker/application.sh --download "qwen 7b"     # search Hugging Face for GGUF models
+```
+
+`--backup` packs `json_configuration`, `sqlite_data`, `static/uploads`, `cert_store`
+and `logs` (models are left out — re-pull them). To pull a model, use the app's
+model page in the browser, or run `forge` and type `/download <query>`.
+
 ---
 
 ## 💾 Backing up

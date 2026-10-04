@@ -4,7 +4,7 @@
   ".gitattributes": "f1741ec13cd048ee99d864bddeb48e2b7b6560d6517e446fd3f01df6a45a859b",
   "TrioForge.bat": "36bd0d4940f535b9831392947fd823bbd6b4be2e4def2d29bc26d514673a96a9",
   "docker/Dockerfile": "9847a616c1373cb622347e633647177e381bb7074b47cb7bb0b0e6f1c12f5889",
-  "docker/application.sh": "9068b7b15c3975cf596add413b1465a80ebcef61d03eb7e79e766566bb0d3535",
+  "docker/application.sh": "178ece870f8d3ee8076c2996c5f773772c6870f5744d26a5fe68d3fffcd1cfa7",
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "7c969f55b0b410e12f9369d5081364021f5ee92ecc11893d371c0dd833818f7b",
   "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
@@ -109,6 +109,6 @@
   "templates/index.html": "9e181274d3a9874f5bd14ad226aa130fe056f3c7f6dfc133d48016bb9ed035a5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T04:03:24",
- "note": "v1.4.9 release"
+ "generated": "2026-10-05T04:13:15",
+ "note": "docker backup/restore/download flags + README"
 }

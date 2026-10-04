@@ -20,6 +20,9 @@
 #   ./docker/application.sh --logs          # follow logs
 #   ./docker/application.sh --status        # show container status
 #   ./docker/application.sh --stop          # stop and remove the container
+#   ./docker/application.sh --backup        # tar your chats/notes/uploads to backups/
+#   ./docker/application.sh --restore <file>  # restore a backup tarball
+#   ./docker/application.sh --download <q>  # search Hugging Face for a GGUF model
 #   ./docker/application.sh --help
 #
 # Updating: the image is rebuilt by CI on every push to main, so --update is all
@@ -45,10 +48,12 @@ echo ""
 
 # ---- flags -----------------------------------------------------------------
 DO_BUILD="auto"     # auto | force | never
-MODE="up-detached"  # up-detached | up-foreground | logs | status | stop
+MODE="up-detached"  # up-detached | up-foreground | logs | status | stop | backup | restore | download
+RESTORE_FILE=""
+DOWNLOAD_QUERY=""
 
-for arg in "$@"; do
-    case "$arg" in
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --build)      DO_BUILD="force" ;;
         --no-build)   DO_BUILD="never" ;;
         --update|--pull) MODE="update" ;;
@@ -56,16 +61,74 @@ for arg in "$@"; do
         --logs)       MODE="logs" ;;
         --status)     MODE="status" ;;
         --stop|--down) MODE="stop" ;;
+        --backup)     MODE="backup" ;;
+        --restore)    MODE="restore"; shift; RESTORE_FILE="$1" ;;
+        --download)   MODE="download"; shift; DOWNLOAD_QUERY="$1" ;;
         --help|-h)
-            sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
-            echo "[TrioForge] Unknown option: $arg  (try --help)"
+            echo "[TrioForge] Unknown option: $1  (try --help)"
             exit 1
             ;;
     esac
+    shift
 done
+
+# ---- backup / restore / download (NO Docker needed) -------------------------
+case "$MODE" in
+    backup)
+        echo ""
+        echo "[TrioForge] Backing up your chats, notes, uploads and certs..."
+        mkdir -p backups
+        stamp=$(date +%Y%m%d-%H%M%S)
+        out="backups/trioforge-docker-$stamp.tar.gz"
+        tar -czf "$out" \
+            json_configuration sqlite_data static/uploads cert_store logs \
+            2>/dev/null || true
+        echo "[TrioForge] Backed up to: $out"
+        echo "[TrioForge] (models/ is NOT included — pull those again with --download"
+        echo "            or the in-app download page.)"
+        exit 0
+        ;;
+    restore)
+        if [ -z "$RESTORE_FILE" ] || [ ! -f "$RESTORE_FILE" ]; then
+            echo "[TrioForge] usage: ./docker/application.sh --restore <backup.tar.gz>"
+            exit 1
+        fi
+        echo ""
+        echo "[TrioForge] Restoring from $RESTORE_FILE ..."
+        tar -xzf "$RESTORE_FILE"
+        echo "[TrioForge] Restored. Start it with: ./docker/application.sh"
+        exit 0
+        ;;
+    download)
+        if [ -z "$DOWNLOAD_QUERY" ]; then
+            echo "[TrioForge] usage: ./docker/application.sh --download <search query>"
+            exit 1
+        fi
+        echo ""
+        echo "[TrioForge] Searching Hugging Face for GGUF models matching '$DOWNLOAD_QUERY'..."
+        PY=""
+        for cand in .venv-linux/bin/python .venv/bin/python python3 python; do
+            if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+        done
+        if [ -n "$PY" ]; then
+            PYTHONPATH=py "$PY" -c "
+from tui.model_download import search
+for repo, dl in search('''$DOWNLOAD_QUERY''', limit=15):
+    print('  %s  (%s downloads)' % (repo, f'{dl:,}' if dl else '?'))
+" 2>/dev/null || echo "  (could not reach Hugging Face — check your network)"
+        else
+            echo "  (no python found — search from the app instead)"
+        fi
+        echo ""
+        echo "[TrioForge] To actually download one: open the app and use the model page,"
+        echo "            or run 'forge' and type /download $DOWNLOAD_QUERY"
+        exit 0
+        ;;
+esac
 
 # ---- 1) Docker + Compose present? ------------------------------------------
 if ! command -v docker >/dev/null 2>&1; then
@@ -164,7 +227,7 @@ fi
 HOST_PORT=$(grep -m1 -oE '"[0-9]+:[0-9]+"' "$COMPOSE_FILE" 2>/dev/null | tr -d '"' | cut -d: -f1 || true)
 [ -n "$HOST_PORT" ] || HOST_PORT=5002
 
-# ---- status / stop / logs short-circuits -----------------------------------
+# ---- status / stop / logs short-circuits (need Docker) ----------------------
 case "$MODE" in
     status)
         echo ""
