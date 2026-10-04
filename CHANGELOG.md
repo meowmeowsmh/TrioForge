@@ -3,7 +3,7 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
+## [1.4.9] — search & download models, and Docker on Apple Silicon
 
 ### Search and download GGUF models from the terminal
 
@@ -18,6 +18,9 @@ GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 The image moved to `python:3.12-slim` (multi-arch, so one `Dockerfile` serves
 arm64 and amd64), gained a healthcheck on `TRIOFORGE_PORT`, and `.dockerignore`
 now keeps the host's plugins, backups, tests and screenshots out of the image.
+The Docker launcher scripts are executable out of the box, the installer message
+names the correct Ubuntu/Mint package (`docker-compose-v2`), and the README walks
+through the whole first-time setup (including removing a stale `docker.com` repo).
 
 ## [1.4.8] — the model picker tells you what will actually fit
 

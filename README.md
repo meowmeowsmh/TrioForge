@@ -423,7 +423,11 @@ Recommended for a Linux server / WSL2 / NAS — and one `Dockerfile` builds on *
    newgrp docker
    ```
 
-   macOS: `brew install --cask docker` (Docker Desktop), then skip these steps.
+   **macOS** — install Docker Desktop and skip the Linux steps above. If you have
+   Homebrew, `brew install --cask docker`; if you **don't** have Homebrew, just
+   download Docker Desktop straight from <https://www.docker.com/products/docker-desktop>
+   (no command line needed — open the `.dmg`, drag it to Applications, launch it,
+   wait for the whale icon to settle). Either way you don't need a `docker` group.
 
 ### Start it
 
