@@ -31,3 +31,12 @@ tools/llama.cpp/
 personal.txt
 weather.html
 docker/ollama_data/
+# User/runtime data and docs that the container never reads — keeps the image
+# from shipping the host's plugins, backups, tests and screenshots.
+plugins/
+backups/
+tests/
+voiceguide_llama.cpp_guide/
+*.png
+*.gif
+*.mp4

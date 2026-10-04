@@ -3,6 +3,22 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### Search and download GGUF models from the terminal
+
+- `/search <query>` lists matching Hugging Face GGUF repos and their download
+  counts — browsing only, nothing is pulled.
+- `/download <query>` goes one step further: pick a repo, see its `.gguf` files
+  with sizes (model first, then any `mmproj` projector), and pull the one you
+  choose into `models/` — the same folder the web UI's download uses.
+
+### Docker builds on Apple Silicon and Linux x86_64
+
+The image moved to `python:3.12-slim` (multi-arch, so one `Dockerfile` serves
+arm64 and amd64), gained a healthcheck on `TRIOFORGE_PORT`, and `.dockerignore`
+now keeps the host's plugins, backups, tests and screenshots out of the image.
+
 ## [1.4.8] — the model picker tells you what will actually fit
 
 ### The picker shows the fit before you load it

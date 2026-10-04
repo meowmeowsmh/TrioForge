@@ -1,4 +1,6 @@
-FROM python:3.10-slim
+# python:3.12-slim is multi-arch (linux/amd64 + linux/arm64), so this single
+# Dockerfile builds on Linux x86_64 AND Apple Silicon with no changes.
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -30,6 +32,11 @@ RUN mkdir -p json_configuration sqlite_data cert_store static/uploads logs \
 # Internal gunicorn port. Override with TRIOFORGE_PORT and adjust the compose
 # port mapping to match, e.g. "5003:5003" + TRIOFORGE_PORT=5003.
 EXPOSE 5001
+
+# No curl in the image; Python's stdlib does the liveness check. Uses the same
+# TRIOFORGE_PORT the server was told to bind, so a port override stays in sync.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD python -c "import os,urllib.request; p=os.environ.get('TRIOFORGE_PORT','5001'); urllib.request.urlopen('http://127.0.0.1:'+p+'/', timeout=4)" || exit 1
 
 # The entrypoint only generates a self-signed cert when TRIOFORGE_SSL=1; by
 # default it serves plain HTTP (localhost is a secure context — no scary

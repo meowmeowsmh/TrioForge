@@ -399,7 +399,7 @@ TrioForge.bat --install-autostart      # also: ./run.sh --install-autostart
 
 ## 🐳 Docker
 
-Recommended for a Linux server / WSL2 / NAS. The prebuilt image (CI-built on every push) is the one-liner at the top. From a clone: `./docker/application.sh` (checks Docker, creates host folders, builds, starts). Host llama.cpp runs in **remote mode** via `LLAMA_HOST=host.docker.internal`; ComfyUI and Ollama likewise run on the host. See the [Start](#-start) section for the exact commands.
+Recommended for a Linux server / WSL2 / NAS — and it builds **on Apple Silicon (arm64) and Linux x86_64 from the same `Dockerfile`** (`python:3.12-slim` is multi-arch, and the image has a healthcheck on `TRIOFORGE_PORT`). The prebuilt image (CI-built on every push) is the one-liner at the top. From a clone: `./docker/application.sh` (checks Docker, creates host folders, builds, starts). Host llama.cpp runs in **remote mode** via `LLAMA_HOST=host.docker.internal`; ComfyUI and Ollama likewise run on the host. See the [Start](#-start) section for the exact commands.
 
 ---
 
