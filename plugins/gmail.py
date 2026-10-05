@@ -34,6 +34,15 @@ MANIFEST = {
     "description": "Let the agent read (and, with the write scope, act on) your Gmail.",
 }
 
+# ── Bundled app credentials (the rclone pattern) ──────────────────────────────
+# A hosted service like Claude registers ONE Google app centrally, so its users just
+# click "Sign in with Google". A self-hosted app has no such owner, so the owner of
+# THIS install creates the app once and pastes the id/secret here (or in
+# json_configuration/gmail_credentials.json). Once either is filled in, the Connectors
+# panel stops asking anybody for credentials - users just click Connect.
+DEFAULT_CLIENT_ID = ""
+DEFAULT_CLIENT_SECRET = ""
+
 # These become agent tools. The agent is handed these definitions, so "do my gmail"
 # becomes a real function call instead of a chatbot that pretends it can't.
 TOOLS = [
@@ -77,6 +86,11 @@ TOOLS = [
 
 
 def _credentials_config():
+    """client_id/client_secret: user-saved file first, then the bundled default.
+
+    The bundled default is what makes the Claude-style flow possible: once the app
+    owner fills DEFAULT_CLIENT_ID/SECRET, no user is ever asked for credentials.
+    """
     cfg = {}
     if os.path.isfile(_CRED_PATH):
         try:
@@ -84,8 +98,10 @@ def _credentials_config():
                 cfg = json.load(fh) or {}
         except Exception:
             cfg = {}
-    client_id = cfg.get("client_id") or os.environ.get("GMAIL_CLIENT_ID")
-    client_secret = cfg.get("client_secret") or os.environ.get("GMAIL_CLIENT_SECRET")
+    client_id = (cfg.get("client_id") or "").strip() or os.environ.get("GMAIL_CLIENT_ID") \
+        or DEFAULT_CLIENT_ID.strip()
+    client_secret = (cfg.get("client_secret") or "").strip() or os.environ.get("GMAIL_CLIENT_SECRET") \
+        or DEFAULT_CLIENT_SECRET.strip()
     scopes = cfg.get("scopes") or ["https://www.googleapis.com/auth/gmail.readonly"]
     return client_id, client_secret, scopes
 
@@ -205,13 +221,16 @@ def _read_message(mid):
 
 
 def _status():
-    cid, _, _ = _credentials_config()
-    if not cid:
-        return {"connected": False, "configured": False,
-                "hint": "Add client_id/client_secret to json_configuration/gmail_credentials.json"}
+    cid, secret, _ = _credentials_config()
+    if not cid or not secret:
+        # No app credentials anywhere. `needs_app` tells the UI to ask the INSTALL
+        # OWNER once - a normal user should never see these fields.
+        return {"connected": False, "configured": False, "needs_app": True,
+                "hint": "This install has no Google app yet. The owner sets it once "
+                        "(Client ID + Secret) and afterwards everyone just clicks Connect."}
     creds = _stored_credentials()
     if creds is None:
-        return {"connected": False, "configured": True}
+        return {"connected": False, "configured": True, "needs_app": False}
     account = None
     svc, _ = _service()
     if svc is not None:
@@ -219,7 +238,7 @@ def _status():
             account = svc.users().getProfile(userId="me").execute().get("emailAddress")
         except Exception:
             account = None
-    return {"connected": True, "configured": True, "account": account}
+    return {"connected": True, "configured": True, "needs_app": False, "account": account}
 
 
 def dispatch(tool_name, args):

@@ -8564,11 +8564,16 @@ function renderConnectorCard(box, c) {
               statusEl.style.color = '#f0883e';
           }
           if (!st.connected) {
-              if (st.configured === false) {
-                  // Let the user paste the service's credentials right here instead of
-                  // editing a JSON file by hand - that hand-edit is the step people skip.
+              if (st.needs_app) {
+                  // Only the INSTALL OWNER sees this, and only until the app has its
+                  // Google credentials - after that every user just clicks Connect,
+                  // the way "Sign in with Google" works everywhere else.
+                  var owner = document.createElement('div');
+                  owner.style.cssText = 'font-size:11px; color:#f0883e; margin-top:8px;';
+                  owner.textContent = '⚙️ One-time app setup (install owner): this build has no Google app yet.';
+                  card.insertBefore(owner, actions);
                   var credRow = document.createElement('div');
-                  credRow.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;';
+                  credRow.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;';
                   var idIn = document.createElement('input');
                   idIn.placeholder = 'Client ID';
                   idIn.autocomplete = 'off';
@@ -8579,7 +8584,7 @@ function renderConnectorCard(box, c) {
                   secIn.autocomplete = 'off';
                   secIn.style.cssText = idIn.style.cssText;
                   var saveBtn = document.createElement('button');
-                  saveBtn.textContent = '💾 Save';
+                  saveBtn.textContent = '💾 Save app';
                   saveBtn.style.cssText = 'background:#1f6feb;border:1px solid #1f6feb;color:#fff;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;';
                   saveBtn.onclick = function() {
                       saveConnectorCredentials(c.id, idIn.value, secIn.value);
@@ -8590,7 +8595,7 @@ function renderConnectorCard(box, c) {
                   card.insertBefore(credRow, actions);
               }
               var btn = document.createElement('button');
-              btn.textContent = st.configured ? '🔗 Connect' : '🔗 Connect (save credentials first)';
+              btn.textContent = st.needs_app ? '🔗 Connect (owner must set the app first)' : '🔗 Connect';
               btn.style.cssText = 'background:#238636;border:0;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
               btn.onclick = function() { connectConnector(c.id); };
               actions.appendChild(btn);
