@@ -295,6 +295,17 @@ def register(app):
         if not addr or not pw:
             return jsonify({"error": "Both your Gmail address and the app password "
                                      "are required."}), 400
+        # A Google App Password is 16 letters (shown as 'abcd efgh ijkl mnop'). Catch a
+        # real account password HERE rather than letting Google reject it: IMAP has
+        # refused plain passwords since Google removed "less secure app access", so
+        # sending it can only ever fail.
+        if not re.fullmatch(r"[a-zA-Z]{16}", pw):
+            return jsonify({"error": "That is not a Google App Password. App passwords "
+                                     "are 16 letters, e.g. 'abcd efgh ijkl mnop' - your "
+                                     "normal Google password can never work here. Create "
+                                     "one at myaccount.google.com -> Security -> App "
+                                     "passwords (2-Step Verification must be ON first)."}), 400
+        pw = pw.lower()
         try:
             os.makedirs(os.path.dirname(_CRED_PATH), exist_ok=True)
             with open(_CRED_PATH, "w", encoding="utf-8") as fh:

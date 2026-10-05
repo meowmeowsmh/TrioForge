@@ -109,6 +109,6 @@
   "templates/index.html": "5b3255e653f2f42d61341e28131f9c566ddf4e43795a9c3463135ba9cad1ea7d",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T16:23:47",
- "note": "gmail auth error clarity"
+ "generated": "2026-10-05T16:27:19",
+ "note": "gmail rejects plain passwords early"
 }
