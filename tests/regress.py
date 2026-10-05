@@ -1493,6 +1493,111 @@ def test_tui_plugin_commands() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_obsidian_connector() -> None:
+    _title("obsidian connector (reads and writes a vault)")
+    import importlib.util
+    import tempfile
+
+    repo = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("obs_probe", repo / "plugins" / "obsidian.py")
+    mod = importlib.util.module_from_spec(spec)
+    # Load the file WITHOUT running register(): the test wants the vault helpers,
+    # not a Flask route table.
+    spec.loader.exec_module(mod)
+
+    with tempfile.TemporaryDirectory() as vault, tempfile.TemporaryDirectory() as cfgdir:
+        mod._CRED_PATH = os.path.join(cfgdir, "obsidian_credentials.json")
+        os.makedirs(os.path.join(vault, ".obsidian"))
+        os.makedirs(os.path.join(vault, "Data"))
+        with open(os.path.join(vault, "Essay.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Essay\n\nSomething about memory management and caches.\n")
+        with open(os.path.join(vault, "Data", "notes.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Notes\n")
+        with open(os.path.join(vault, ".obsidian", "app.json"), "w", encoding="utf-8") as fh:
+            fh.write("{}")
+
+        mod._save_cfg({"vault": vault})
+
+        st = mod.dispatch("obsidian_status", {})
+        assert st["connected"] is True, st
+        assert st["notes"] == 2, st
+
+        # .obsidian is not a note, and never leaks into the listing.
+        listing = mod.dispatch("obsidian_list", {})
+        assert listing["count"] == 2, listing
+        assert listing["notes"] == ["Data/notes.md", "Essay.md"], listing["notes"]
+        assert mod.dispatch("obsidian_list", {"folder": "Data"})["count"] == 1
+
+        got = mod.dispatch("obsidian_read", {"note": "Essay.md"})
+        assert "memory management" in got["content"], got
+        # The extension is optional, and a missing note is an error not a crash.
+        assert mod.dispatch("obsidian_read", {"note": "Data/notes"})["note"] == "Data/notes.md"
+        assert "error" in mod.dispatch("obsidian_read", {"note": "nope.md"})
+
+        # The model supplies these paths, so confinement is the security boundary.
+        for bad in ("../escape", "..\\escape", "Data/../../escape",
+                    "D:/windows/evil", "/etc/passwd", ".obsidian/app"):
+            res = mod.dispatch("obsidian_read", {"note": bad})
+            assert "error" in res, "should have refused {!r}: {}".format(bad, res)
+
+        # Write creates, append preserves what was there.
+        res = mod.dispatch("obsidian_write", {"note": "New Note", "content": "hello\n"})
+        assert res["created"] is True and res["note"] == "New Note.md", res
+        assert os.path.isfile(os.path.join(vault, "New Note.md"))
+
+        res = mod.dispatch("obsidian_append", {"note": "Essay.md", "content": "appended line"})
+        assert res["action"] == "appended", res
+        after = mod.dispatch("obsidian_read", {"note": "Essay.md"})["content"]
+        assert "memory management" in after and "appended line" in after, after
+        assert mod.dispatch("obsidian_list", {})["count"] == 3
+
+        # Search hits names and content.
+        found = mod.dispatch("obsidian_search", {"query": "memory"})
+        assert any(m["note"] == "Essay.md" for m in found["match_content"]), found
+        by_name = mod.dispatch("obsidian_search", {"query": "notes"})
+        assert "Data/notes.md" in by_name["match_name"], by_name
+
+        assert "error" in mod.dispatch("obsidian_not_a_tool", {})
+        assert mod.connect_info()["connected"] is True
+
+        # Unset vault -> a clear message, not a stack trace.
+        mod._save_cfg({"vault": ""})
+        mod._detect_vault = lambda: None
+        st = mod.dispatch("obsidian_status", {})
+        assert st["connected"] is False and "vault" in st["error"].lower(), st
+    print("  status, list, read/write/append, search, traversal refused -> OK")
+
+
+# ---------------------------------------------------------------------------
+def test_shipped_plugins_load() -> None:
+    """Every plugin that ships must load - and register() must not collide.
+
+    Flask keys routes by the view function's NAME, not by path, so two plugins
+    that both define `_status_route` cannot coexist: the second one fails to
+    register and is silently dropped from the app. That actually happened when
+    the Obsidian connector was added next to Gmail, and nothing caught it because
+    each plugin passed its own tests in isolation. This is the test that does.
+    """
+    _title("every shipped plugin loads")
+    import plugin_loader
+    from flask import Flask
+
+    app = Flask("regress-plugins")
+    results = plugin_loader.load_all(app)
+    broken = [(r.get("id"), r.get("error")) for r in results if r.get("error")]
+    assert not broken, "these plugins failed to load: {}".format(broken)
+
+    ids = sorted(r["id"] for r in results)
+    assert "gmail" in ids and "obsidian" in ids, ids
+
+    # Both connectors reach the agent as callable tools.
+    names = {t["function"]["name"] for t in plugin_loader.collect_tools()}
+    for expected in ("gmail_status", "obsidian_status", "obsidian_read"):
+        assert expected in names, "{} missing from {}".format(expected, sorted(names))
+    print("  {} plugin(s) loaded, no route-name collisions -> OK".format(len(results)))
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1508,7 +1613,8 @@ def main() -> int:
              test_design_run_terminal, test_design_runner_languages,
              test_plugin_tools, test_skills, test_mcp_client,
              test_toolbar_icons_unique, test_extensions,
-             test_tui_plugin_commands]
+             test_tui_plugin_commands, test_obsidian_connector,
+             test_shipped_plugins_load]
     failed = []
     for t in tests:
         try:

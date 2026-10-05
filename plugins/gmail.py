@@ -410,7 +410,7 @@ def _read_message(mid):
     return _read_imap(mid)
 
 
-def _status():
+def _status_base():
     cfg = _cfg()
     cid, secret = _oauth_client()
     if cfg.get("refresh_token") and cid:
@@ -438,6 +438,21 @@ def _status():
             "method": None, "account": None,
             "hint": "The install owner sets the Google app once (Client ID + Secret); "
                     "after that everyone just clicks Sign in with Google."}
+
+
+def _status():
+    """Status plus the two flags the connector card renders from.
+
+    ``needs_setup`` -> show the declared credential fields.
+    ``can_sign_in`` -> show a sign-in button.
+    Stating both explicitly is what lets one card render Gmail (a sign-in) and
+    Obsidian (just a folder path) without the panel special-casing either.
+    """
+    st = _status_base()
+    st.setdefault("needs_setup", bool(st.get("needs_client")))
+    st["can_sign_in"] = bool(st.get("configured")) and not bool(st.get("connected"))
+    st["sign_in_label"] = "🔗 Sign in with Google"
+    return st
 
 
 def connect_info():

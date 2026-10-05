@@ -113,9 +113,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "e524436f539ada362ce03e1187422871f488968cbf714727c582740473d25e45",
+  "templates/index.html": "c9622c5146ec0be3d4d9b3ad09aa0d446533a70efd4182646ea039928bbd290d",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T03:19:14",
- "note": "plugins + connectors in the tui"
+ "generated": "2026-10-06T03:47:11",
+ "note": "obsidian connector"
 }

@@ -117,6 +117,13 @@ def register(app):                 # optional — add HTTP routes
   **🔌 Connectors** panel automatically.
 - `register(app)` — optional; only if the plugin needs HTTP routes (e.g. the
   OAuth endpoints Gmail uses).
+  **Name every view function after your plugin** (`_obsidian_status_route`, not
+  `_status_route`). Flask keys routes by the view function's *name*, not its
+  path, so two plugins that both define `_status_route` cannot coexist — the
+  second one fails to register and is dropped from the app entirely. This is not
+  hypothetical: it is what happened when the Obsidian connector was added beside
+  Gmail, and there is now a regression test (`every shipped plugin loads`) that
+  fails if any shipped plugin cannot register.
 - `credentials` inside `MANIFEST` — optional list of `{key, label, type,
   placeholder, hint}` fields; the Connectors panel renders them as inputs, so a
   connector never has to build its own UI.
