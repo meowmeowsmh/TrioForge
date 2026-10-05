@@ -6072,6 +6072,9 @@ function actuallySend(text) {
                                 if (data.applied_skills) {
                                     showAppliedSkills(botDiv, data.applied_skills);
                                 }
+                                if (data.tool_calls) {
+                                    showToolCalls(botDiv, data.tool_calls);
+                                }
                             } catch(e) {}
                         }
                     }
@@ -6087,6 +6090,7 @@ function actuallySend(text) {
                     var text = data.response || '(no response)';
                     if (data.reasoning) renderThinkingBlock(botDiv, data.reasoning);
                     if (data.applied_skills) showAppliedSkills(botDiv, data.applied_skills);
+                    if (data.tool_calls) showToolCalls(botDiv, data.tool_calls);
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
                     botDiv.querySelector('.body').innerHTML = renderMarkdown(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
@@ -9046,6 +9050,37 @@ function showAppliedSkills(botDiv, ids) {
     });
     var body = botDiv.querySelector('.body');
     if (body) botDiv.insertBefore(bar, body); else botDiv.appendChild(bar);
+}
+// Which tools produced this reply - a connector's use should be visible, not
+// inferred. Saved in conversations.db too, so it survives a reload.
+function showToolCalls(botDiv, calls) {
+    if (!botDiv || !calls || !calls.length) return;
+    var prev = botDiv.querySelector('.tool-calls');
+    if (prev) prev.remove();
+    var bySource = {};
+    calls.forEach(function(c) {
+        var key = c.source || c.kind || 'tool';
+        var e = bySource[key] || (bySource[key] = { n: 0, failed: 0, kind: c.kind });
+        e.n++;
+        if (!c.ok) e.failed++;
+    });
+    var bar = document.createElement('div');
+    bar.className = 'tool-calls';
+    bar.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 0;';
+    Object.keys(bySource).forEach(function(key) {
+        var e = bySource[key];
+        var bad = e.failed > 0;
+        var chip = document.createElement('span');
+        chip.textContent = '🔧 ' + key + (e.n > 1 ? ' ×' + e.n : '') + (bad ? ' ⚠' : '');
+        chip.title = calls.filter(function(c) { return (c.source || c.kind) === key; })
+            .map(function(c) { return c.tool + (c.ok ? '' : ' — ' + (c.error || 'failed')); })
+            .join('\n');
+        chip.style.cssText = 'font-size:11px; border-radius:999px; padding:2px 9px; ' +
+            (bad ? 'color:#f0883e; border:1px solid rgba(240,136,62,0.4); background:rgba(240,136,62,0.08);'
+                 : 'color:#8b949e; border:1px solid rgba(139,148,158,0.35); background:rgba(139,148,158,0.08);');
+        bar.appendChild(chip);
+    });
+    botDiv.appendChild(bar);
 }
 
 // ── Skills panel (markdown instructions the AI loads on demand) ──

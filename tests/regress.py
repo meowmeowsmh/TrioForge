@@ -1667,6 +1667,62 @@ def test_failures_are_visible() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_tool_calls_are_recorded() -> None:
+    """Tool calls - especially connector ones - are saved in conversations.db.
+
+    Before this, a turn that read the user's Gmail or Obsidian vault left only
+    prose behind: the messages table had the answer and nothing about how it was
+    produced, so "did it actually read my notes?" was unanswerable.
+    """
+    _title("tool calls are saved in conversations.db")
+    import app as appmod
+
+    conv = "regress-toolcalls"
+    try:
+        appmod.start_tool_tracking(conv)
+        res = appmod._execute_tool("list_skills", {})
+        assert isinstance(res, dict), res
+
+        tracked = appmod.tracked_tool_calls()
+        assert tracked and tracked[0]["tool"] == "list_skills", tracked
+        assert tracked[0]["kind"] == "skill", tracked[0]
+
+        rows = appmod.tool_calls_for(conv)
+        assert rows and rows[-1]["tool"] == "list_skills", rows
+        assert rows[-1]["source_kind"] == "skill", rows[-1]
+        assert rows[-1]["ok"] is True
+
+        # A source is tagged, so a connector's use is distinguishable from a guess.
+        kinds = {n: appmod._tool_source(n, {})[0]
+                 for n in ("list_skills", "read_file", "mcp__memory__read_graph")}
+        assert kinds["list_skills"] == "skill", kinds
+        assert kinds["read_file"] == "workspace", kinds
+        assert kinds["mcp__memory__read_graph"] == "mcp", kinds
+
+        # Arguments are logged, with secrets replaced rather than stored.
+        appmod.record_tool_call("probe", "connector", "probeid",
+                                {"api_key": "sk-do-not-store", "query": "hi"},
+                                {"result": "fine"}, 12)
+        row = appmod.tool_calls_for(conv)[-1]
+        assert row["arguments"]["api_key"] == "***", row["arguments"]
+        assert row["arguments"]["query"] == "hi", row["arguments"]
+        assert row["source_id"] == "probeid"
+
+        # A failing call is recorded as failed, not silently dropped.
+        appmod.record_tool_call("probe", "connector", "probeid", {},
+                                {"error": "vault missing"}, 3)
+        last = appmod.tool_calls_for(conv)[-1]
+        assert last["ok"] is False and "vault missing" in (last["error"] or ""), last
+    finally:
+        with appmod._sqlite_lock:
+            appmod._sqlite_conn.execute(
+                "DELETE FROM tool_calls WHERE conversation_id = ?", (conv,))
+            appmod._sqlite_conn.commit()
+    assert appmod.tool_calls_for(conv) == [], "the test must clean up after itself"
+    print("  connector/tool calls, source tags, redacted args -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1683,7 +1739,8 @@ def main() -> int:
              test_plugin_tools, test_skills, test_mcp_client,
              test_toolbar_icons_unique, test_extensions,
              test_tui_plugin_commands, test_obsidian_connector,
-             test_shipped_plugins_load, test_failures_are_visible]
+             test_shipped_plugins_load, test_failures_are_visible,
+             test_tool_calls_are_recorded]
     failed = []
     for t in tests:
         try:

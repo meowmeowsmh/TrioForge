@@ -618,6 +618,29 @@ def _init_sqlite():
         columns = [col[1] for col in cur.fetchall()]
         if 'attachments' not in columns:
             _sqlite_conn.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
+
+        # Every agent tool call, so "what did it actually do" is answerable from
+        # the database and not only from the prose. Connectors, plugins, MCP
+        # servers, skills and workspace tools all land here with their source
+        # tagged, which is what makes a connector's use visible at all.
+        _sqlite_conn.execute("""
+            CREATE TABLE IF NOT EXISTS tool_calls (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT,
+                tool            TEXT NOT NULL,
+                source_kind     TEXT NOT NULL,   -- connector | plugin | mcp | skill | workspace
+                source_id       TEXT,            -- gmail | obsidian | memory | ...
+                arguments       TEXT,            -- JSON, secrets redacted
+                ok              INTEGER NOT NULL DEFAULT 1,
+                error           TEXT,
+                result_preview  TEXT,
+                duration_ms     INTEGER DEFAULT 0,
+                created_at      TEXT NOT NULL
+            );
+        """)
+        _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_conv ON tool_calls(conversation_id);")
+        _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_tool ON tool_calls(tool);")
+        _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at);")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);")
 
@@ -1559,7 +1582,7 @@ providers = {
 API_PROVIDERS = {"groq", "huggingface", "deepseek", "claude", "openrouter", "gemini"}
 
 
-def _bot_meta(provider_name, model, reasoning=None):
+def _bot_meta(provider_name, model, reasoning=None, tools=None):
     """Tag a bot message so the UI can show whether it came from a local model
     (free) or an API-key model (paid), and optionally its chain-of-thought."""
     meta = {
@@ -1569,7 +1592,107 @@ def _bot_meta(provider_name, model, reasoning=None):
     }
     if reasoning:
         meta["reasoning"] = reasoning
+    if tools:
+        # Which tools produced this answer. Without it, a reply that read the
+        # user's Obsidian vault looks identical to one that made it up.
+        meta["tools"] = tools
     return meta
+
+
+# ── Agent tool calls, recorded per conversation ──────────────────────────────
+# Thread-local: the chat handlers say which conversation is running and collect
+# the calls made during it. The tool loop runs in the request thread, so
+# concurrent requests do not see each other's calls.
+_tool_ctx = threading.local()
+
+#: Argument keys whose values are never written to the database.
+_SECRET_HINT = re.compile(r"(pass|secret|token|key|auth|credential)", re.I)
+
+
+def start_tool_tracking(conv_id):
+    """Begin collecting tool calls for one request."""
+    _tool_ctx.conv_id = conv_id
+    _tool_ctx.calls = []
+
+
+def tracked_tool_calls():
+    """The calls recorded so far, for attaching to the message they belong to."""
+    return list(getattr(_tool_ctx, "calls", None) or [])
+
+
+def _summarise_args(args):
+    """Arguments as stored: secrets replaced, long values cut short."""
+    out = {}
+    for key, value in (args or {}).items():
+        if _SECRET_HINT.search(str(key)):
+            out[key] = "***"
+        elif isinstance(value, (int, float, bool)) or value is None:
+            out[key] = value
+        else:
+            text = str(value)
+            out[key] = text[:400] + ("..." if len(text) > 400 else "")
+    return out
+
+
+def record_tool_call(name, kind, source_id, args, result, duration_ms):
+    """Persist one tool call, and remember it for this turn's message."""
+    error = result.get("error") if isinstance(result, dict) else None
+    ok = not error
+
+    entry = {"tool": name, "kind": kind, "source": source_id,
+             "ok": bool(ok), "ms": int(duration_ms)}
+    if error:
+        entry["error"] = str(error)[:200]
+    calls = getattr(_tool_ctx, "calls", None)
+    if calls is not None:
+        calls.append(entry)
+
+    try:
+        preview = std_json.dumps(result, ensure_ascii=False)
+    except Exception:
+        preview = str(result)
+    if len(preview) > 300:
+        preview = preview[:300] + "..."
+
+    try:
+        with _sqlite_lock:
+            _sqlite_conn.execute(
+                "INSERT INTO tool_calls (conversation_id, tool, source_kind, source_id, "
+                "arguments, ok, error, result_preview, duration_ms, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (getattr(_tool_ctx, "conv_id", None), name, kind, source_id,
+                 std_json.dumps(_summarise_args(args), ensure_ascii=False),
+                 1 if ok else 0, (str(error)[:500] if error else None),
+                 preview, int(duration_ms), datetime.now().isoformat()))
+            _sqlite_conn.commit()
+    except sqlite3.Error as e:
+        # Losing a log line must never fail the call the user is waiting on.
+        logger.warning("Could not record the %s tool call: %s", name, e)
+
+
+def tool_calls_for(conv_id, limit=200):
+    """The recorded tool calls for one conversation, oldest first.
+
+    Columns are zipped by name rather than using dict(row): this connection sets
+    no row_factory, so a row is a plain tuple and dict(row) raises.
+    """
+    cols = ("id", "tool", "source_kind", "source_id", "arguments", "ok",
+            "error", "result_preview", "duration_ms", "created_at")
+    with _sqlite_lock:
+        rows = _sqlite_conn.execute(
+            "SELECT " + ", ".join(cols) + " FROM tool_calls "
+            "WHERE conversation_id = ? ORDER BY id ASC LIMIT ?",
+            (conv_id, int(limit))).fetchall()
+    out = []
+    for row in rows:
+        item = dict(zip(cols, row))
+        item["ok"] = bool(item.get("ok"))
+        try:
+            item["arguments"] = std_json.loads(item.get("arguments") or "{}")
+        except Exception:
+            pass
+        out.append(item)
+    return out
 
 # Estimated cost per 1,000,000 tokens (input, output) for paid providers.
 # These are rough averages and are editable here if your plan differs.
@@ -3112,6 +3235,28 @@ def search_conversations():
     return jsonify(results)
 
 # â”€â”€ NEW ROUTE: Get conversation tree for import â”€â”€
+@app.route('/api/conversations/<cid>/tools', methods=['GET'])
+def conversation_tools(cid):
+    """Every tool the agent ran in this conversation, with where it came from.
+
+    Connectors get their own summary at the end so "did it actually read my
+    vault, or did it guess?" is one request away.
+    """
+    if cid not in load_conversations():
+        return jsonify({"error": "Conversation not found"}), 404
+    calls = tool_calls_for(cid)
+    by_source = {}
+    for c in calls:
+        key = c.get("source_id") or c.get("source_kind") or "unknown"
+        entry = by_source.setdefault(key, {"kind": c.get("source_kind"), "calls": 0,
+                                           "failed": 0})
+        entry["calls"] += 1
+        if not c.get("ok"):
+            entry["failed"] += 1
+    return jsonify({"conversation_id": cid, "count": len(calls),
+                    "by_source": by_source, "calls": calls})
+
+
 @app.route('/api/conversations/<cid>/tree', methods=['GET'])
 def conversation_tree(cid):
     if cid not in load_conversations():
@@ -3505,7 +3650,45 @@ def _agent_tools():
             + mcp_client.collect_tools())
 
 
+def _tool_source(name, args):
+    """Which extension service a tool belongs to: (kind, id).
+
+    Tagging the source is the point of recording these at all - "the agent used
+    Obsidian" and "the agent made something up" should not look the same in the
+    database afterwards.
+    """
+    if name == "use_skill":
+        return "skill", str((args or {}).get("name") or "unknown")
+    if name == "list_skills":
+        return "skill", "skills"
+    for info in plugin_loader.list_loaded():
+        if name in (info.get("tool_names") or []):
+            return ("connector" if info.get("connector") else "plugin"), info["id"]
+    if name.startswith(mcp_client.TOOL_PREFIX):
+        parts = name.split("__")
+        return "mcp", parts[1] if len(parts) > 1 else ""
+    return "workspace", ""
+
+
 def _execute_tool(name, args):
+    """Run a tool, and record the call so the database shows what the agent did.
+
+    Connectors, plugins, MCP servers, skills and workspace tools all pass through
+    here, so every one of them is logged with its source, its arguments and
+    whether it worked.
+    """
+    kind, source_id = _tool_source(name, args)
+    started = time.time()
+    result = _dispatch_tool(name, args)
+    try:
+        record_tool_call(name, kind, source_id, args, result,
+                         (time.time() - started) * 1000)
+    except Exception as e:  # noqa: BLE001 - logging must not break the call
+        logger.warning("Could not record tool call %s: %s", name, e)
+    return result
+
+
+def _dispatch_tool(name, args):
     """Run a workspace-folder tool, a skill tool, a plugin tool or an MCP tool."""
     # Skills first: two dictionary lookups, no I/O, and the name space is tiny.
     skill_result = skills_loader.execute_tool(name, args)
@@ -4852,6 +5035,9 @@ def chat():
             conv = get_conversation(conv_id)
             if conv is None:
                 return jsonify({'error': 'Conversation not found'}), 404
+        # Collect this request's tool calls so they can be attached to the reply
+        # and written to tool_calls.
+        start_tool_tracking(conv_id)
 
         if is_ollama_command(user_message):
             output = execute_ollama_command_sync(user_message)
@@ -5001,13 +5187,16 @@ def chat():
         if not add_message(conv_id, "user", original_message, store_images, store_files):
             return jsonify({'error': f'Failed to save user message to {conv_id}'}), 500
         reasoning = getattr(provider, "last_reasoning", "") or ""
-        if not add_message(conv_id, "bot", reply, [], [], meta=_bot_meta(provider_name, model, reasoning)):
+        if not add_message(conv_id, "bot", reply, [], [],
+                           meta=_bot_meta(provider_name, model, reasoning,
+                                          tools=tracked_tool_calls())):
             return jsonify({'error': f'Failed to save bot message to {conv_id}'}), 500
         _record_code_blocks(reply)
         _auto_title(conv_id, original_message, reply, provider_name, model, api_key)
 
         return jsonify({'response': reply, 'usage': usage, 'reasoning': reasoning,
-                        'applied_skills': applied_skill_ids})
+                        'applied_skills': applied_skill_ids,
+                        'tool_calls': tracked_tool_calls()})
 
     except requests.exceptions.ConnectionError:
         return jsonify({'error': 'Cannot connect to Ollama. Make sure it is running.'}), 503
@@ -5125,6 +5314,9 @@ def chat_stream():
             conv = get_conversation(conv_id)
             if conv is None:
                 return jsonify({'error': 'Conversation not found'}), 404
+        # Collect this request's tool calls so they can be attached to the reply
+        # and written to tool_calls.
+        start_tool_tracking(conv_id)
 
         # Video â†’ frames: sample the clip into images so a vision model can
         # "see" it (ffmpeg auto-detected). The frames are used ONLY for the model
@@ -5254,12 +5446,18 @@ def chat_stream():
                 else:
                     audio_final_text = f"[audio error] {e}"
 
+        # Capture the tool calls now, in the request thread: generate() may run on
+        # a different one, where the thread-local collection would be empty.
+        _tool_calls = tracked_tool_calls()
+
         def generate():
             # Tell the client which skills were applied BEFORE any token, so the
             # UI can show the chip while the answer is still streaming - the user
             # never has to wonder whether a skill took effect.
             if applied_skill_ids:
                 yield f"data: {json_dumps({'applied_skills': applied_skill_ids})}\n\n"
+            if _tool_calls:
+                yield f"data: {json_dumps({'tool_calls': _tool_calls})}\n\n"
             # llama.cpp only: start() above SPAWNED the server, it did not wait for it.
             # A 12B GGUF then needs several seconds to load, and the direct streaming
             # path below used to fire its request straight away - so the first send
@@ -5284,7 +5482,7 @@ def chat_stream():
                 yield f"data: {json_dumps({'done': True, 'full_response': tool_final_text, 'usage': {'tokens': _estimate_tokens(tool_final_text), 'input_tokens': _estimate_tokens(final_prompt), 'reasoning_tokens': _estimate_tokens(tool_reasoning), 'duration_sec': 0}, 'reasoning': tool_reasoning})}\n\n"
                 store_images, store_files = _user_attachments(images, files, videos)
                 add_message(conv_id, "user", user_message, store_images, store_files)
-                add_message(conv_id, "bot", tool_final_text, [], [], meta=_bot_meta(provider_name, model, tool_reasoning))
+                add_message(conv_id, "bot", tool_final_text, [], [], meta=_bot_meta(provider_name, model, tool_reasoning, tools=_tool_calls))
                 record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(tool_final_text))
                 return
 
@@ -5295,7 +5493,7 @@ def chat_stream():
                 yield f"data: {json_dumps({'done': True, 'full_response': audio_final_text, 'usage': {'tokens': _estimate_tokens(audio_final_text), 'input_tokens': _estimate_tokens(final_prompt), 'reasoning_tokens': _estimate_tokens(audio_reasoning), 'duration_sec': 0}, 'reasoning': audio_reasoning})}\n\n"
                 store_images, store_files = _user_attachments(images, files, videos)
                 add_message(conv_id, "user", user_message, store_images, store_files)
-                add_message(conv_id, "bot", audio_final_text, [], [], meta=_bot_meta(provider_name, model, audio_reasoning))
+                add_message(conv_id, "bot", audio_final_text, [], [], meta=_bot_meta(provider_name, model, audio_reasoning, tools=_tool_calls))
                 record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(audio_final_text))
                 return
 
@@ -5410,7 +5608,7 @@ def chat_stream():
             store_images, store_files = _user_attachments(images, files, videos)
             add_message(conv_id, "user", user_message, store_images, store_files)
             add_message(conv_id, "bot", full_response or "(empty response)", [], [],
-                        meta=_bot_meta(provider_name, model, thinking_acc))
+                        meta=_bot_meta(provider_name, model, thinking_acc, tools=_tool_calls))
             _record_code_blocks(full_response)
             record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(full_response))
             _auto_title(conv_id, user_message, full_response, provider_name, model, api_key)
