@@ -491,10 +491,22 @@ def register(app):
 
     @app.route("/api/connectors/gmail/disconnect", methods=["POST"])
     def _disconnect_route():
+        """Sign out, but KEEP the one-time Google app credentials.
+
+        Disconnecting should not make the install owner re-enter the Client ID/Secret -
+        it only drops this account's token (and any app password), so the panel goes
+        straight back to a plain "Sign in with Google" button.
+        """
         try:
-            if os.path.isfile(_CRED_PATH):
-                os.remove(_CRED_PATH)
+            cfg = _cfg()
+            for key in ("refresh_token", "access_token", "token_expires",
+                        "email", "app_password"):
+                cfg.pop(key, None)
+            os.makedirs(os.path.dirname(_CRED_PATH), exist_ok=True)
+            with open(_CRED_PATH, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=2)
             _token_cache["access"] = None
+            _token_cache["expires"] = 0.0
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
         return jsonify({"ok": True})
