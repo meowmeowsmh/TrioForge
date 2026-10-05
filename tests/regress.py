@@ -1459,6 +1459,40 @@ def test_extensions() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_tui_plugin_commands() -> None:
+    _title("tui plugin commands (/plugins, /connectors)")
+    import contextlib
+    import io
+    from tui import commands
+
+    # Discoverable through the same table /help and the palette read.
+    assert commands.lookup("plugins") is not None
+    assert commands.lookup("connectors") is not None
+    assert "/plugins" in commands._TABLE and "/connectors" in commands._TABLE
+
+    class _Ctx:
+        pass
+
+    ctx = _Ctx()
+    ctx.session = ctx.cfg = ctx.args = ctx.backend = ctx.real_backend = None
+    ctx.running = True
+    ctx.is_tui = True
+
+    # Skip the lazy loader's real network/subprocess side effects (it would fetch
+    # MCP servers and re-import plugins); the command plumbing is under test, not
+    # the loaders themselves - those are covered by test_extensions / test_mcp_client.
+    commands._ext_ready = True
+    try:
+        for line in ("/plugins browse", "/plugins", "/plugins disable skill nope"):
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                assert commands.handle(line, ctx) is True
+    finally:
+        commands._ext_ready = False
+    print("  /plugins + /connectors discoverable and runnable -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1473,7 +1507,8 @@ def main() -> int:
              test_design_persists_in_conversation, test_design_artifacts_listing,
              test_design_run_terminal, test_design_runner_languages,
              test_plugin_tools, test_skills, test_mcp_client,
-             test_toolbar_icons_unique, test_extensions]
+             test_toolbar_icons_unique, test_extensions,
+             test_tui_plugin_commands]
     failed = []
     for t in tests:
         try:

@@ -440,6 +440,28 @@ def _status():
                     "after that everyone just clicks Sign in with Google."}
 
 
+def connect_info():
+    """Terminal sign-in for the TUI: report status, or hand back the OAuth URL.
+
+    The redirect lands on TrioForge's web server (port 5003), which writes the
+    token to the shared credentials file; the TUI then polls _status() until it
+    flips to connected. So the web app must be running to catch the redirect.
+    """
+    st = _status()
+    if st.get("connected"):
+        return {"connected": True, "account": st.get("account"), "method": st.get("method")}
+    if st.get("needs_client") or not st.get("configured"):
+        return {"error": "the Google app is not set up yet (Client ID + Secret). "
+                         "Set it in the web UI (Connectors panel) or ship it in "
+                         "DEFAULT_CLIENT_ID / GMAIL_CLIENT_ID."}
+    url, err = auth_url("https://127.0.0.1:5003/api/connectors/gmail/oauth2callback")
+    if url is None:
+        return {"error": err or "could not build the sign-in URL"}
+    return {"url": url,
+            "note": "sign in, and TrioForge's web server (https://127.0.0.1:5003) "
+                    "must be running to catch the redirect"}
+
+
 def dispatch(tool_name, args):
     args = args or {}
     if tool_name == "gmail_list_inbox":

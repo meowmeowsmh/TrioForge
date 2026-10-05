@@ -38,6 +38,10 @@ PLUGINS_DIR = root_path("plugins")
 
 _loaded: Dict[str, dict] = {}
 
+#: Module objects by plugin id, so a connector can expose a terminal connect flow
+#: (connect_info()) that the TUI reaches without re-importing the file.
+_mods: Dict[str, object] = {}
+
 # Agent-facing tools that plugins expose. A plugin may define TOOLS (a list of
 # OpenAI function-calling tool objects) plus a dispatch(tool_name, args) callable;
 # the loader collects them here so the agent loop can offer and run them.
@@ -80,6 +84,7 @@ def _load_plugin(path: str) -> dict:
     # explicitly, with "it asks for credentials" as the fallback, so an existing
     # connector written before this flag keeps working.
     is_connector = bool(manifest.get("connector")) or bool(creds)
+    _mods[pid] = mod
     return {
         "id": pid,
         "title": manifest.get("title", pid),
@@ -112,6 +117,7 @@ def load_all(app) -> List[dict]:
     set_app(app)
     results = []
     _loaded.clear()
+    _mods.clear()
     _tool_defs.clear()
     _tool_owners.clear()
     os.makedirs(PLUGINS_DIR, exist_ok=True)
@@ -173,6 +179,25 @@ def execute_tool(name: str, args: dict):
     if not isinstance(result, dict):
         result = {"result": result}
     return result
+
+
+def connect_info(pid: str) -> dict:
+    """A connector's terminal connect flow, if it declares one.
+
+    A connector plugin may define ``connect_info() -> dict`` returning either
+    ``{"connected": True, "account": ...}``, ``{"url": ..., "note": ...}`` for an
+    OAuth sign-in the caller should open, or ``{"error": ...}``. The TUI uses
+    this so a terminal can drive the same sign-in as the web button.
+    """
+    mod = _mods.get(pid)
+    fn = getattr(mod, "connect_info", None)
+    if fn is None:
+        return {"error": "connector '{}' has no terminal connect flow".format(pid)}
+    try:
+        result = fn()
+    except Exception as e:
+        return {"error": "{}: {}".format(type(e).__name__, e)}
+    return result if isinstance(result, dict) else {"result": result}
 
 
 def list_loaded() -> List[dict]:

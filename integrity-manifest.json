@@ -46,7 +46,7 @@
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
-  "py/plugin_loader.py": "a6e59e792ec4a68555a8ce207b91bdf9e4a22bc4e59a5ed4c593eff965fc74a8",
+  "py/plugin_loader.py": "1731207f9ca10e83d0c7fee743d69947f32cd38755311c2de12ec6a4478c5044",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "3559d3b0c0cf686bbb1d390f9fe37bc800ccf7ff124329a14ee50801a1496321",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
@@ -71,7 +71,7 @@
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
   "py/tui/backend.py": "387ba89a60465033ea591c06fe2eadca4e97410fb5cde727d62649debb043f17",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
-  "py/tui/commands.py": "660851c3b3af3aebd421b253d7ed0cda9819bf0b443671866159e1125300b6e8",
+  "py/tui/commands.py": "70bc91e53bc60ed3eab29a7531634bf2b5fd16b8807a622fd71744909cab8fc9",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
@@ -116,6 +116,6 @@
   "templates/index.html": "e524436f539ada362ce03e1187422871f488968cbf714727c582740473d25e45",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T03:01:56",
- "note": "catalog browse tab + catalog in integrity scope"
+ "generated": "2026-10-06T03:19:14",
+ "note": "plugins + connectors in the tui"
 }

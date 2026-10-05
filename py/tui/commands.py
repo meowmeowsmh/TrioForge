@@ -98,6 +98,24 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/memory recall what editor do I use"),
         Cmd("/memory forget <key>", "delete a key", "/memory forget editor"),
     ]),
+    ("plugins & connectors", [
+        Cmd("/plugins", "everything installed: skills, plugins, MCP servers",
+            "/plugins"),
+        Cmd("/plugins browse", "the shipped catalog of installable extensions",
+            "/plugins browse"),
+        Cmd("/plugins install <id|url|path>", "install from the catalog, a Git URL or a folder",
+            "/plugins install refactor"),
+        Cmd("/plugins enable <kind> <id>", "turn one extension on",
+            "/plugins enable skill refactor"),
+        Cmd("/plugins disable <kind> <id>", "turn one extension off",
+            "/plugins disable skill refactor"),
+        Cmd("/plugins remove <kind> <id>", "uninstall one extension",
+            "/plugins remove skill refactor"),
+        Cmd("/connectors", "services you've signed into, with live status",
+            "/connectors"),
+        Cmd("/connectors connect <id>", "sign in to a connector (opens your browser)",
+            "/connectors connect gmail"),
+    ]),
     ("other", [
         Cmd("/echo", "toggle the offline stub (no model needed)", "/echo"),
         Cmd("/quit", "leave (ctrl+q in the terminal client)", "/quit"),
@@ -1021,6 +1039,215 @@ def _memory(ctx, arg: str) -> None:
                 "recall SENTENCE | stats]")
 
 
+_ext_ready = False
+
+
+def _ext():
+    """Load skills, plugins and MCP once, then hand back the extensions module.
+
+    The web app loads these at startup; the TUI is a separate process, so it does
+    the same, lazily, the first time a plugin command is used. Plugins are given a
+    bare Flask app to register routes on - harmless here, and it keeps gmail
+    loading cleanly instead of failing its register(None) call.
+    """
+    global _ext_ready
+    import plugin_loader, skills_loader, mcp_client, extensions
+    if not _ext_ready:
+        try:
+            skills_loader.load_all()
+        except Exception as e:  # noqa: BLE001
+            render.warn(f"skills failed to load: {e}")
+        try:
+            mcp_client.load_all()
+        except Exception as e:  # noqa: BLE001
+            render.warn(f"mcp failed to load: {e}")
+        try:
+            from flask import Flask
+            plugin_loader.load_all(Flask("trioforge-tui"))
+        except Exception:  # noqa: BLE001 - a plugin's register() may not like Flask
+            try:
+                plugin_loader.load_all(None)
+            except Exception as e:  # noqa: BLE001
+                render.warn(f"plugins failed to load: {e}")
+        _ext_ready = True
+    return extensions
+
+
+def _plugins(ctx, arg: str) -> None:
+    """The 🧩 Plugins panel as a command: list, browse, install, toggle, remove."""
+    ext = _ext()
+    parts = (arg or "").strip().split()
+    verb = parts[0].lower() if parts else ""
+
+    if verb == "browse":
+        rows = []
+        for c in ext.catalog():
+            state = "installed" if c["installed"] else "install"
+            rows.append(("{} · {}".format(state, c["kind"]),
+                         "{} — {}".format(c["title"], c["description"])))
+        render.table("catalog", rows)
+        render.info("install one with /plugins install <id>")
+        return
+
+    if verb == "install":
+        if len(parts) < 2:
+            render.error("usage: /plugins install <catalog-id | git-url | folder-path>")
+            return
+        src = parts[1]
+        known = {c["id"] for c in ext.catalog()}
+        if src in known and "://" not in src and not Path(src).exists():
+            src = "catalog:" + src
+        res = ext.install(src)
+        if res.get("error"):
+            render.error(res["error"])
+            return
+        lines = []
+        for s in res.get("skills") or []:
+            lines.append("  skill  " + s)
+        for p in res.get("plugins") or []:
+            lines.append("  plugin " + p)
+        render.ok("installed:")
+        for line in lines:
+            render.info(line)
+        if res.get("restart"):
+            render.warn("plugins import at startup — restart the TUI to load them")
+        return
+
+    if verb in ("enable", "disable", "on", "off"):
+        enabled = verb in ("enable", "on")
+        if len(parts) < 3:
+            render.error(f"usage: /plugins {verb} <skill|plugin|mcp> <id>")
+            return
+        res = ext.set_enabled(parts[1].lower(), parts[2], enabled)
+        if res.get("error"):
+            render.error(res["error"])
+            return
+        render.ok(f"{parts[2]} {'enabled' if enabled else 'disabled'}")
+        if res.get("restart"):
+            render.warn("plugins import at startup — restart the TUI for this to take effect")
+        return
+
+    if verb in ("remove", "uninstall", "rm", "delete"):
+        if len(parts) < 3:
+            render.error("usage: /plugins remove <skill|plugin|mcp> <id>")
+            return
+        res = ext.remove(parts[1].lower(), parts[2])
+        if res.get("error"):
+            render.error(res["error"])
+            return
+        render.ok(f"removed {parts[2]}")
+        if res.get("restart"):
+            render.warn("its routes stay loaded until the TUI restarts")
+        return
+
+    if verb:
+        render.info("usage: /plugins [browse | install <id|url|path> | enable <kind> <id> | "
+                    "disable <kind> <id> | remove <kind> <id>]")
+        return
+
+    # no verb -> the inventory
+    rows = []
+    for e in ext.inventory():
+        state = "on" if e["enabled"] else "OFF"
+        kind = e["kind"]
+        if e.get("connector"):
+            kind += " · connector"
+        if e.get("status"):
+            state += " " + e["status"]
+        rows.append(("{} · {}".format(state, kind),
+                     "{} ({}) — {}".format(e["title"], e["id"], e["description"])))
+    render.table("plugins", rows)
+    render.info("manage them with: /plugins browse | install | enable | disable | remove")
+
+
+def _connector_status(pid: str) -> dict:
+    """A connector's live state, via its <id>_status tool when it has one."""
+    import plugin_loader
+    names = []
+    for p in plugin_loader.list_loaded():
+        if p["id"] == pid:
+            names = p.get("tool_names") or []
+    status_tool = next((n for n in names if n.endswith("_status")), None)
+    if not status_tool:
+        return {"error": "no status tool"}
+    return plugin_loader.execute_tool(status_tool, {}) or {}
+
+
+def _connectors(ctx, arg: str) -> None:
+    """The 🔌 Connectors panel as a command: list, detail, and sign in."""
+    import plugin_loader
+    ext = _ext()
+    conns = [e for e in ext.inventory() if e["kind"] == "plugin" and e.get("connector")]
+    if not conns:
+        render.warn("no connectors installed — services you sign into appear here")
+        return
+
+    parts = (arg or "").strip().split()
+    if parts and parts[0].lower() == "connect":
+        if len(parts) < 2:
+            render.error("usage: /connectors connect <id>")
+            return
+        pid = parts[1]
+        info = plugin_loader.connect_info(pid)
+        if "error" in info:
+            render.error(info["error"])
+            return
+        if info.get("connected"):
+            render.ok(f"already connected as {info.get('account')}")
+            return
+        url = info.get("url")
+        if not url:
+            render.warn("this connector has no terminal sign-in flow")
+            return
+        render.info("open this in your browser to sign in:")
+        render.info(url)
+        if info.get("note"):
+            render.warn(info["note"])
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            render.info("opened in your browser — when it says 'connected', run /connectors to confirm")
+        except Exception:  # noqa: BLE001 - no browser is fine, the URL is printed
+            render.info("could not open a browser automatically — open the URL above, "
+                        "then run /connectors")
+        return
+
+    # detail for one connector
+    if parts:
+        pid = parts[0]
+        if pid not in [c["id"] for c in conns]:
+            render.error(f"no connector named {pid!r}")
+            render.info("installed: " + ", ".join(c["id"] for c in conns))
+            return
+        st = _connector_status(pid)
+        rows = [("id", pid)]
+        if st.get("connected"):
+            rows += [("state", "connected"), ("account", st.get("account") or ""),
+                     ("method", st.get("method") or "")]
+        else:
+            rows += [("state", "not connected"),
+                     ("configured", "yes" if st.get("configured") else "no")]
+            if st.get("error"):
+                rows.append(("error", st["error"]))
+        render.table(f"connector — {pid}", rows)
+        render.info("sign in with /connectors connect " + pid)
+        return
+
+    # list with live status
+    rows = []
+    for c in conns:
+        st = _connector_status(c["id"])
+        if st.get("connected"):
+            state = f"connected · {st.get('account')}"
+        elif st.get("configured"):
+            state = "not connected"
+        else:
+            state = "setup needed"
+        rows.append((state, "{} — {}".format(c["title"], c["description"])))
+    render.table("connectors", rows)
+    render.info("detail with /connectors <id> · sign in with /connectors connect <id>")
+
+
 _TABLE = {
     "/help": _help, "/?": _help, "/setup": _setup,
     "/model": _model, "/models": _models, "/specs": _specs, "/llama": _llama,
@@ -1034,6 +1261,7 @@ _TABLE = {
     "/search": _search, "/find": _search,
     "/quit": _quit, "/exit": _quit, "/q": _quit,
     "/memory": _memory, "/mem": _memory,
+    "/plugins": _plugins, "/connectors": _connectors,
 }
 
 

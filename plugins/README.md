@@ -62,6 +62,11 @@ visibly off. Skills and MCP servers apply immediately; a native plugin is
 imported at startup, so toggling it takes effect on the next restart (the same
 as Obsidian's plugin toggles).
 
+The same management lives in the terminal (`forge`): `/plugins` lists,
+`/plugins browse` shows the catalog, `/plugins install <id|url|path>` installs,
+`/plugins enable|disable|remove <kind> <id>` manage, and `/connectors` lists the
+services you've signed into with `/connectors connect <id>` for sign-in.
+
 ## Anatomy of a plugin
 
 ```python
