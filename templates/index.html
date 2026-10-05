@@ -1596,6 +1596,7 @@ video.tf-video {
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">⚙️</button>
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
+        <button class="clear-btn" id="connectorsBtn" onclick="openConnectorsModal()" title="Connectors — connect Gmail and other services so the AI can use them" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🔌</button>
         <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup — install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🚀</button>
         <button class="clear-btn" id="integrityBtn" onclick="openIntegrity()" title="Integrity check — compare this app's files with its recorded baseline and scan for injected code" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🛡️</button>
         <button class="clear-btn" id="themeBtn" onclick="openThemePicker()" title="Appearance — pick a theme for every page">🎨</button>
@@ -8487,6 +8488,118 @@ document.addEventListener('fullscreenchange', function () {
     });
 })();
 
+// ── Connectors panel (services the AI can use) ──
+function openConnectorsModal() {
+    var m = document.getElementById('connectorsModal');
+    if (m) m.style.display = 'flex';
+    loadConnectors();
+}
+function closeConnectorsModal() {
+    var m = document.getElementById('connectorsModal');
+    if (m) m.style.display = 'none';
+}
+function loadConnectors() {
+    var box = document.getElementById('connectorsList');
+    if (!box) return;
+    box.innerHTML = '<div style="color:#8b949e; font-size:13px;">Loading…</div>';
+    fetch('/api/connectors')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          var conns = (d && d.connectors) || [];
+          if (!conns.length) {
+              box.innerHTML = '<div style="color:#8b949e; font-size:13px;">No connectors installed yet. ' +
+                  'Drop a plugin with TOOLS into the plugins/ folder.</div>';
+              return;
+          }
+          box.innerHTML = '';
+          conns.forEach(function(c) { renderConnectorCard(box, c); });
+      })
+      .catch(function(e) {
+          box.innerHTML = '<div style="color:#f85149; font-size:13px;">Could not list connectors: ' + e + '</div>';
+      });
+}
+function renderConnectorCard(box, c) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:12px 14px; margin-bottom:10px; background:#0e0e15;';
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex; align-items:center; gap:8px;';
+    var name = document.createElement('strong');
+    name.textContent = c.title || c.id;
+    name.style.cssText = 'font-size:14px;';
+    head.appendChild(name);
+    var tools = document.createElement('span');
+    tools.textContent = (c.tools || []).join(' · ');
+    tools.style.cssText = 'font-size:11px; color:#5a5a6a;';
+    head.appendChild(tools);
+    var statusEl = document.createElement('span');
+    statusEl.id = 'conn-status-' + c.id;
+    statusEl.style.cssText = 'margin-left:auto; font-size:12px; color:#8b949e;';
+    statusEl.textContent = '…';
+    head.appendChild(statusEl);
+    card.appendChild(head);
+    if (c.description) {
+        var desc = document.createElement('div');
+        desc.textContent = c.description;
+        desc.style.cssText = 'font-size:12px; color:#8b949e; margin:4px 0 8px;';
+        card.appendChild(desc);
+    }
+    var actions = document.createElement('div');
+    actions.style.cssText = 'display:flex; gap:8px; margin-top:8px;';
+    var hint = document.createElement('div');
+    hint.id = 'conn-hint-' + c.id;
+    hint.style.cssText = 'font-size:11px; color:#8b949e; margin-top:6px; display:none;';
+    card.appendChild(actions);
+    card.appendChild(hint);
+    box.appendChild(card);
+
+    // Generic: each connector has /api/connectors/<id>/status and /auth.
+    fetch('/api/connectors/' + c.id + '/status')
+      .then(function(r) { return r.json(); })
+      .then(function(st) {
+          if (st.connected) {
+              statusEl.textContent = '✅ Connected' + (st.account ? ' — ' + st.account : '');
+              statusEl.style.color = '#7ee787';
+          } else {
+              statusEl.textContent = st.configured ? '⚪ Not connected' : '⚪ Not configured';
+              statusEl.style.color = '#f0883e';
+          }
+          if (!st.connected) {
+              var btn = document.createElement('button');
+              btn.textContent = st.configured ? '🔗 Connect' : '🔗 Connect (needs credentials)';
+              btn.style.cssText = 'background:#238636;border:0;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
+              btn.onclick = function() { connectConnector(c.id); };
+              actions.appendChild(btn);
+          } else {
+              var disc = document.createElement('button');
+              disc.textContent = 'Disconnect';
+              disc.style.cssText = 'background:#1c1c26;border:1px solid #333;color:#f0883e;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
+              disc.onclick = function() { disconnectConnector(c.id); };
+              actions.appendChild(disc);
+          }
+          if (st.configured === false && st.hint) {
+              hint.textContent = st.hint;
+              hint.style.display = '';
+          }
+      })
+      .catch(function() { statusEl.textContent = ''; });
+}
+function connectConnector(id) {
+    fetch('/api/connectors/' + id + '/auth')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          if (d.error) { alert(d.error); return; }
+          window.open(d.auth_url, '_blank');
+          // Poll status so the card flips to Connected once the user clicks Allow.
+          setTimeout(function() { loadConnectors(); }, 4000);
+      })
+      .catch(function(e) { alert('Could not start the sign-in: ' + e); });
+}
+function disconnectConnector(id) {
+    fetch('/api/connectors/' + id + '/disconnect', { method: 'POST' })
+      .then(function() { loadConnectors(); })
+      .catch(function(e) { alert('Could not disconnect: ' + e); });
+}
+
 // ── Services control panel ──
 function openServicesModal() {
     var m = document.getElementById('servicesModal');
@@ -9022,6 +9135,18 @@ if ('serviceWorker' in navigator) {
       <div id="mbResults" style="margin-top:10px;"></div>
       <div id="mbFiles" style="margin-top:10px;"></div>
     </div>
+  </div>
+</div>
+
+<!-- Connectors panel -->
+<div id="connectorsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10000; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(520px, 94vw);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:16px;">🔌 Connectors</strong>
+      <button onclick="closeConnectorsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">Connect services so the AI can read and use them when you ask.</p>
+    <div id="connectorsList" style="max-height:60vh; overflow:auto;"></div>
   </div>
 </div>
 

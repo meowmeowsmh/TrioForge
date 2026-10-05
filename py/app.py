@@ -4489,6 +4489,23 @@ def api_plugins():
     return jsonify(plugin_loader.list_loaded())
 
 
+@app.route('/api/connectors', methods=['GET'])
+def api_connectors():
+    """List the plugins that expose agent tools - i.e. the Connectors the AI can use."""
+    items = []
+    for p in plugin_loader.list_loaded():
+        names = p.get("tool_names") or []
+        if not names:
+            continue
+        items.append({
+            "id": p.get("id"),
+            "title": p.get("title", p.get("id")),
+            "description": p.get("description", ""),
+            "tools": names,
+        })
+    return jsonify({"connectors": items})
+
+
 # â”€â”€ First-run setup checker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route('/api/setup/check', methods=['GET'])
 def setup_check_status():

@@ -12,7 +12,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "213deca75453a14d0449088ca37b362101029a11b58026558e0c10fc4916aaf6",
+  "py/app.py": "3d068986fdcb3ecd4c45f5af1b019f94ddc9b099baaa5566cf9d87a87532f02b",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -106,9 +106,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "9e181274d3a9874f5bd14ad226aa130fe056f3c7f6dfc133d48016bb9ed035a5",
+  "templates/index.html": "4d76f6ea4e18a09fb9ac4b90e75f132288a3c78d53ec32b8b23cf04e1bbf14c0",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T15:53:09",
- "note": "gmail oauth error surfacing"
+ "generated": "2026-10-05T15:59:33",
+ "note": "connectors UI"
 }
