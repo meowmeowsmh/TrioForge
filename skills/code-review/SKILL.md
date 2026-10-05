@@ -3,6 +3,7 @@ name: code-review
 title: Code Review
 description: Review a diff or file for real bugs and risks, with confidence filtering so only actionable findings are reported.
 when_to_use: reviewing code, a pull request, a diff, or checking work before it ships
+triggers: code review, pull request, review, diff, merge request, code smells, pr
 version: 1.0.0
 ---
 

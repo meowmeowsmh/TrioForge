@@ -3,6 +3,7 @@ name: frontend-design
 title: Frontend Design
 description: Build production-grade interfaces with a distinct visual point of view instead of generic AI-default styling.
 when_to_use: building a page, UI, dashboard, landing page, component, or styling anything visual
+triggers: landing page, dashboard, website, webpage, frontend, redesign, styling, ui/ux, user interface, html, css, home page, hero section, mockup, prototype
 version: 1.0.0
 ---
 

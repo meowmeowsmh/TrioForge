@@ -1186,7 +1186,17 @@ def test_skills() -> None:
             skills_loader.SKILLS_DIR = real_dir
             skills_loader.load_all()
     assert len(skills_loader.all_skills()) >= 1
-    print("  front-matter, loose notes, on-demand bodies, bad files skipped -> OK")
+    # Auto matching is deterministic and conservative: a shipped trigger fires,
+    # a short trigger never fires inside a longer word.
+    m = skills_loader.match_text("build me a landing page")
+    assert m and m[0]["id"] == "frontend-design", m
+    assert skills_loader.match_text("commit and push to github")[0]["id"] == "commit"
+    assert any(x["id"] == "code-review" for x in skills_loader.match_text("review this code"))
+    assert not any(x["id"] == "frontend-design" for x in skills_loader.match_text("quick question"))
+    # Explicit selection wins over (and dedupes with) auto.
+    picked = skills_loader.select_skills("landing page", explicit=["tdd"])
+    assert picked[0]["id"] == "tdd" and picked[1]["id"] == "frontend-design", picked
+    print("  front-matter, loose notes, on-demand bodies, auto match -> OK")
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "c2a6ffe9de10343a5fb4455f23792b7f76a494efe77230c57e8dad843e35b037",
+  "py/app.py": "04f80ac766543934c88b7e4f92b412b89e51ea479d2f29265c6088b00d4f2c59",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -47,7 +47,7 @@
   "py/providers/llm_providers.py": "3559d3b0c0cf686bbb1d390f9fe37bc800ccf7ff124329a14ee50801a1496321",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "27df446aaacdab083b25a595c42190bb2bea0c425c6c6fa49426201b935da31c",
-  "py/skills_loader.py": "9e61ba06660b56460fc8762eac273e60bea5f15d96c9433854a740da4365b3f5",
+  "py/skills_loader.py": "882ec0f9a64c75027853737a30f6e856e8bc6ca601a9a2b16b0698ed619da2a2",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/tools/app_window.py": "b15626b457050c66f22f3e2bc5977687a28101f75bb5a298aaedec993236eeb6",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
@@ -109,9 +109,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "d2fd0cfa0d90bd921790513de97fab6a7eccc41383e2427d6995f5c04361cffb",
+  "templates/index.html": "1212e9076b59258422020e1618400297aa7419522dbefe3056d9ab5417df9610",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T02:32:50",
- "note": "plugins panel + connector taxonomy"
+ "generated": "2026-10-06T02:45:26",
+ "note": "skill apply: manual picker + auto triggers"
 }

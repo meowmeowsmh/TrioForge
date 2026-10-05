@@ -3,6 +3,7 @@ name: tdd
 title: Test-Driven Development
 description: Write the failing test first, then the smallest change that passes, then refactor - red, green, refactor.
 when_to_use: adding a feature, fixing a bug, or any change where correctness must be demonstrated
+triggers: test, tests, unit test, pytest, tdd, test-driven, write a test, add a test, coverage
 version: 1.0.0
 ---
 

@@ -35,6 +35,30 @@ Everything between the `---` markers is the header. Only three keys matter:
 | `name` | no | The id the AI calls. Defaults to the folder or file name. |
 | `description` | no | Shown to the AI at all times. Defaults to the first paragraph. |
 | `when_to_use` | no | Extra hint for when this skill applies. |
+| `triggers` | no | Comma-separated words/phrases that **auto-apply** this skill. |
+
+## When a skill applies: manual and automatic
+
+Two paths, both deterministic — neither depends on the model guessing right.
+
+1. **Manual (you pin it).** The 🎓 button next to the message box opens the skill
+   picker. Pin a skill and it applies to every message until you remove it. A
+   purple chip above the box shows what is pinned.
+
+2. **Automatic (keyword match).** When a message contains one of the skill's
+   `triggers`, its full instructions are injected into that message
+   automatically. The AI shows which skills it used as green chips on its reply,
+   so you always know — and if the match is wrong you see it immediately.
+
+A trigger of more than one word matches as a phrase; a single word matches on
+word boundaries (so `ui` cannot fire inside `quick`). Write them for precision:
+`landing page, dashboard, css` not `design`. No `triggers` line means the skill
+is manual-only.
+
+Explicit pinning always wins over auto, and at most three skills are applied to
+one message — stacking more turns the prompt into noise.
+
+
 
 `title` and `version` are also read if you want them, for display in the panel.
 

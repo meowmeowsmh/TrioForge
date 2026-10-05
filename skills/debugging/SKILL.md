@@ -3,6 +3,7 @@ name: debugging
 title: Debugging
 description: Find a root cause from a symptom by bisecting and instrumenting, instead of guessing at fixes.
 when_to_use: something is broken, throwing, failing, hanging, or behaving differently than expected
+triggers: debug, bug, broken, crash, error, stack trace, failing, not working, throws, traceback, hanging
 version: 1.0.0
 ---
 

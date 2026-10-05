@@ -3,6 +3,7 @@ name: commit
 title: Commit & Push
 description: Stage, write a real commit message, and push - with an explicit check that the user actually asked for it.
 when_to_use: the user asks to commit, save the work, push, or ship it
+triggers: commit, push, git, stage, merge, ship it
 version: 1.0.0
 ---
 

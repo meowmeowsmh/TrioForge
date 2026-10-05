@@ -1652,7 +1652,9 @@ video.tf-video {
         <br>You can also type <code>ollama pull &lt;model&gt;</code>, <code>ollama list</code>, etc.</div>
       </div>
       <div class="attachments" id="attachments"></div>
+      <div id="skillChips" style="display:none; padding:0 16px 6px; gap:6px; flex-wrap:wrap; align-items:center;"></div>
       <div class="input-bar">
+        <button class="search-toggle-btn" id="skillPickBtn" title="Apply a skill to your message" onclick="toggleSkillPicker()">🎓</button>
         <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
@@ -1682,6 +1684,17 @@ video.tf-video {
         <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
         <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
         <button id="sendBtn">Send</button>
+      </div>
+      <!-- Skill apply picker (pinned skills + auto) -->
+      <div id="skillPicker" style="display:none; position:fixed; bottom:130px; left:50%; transform:translateX(-50%); width:min(420px,92vw); max-height:340px; overflow:auto; background:#14141c; border:1px solid #333; border-radius:12px; padding:10px; z-index:11000; box-shadow:0 12px 40px rgba(0,0,0,0.6);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <strong style="font-size:13px;">🎓 Apply a skill</strong>
+          <button onclick="closeSkillPicker()" style="background:transparent;border:none;color:#aaa;font-size:16px;cursor:pointer;">✕</button>
+        </div>
+        <p style="font-size:11px; color:#8b949e; margin:0 0 8px; line-height:1.5;">
+          Pinned skills apply to every message until you remove them. Matching skills also apply automatically — the AI shows which ones it used.
+        </p>
+        <div id="skillPickerList"></div>
       </div>
     </div>
 
@@ -5947,6 +5960,7 @@ function actuallySend(text) {
             videos: videos.map(v => ({ b64: v.b64, name: v.name, mime: v.mime, id: v.id })),
             search: searchEnabled,
             rag: ragEnabled,
+            skills: pinnedSkills,
             provider: provider,
             model: model,
             ctx_size: parseInt(ctxSelect.value, 10) || null,
@@ -6055,6 +6069,9 @@ function actuallySend(text) {
                                     liveReasoningChars = reasoningAcc.length;
                                     renderThinkingBlock(botDiv, reasoningAcc);
                                 }
+                                if (data.applied_skills) {
+                                    showAppliedSkills(botDiv, data.applied_skills);
+                                }
                             } catch(e) {}
                         }
                     }
@@ -6069,6 +6086,7 @@ function actuallySend(text) {
                 } else {
                     var text = data.response || '(no response)';
                     if (data.reasoning) renderThinkingBlock(botDiv, data.reasoning);
+                    if (data.applied_skills) showAppliedSkills(botDiv, data.applied_skills);
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
                     botDiv.querySelector('.body').innerHTML = renderMarkdown(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
@@ -8844,6 +8862,95 @@ function reconnectMcp() {
     fetch('/api/mcp/reconnect', {method: 'POST'})
       .then(function() { loadMcp(); })
       .catch(function(e) { alert('Reconnect failed: ' + e); loadMcp(); });
+}
+
+// ── Skill apply picker (pin a skill so it applies to every message) ──
+var pinnedSkills = [];
+function toggleSkillPicker() {
+    var p = document.getElementById('skillPicker');
+    if (!p) return;
+    if (p.style.display === 'block') { closeSkillPicker(); return; }
+    p.style.display = 'block';
+    refreshSkillPickerList();
+}
+function closeSkillPicker() {
+    var p = document.getElementById('skillPicker');
+    if (p) p.style.display = 'none';
+}
+function refreshSkillPickerList() {
+    var list = document.getElementById('skillPickerList');
+    if (!list) return;
+    list.innerHTML = '<div style="color:#8b949e;font-size:12px;">Loading…</div>';
+    fetch('/api/skills')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          list.innerHTML = '';
+          var skills = (d && d.skills) || [];
+          if (!skills.length) {
+              list.innerHTML = '<div style="color:#8b949e;font-size:12px;">No skills installed.</div>';
+              return;
+          }
+          skills.forEach(function(s) { renderSkillPickerRow(list, s); });
+      });
+}
+function renderSkillPickerRow(list, s) {
+    var on = pinnedSkills.indexOf(s.id) !== -1;
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.style.cssText = 'display:block; width:100%; text-align:left; background:' + (on ? '#1c1c26' : 'transparent') +
+        '; border:1px solid ' + (on ? '#2ea043' : 'transparent') + '; padding:7px 8px; cursor:pointer; border-radius:6px; margin-bottom:4px;';
+    var name = document.createElement('span');
+    name.textContent = (on ? '✅ ' : '') + (s.title || s.id);
+    name.style.cssText = 'color:#e1e4e8; font-size:13px;';
+    row.appendChild(name);
+    var desc = document.createElement('div');
+    desc.textContent = s.description || '';
+    desc.style.cssText = 'color:#8b949e; font-size:11px; margin-top:2px;';
+    row.appendChild(desc);
+    row.onclick = function() { togglePinnedSkill(s.id); };
+    list.appendChild(row);
+}
+function togglePinnedSkill(id) {
+    var i = pinnedSkills.indexOf(id);
+    if (i === -1) pinnedSkills.push(id); else pinnedSkills.splice(i, 1);
+    renderSkillChips();
+    refreshSkillPickerList();
+}
+function renderSkillChips() {
+    var box = document.getElementById('skillChips');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!pinnedSkills.length) { box.style.display = 'none'; return; }
+    box.style.display = 'flex';
+    pinnedSkills.forEach(function(id) {
+        var chip = document.createElement('span');
+        chip.style.cssText = 'font-size:11px; color:#d2a8ff; border:1px solid rgba(210,168,255,0.4); border-radius:999px; padding:2px 9px; background:rgba(210,168,255,0.08); display:inline-flex; align-items:center; gap:5px;';
+        var label = document.createElement('span');
+        label.textContent = '🎓 ' + id;
+        chip.appendChild(label);
+        var x = document.createElement('span');
+        x.textContent = '✕';
+        x.style.cssText = 'cursor:pointer;';
+        x.onclick = function() { togglePinnedSkill(id); };
+        chip.appendChild(x);
+        box.appendChild(chip);
+    });
+}
+function showAppliedSkills(botDiv, ids) {
+    if (!botDiv || !ids || !ids.length) return;
+    var prev = botDiv.querySelector('.applied-skills');
+    if (prev) prev.remove();
+    var bar = document.createElement('div');
+    bar.className = 'applied-skills';
+    bar.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin:0 0 6px;';
+    ids.forEach(function(id) {
+        var chip = document.createElement('span');
+        chip.textContent = '🎓 ' + id;
+        chip.style.cssText = 'font-size:11px; color:#3fb950; border:1px solid rgba(63,185,80,0.4); border-radius:999px; padding:2px 9px; background:rgba(63,185,80,0.08);';
+        bar.appendChild(chip);
+    });
+    var body = botDiv.querySelector('.body');
+    if (body) botDiv.insertBefore(bar, body); else botDiv.appendChild(bar);
 }
 
 // ── Skills panel (markdown instructions the AI loads on demand) ──

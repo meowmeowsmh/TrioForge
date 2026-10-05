@@ -129,6 +129,7 @@ def _load_skill(path: str, fallback_name: str):
         "title": title,
         "description": description,
         "when_to_use": meta.get("when_to_use") or meta.get("when") or "",
+        "triggers": meta.get("triggers") or "",
         "version": meta.get("version", ""),
         "body": body.strip(),
         "path": path,
@@ -332,3 +333,70 @@ def execute_tool(name: str, args: dict):
         "skill": skill["id"],
         "instructions": skill["body"],
     }
+
+
+# ── choosing skills for a message (manual + auto) ───────────────────────────
+
+def match_text(text: str, limit: int = 3) -> List[dict]:
+    """Skills whose declared triggers appear in the text, best match first.
+
+    This is the deterministic auto path - it does not ask the model to volunteer,
+    which is exactly what "auto" has to be if it is going to be trusted. A trigger
+    of more than one word matches as a phrase; a single-word trigger matches on
+    word boundaries, so a short trigger like ``ui`` cannot fire inside ``quick``.
+    """
+    text_l = (text or "").lower()
+    if not text_l:
+        return []
+    scored = []
+    for s in _loaded.values():
+        raw = s.get("triggers") or ""
+        triggers = [t.strip().lower() for t in raw.split(",") if t.strip()]
+        hits = []
+        for t in triggers:
+            if " " in t:
+                if t in text_l:
+                    hits.append(t)
+            elif re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", text_l):
+                hits.append(t)
+        # The id or title spoken verbatim is a strong signal even with no trigger,
+        # so "do it with tdd" or "code review this" works on skills that ship none.
+        named = any(tok and tok in text_l
+                    for tok in (s.get("id", "").lower(), s.get("title", "").lower()))
+        if hits or named:
+            scored.append({"id": s["id"], "score": len(hits) + (1 if named else 0),
+                           "matched": hits, "named": named})
+    scored.sort(key=lambda x: (-x["score"], x["id"]))
+    return scored[:limit]
+
+
+def select_skills(message: str, explicit=(), limit: int = 3) -> List[dict]:
+    """The skills to apply to one message: explicitly chosen first, then the best
+    automatic match, deduped. Capped, because stacking skills is how a prompt
+    turns into noise."""
+    chosen: List[dict] = []
+    for name in explicit:
+        skill = get(name)
+        if skill and skill["id"] not in [c["id"] for c in chosen]:
+            chosen.append(skill)
+    for match in match_text(message, limit=limit):
+        skill = get(match["id"])
+        if skill and skill["id"] not in [c["id"] for c in chosen]:
+            chosen.append(skill)
+        if len(chosen) >= limit:
+            break
+    return chosen
+
+
+def skill_prompt_block(skills: List[dict]) -> str:
+    """The text prepended to the user message that carries the chosen bodies."""
+    if not skills:
+        return ""
+    parts = []
+    for s in skills:
+        parts.append("[SKILL: {id}]\n{body}\n[/SKILL: {id}]".format(
+            id=s["id"], body=s["body"]))
+    header = ("You have been given skill instructions for this task. Follow them "
+              "closely. Where a skill instruction and the user's explicit request "
+              "conflict, the user's request wins.")
+    return header + "\n\n" + "\n\n".join(parts)

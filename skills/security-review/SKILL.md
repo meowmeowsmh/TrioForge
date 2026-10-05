@@ -3,6 +3,7 @@ name: security-review
 title: Security Review
 description: Scan a change for injection, secret leaks, unsafe input handling and broken access control before it ships.
 when_to_use: handling user input, database queries, file paths, shell commands, auth, secrets, or anything parsing untrusted data
+triggers: security, vulnerability, sql injection, xss, secret, auth, authentication, login, harden, injection, exploit, path traversal
 version: 1.0.0
 ---
 

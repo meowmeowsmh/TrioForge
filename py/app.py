@@ -4885,6 +4885,16 @@ def chat():
                   "search for the question's exact words. Give the answer from the provided content, and "
                   "do not ask for confirmation or what the user wants."
             )
+        # Skills: explicit (the user pinned one) first, then the best automatic
+        # match. Their bodies are injected into THIS message, so they apply even
+        # when the workspace-tool loop is off - the deterministic path, not a hope
+        # that the model volunteers to call use_skill.
+        _explicit_skills = [s for s in (data.get('skills') or []) if isinstance(s, str)]
+        _applied_skills = skills_loader.select_skills(user_message, explicit=_explicit_skills)
+        _skill_prompt = skills_loader.skill_prompt_block(_applied_skills)
+        if _skill_prompt:
+            final_prompt = _skill_prompt + "\n\n" + final_prompt
+        applied_skill_ids = [s["id"] for s in _applied_skills]
         # llama.cpp GGUF chat templates often require strictly alternating
         # user/assistant roles, so drop the separate "system" role there (the
         # system prompt is already folded into final_prompt by _build_final_prompt).
@@ -4990,7 +5000,8 @@ def chat():
         _record_code_blocks(reply)
         _auto_title(conv_id, original_message, reply, provider_name, model, api_key)
 
-        return jsonify({'response': reply, 'usage': usage, 'reasoning': reasoning})
+        return jsonify({'response': reply, 'usage': usage, 'reasoning': reasoning,
+                        'applied_skills': applied_skill_ids})
 
     except requests.exceptions.ConnectionError:
         return jsonify({'error': 'Cannot connect to Ollama. Make sure it is running.'}), 503
@@ -5159,6 +5170,12 @@ def chat_stream():
                   "search for the question's exact words. Give the answer from the provided content, and "
                   "do not ask for confirmation or what the user wants."
             )
+        _explicit_skills = [s for s in (data.get('skills') or []) if isinstance(s, str)]
+        _applied_skills = skills_loader.select_skills(user_message, explicit=_explicit_skills)
+        _skill_prompt = skills_loader.skill_prompt_block(_applied_skills)
+        if _skill_prompt:
+            final_prompt = _skill_prompt + "\n\n" + final_prompt
+        applied_skill_ids = [s["id"] for s in _applied_skills]
         include_system = (provider_name != 'llamacpp')
         messages = _build_messages(conv_id, system_prompt, final_prompt, include_system=include_system)
 
@@ -5232,6 +5249,11 @@ def chat_stream():
                     audio_final_text = f"[audio error] {e}"
 
         def generate():
+            # Tell the client which skills were applied BEFORE any token, so the
+            # UI can show the chip while the answer is still streaming - the user
+            # never has to wonder whether a skill took effect.
+            if applied_skill_ids:
+                yield f"data: {json_dumps({'applied_skills': applied_skill_ids})}\n\n"
             # llama.cpp only: start() above SPAWNED the server, it did not wait for it.
             # A 12B GGUF then needs several seconds to load, and the direct streaming
             # path below used to fire its request straight away - so the first send
