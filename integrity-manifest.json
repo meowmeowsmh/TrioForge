@@ -109,6 +109,6 @@
   "templates/index.html": "dc33e3c626493c5c81c6edb644b93cfcf35ea387179fabb7793bd513d67d30e0",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T16:41:35",
- "note": "gmail disconnect keeps the app"
+ "generated": "2026-10-05T16:45:39",
+ "note": "gmail app can be baked in"
 }

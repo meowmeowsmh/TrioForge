@@ -38,6 +38,13 @@ GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
 GMAIL_API = "https://gmail.googleapis.com/gmail/v1/"
 SCOPES = "https://www.googleapis.com/auth/gmail.readonly"
 
+# ── Bake the app in here to make the fields disappear for ever ────────────────
+# Fill these two (or set GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET in the environment) and
+# the Connectors panel NEVER asks anybody for credentials again - it shows only
+# "Sign in with Google". This is how a published build ships the Claude experience.
+DEFAULT_CLIENT_ID = ""
+DEFAULT_CLIENT_SECRET = ""
+
 MANIFEST = {
     "name": "gmail",
     "title": "Gmail",
@@ -118,8 +125,12 @@ def _save_cfg(updates):
 
 def _oauth_client():
     cfg = _cfg()
-    cid = (cfg.get("oauth_client_id") or os.environ.get("GMAIL_CLIENT_ID") or "").strip()
-    secret = (cfg.get("oauth_client_secret") or os.environ.get("GMAIL_CLIENT_SECRET") or "").strip()
+    cid = ((cfg.get("oauth_client_id") or "").strip()
+           or os.environ.get("GMAIL_CLIENT_ID", "").strip()
+           or DEFAULT_CLIENT_ID.strip())
+    secret = ((cfg.get("oauth_client_secret") or "").strip()
+              or os.environ.get("GMAIL_CLIENT_SECRET", "").strip()
+              or DEFAULT_CLIENT_SECRET.strip())
     return cid, secret
 
 
