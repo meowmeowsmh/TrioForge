@@ -1190,6 +1190,153 @@ def test_skills() -> None:
 
 
 # ---------------------------------------------------------------------------
+#: A minimal MCP server, used as the counterparty for the client test. It speaks
+#: the real protocol over stdio, and prints a non-JSON banner first so the test
+#: also proves the client ignores noise on the stream.
+_FAKE_MCP = r'''
+import json, sys
+sys.stdout.write("a banner line that is not JSON\n")
+sys.stdout.flush()
+def send(o):
+    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    try: msg = json.loads(line)
+    except ValueError: continue
+    mid = msg.get("id"); method = msg.get("method")
+    if method == "initialize":
+        send({"jsonrpc":"2.0","id":mid,"result":{"protocolVersion":"2024-11-05",
+              "capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"}}})
+    elif method == "tools/list":
+        send({"jsonrpc":"2.0","id":mid,"result":{"tools":[
+            {"name":"echo","description":"Echo text back",
+             "inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}},
+            {"name":"boom","description":"Always errors",
+             "inputSchema":{"type":"object","properties":{}}}]}})
+    elif method == "tools/call":
+        p = msg.get("params") or {}
+        if p.get("name") == "boom":
+            send({"jsonrpc":"2.0","id":mid,"result":{"content":[{"type":"text","text":"it broke"}],"isError":True}})
+        else:
+            send({"jsonrpc":"2.0","id":mid,"result":{"content":[
+                {"type":"text","text":"echo:" + str((p.get("arguments") or {}).get("text"))}]}})
+    elif mid is not None:
+        send({"jsonrpc":"2.0","id":mid,"error":{"code":-32601,"message":"no such method"}})
+'''
+
+
+def _sse_handler_class():
+    """A remote MCP server answering JSON-RPC over an SSE stream."""
+    import json as _json
+    from http.server import BaseHTTPRequestHandler
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a):        # silence the test output
+            pass
+
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            msg = _json.loads(self.rfile.read(n) or b"{}")
+            mid, method = msg.get("id"), msg.get("method")
+            if method == "initialize":
+                body = {"jsonrpc": "2.0", "id": mid, "result": {
+                    "protocolVersion": "2024-11-05", "capabilities": {},
+                    "serverInfo": {"name": "fake-http", "version": "1"}}}
+            elif method == "tools/list":
+                body = {"jsonrpc": "2.0", "id": mid, "result": {"tools": [
+                    {"name": "web_search", "description": "Search the web",
+                     "inputSchema": {"type": "object", "properties": {"q": {"type": "string"}}}}]}}
+            else:
+                body = {"jsonrpc": "2.0", "id": mid, "result": {"content": [
+                    {"type": "text", "text": "found it"}]}}
+            payload = ("event: message\ndata: " + _json.dumps(body) + "\n\n").encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    return Handler
+
+
+def test_mcp_client() -> None:
+    _title("mcp client (borrowed tools, not reinvented ones)")
+    import json as _json
+    import sys as _sys
+    import tempfile
+    import threading
+    from http.server import HTTPServer
+    import mcp_client
+
+    real_path = mcp_client.CONFIG_PATH
+    with tempfile.TemporaryDirectory() as tmp:
+        script = os.path.join(tmp, "fake_mcp.py")
+        with open(script, "w", encoding="utf-8") as fh:
+            fh.write(_FAKE_MCP)
+
+        httpd = HTTPServer(("127.0.0.1", 0), _sse_handler_class())
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+        mcp_client.CONFIG_PATH = os.path.join(tmp, "mcp_servers.json")
+        try:
+            # save_config takes the inner map but must tolerate the whole file
+            # object, which is what a caller naturally hands it.
+            mcp_client.save_config({"servers": {
+                "fake": {"command": _sys.executable, "args": [script]},
+                "web": {"url": "http://127.0.0.1:{}/mcp".format(port)},
+                "dead": {"command": "definitely-not-a-real-binary-xyz"},
+            }})
+            with open(mcp_client.CONFIG_PATH, encoding="utf-8") as fh:
+                written = _json.load(fh)
+            assert set(written["servers"]) == {"fake", "web", "dead"}, written["servers"]
+
+            mcp_client.load_all()
+            assert mcp_client.wait_ready(45), mcp_client.list_servers()
+
+            by_id = {s["id"]: s for s in mcp_client.list_servers()}
+            # stdio and HTTP both reach "ready"; the bad command is reported, not fatal.
+            assert by_id["fake"]["status"] == "ready", by_id["fake"]
+            assert by_id["web"]["status"] == "ready", by_id["web"]
+            assert by_id["dead"]["status"] == "error", by_id["dead"]
+            assert "was not found" in by_id["dead"]["error"], by_id["dead"]
+
+            names = sorted(t["function"]["name"] for t in mcp_client.collect_tools())
+            assert names == ["mcp__fake__boom", "mcp__fake__echo",
+                             "mcp__web__web_search"], names
+            # A broken server contributes nothing to the agent's tool list.
+            assert not any("dead" in n for n in names), names
+
+            assert mcp_client.execute_tool("mcp__fake__echo", {"text": "hi"}) == \
+                {"result": "echo:hi"}
+            assert mcp_client.execute_tool("mcp__web__web_search", {"q": "x"}) == \
+                {"result": "found it"}
+            # isError in the MCP result becomes an error the model can act on.
+            boom = mcp_client.execute_tool("mcp__fake__boom", {})
+            assert "it broke" in boom.get("error", ""), boom
+            # An unknown prefixed name is reported, and a non-MCP name is not ours.
+            assert "error" in mcp_client.execute_tool("mcp__ghost__nope", {})
+            assert mcp_client.execute_tool("read_file", {"path": "x"}) is None
+
+            desc = mcp_client.add_server("extra", {"command": _sys.executable, "args": [script]})
+            assert desc["status"] in ("connecting", "ready"), desc
+            mcp_client.wait_ready(30)
+            assert any(t["function"]["name"] == "mcp__extra__echo"
+                       for t in mcp_client.collect_tools())
+            assert mcp_client.remove_server("extra") is True
+            mcp_client.wait_ready(5)
+            assert not any(t["function"]["name"].startswith("mcp__extra__")
+                           for t in mcp_client.collect_tools())
+        finally:
+            mcp_client.shutdown()
+            httpd.shutdown()
+            mcp_client.CONFIG_PATH = real_path
+            mcp_client.load_all()
+    print("  stdio + SSE handshake, tools/list, calls, dead server isolated -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1203,7 +1350,7 @@ def main() -> int:
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
              test_design_persists_in_conversation, test_design_artifacts_listing,
              test_design_run_terminal, test_design_runner_languages,
-             test_plugin_tools, test_skills]
+             test_plugin_tools, test_skills, test_mcp_client]
     failed = []
     for t in tests:
         try:

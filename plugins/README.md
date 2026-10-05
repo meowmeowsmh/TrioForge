@@ -4,6 +4,35 @@ Drop a single `.py` file here to extend TrioForge. Plugins are loaded at
 startup and can add routes, register blueprints, or **give the agent tools it
 can call**.
 
+## Three ways to extend TrioForge
+
+A single `.py` file is the most powerful option, and usually the wrong first
+choice. There are three tiers — pick the cheapest one that does the job.
+
+| | **Skill** | **MCP server** | **Plugin** (this folder) |
+|---|---|---|---|
+| What it is | Markdown instructions | Someone else's tool server | Python code |
+| Lives in | `skills/<name>/SKILL.md` | 🧰 MCP Servers panel | `plugins/<name>.py` |
+| You write | prose | nothing — one click | real code |
+| Gives the AI | know-how | tools | tools + routes + UI |
+| Best for | *how* to do a job well | Playwright, GitHub, docs, databases | first-class UX, OAuth, your own service |
+
+**Reach down the table only when the tier above cannot do it.**
+
+- **A skill** changes how the AI works — code review standards, frontend taste,
+  test discipline. It is a prompt with a name. Most of what you would call an
+  "AI plugin" is exactly this, and it needs no code at all. See `skills/README.md`.
+- **An MCP server** gives the AI tools that already exist. Browser control, live
+  docs, GitHub, Postgres, Figma — the same servers Claude and Cursor use. Do not
+  rewrite these as plugins; connect to them. See the 🧰 panel.
+- **A plugin** is for when you want something TrioForge-shaped: a one-click
+  Google sign-in, a credential panel, an HTTP route of your own. That is why
+  `plugins/gmail.py` is a plugin and not an MCP server.
+
+All three end up in the same place: one tool list handed to the model. Skills
+also contribute their description to the system prompt, so the model knows a
+skill exists before it decides to load it.
+
 ## Anatomy of a plugin
 
 ```python

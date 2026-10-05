@@ -1598,6 +1598,7 @@ video.tf-video {
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
         <button class="clear-btn" id="connectorsBtn" onclick="openConnectorsModal()" title="Connectors — connect Gmail and other services so the AI can use them" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🔌</button>
         <button class="clear-btn" id="skillsBtn" onclick="openSkillsModal()" title="Skills — Markdown instructions the AI loads when a task matches" style="border-color:rgba(210,168,255,0.45); color:#d2a8ff;">📚</button>
+        <button class="clear-btn" id="mcpBtn" onclick="openMcpModal()" title="MCP Servers — borrow tools other people already built (Playwright, GitHub, docs lookup, …)" style="border-color:rgba(255,196,120,0.45); color:#ffc478;">🧰</button>
         <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup — install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🚀</button>
         <button class="clear-btn" id="integrityBtn" onclick="openIntegrity()" title="Integrity check — compare this app's files with its recorded baseline and scan for injected code" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🛡️</button>
         <button class="clear-btn" id="themeBtn" onclick="openThemePicker()" title="Appearance — pick a theme for every page">🎨</button>
@@ -8489,6 +8490,197 @@ document.addEventListener('fullscreenchange', function () {
     });
 })();
 
+// ── MCP servers panel ──
+// One-click presets, because hand-writing JSON-RPC config is exactly the kind of
+// setup work that stops people from ever using this. `needs` asks for the one
+// thing that server cannot guess.
+var MCP_PRESETS = [
+    {id: 'playwright', label: '🎭 Playwright',
+     hint: 'Drive a real browser: open pages, click, fill forms, screenshot.',
+     spec: {command: 'npx', args: ['-y', '@playwright/mcp@latest']}},
+    {id: 'fetch', label: '🌐 Fetch',
+     hint: 'Fetch a URL and hand the page back as clean text.',
+     spec: {command: 'npx', args: ['-y', '@modelcontextprotocol/server-fetch']}},
+    {id: 'memory', label: '🧠 Memory',
+     hint: 'A knowledge graph the AI can write to and recall later.',
+     spec: {command: 'npx', args: ['-y', '@modelcontextprotocol/server-memory']}},
+    {id: 'context7', label: '📖 Context7',
+     hint: 'Version-specific docs and code examples for libraries.',
+     spec: {url: 'https://mcp.context7.com/mcp'}},
+    {id: 'filesystem', label: '📂 Filesystem', needs: 'path',
+     hint: 'Read and write one folder you choose.',
+     spec: {command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem']}},
+    {id: 'github', label: '🐙 GitHub', needs: 'token',
+     hint: 'Issues, pull requests, code search on your repos.',
+     spec: {command: 'npx', args: ['-y', '@modelcontextprotocol/server-github']}}
+];
+
+function openMcpModal() {
+    var m = document.getElementById('mcpModal');
+    if (m) m.style.display = 'flex';
+    renderMcpPresets();
+    loadMcp();
+}
+function closeMcpModal() {
+    var m = document.getElementById('mcpModal');
+    if (m) m.style.display = 'none';
+}
+function renderMcpPresets() {
+    var box = document.getElementById('mcpPresets');
+    if (!box || box.dataset.done) return;
+    box.dataset.done = '1';
+    MCP_PRESETS.forEach(function(p) {
+        var b = document.createElement('button');
+        b.textContent = p.label;
+        b.title = p.hint;
+        b.style.cssText = 'padding:6px 11px; border:1px solid #3a3a4a; border-radius:999px; ' +
+            'background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;';
+        b.onclick = function() { addMcpPreset(p); };
+        box.appendChild(b);
+    });
+    var note = document.createElement('div');
+    note.textContent = 'Servers that run npx need Node.js installed.';
+    note.style.cssText = 'font-size:11px; color:#5a5a6a; width:100%; margin-top:4px;';
+    box.appendChild(note);
+}
+function addMcpPreset(p) {
+    var spec = JSON.parse(JSON.stringify(p.spec));
+    if (p.needs === 'path') {
+        var dir = prompt('Which folder should the AI be able to read and write?\n\n' +
+                         'Full path, for example: D:\\\\projects\\\\my-app');
+        if (!dir) return;
+        spec.args.push(dir);
+    } else if (p.needs === 'token') {
+        var tok = prompt('Paste a GitHub personal access token.\n\n' +
+                         '(GitHub → Settings → Developer settings → Personal access tokens)');
+        if (!tok) return;
+        spec.env = {'GITHUB_PERSONAL_ACCESS_TOKEN': tok};
+    }
+    mcpAdd(p.id, spec);
+}
+function addMcpCustom() {
+    var id = prompt('Server id — short, lowercase, no spaces (e.g. "my-tools")');
+    if (!id) return;
+    var spec = {};
+    var cmd = prompt('Command to run (leave empty to use a URL instead)\n\nFor example: npx');
+    if (cmd) {
+        spec.command = cmd;
+        var args = prompt('Arguments, space separated (leave empty for none)\n\nFor example: -y @some/mcp-server');
+        if (args) spec.args = args.split(/\s+/).filter(function(a) { return a.length; });
+    } else {
+        var url = prompt('Server URL (e.g. https://mcp.example.com/mcp)');
+        if (!url) return;
+        spec.url = url;
+    }
+    mcpAdd(id, spec);
+}
+function mcpAdd(id, spec) {
+    var box = document.getElementById('mcpList');
+    if (box) box.innerHTML = '<div style="color:#8b949e; font-size:13px;">Starting “' + id +
+        '”… the first run may download a package.</div>';
+    var body = {id: id};
+    Object.keys(spec).forEach(function(k) { body[k] = spec[k]; });
+    fetch('/api/mcp/servers', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          if (d && d.error) { alert(d.error); loadMcp(); return; }
+          // A first `npx -y` downloads, so poll until it settles instead of
+          // showing "connecting" forever and looking broken.
+          var tries = 0;
+          var timer = setInterval(function() {
+              tries++;
+              loadMcp();
+              if (tries >= 20) clearInterval(timer);
+          }, 1500);
+      })
+      .catch(function(e) { alert('Could not add the server: ' + e); loadMcp(); });
+}
+function loadMcp() {
+    var box = document.getElementById('mcpList');
+    if (!box) return;
+    fetch('/api/mcp')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          var list = (d && d.servers) || [];
+          if (!list.length) {
+              box.innerHTML = '<div style="color:#8b949e; font-size:13px; line-height:1.7;">' +
+                  'No MCP servers yet. Pick one above — Playwright and Fetch are the ' +
+                  'quickest to try.</div>';
+              return;
+          }
+          box.innerHTML = '';
+          list.forEach(function(s) { renderMcpCard(box, s); });
+      })
+      .catch(function(e) {
+          box.innerHTML = '<div style="color:#f85149; font-size:13px;">Could not list MCP servers: ' + e + '</div>';
+      });
+}
+function renderMcpCard(box, s) {
+    var colour = s.status === 'ready' ? '#3fb950'
+               : s.status === 'error' ? '#f85149'
+               : s.status === 'connecting' ? '#d29922' : '#8b949e';
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:12px 14px; margin-bottom:10px; background:#0e0e15;';
+
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex; align-items:center; gap:8px;';
+    var dot = document.createElement('span');
+    dot.textContent = '●';
+    dot.style.cssText = 'color:' + colour + '; font-size:11px;';
+    head.appendChild(dot);
+    var name = document.createElement('strong');
+    name.textContent = s.id;
+    name.style.cssText = 'font-size:14px;';
+    head.appendChild(name);
+    var transport = document.createElement('span');
+    transport.textContent = s.transport === 'http' ? 'remote' : 'local';
+    transport.style.cssText = 'font-size:11px; color:#5a5a6a;';
+    head.appendChild(transport);
+    var status = document.createElement('span');
+    status.textContent = s.status === 'ready'
+        ? (s.tool_count + (s.tool_count === 1 ? ' tool' : ' tools'))
+        : s.status;
+    status.style.cssText = 'font-size:12px; color:' + colour + '; margin-left:auto;';
+    head.appendChild(status);
+    var del = document.createElement('button');
+    del.textContent = '✕';
+    del.title = 'Remove this server';
+    del.style.cssText = 'background:transparent;border:none;color:#8b949e;cursor:pointer;font-size:14px;';
+    del.onclick = function() {
+        if (!confirm('Remove the MCP server “' + s.id + '”?')) return;
+        fetch('/api/mcp/servers/' + encodeURIComponent(s.id), {method: 'DELETE'})
+          .then(loadMcp);
+    };
+    head.appendChild(del);
+    card.appendChild(head);
+
+    if (s.error) {
+        var err = document.createElement('div');
+        err.textContent = s.error;
+        err.style.cssText = 'font-size:12px; color:#f85149; margin-top:6px; line-height:1.5;';
+        card.appendChild(err);
+    }
+    if (s.tool_count) {
+        var names = document.createElement('div');
+        names.textContent = (s.tool_names || []).join('  ·  ');
+        names.style.cssText = 'font-size:11px; color:#6a6a7a; margin-top:6px; line-height:1.6; ' +
+            'max-height:66px; overflow:auto;';
+        card.appendChild(names);
+    }
+    box.appendChild(card);
+}
+function reconnectMcp() {
+    var box = document.getElementById('mcpList');
+    if (box) box.innerHTML = '<div style="color:#8b949e; font-size:13px;">Reconnecting…</div>';
+    fetch('/api/mcp/reconnect', {method: 'POST'})
+      .then(function() { loadMcp(); })
+      .catch(function(e) { alert('Reconnect failed: ' + e); loadMcp(); });
+}
+
 // ── Skills panel (markdown instructions the AI loads on demand) ──
 function openSkillsModal() {
     var m = document.getElementById('skillsModal');
@@ -9356,6 +9548,26 @@ if ('serviceWorker' in navigator) {
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">Connect services so the AI can read and use them when you ask.</p>
     <div id="connectorsList" style="max-height:60vh; overflow:auto;"></div>
+  </div>
+</div>
+
+<!-- MCP servers panel -->
+<div id="mcpModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10000; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(580px, 94vw);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:16px;">🧰 MCP Servers</strong>
+      <button onclick="closeMcpModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 12px; line-height:1.6;">
+      Borrow tools somebody else already built. Each server hands the AI its own tools —
+      browser control, live docs, GitHub, databases. One click to add.
+    </p>
+    <div id="mcpPresets" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;"></div>
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button onclick="reconnectMcp()" style="padding:6px 12px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">↻ Reconnect all</button>
+      <button onclick="addMcpCustom()" style="padding:6px 12px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">＋ Custom server…</button>
+    </div>
+    <div id="mcpList" style="max-height:52vh; overflow:auto;"></div>
   </div>
 </div>
 

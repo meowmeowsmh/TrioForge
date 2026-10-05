@@ -161,6 +161,7 @@ import comfyui_service
 import rag
 import plugin_loader
 import skills_loader
+import mcp_client
 import setup_check
 import edits_store
 import video_to_text
@@ -213,6 +214,12 @@ try:
     skills_loader.load_all()
 except Exception as _skill_exc:
     logger.warning("Skill loading failed: %s", _skill_exc)
+
+# â”€â”€ MCP servers (connect in the background; a first npx run can be slow) â”€â”€
+try:
+    mcp_client.load_all()
+except Exception as _mcp_exc:
+    logger.warning("MCP loading failed: %s", _mcp_exc)
 
 # â”€â”€ Live-coding edits: load persisted edits so the panel survives restarts â”€â”€
 try:
@@ -3486,17 +3493,19 @@ def _list_files_recursive(base, rel=""):
 def _agent_tools():
     """Every tool the agent may call, from every source, in one place.
 
-    Workspace tools are built in, native plugins come from plugins/, and skills
-    contribute the two that load their own instructions. Assembled here so a new
-    source cannot be wired into the OpenAI path and forgotten in the Claude one.
+    Workspace tools are built in, native plugins come from plugins/, skills
+    contribute the two that load their own instructions, and MCP servers bring
+    whatever someone else already wrote. Assembled here so a new source cannot be
+    wired into the OpenAI path and forgotten in the Claude one.
     """
     return (WORKSPACE_TOOLS
             + plugin_loader.collect_tools()
-            + skills_loader.collect_tools())
+            + skills_loader.collect_tools()
+            + mcp_client.collect_tools())
 
 
 def _execute_tool(name, args):
-    """Run a workspace-folder tool, a skill tool or a plugin tool."""
+    """Run a workspace-folder tool, a skill tool, a plugin tool or an MCP tool."""
     # Skills first: two dictionary lookups, no I/O, and the name space is tiny.
     skill_result = skills_loader.execute_tool(name, args)
     if skill_result is not None:
@@ -3507,6 +3516,12 @@ def _execute_tool(name, args):
     plugin_result = plugin_loader.execute_tool(name, args)
     if plugin_result is not None:
         return plugin_result
+
+    # Then MCP: names are prefixed mcp__server__tool, so this is a cheap check
+    # for anything that is not one, and a real call for anything that is.
+    mcp_result = mcp_client.execute_tool(name, args)
+    if mcp_result is not None:
+        return mcp_result
 
     wid = _current_workspace_id()
     base = _workspace_setting(wid, "folder", "") or ""
@@ -4553,6 +4568,56 @@ def api_skill_body(name):
     if skill is None:
         return jsonify({"error": "No skill named '{}'.".format(name)}), 404
     return jsonify({k: v for k, v in skill.items()})
+
+
+@app.route('/api/mcp', methods=['GET'])
+def api_mcp():
+    """List configured MCP servers and how each one is doing."""
+    return jsonify({
+        "servers": mcp_client.list_servers(),
+        "config": mcp_client.config_path(),
+    })
+
+
+@app.route('/api/mcp/servers', methods=['POST'])
+def api_mcp_add():
+    """Add or replace one MCP server, then connect in the background."""
+    body = request.get_json(silent=True) or {}
+    sid = (body.get("id") or "").strip()
+    sid = re.sub(r"[^A-Za-z0-9._-]+", "-", sid).strip("-")
+    if not sid:
+        return jsonify({"error": "An id is required."}), 400
+
+    spec = {}
+    for key in ("command", "url", "cwd", "token"):
+        value = (body.get(key) or "").strip() if isinstance(body.get(key), str) else body.get(key)
+        if value:
+            spec[key] = value
+    for key in ("args", "env", "headers"):
+        value = body.get(key)
+        if value:
+            spec[key] = value
+    if "enabled" in body:
+        spec["enabled"] = bool(body["enabled"])
+
+    if not spec.get("command") and not spec.get("url"):
+        return jsonify({"error": "Give either a command (local server) or a url (remote server)."}), 400
+    if spec.get("args") and not isinstance(spec["args"], list):
+        return jsonify({"error": "args must be a list."}), 400
+
+    return jsonify(mcp_client.add_server(sid, spec))
+
+
+@app.route('/api/mcp/servers/<sid>', methods=['DELETE'])
+def api_mcp_remove(sid):
+    """Remove a server from the config and stop it."""
+    return jsonify({"removed": mcp_client.remove_server(sid)})
+
+
+@app.route('/api/mcp/reconnect', methods=['POST'])
+def api_mcp_reconnect():
+    """Retry every configured server."""
+    return jsonify({"servers": mcp_client.reconnect_all()})
 
 
 @app.route('/api/connectors', methods=['GET'])

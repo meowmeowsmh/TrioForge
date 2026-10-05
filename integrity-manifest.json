@@ -12,7 +12,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "f62ac02a36141bfdefc32e59e29bce11120584c54e71494cf2c95f469fa97b9f",
+  "py/app.py": "e173ed0333293b13e3bf419fc4beb6193b7011936594fe1e4036ba216667c41b",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -37,6 +37,7 @@
   "py/llamacpp_service.py": "f9dacdd51196c55ff343c728f3d99ff92abcbffab8bd7b539e47d0bf79ee91a2",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
+  "py/mcp_client.py": "10d9a909f24c1bf6e5cc55b97b80e639df65e23306acc1d9a3d1320b05999950",
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
@@ -107,9 +108,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "8915a7d02fb8d715dfca78a35dd78516587cabac04b530108b95e8278b2ea1ef",
+  "templates/index.html": "b4bf4c6fadb1b9b4ebd94098d1bcdeff122bcd54ff0da4369bcf63e812607388",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T01:33:35",
- "note": "skills tier added"
+ "generated": "2026-10-06T01:50:12",
+ "note": "mcp client tier added"
 }

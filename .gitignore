@@ -78,6 +78,9 @@ json_configuration/host_password
 json_configuration/.host_secret
 # Connector credentials: OAuth client secrets and account tokens. Local only.
 json_configuration/gmail_credentials.json
+# MCP server config: a server's `env`, `headers` or `token` holds API keys and
+# personal access tokens. Local only — exactly like the credentials above.
+json_configuration/mcp_servers.json
 sqlite_data/
 
 # ──────────────────────────────────────────────────────────────
