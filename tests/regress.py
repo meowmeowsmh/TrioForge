@@ -1337,6 +1337,32 @@ def test_mcp_client() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_toolbar_icons_unique() -> None:
+    _title("toolbar icons (no two controls look the same)")
+    import re as _re
+
+    html_path = Path(__file__).resolve().parent.parent / "templates" / "index.html"
+    html = html_path.read_text(encoding="utf-8")
+    block = html[html.index('id="topBarIcons"'):html.index('id="viewHost"')]
+
+    # The icon is the first non-ASCII run after the tag. Attribute text is skipped
+    # because [^>]* cannot cross the closing bracket, so an em dash inside a title
+    # is not mistaken for the icon. Buttons drawn as inline SVG simply do not match.
+    icons = _re.findall(r"<(?:button|span)\b[^>]*>\s*([^\x00-\x7f]+)", block)
+    assert len(icons) > 20, "toolbar extraction found too few icons: {}".format(icons)
+
+    seen, dupes = set(), []
+    for icon in icons:
+        if icon in seen:
+            dupes.append(icon)
+        seen.add(icon)
+    # Two different features behind one icon is a real usability bug: the toolbar is
+    # icon-only, so a duplicate is indistinguishable without hovering every button.
+    assert not dupes, "one icon is used by more than one toolbar control: {}".format(dupes)
+    print("  {} toolbar icons, all distinct -> OK".format(len(icons)))
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1350,7 +1376,8 @@ def main() -> int:
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
              test_design_persists_in_conversation, test_design_artifacts_listing,
              test_design_run_terminal, test_design_runner_languages,
-             test_plugin_tools, test_skills, test_mcp_client]
+             test_plugin_tools, test_skills, test_mcp_client,
+             test_toolbar_icons_unique]
     failed = []
     for t in tests:
         try:
