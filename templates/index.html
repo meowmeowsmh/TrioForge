@@ -8564,6 +8564,14 @@ function renderConnectorCard(box, c) {
               statusEl.style.color = '#f0883e';
           }
           if (!st.connected) {
+              if (st.error) {
+                  // Keep the reason on the card: a popup vanishes and leaves the user
+                  // guessing why the connector still says "Not configured".
+                  var errBox = document.createElement('div');
+                  errBox.textContent = '⚠️ ' + st.error;
+                  errBox.style.cssText = 'font-size:11px; color:#f0883e; margin-top:8px; line-height:1.5;';
+                  card.insertBefore(errBox, actions);
+              }
               // The connector declares its own credential fields in MANIFEST, so the
               // panel stays generic: Gmail asks for address + app password, not a
               // Client ID, because a local app can't be a centrally registered one.

@@ -108,7 +108,20 @@ def _imap():
         conn.login(addr, pw)
         return conn, None
     except imaplib.IMAP4.error as exc:
-        return None, "sign-in failed: {}".format(exc)
+        # IMAP errors arrive as raw bytes ("b'[AUTHENTICATIONFAILED] …'"), which reads
+        # like a crash. Decode it and, for the auth failure that is 99% of cases, say
+        # exactly which of the three usual causes to check.
+        text = exc.decode("utf-8", "replace") if isinstance(exc, bytes) else str(exc)
+        if "AUTHENTICATIONFAILED" in text or "Invalid credentials" in text:
+            return None, (
+                "Gmail rejected the sign-in. Check all three: "
+                "(1) 2-Step Verification must be ON for your Google account - "
+                "App Passwords do not exist without it; "
+                "(2) paste the 16-character APP PASSWORD, not your normal Google "
+                "password (it looks like 'abcd efgh ijkl mnop'); "
+                "(3) IMAP must be enabled in Gmail -> Settings -> Forwarding and "
+                "POP/IMAP -> Enable IMAP.")
+        return None, text.replace("[", "").replace("]", "")
     except Exception as exc:
         return None, str(exc)
 
