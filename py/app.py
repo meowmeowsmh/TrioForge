@@ -4503,6 +4503,7 @@ def api_connectors():
             "description": p.get("description", ""),
             "tools": names,
             "credentials": p.get("credentials") or [],
+            "guide": p.get("guide") or [],
         })
     return jsonify({"connectors": items})
 

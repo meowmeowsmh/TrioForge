@@ -48,17 +48,31 @@ DEFAULT_CLIENT_SECRET = ""
 MANIFEST = {
     "name": "gmail",
     "title": "Gmail",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Sign in with Google so the agent can read your Gmail.",
     # Rendered by the Connectors panel. This is the one-time APP setup, not a
     # per-user login - after it is saved, users only ever click Sign in with Google.
     "credentials": [
         {"key": "oauth_client_id", "label": "Google Client ID (one-time app setup)",
-         "type": "text", "placeholder": "…apps.googleusercontent.com",
-         "hint": "console.cloud.google.com -> Credentials -> OAuth client ID -> "
-                 "Web application. Add the redirect URI exactly as shown in the README."},
+         "type": "text", "placeholder": "…apps.googleusercontent.com"},
         {"key": "oauth_client_secret", "label": "Google Client Secret", "type": "password",
          "placeholder": "GOCSPX-…"},
+    ],
+    # A built-in guide, shown in the panel itself: the setup must not depend on
+    # somebody finding and following a README.
+    "guide": [
+        "1. console.cloud.google.com -> create a project, and stay in THAT project for "
+        "every step below (the #1 cause of failures is doing one step in a different project).",
+        "2. APIs & Services -> Library -> search 'Gmail API' -> ENABLE.",
+        "3. Google Auth Platform -> Audience -> Test users -> add YOUR OWN Gmail address "
+        "-> Save. (Skip this and Google answers with 'access_denied'.)",
+        "4. Credentials -> + Create credentials -> OAuth client ID -> type: Web application.",
+        "5. Authorized redirect URIs -> + ADD URI -> paste exactly "
+        "https://127.0.0.1:5003/api/connectors/gmail/oauth2callback -> then click SAVE "
+        "(the URI does nothing until you save).",
+        "6. Copy the Client ID + Client secret, paste them here -> Save app.",
+        "7. Click 'Sign in with Google' -> pick your account -> Continue. The tab then "
+        "says 'Gmail connected'.",
     ],
 }
 
@@ -221,9 +235,12 @@ def _list_oauth(query, max_results):
         return {"error": err}
     out = []
     for m in data.get("messages", []):
+        # metadataHeaders must be REPEATED params (…&metadataHeaders=From&…). Passing
+        # one comma-joined string made the API ignore it and return no headers at all,
+        # so every message came back with an empty Subject/From.
         meta, err2 = _api("users/me/messages/" + m["id"],
                           {"format": "metadata",
-                           "metadataHeaders": "From,Subject,Date"})
+                           "metadataHeaders": ["From", "Subject", "Date"]})
         if err2:
             continue
         payload = meta.get("payload", {})

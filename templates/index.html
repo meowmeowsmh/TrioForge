@@ -8544,12 +8544,36 @@ function renderConnectorCard(box, c) {
         card.appendChild(desc);
     }
     var actions = document.createElement('div');
-    actions.style.cssText = 'display:flex; gap:8px; margin-top:8px;';
+    actions.style.cssText = 'display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;';
     var hint = document.createElement('div');
     hint.id = 'conn-hint-' + c.id;
     hint.style.cssText = 'font-size:11px; color:#8b949e; margin-top:6px; display:none;';
     card.appendChild(actions);
     card.appendChild(hint);
+    // The connector ships its own setup guide, so nobody has to hunt for a README.
+    if ((c.guide || []).length) {
+        var gWrap = document.createElement('div');
+        gWrap.style.cssText = 'margin-top:10px;';
+        var gBtn = document.createElement('button');
+        gBtn.textContent = '❓ How to set this up';
+        gBtn.style.cssText = 'background:transparent;border:1px solid #333;color:#58a6ff;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;';
+        var gBody = document.createElement('div');
+        gBody.style.cssText = 'display:none; margin-top:8px; font-size:12px; color:#c9d1d9; line-height:1.6;';
+        (c.guide || []).forEach(function(step) {
+            var line = document.createElement('div');
+            line.textContent = step;
+            line.style.cssText = 'margin-bottom:6px;';
+            gBody.appendChild(line);
+        });
+        gBtn.onclick = function() {
+            var open = gBody.style.display !== 'none';
+            gBody.style.display = open ? 'none' : 'block';
+            gBtn.textContent = open ? '❓ How to set this up' : '✕ Hide the steps';
+        };
+        gWrap.appendChild(gBtn);
+        gWrap.appendChild(gBody);
+        card.appendChild(gWrap);
+    }
     box.appendChild(card);
 
     // Generic: each connector has /api/connectors/<id>/status and /auth.

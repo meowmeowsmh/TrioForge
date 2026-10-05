@@ -84,6 +84,7 @@ def _load_plugin(path: str) -> dict:
         "tools": tools,
         "dispatch": dispatch,
         "credentials": creds,
+        "guide": manifest.get("guide") or [],
     }
 
 
