@@ -8572,10 +8572,9 @@ function renderConnectorCard(box, c) {
                   errBox.style.cssText = 'font-size:11px; color:#f0883e; margin-top:8px; line-height:1.5;';
                   card.insertBefore(errBox, actions);
               }
-              // The connector declares its own credential fields in MANIFEST, so the
-              // panel stays generic: Gmail asks for address + app password, not a
-              // Client ID, because a local app can't be a centrally registered one.
-              var spec = c.credentials || [];
+              // needs_client = the install has no Google app yet, so show the one-time
+              // Client ID/Secret fields. Once saved, everybody just gets the button.
+              var spec = st.needs_client ? (c.credentials || []) : [];
               if (spec.length) {
                   var wrap = document.createElement('div');
                   wrap.style.cssText = 'margin-top:8px;';
@@ -8600,8 +8599,8 @@ function renderConnectorCard(box, c) {
                       }
                   });
                   var saveBtn = document.createElement('button');
-                  saveBtn.textContent = '💾 Save & connect';
-                  saveBtn.style.cssText = 'margin-top:10px; background:#238636;border:0;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;';
+                  saveBtn.textContent = '💾 Save app';
+                  saveBtn.style.cssText = 'margin-top:10px; background:#1f6feb;border:1px solid #1f6feb;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;';
                   saveBtn.onclick = function() {
                       var payload = {};
                       Object.keys(inputs).forEach(function(k) { payload[k] = inputs[k].value; });
@@ -8611,7 +8610,7 @@ function renderConnectorCard(box, c) {
                   card.insertBefore(wrap, actions);
               } else {
                   var btn = document.createElement('button');
-                  btn.textContent = '🔗 Connect';
+                  btn.textContent = '🔗 Sign in with Google';
                   btn.style.cssText = 'background:#238636;border:0;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
                   btn.onclick = function() { connectConnector(c.id); };
                   actions.appendChild(btn);
