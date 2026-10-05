@@ -506,7 +506,27 @@ def register(app):
             return "<h3>missing code</h3><p>Start from /api/connectors/gmail/auth.</p>", 400
         data, err = exchange_code(code, _redirect_uri())
         if err:
-            return "<html><body><h3>Sign-in failed</h3><pre>{}</pre></body></html>".format(err), 400
+            # A Google authorization code is single-use. When the callback is reached
+            # twice (the browser retries, or the tab is reopened), the SECOND exchange
+            # fails with invalid_grant even though the first one already stored a valid
+            # token - so a scary "Sign-in failed" was being shown for a sign-in that
+            # had actually worked. Report the real state instead.
+            st = _status()
+            if st.get("connected"):
+                return ("<html><body style='background:#0b0d12;color:#e6edf3;"
+                        "font-family:Segoe UI;text-align:center;padding-top:15vh'>"
+                        "<h2>Gmail connected</h2><p>{}</p>"
+                        "<p style='color:#8b949e'>You can close this tab.</p>"
+                        "</body></html>").format(st.get("account") or "")
+            if "invalid_grant" in err:
+                return ("<html><body style='background:#0b0d12;color:#f0883e;"
+                        "font-family:Segoe UI;text-align:center;padding-top:14vh'>"
+                        "<h2>This sign-in link was already used</h2>"
+                        "<p style='color:#8b949e'>Google codes work once. Start again from "
+                        "🔌 Connectors → Sign in with Google.</p></body></html>"), 400
+            return ("<html><body style='background:#0b0d12;color:#f0883e;font-family:Segoe UI;"
+                    "text-align:center;padding-top:14vh'><h2>Sign-in failed</h2>"
+                    "<pre style='color:#8b949e'>{}</pre></body></html>").format(err), 400
         st = _status()
         return ("<html><body style='background:#0b0d12;color:#e6edf3;font-family:Segoe UI;"
                 "text-align:center;padding-top:15vh'><h2>Gmail connected</h2>"

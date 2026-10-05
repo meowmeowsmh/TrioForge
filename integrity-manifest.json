@@ -109,6 +109,6 @@
   "templates/index.html": "70a057517f5ee15a612b2720361144a2dbe01b97fcf9dda3515b30037cd7221f",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T17:36:29",
- "note": "connector guide + gmail metadata fix"
+ "generated": "2026-10-05T17:38:59",
+ "note": "gmail duplicate callback handled"
 }
