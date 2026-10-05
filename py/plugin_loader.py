@@ -74,6 +74,7 @@ def _load_plugin(path: str) -> dict:
 
     tools = getattr(mod, "TOOLS", None) or []
     dispatch = getattr(mod, "dispatch", None)
+    creds = manifest.get("credentials") or []
     return {
         "id": pid,
         "title": manifest.get("title", pid),
@@ -82,6 +83,7 @@ def _load_plugin(path: str) -> dict:
         "file": os.path.basename(path),
         "tools": tools,
         "dispatch": dispatch,
+        "credentials": creds,
     }
 
 

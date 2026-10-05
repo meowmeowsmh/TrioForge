@@ -8564,41 +8564,50 @@ function renderConnectorCard(box, c) {
               statusEl.style.color = '#f0883e';
           }
           if (!st.connected) {
-              if (st.needs_app) {
-                  // Only the INSTALL OWNER sees this, and only until the app has its
-                  // Google credentials - after that every user just clicks Connect,
-                  // the way "Sign in with Google" works everywhere else.
-                  var owner = document.createElement('div');
-                  owner.style.cssText = 'font-size:11px; color:#f0883e; margin-top:8px;';
-                  owner.textContent = '⚙️ One-time app setup (install owner): this build has no Google app yet.';
-                  card.insertBefore(owner, actions);
-                  var credRow = document.createElement('div');
-                  credRow.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;';
-                  var idIn = document.createElement('input');
-                  idIn.placeholder = 'Client ID';
-                  idIn.autocomplete = 'off';
-                  idIn.style.cssText = 'flex:1; min-width:170px; padding:7px 9px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;';
-                  var secIn = document.createElement('input');
-                  secIn.placeholder = 'Client Secret';
-                  secIn.type = 'password';
-                  secIn.autocomplete = 'off';
-                  secIn.style.cssText = idIn.style.cssText;
+              // The connector declares its own credential fields in MANIFEST, so the
+              // panel stays generic: Gmail asks for address + app password, not a
+              // Client ID, because a local app can't be a centrally registered one.
+              var spec = c.credentials || [];
+              if (spec.length) {
+                  var wrap = document.createElement('div');
+                  wrap.style.cssText = 'margin-top:8px;';
+                  var inputs = {};
+                  spec.forEach(function(f) {
+                      var lbl = document.createElement('div');
+                      lbl.textContent = f.label || f.key;
+                      lbl.style.cssText = 'font-size:11px; color:#8b949e; margin:6px 0 3px;';
+                      var inp = document.createElement('input');
+                      inp.type = f.type || 'text';
+                      inp.placeholder = f.placeholder || '';
+                      inp.autocomplete = 'off';
+                      inp.style.cssText = 'width:100%; padding:7px 9px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;';
+                      inputs[f.key] = inp;
+                      wrap.appendChild(lbl);
+                      wrap.appendChild(inp);
+                      if (f.hint) {
+                          var h = document.createElement('div');
+                          h.textContent = f.hint;
+                          h.style.cssText = 'font-size:11px; color:#5a5a6a; margin-top:3px;';
+                          wrap.appendChild(h);
+                      }
+                  });
                   var saveBtn = document.createElement('button');
-                  saveBtn.textContent = '💾 Save app';
-                  saveBtn.style.cssText = 'background:#1f6feb;border:1px solid #1f6feb;color:#fff;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;';
+                  saveBtn.textContent = '💾 Save & connect';
+                  saveBtn.style.cssText = 'margin-top:10px; background:#238636;border:0;color:#fff;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;';
                   saveBtn.onclick = function() {
-                      saveConnectorCredentials(c.id, idIn.value, secIn.value);
+                      var payload = {};
+                      Object.keys(inputs).forEach(function(k) { payload[k] = inputs[k].value; });
+                      saveConnectorCredentials(c.id, payload);
                   };
-                  credRow.appendChild(idIn);
-                  credRow.appendChild(secIn);
-                  credRow.appendChild(saveBtn);
-                  card.insertBefore(credRow, actions);
+                  wrap.appendChild(saveBtn);
+                  card.insertBefore(wrap, actions);
+              } else {
+                  var btn = document.createElement('button');
+                  btn.textContent = '🔗 Connect';
+                  btn.style.cssText = 'background:#238636;border:0;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
+                  btn.onclick = function() { connectConnector(c.id); };
+                  actions.appendChild(btn);
               }
-              var btn = document.createElement('button');
-              btn.textContent = st.needs_app ? '🔗 Connect (owner must set the app first)' : '🔗 Connect';
-              btn.style.cssText = 'background:#238636;border:0;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
-              btn.onclick = function() { connectConnector(c.id); };
-              actions.appendChild(btn);
           } else {
               var disc = document.createElement('button');
               disc.textContent = 'Disconnect';
@@ -8629,17 +8638,18 @@ function disconnectConnector(id) {
       .then(function() { loadConnectors(); })
       .catch(function(e) { alert('Could not disconnect: ' + e); });
 }
-function saveConnectorCredentials(id, clientId, clientSecret) {
-    if (!clientId || !clientSecret) { alert('Paste both the Client ID and the Client Secret.'); return; }
+function saveConnectorCredentials(id, payload) {
+    var empty = Object.keys(payload || {}).filter(function(k) { return !payload[k]; });
+    if (!payload || empty.length) { alert('Please fill in every field.'); return; }
     fetch('/api/connectors/' + id + '/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: clientId.trim(), client_secret: clientSecret.trim() })
+        body: JSON.stringify(payload)
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
         if (d.error) { alert(d.error); return; }
-        loadConnectors();     // the card now shows Connect instead of the fields
+        loadConnectors();     // the card flips to Connected
     })
     .catch(function(e) { alert('Could not save: ' + e); });
 }

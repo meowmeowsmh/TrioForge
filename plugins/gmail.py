@@ -1,56 +1,55 @@
 # gmail.py — a TrioForge PLUGIN that gives the agent a Gmail connector.
 #
-# This is the difference from a plain route-plugin: besides the OAuth routes, it
-# advertises TOOLS (gmail_list_inbox / gmail_read_message / gmail_status) and a
-# dispatch() hook, so when you ask the agent "summarize my inbox" it actually calls
-# these tools and reads your mail.
+# No Google Cloud. No Client ID. No Client Secret. No OAuth redirect.
 #
-# One-time setup (only you can do this part):
-#   1. console.cloud.google.com -> create a project -> enable the Gmail API
-#   2. OAuth consent screen -> add yourself as a test user
-#   3. Credentials -> OAuth client ID -> "Web application"  (NOT "Desktop app")
-#   4. Under Authorized redirect URIs add exactly:
-#          https://127.0.0.1:5003/api/connectors/gmail/oauth2callback
-#   5. Put the client id/secret into json_configuration/gmail_credentials.json:
-#          {"client_id": "…", "client_secret": "…"}
-#   6. GET /api/connectors/gmail/auth  (or use the Connect button) -> click Allow.
+# A self-hosted app cannot be "Claude for Google Drive" (a centrally registered Google
+# app) - so instead of making you create one, this talks to Gmail over IMAP with a
+# Google **App Password**: one value you generate on your own account page and paste
+# once. That is the whole setup.
 #
-# Read-only scope by default; add "https://www.googleapis.com/auth/gmail.modify" and
-# "https://www.googleapis.com/auth/gmail.send" to "scopes" if you want the agent to
-# draft/send too.
+#   1. myaccount.google.com -> Security -> 2-Step Verification (must be ON)
+#   2. Security -> App passwords -> create one for "Mail"
+#   3. Paste it into 🔌 Connectors (with your Gmail address) -> Connect
+#
+# Read-only by default. Nothing is sent unless you also enable the send scope below.
 
-import base64
+import email
+import imaplib
 import json
 import os
+import re
+import smtplib
+from email.header import decode_header, make_header
+from email.mime.text import MIMEText
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CRED_PATH = os.path.join(REPO_ROOT, "json_configuration", "gmail_credentials.json")
-_TOKEN_PATH = os.path.join(REPO_ROOT, "json_configuration", "gmail_token.json")
+
+IMAP_HOST = "imap.gmail.com"
+SMTP_HOST = "smtp.gmail.com"
 
 MANIFEST = {
     "name": "gmail",
     "title": "Gmail",
-    "version": "1.0.0",
-    "description": "Let the agent read (and, with the write scope, act on) your Gmail.",
+    "version": "1.1.0",
+    "description": "Read your Gmail with an app password - no Google Cloud, no Client ID.",
+    # The Connectors panel renders these inputs from this spec, so the UI stays generic.
+    "credentials": [
+        {"key": "email", "label": "Gmail address", "type": "text",
+         "placeholder": "you@gmail.com"},
+        {"key": "app_password", "label": "App password", "type": "password",
+         "placeholder": "16 characters, no spaces",
+         "hint": "Google Account -> Security -> 2-Step Verification -> App passwords "
+                 "-> create one for Mail, then paste it here."},
+    ],
 }
 
-# ── Bundled app credentials (the rclone pattern) ──────────────────────────────
-# A hosted service like Claude registers ONE Google app centrally, so its users just
-# click "Sign in with Google". A self-hosted app has no such owner, so the owner of
-# THIS install creates the app once and pastes the id/secret here (or in
-# json_configuration/gmail_credentials.json). Once either is filled in, the Connectors
-# panel stops asking anybody for credentials - users just click Connect.
-DEFAULT_CLIENT_ID = ""
-DEFAULT_CLIENT_SECRET = ""
-
-# These become agent tools. The agent is handed these definitions, so "do my gmail"
-# becomes a real function call instead of a chatbot that pretends it can't.
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "gmail_list_inbox",
-            "description": "List recent emails in the connected Gmail account. Use query terms like 'is:unread', 'from:someone', 'newer_than:2d'.",
+            "description": "List recent emails in the connected Gmail account. Query uses Gmail syntax, e.g. 'is:unread', 'from:someone@x.com', 'newer_than:2d'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -65,7 +64,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "gmail_read_message",
-            "description": "Read the body of one Gmail message by id.",
+            "description": "Read the body of one Gmail message by id (as returned by gmail_list_inbox).",
             "parameters": {
                 "type": "object",
                 "properties": {"id": {"type": "string", "description": "message id"}},
@@ -85,12 +84,8 @@ TOOLS = [
 ]
 
 
-def _credentials_config():
-    """client_id/client_secret: user-saved file first, then the bundled default.
-
-    The bundled default is what makes the Claude-style flow possible: once the app
-    owner fills DEFAULT_CLIENT_ID/SECRET, no user is ever asked for credentials.
-    """
+def _creds():
+    """{"email": …, "app_password": …} from the credentials file or the environment."""
     cfg = {}
     if os.path.isfile(_CRED_PATH):
         try:
@@ -98,147 +93,165 @@ def _credentials_config():
                 cfg = json.load(fh) or {}
         except Exception:
             cfg = {}
-    client_id = (cfg.get("client_id") or "").strip() or os.environ.get("GMAIL_CLIENT_ID") \
-        or DEFAULT_CLIENT_ID.strip()
-    client_secret = (cfg.get("client_secret") or "").strip() or os.environ.get("GMAIL_CLIENT_SECRET") \
-        or DEFAULT_CLIENT_SECRET.strip()
-    scopes = cfg.get("scopes") or ["https://www.googleapis.com/auth/gmail.readonly"]
-    return client_id, client_secret, scopes
+    email_addr = (cfg.get("email") or os.environ.get("GMAIL_ADDRESS") or "").strip()
+    app_password = (cfg.get("app_password") or os.environ.get("GMAIL_APP_PASSWORD") or "").strip()
+    return email_addr, app_password.replace(" ", "")
 
 
-def _client_config():
-    cid, secret, _ = _credentials_config()
-    if not cid or not secret:
-        return None
-    return {
-        "installed": {
-            "client_id": cid, "client_secret": secret,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-    }
-
-
-def _stored_credentials():
-    if not os.path.isfile(_TOKEN_PATH):
-        return None
+def _imap():
+    """A logged-in IMAP connection, or (None, error)."""
+    addr, pw = _creds()
+    if not addr or not pw:
+        return None, "not connected"
     try:
-        with open(_TOKEN_PATH, encoding="utf-8") as fh:
-            data = json.load(fh)
-        from google.oauth2.credentials import Credentials
-        return Credentials.from_authorized_user_info(data)
-    except Exception:
-        return None
-
-
-def _store_credentials(creds):
-    os.makedirs(os.path.dirname(_TOKEN_PATH), exist_ok=True)
-    with open(_TOKEN_PATH, "w", encoding="utf-8") as fh:
-        json.dump(json.loads(creds.to_json()), fh, indent=2)
-
-
-def _service():
-    creds = _stored_credentials()
-    if creds is None or not creds.valid:
-        if creds is not None and creds.refresh_token:
-            try:
-                import google.auth.transport.requests
-                creds.refresh(google.auth.transport.requests.Request())
-                _store_credentials(creds)
-            except Exception:
-                return None, "refresh failed"
-        else:
-            return None, "not connected"
-    try:
-        from googleapiclient.discovery import build
-        return build("gmail", "v1", credentials=creds, cache_discovery=False), None
+        conn = imaplib.IMAP4_SSL(IMAP_HOST, 993)
+        conn.login(addr, pw)
+        return conn, None
+    except imaplib.IMAP4.error as exc:
+        return None, "sign-in failed: {}".format(exc)
     except Exception as exc:
         return None, str(exc)
 
 
-def _header(headers, name):
-    for h in headers or []:
-        if h.get("name", "").lower() == name.lower():
-            return h.get("value", "")
-    return ""
+def _decode(value):
+    if not value:
+        return ""
+    try:
+        return str(make_header(decode_header(value)))
+    except Exception:
+        return value
+
+
+def _search(conn, query):
+    """Gmail query syntax via X-GM-RAW, falling back to plain text search."""
+    if not query:
+        typ, data = conn.uid("search", None, "ALL")
+        return data[0].split() if typ == "OK" else []
+    try:
+        typ, data = conn.uid("search", None, "X-GM-RAW", '"{}"'.format(query.replace('"', "")))
+        if typ == "OK":
+            return data[0].split()
+    except Exception:
+        pass
+    # Fallback: translate the few common Gmail operators into IMAP ones.
+    imap_query = query
+    imap_query = re.sub(r"\bis:unread\b", "UNSEEN", imap_query, flags=re.I)
+    imap_query = re.sub(r"\bis:read\b", "SEEN", imap_query, flags=re.I)
+    imap_query = re.sub(r"\bfrom:(\S+)", r'FROM "\1"', imap_query, flags=re.I)
+    imap_query = re.sub(r"\bsubject:(\S+)", r'SUBJECT "\1"', imap_query, flags=re.I)
+    if not re.search(r"\b(ALL|UNSEEN|SEEN|FROM|SUBJECT|TO|SINCE|BEFORE)\b", imap_query, re.I):
+        imap_query = 'TEXT "{}"'.format(query.replace('"', ""))
+    try:
+        typ, data = conn.uid("search", None, imap_query)
+        return data[0].split() if typ == "OK" else []
+    except Exception:
+        return []
 
 
 def _list_inbox(query, max_results):
-    svc, err = _service()
-    if svc is None:
-        return {"error": "Gmail is not connected ({}).".format(err or "no token")}
+    conn, err = _imap()
+    if conn is None:
+        return {"error": "Gmail is not connected ({}).".format(err)}
     try:
-        max_results = min(max(int(max_results or 10), 1), 50)
-    except (TypeError, ValueError):
-        max_results = 10
-    try:
-        ids = svc.users().messages().list(userId="me", q=query or None,
-                                          maxResults=max_results).execute()
-        msgs = ids.get("messages", [])
+        try:
+            max_results = min(max(int(max_results or 10), 1), 50)
+        except (TypeError, ValueError):
+            max_results = 10
+        conn.select("INBOX", readonly=True)
+        uids = _search(conn, query or "")
+        uids = uids[-max_results:]
+        out = []
+        for uid in reversed(uids):                      # newest first
+            typ, data = conn.uid(
+                "fetch", uid,
+                "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] FLAGS)")
+            if typ != "OK" or not data:
+                continue
+            raw = b""
+            flags = ""
+            for part in data:
+                if isinstance(part, tuple):
+                    raw += part[1] or b""
+                elif isinstance(part, bytes):
+                    flags += part.decode("utf-8", "replace")
+            msg = email.message_from_bytes(raw)
+            out.append({
+                "id": uid.decode() if isinstance(uid, bytes) else str(uid),
+                "from": _decode(msg.get("From")),
+                "subject": _decode(msg.get("Subject")),
+                "date": _decode(msg.get("Date")),
+                "snippet": "",
+                "unread": "\\Seen" not in flags,
+            })
+        return {"messages": out, "count": len(out)}
     except Exception as exc:
         return {"error": str(exc)}
-    out = []
-    for m in msgs:
+    finally:
         try:
-            meta = svc.users().messages().get(
-                userId="me", id=m["id"], format="metadata",
-                metadataHeaders=["From", "Subject", "Date"]).execute()
+            conn.logout()
         except Exception:
-            continue
-        headers = meta.get("payload", {}).get("headers", [])
-        out.append({
-            "id": m["id"],
-            "from": _header(headers, "From"),
-            "subject": _header(headers, "Subject"),
-            "date": _header(headers, "Date"),
-            "snippet": meta.get("snippet", ""),
-            "unread": "UNREAD" in meta.get("labelIds", []),
-        })
-    return {"messages": out, "count": len(out)}
+            pass
 
 
 def _read_message(mid):
-    svc, err = _service()
-    if svc is None:
-        return {"error": "Gmail is not connected."}
+    conn, err = _imap()
+    if conn is None:
+        return {"error": "Gmail is not connected ({}).".format(err)}
     try:
-        full = svc.users().messages().get(userId="me", id=mid, format="full").execute()
-    except Exception as exc:
-        return {"error": str(exc)}
-    payload = full.get("payload", {})
-    headers = payload.get("headers", [])
-    body = ""
-    if payload.get("mimeType") == "text/plain":
-        data = (payload.get("body") or {}).get("data", "")
-        if data:
+        conn.select("INBOX", readonly=True)
+        typ, data = conn.uid("fetch", str(mid).encode(), "(RFC822)")
+        if typ != "OK" or not data:
+            return {"error": "message {} not found".format(mid)}
+        raw = b""
+        for part in data:
+            if isinstance(part, tuple):
+                raw += part[1] or b""
+        msg = email.message_from_bytes(raw)
+        body = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    try:
+                        body = part.get_payload(decode=True).decode(
+                            part.get_content_charset() or "utf-8", "replace")
+                        break
+                    except Exception:
+                        continue
+        else:
             try:
-                body = base64.urlsafe_b64decode(data + "===").decode("utf-8", "replace")
+                body = msg.get_payload(decode=True).decode(
+                    msg.get_content_charset() or "utf-8", "replace")
             except Exception:
                 body = ""
-    return {"id": mid, "from": _header(headers, "From"),
-            "subject": _header(headers, "Subject"), "date": _header(headers, "Date"),
-            "body": body[:8000]}
+        return {"id": str(mid), "from": _decode(msg.get("From")),
+                "subject": _decode(msg.get("Subject")), "date": _decode(msg.get("Date")),
+                "body": body[:8000]}
+    except Exception as exc:
+        return {"error": str(exc)}
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
 
 
 def _status():
-    cid, secret, _ = _credentials_config()
-    if not cid or not secret:
-        # No app credentials anywhere. `needs_app` tells the UI to ask the INSTALL
-        # OWNER once - a normal user should never see these fields.
-        return {"connected": False, "configured": False, "needs_app": True,
-                "hint": "This install has no Google app yet. The owner sets it once "
-                        "(Client ID + Secret) and afterwards everyone just clicks Connect."}
-    creds = _stored_credentials()
-    if creds is None:
-        return {"connected": False, "configured": True, "needs_app": False}
-    account = None
-    svc, _ = _service()
-    if svc is not None:
-        try:
-            account = svc.users().getProfile(userId="me").execute().get("emailAddress")
-        except Exception:
-            account = None
-    return {"connected": True, "configured": True, "needs_app": False, "account": account}
+    addr, pw = _creds()
+    if not addr or not pw:
+        return {"connected": False, "configured": False, "needs_credentials": True,
+                "account": None,
+                "hint": "Create a Google App Password (Security -> App passwords) and "
+                        "paste it here with your Gmail address. No Client ID needed."}
+    conn, err = _imap()
+    if conn is None:
+        return {"connected": False, "configured": True, "needs_credentials": False,
+                "account": addr, "error": err}
+    try:
+        conn.logout()
+    except Exception:
+        pass
+    return {"connected": True, "configured": True, "needs_credentials": False,
+            "account": addr}
 
 
 def dispatch(tool_name, args):
@@ -254,98 +267,55 @@ def dispatch(tool_name, args):
 
 
 def register(app):
-    """The HTTP side: OAuth connect/disconnect and a raw status/inbox endpoint."""
+    """The HTTP side: save credentials, connect/disconnect, raw inbox endpoints."""
     from flask import jsonify, request
-
-    def _redirect_uri():
-        return "{}://{}/api/connectors/gmail/oauth2callback".format(
-            request.scheme or "https", request.host)
 
     @app.route("/api/connectors/gmail/status")
     def _status_route():
         return jsonify(_status())
 
     @app.route("/api/connectors/gmail/credentials", methods=["POST"])
-    def _save_credentials_route():
-        """Save the user's Google OAuth client id/secret from the Connectors panel.
-
-        Editing json_configuration/gmail_credentials.json by hand is the step people
-        skip; pasting the two values into the panel is the same thing minus the file.
-        """
+    def _credentials_route():
         data = request.get_json(silent=True) or {}
-        cid = (data.get("client_id") or "").strip()
-        secret = (data.get("client_secret") or "").strip()
-        if not cid or not secret:
-            return jsonify({"error": "Both Client ID and Client Secret are required."}), 400
+        addr = (data.get("email") or "").strip()
+        pw = (data.get("app_password") or "").strip().replace(" ", "")
+        if not addr or not pw:
+            return jsonify({"error": "Both your Gmail address and the app password "
+                                     "are required."}), 400
         try:
             os.makedirs(os.path.dirname(_CRED_PATH), exist_ok=True)
-            _, _, scopes = _credentials_config()
             with open(_CRED_PATH, "w", encoding="utf-8") as fh:
-                json.dump({"client_id": cid, "client_secret": secret, "scopes": scopes},
-                          fh, indent=2)
+                json.dump({"email": addr, "app_password": pw}, fh, indent=2)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-        return jsonify({"ok": True})
+        st = _status()
+        if not st.get("connected"):
+            return jsonify({"error": "Saved, but Gmail refused the sign-in: {}".format(
+                st.get("error") or "check the app password")}), 400
+        return jsonify({"ok": True, "account": st.get("account")})
+
+    @app.route("/api/connectors/gmail/connect", methods=["POST"])
+    def _connect_route():
+        return jsonify(_status())
 
     @app.route("/api/connectors/gmail/auth")
     def _auth_route():
-        cc = _client_config()
-        if cc is None:
-            return jsonify({"error": "Gmail not configured."}), 400
-        _, _, scopes = _credentials_config()
-        try:
-            from google_auth_oauthlib.flow import Flow
-            flow = Flow.from_client_config(cc, scopes=scopes)
-            flow.redirect_uri = _redirect_uri()
-            auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
-            return jsonify({"auth_url": auth_url})
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/api/connectors/gmail/oauth2callback")
-    def _callback_route():
-        # Google sends back EITHER ?code=… on success OR ?error=… when it refuses.
-        # Surfacing that error is the difference between a helpful diagnosis and a
-        # bare "missing code" (the most common is redirect_uri_mismatch).
-        oauth_error = request.args.get("error")
-        if oauth_error:
-            desc = request.args.get("error_description") or ""
-            return ("<html><body style='background:#0b0d12;color:#f0883e;font-family:Segoe UI;"
-                    "text-align:center;padding-top:12vh'><h2>Google refused the sign-in</h2>"
-                    "<p style='font-family:monospace'>{}</p><p style='color:#8b949e'>{}</p>"
-                    "<p style='color:#8b949e'>Fix: the OAuth client must be a <b>Web application</b> "
-                    "(not Desktop app), and this exact redirect URI must be listed under "
-                    "Authorized redirect URIs.</p></body></html>".format(oauth_error, desc))
-        code = request.args.get("code")
-        if not code:
-            return ("<h3>missing code</h3><p>Open <code>/api/connectors/gmail/auth</code> "
-                    "first and follow the link it returns.</p>"), 400
-        cc = _client_config()
-        if cc is None:
-            return "<h3>Gmail not configured.</h3>", 400
-        _, _, scopes = _credentials_config()
-        try:
-            from google_auth_oauthlib.flow import Flow
-            flow = Flow.from_client_config(cc, scopes=scopes)
-            flow.redirect_uri = _redirect_uri()
-            flow.fetch_token(code=code)
-            _store_credentials(flow.credentials)
-            return ("<html><body style='background:#0b0d12;color:#e6edf3;font-family:Segoe UI;"
-                    "text-align:center;padding-top:15vh'><h2>Gmail connected</h2>"
-                    "<p>Close this tab and ask TrioForge about your inbox.</p></body></html>")
-        except Exception as exc:
-            return "<html><body><h3>Authorization failed</h3><pre>{}</pre></body></html>".format(exc), 400
+        # No OAuth in this connector - "connecting" is saving a working app password.
+        st = _status()
+        if st.get("connected"):
+            return jsonify({"ok": True, "account": st.get("account")})
+        return jsonify({"error": st.get("hint") or "Not connected.",
+                        "needs_credentials": True}), 400
 
     @app.route("/api/connectors/gmail/inbox")
     def _inbox_route():
-        q = request.args.get("query", "")
-        return jsonify(_list_inbox(q, request.args.get("max")))
+        return jsonify(_list_inbox(request.args.get("query", ""), request.args.get("max")))
 
     @app.route("/api/connectors/gmail/disconnect", methods=["POST"])
     def _disconnect_route():
         try:
-            if os.path.isfile(_TOKEN_PATH):
-                os.remove(_TOKEN_PATH)
+            if os.path.isfile(_CRED_PATH):
+                os.remove(_CRED_PATH)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
         return jsonify({"ok": True})
