@@ -1112,6 +1112,84 @@ def test_plugin_tools() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_skills() -> None:
+    _title("skills (markdown instruction packs)")
+    import tempfile
+    import skills_loader
+
+    # A skill is Markdown, not code: front-matter is advertised to the model, the
+    # body only arrives through use_skill. This checks the whole round trip.
+    real_dir = skills_loader.SKILLS_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "probe-skill"))
+        with open(os.path.join(tmp, "probe-skill", "SKILL.md"), "w", encoding="utf-8") as fh:
+            fh.write("---\nname: probe-skill\ndescription: Probe things.\n"
+                     "when_to_use: probing\n---\n\n# Probe\n\nDo the probe.\n")
+        # A loose .md with no front-matter still loads: heading -> title, first
+        # paragraph -> description. That is what makes "drop a note in" work.
+        with open(os.path.join(tmp, "loose.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Loose Skill\n\nA note dropped straight into skills/.\n")
+        # README.md is documentation, never a skill.
+        with open(os.path.join(tmp, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write("# How to write a skill\n")
+
+        skills_loader.SKILLS_DIR = tmp
+        try:
+            results = skills_loader.load_all()
+            assert len(results) == 2, [r.get("id") for r in results]
+            ids = sorted(s["id"] for s in skills_loader.all_skills())
+            assert ids == ["loose", "probe-skill"], ids
+
+            probe = skills_loader.get("probe-skill")
+            assert probe["description"] == "Probe things.", probe
+            assert "Do the probe." in probe["body"], probe
+            assert skills_loader.get("loose")["description"].startswith("A note dropped"), \
+                skills_loader.get("loose")
+
+            # Advertised cheaply: names + descriptions, never the body.
+            block = skills_loader.catalogue_block()
+            assert "probe-skill" in block and "Do the probe." not in block, block
+
+            assert [t["function"]["name"] for t in skills_loader.collect_tools()] == \
+                ["list_skills", "use_skill"]
+
+            loaded = skills_loader.execute_tool("use_skill", {"name": "probe-skill"})
+            assert "Do the probe." in loaded["instructions"], loaded
+            assert skills_loader.execute_tool("use_skill", {"name": "nope"}).get("error")
+            assert skills_loader.execute_tool("list_skills", {})["count"] == 2
+            # Not a skill tool -> None, so the next source in _execute_tool gets a turn.
+            assert skills_loader.execute_tool("read_file", {"path": "x"}) is None
+
+            # A messy name is normalised, not rejected - and lookups go through the
+            # same normalisation, so the model can reach it either way.
+            with open(os.path.join(tmp, "messy.md"), "w", encoding="utf-8") as fh:
+                fh.write('---\nname: "My Skill!"\ndescription: messy\n---\nbody\n')
+            skills_loader.load_all()
+            assert skills_loader.get("My Skill!") is not None
+            assert "my-skill" in [s["id"] for s in skills_loader.all_skills()]
+
+            # A duplicated name is the real user error (a copied folder that was
+            # never renamed). It is reported, and the folder skill keeps the name.
+            with open(os.path.join(tmp, "dupe.md"), "w", encoding="utf-8") as fh:
+                fh.write("---\nname: probe-skill\ndescription: a stray copy\n---\nbody\n")
+            results = skills_loader.load_all()
+            assert any("duplicate" in (r.get("error") or "") for r in results), results
+            assert skills_loader.get("probe-skill")["description"] == "Probe things.", \
+                skills_loader.get("probe-skill")
+
+            # With nothing installed there is no prompt section and no tools at all,
+            # so an empty skills/ folder costs the model nothing.
+            skills_loader._loaded.clear()
+            assert skills_loader.catalogue_block() == ""
+            assert skills_loader.collect_tools() == []
+        finally:
+            skills_loader.SKILLS_DIR = real_dir
+            skills_loader.load_all()
+    assert len(skills_loader.all_skills()) >= 1
+    print("  front-matter, loose notes, on-demand bodies, bad files skipped -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1125,7 +1203,7 @@ def main() -> int:
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
              test_design_persists_in_conversation, test_design_artifacts_listing,
              test_design_run_terminal, test_design_runner_languages,
-             test_plugin_tools]
+             test_plugin_tools, test_skills]
     failed = []
     for t in tests:
         try:

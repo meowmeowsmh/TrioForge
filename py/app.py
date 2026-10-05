@@ -160,6 +160,7 @@ import personas
 import comfyui_service
 import rag
 import plugin_loader
+import skills_loader
 import setup_check
 import edits_store
 import video_to_text
@@ -206,6 +207,12 @@ try:
     plugin_loader.load_all(app)
 except Exception as _plugin_exc:
     logger.warning("Plugin loading failed: %s", _plugin_exc)
+
+# â”€â”€ Skills: Markdown instruction packs (no register hook, nothing to inject) â”€â”€
+try:
+    skills_loader.load_all()
+except Exception as _skill_exc:
+    logger.warning("Skill loading failed: %s", _skill_exc)
 
 # â”€â”€ Live-coding edits: load persisted edits so the panel survives restarts â”€â”€
 try:
@@ -3476,9 +3483,26 @@ def _list_files_recursive(base, rel=""):
     return out
 
 
+def _agent_tools():
+    """Every tool the agent may call, from every source, in one place.
+
+    Workspace tools are built in, native plugins come from plugins/, and skills
+    contribute the two that load their own instructions. Assembled here so a new
+    source cannot be wired into the OpenAI path and forgotten in the Claude one.
+    """
+    return (WORKSPACE_TOOLS
+            + plugin_loader.collect_tools()
+            + skills_loader.collect_tools())
+
+
 def _execute_tool(name, args):
-    """Run a workspace-folder tool or a plugin tool; return JSON-serializable."""
-    # Plugin tools first: a connector (Gmail, Obsidian, …) the user installed in
+    """Run a workspace-folder tool, a skill tool or a plugin tool."""
+    # Skills first: two dictionary lookups, no I/O, and the name space is tiny.
+    skill_result = skills_loader.execute_tool(name, args)
+    if skill_result is not None:
+        return skill_result
+
+    # Then plugins: a connector (Gmail, Obsidian, …) the user installed in
     # plugins/ gets its own tools here, so the agent can read those services.
     plugin_result = plugin_loader.execute_tool(name, args)
     if plugin_result is not None:
@@ -3729,7 +3753,7 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
     if isinstance(provider, ClaudeProvider):
         return _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps)
     messages = list(messages)
-    tools = WORKSPACE_TOOLS + plugin_loader.collect_tools()
+    tools = _agent_tools()
     for _ in range(max_steps):
         resp = provider.generate_raw(messages, tools=tools, **extra_kwargs)
         content = resp.get("content")
@@ -3772,7 +3796,7 @@ def _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps=20):
     }
 
     anthropic_tools = []
-    for t in WORKSPACE_TOOLS + plugin_loader.collect_tools():
+    for t in _agent_tools():
         fn = t.get("function", {})
         anthropic_tools.append({
             "name": fn.get("name"),
@@ -4489,6 +4513,48 @@ def api_plugins():
     return jsonify(plugin_loader.list_loaded())
 
 
+@app.route('/api/skills', methods=['GET'])
+def api_skills():
+    """List installed skills (name + description; bodies load on demand)."""
+    return jsonify({"skills": skills_loader.list_loaded()})
+
+
+@app.route('/api/skills/reload', methods=['POST'])
+def api_skills_reload():
+    """Re-scan skills/ so a dropped-in file takes effect without a restart."""
+    results = skills_loader.load_all()
+    errors = [r for r in results if r.get("error")]
+    return jsonify({
+        "count": len(skills_loader.all_skills()),
+        "errors": errors,
+        "skills": skills_loader.list_loaded(),
+    })
+
+
+@app.route('/api/skills/open-folder', methods=['POST'])
+def api_skills_open_folder():
+    """Reveal skills/ in the file manager so adding one is drag-and-drop."""
+    path = skills_loader.SKILLS_DIR
+    try:
+        os.makedirs(path, exist_ok=True)
+        if os.name == 'nt':
+            os.startfile(path)                       # noqa: S606 (Windows only)
+        else:
+            subprocess.Popen(['xdg-open', path])
+        return jsonify({"ok": True, "path": path})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route('/api/skills/<name>', methods=['GET'])
+def api_skill_body(name):
+    """The full instructions of one skill, for the UI's detail view."""
+    skill = skills_loader.get(name)
+    if skill is None:
+        return jsonify({"error": "No skill named '{}'.".format(name)}), 404
+    return jsonify({k: v for k, v in skill.items()})
+
+
 @app.route('/api/connectors', methods=['GET'])
 def api_connectors():
     """List the plugins that expose agent tools - i.e. the Connectors the AI can use."""
@@ -4700,6 +4766,11 @@ def chat():
             provider._default_key = api_key
 
         system_prompt = provider.get_system_prompt()
+        # Skills are advertised here as a name + description list; their bodies
+        # arrive only if the model calls use_skill, so a shelf of them is cheap.
+        _skills_block = skills_loader.system_block()
+        if _skills_block:
+            system_prompt = system_prompt + "\n\n" + _skills_block
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
@@ -4969,6 +5040,11 @@ def chat_stream():
             provider._default_key = api_key
 
         system_prompt = provider.get_system_prompt()
+        # Skills are advertised here as a name + description list; their bodies
+        # arrive only if the model calls use_skill, so a shelf of them is cheap.
+        _skills_block = skills_loader.system_block()
+        if _skills_block:
+            system_prompt = system_prompt + "\n\n" + _skills_block
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt

@@ -1597,6 +1597,7 @@ video.tf-video {
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">🧩</button>
         <button class="clear-btn" id="connectorsBtn" onclick="openConnectorsModal()" title="Connectors — connect Gmail and other services so the AI can use them" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🔌</button>
+        <button class="clear-btn" id="skillsBtn" onclick="openSkillsModal()" title="Skills — Markdown instructions the AI loads when a task matches" style="border-color:rgba(210,168,255,0.45); color:#d2a8ff;">📚</button>
         <button class="clear-btn" id="setupBtn" onclick="checkSetup(true)" title="Setup — install missing local services/models" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🚀</button>
         <button class="clear-btn" id="integrityBtn" onclick="openIntegrity()" title="Integrity check — compare this app's files with its recorded baseline and scan for injected code" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🛡️</button>
         <button class="clear-btn" id="themeBtn" onclick="openThemePicker()" title="Appearance — pick a theme for every page">🎨</button>
@@ -8488,6 +8489,129 @@ document.addEventListener('fullscreenchange', function () {
     });
 })();
 
+// ── Skills panel (markdown instructions the AI loads on demand) ──
+function openSkillsModal() {
+    var m = document.getElementById('skillsModal');
+    if (m) m.style.display = 'flex';
+    loadSkills();
+}
+function closeSkillsModal() {
+    var m = document.getElementById('skillsModal');
+    if (m) m.style.display = 'none';
+}
+function loadSkills() {
+    var box = document.getElementById('skillsList');
+    if (!box) return;
+    box.innerHTML = '<div style="color:#8b949e; font-size:13px;">Loading…</div>';
+    fetch('/api/skills')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          var list = (d && d.skills) || [];
+          if (!list.length) {
+              box.innerHTML = '<div style="color:#8b949e; font-size:13px; line-height:1.7;">' +
+                  'No skills installed.<br>Create <code style="color:#d2a8ff;">skills/my-skill/SKILL.md</code> ' +
+                  'starting with a name and description, then press Reload.</div>';
+              return;
+          }
+          box.innerHTML = '';
+          list.forEach(function(s) { renderSkillCard(box, s); });
+      })
+      .catch(function(e) {
+          box.innerHTML = '<div style="color:#f85149; font-size:13px;">Could not list skills: ' + e + '</div>';
+      });
+}
+function renderSkillCard(box, s) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:12px 14px; margin-bottom:10px; background:#0e0e15;';
+
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;';
+    var name = document.createElement('strong');
+    name.textContent = s.title || s.id;
+    name.style.cssText = 'font-size:14px;';
+    head.appendChild(name);
+    var idTag = document.createElement('code');
+    idTag.textContent = s.id;
+    idTag.style.cssText = 'font-size:11px; color:#d2a8ff;';
+    head.appendChild(idTag);
+    var size = document.createElement('span');
+    size.textContent = (s.chars || 0) + ' chars';
+    size.style.cssText = 'font-size:11px; color:#5a5a6a; margin-left:auto;';
+    head.appendChild(size);
+    card.appendChild(head);
+
+    if (s.description) {
+        var desc = document.createElement('div');
+        desc.textContent = s.description;
+        desc.style.cssText = 'font-size:12px; color:#8b949e; margin:4px 0 0;';
+        card.appendChild(desc);
+    }
+    if (s.when_to_use) {
+        var when = document.createElement('div');
+        when.textContent = 'Use when: ' + s.when_to_use;
+        when.style.cssText = 'font-size:11px; color:#5a5a6a; margin-top:3px;';
+        card.appendChild(when);
+    }
+
+    // The body is fetched only when asked for - the same progressive disclosure
+    // the model uses, so opening this panel never pulls in every skill's text.
+    var body = document.createElement('pre');
+    body.style.cssText = 'display:none; margin:10px 0 0; padding:10px; background:#0a0a10; ' +
+        'border:1px solid #222; border-radius:8px; font-size:11px; color:#c9d1d9; ' +
+        'white-space:pre-wrap; max-height:280px; overflow:auto;';
+    var btn = document.createElement('button');
+    btn.textContent = '👁 Show instructions';
+    btn.style.cssText = 'margin-top:9px; background:transparent; border:1px solid #333; color:#d2a8ff; ' +
+        'border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer;';
+    btn.onclick = function() {
+        if (body.style.display === 'block') {
+            body.style.display = 'none';
+            btn.textContent = '👁 Show instructions';
+            return;
+        }
+        if (body.dataset.loaded) {
+            body.style.display = 'block';
+            btn.textContent = '🙈 Hide instructions';
+            return;
+        }
+        btn.textContent = 'Loading…';
+        fetch('/api/skills/' + encodeURIComponent(s.id))
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+              body.textContent = d.body || d.error || '(empty)';
+              body.dataset.loaded = '1';
+              body.style.display = 'block';
+              btn.textContent = '🙈 Hide instructions';
+          })
+          .catch(function(e) { btn.textContent = 'Failed: ' + e; });
+    };
+    card.appendChild(btn);
+    card.appendChild(body);
+    box.appendChild(card);
+}
+function reloadSkills() {
+    var box = document.getElementById('skillsList');
+    if (box) box.innerHTML = '<div style="color:#8b949e; font-size:13px;">Reloading…</div>';
+    fetch('/api/skills/reload', {method: 'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          loadSkills();
+          var errs = (d && d.errors) || [];
+          if (errs.length) {
+              // A rejected skill file is the one thing the user must be told about.
+              alert('Reloaded ' + d.count + ' skill(s), but these were skipped:\n\n' +
+                    errs.map(function(e) { return '• ' + e.id + ': ' + e.error; }).join('\n'));
+          }
+      })
+      .catch(function(e) { alert('Reload failed: ' + e); });
+}
+function openSkillsFolder() {
+    fetch('/api/skills/open-folder', {method: 'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d && d.error) alert(d.error); })
+      .catch(function(e) { alert('Could not open the folder: ' + e); });
+}
+
 // ── Connectors panel (services the AI can use) ──
 function openConnectorsModal() {
     var m = document.getElementById('connectorsModal');
@@ -9232,6 +9356,25 @@ if ('serviceWorker' in navigator) {
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">Connect services so the AI can read and use them when you ask.</p>
     <div id="connectorsList" style="max-height:60vh; overflow:auto;"></div>
+  </div>
+</div>
+
+<!-- Skills panel -->
+<div id="skillsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10000; align-items:center; justify-content:center;">
+  <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(560px, 94vw);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:16px;">📚 Skills</strong>
+      <button onclick="closeSkillsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px; color:#8b949e; margin:0 0 10px;">
+      Markdown instructions the AI loads only when a task matches one.
+      Drop a folder into <code style="color:#d2a8ff;">skills/</code> to add your own.
+    </p>
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button onclick="reloadSkills()" style="padding:6px 12px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">↻ Reload from disk</button>
+      <button onclick="openSkillsFolder()" style="padding:6px 12px; border:1px solid #333; border-radius:6px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">📂 Open skills folder</button>
+    </div>
+    <div id="skillsList" style="max-height:56vh; overflow:auto;"></div>
   </div>
 </div>
 
