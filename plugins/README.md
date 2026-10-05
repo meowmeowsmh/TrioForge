@@ -33,6 +33,33 @@ All three end up in the same place: one tool list handed to the model. Skills
 also contribute their description to the system prompt, so the model knows a
 skill exists before it decides to load it.
 
+## Plugin vs connector — not the same category
+
+A **plugin** is a *package you install*. A **connector** is a *service you sign
+into*. They overlap because a connector is usually delivered by a plugin, but
+they answer different questions:
+
+- **Plugin** → "what code/prompt did I add?" (all three tiers above, in the 🧩 Plugins panel)
+- **Connector** → "which accounts have I connected?" (🔌 panel, Gmail today)
+
+Gmail is a connector because it manages an account and its sign-in state. A
+plugin that merely exposes tools — say, a local file search — is a plugin, not a
+connector, and belongs in 🧩 Plugins only. A plugin declares itself a connector
+with `"connector": True` in its `MANIFEST` (or implicitly, by declaring
+`credentials`).
+
+## Managing what's installed
+
+The **🧩 Plugins** panel is one inventory of everything — skills, plugins, and
+MCP servers — with an enable/disable toggle, an uninstall button, and an
+**install** box that accepts a Git URL or a local folder (a bundle with
+`skills/` and `plugins/` subfolders installs both at once).
+
+Enable/disable is a rename to a `_`-prefixed name on disk — `skills/_tdd` is
+visibly off. Skills and MCP servers apply immediately; a native plugin is
+imported at startup, so toggling it takes effect on the next restart (the same
+as Obsidian's plugin toggles).
+
 ## Anatomy of a plugin
 
 ```python

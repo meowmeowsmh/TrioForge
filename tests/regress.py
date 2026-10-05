@@ -1363,6 +1363,83 @@ def test_toolbar_icons_unique() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_extensions() -> None:
+    _title("extensions (one list, install / toggle / remove)")
+    import tempfile
+    import extensions
+    import skills_loader
+
+    real_skill_dir = skills_loader.SKILLS_DIR
+    real_plugin_dir = extensions.PLUGINS_DIR
+    with tempfile.TemporaryDirectory() as sk, \
+            tempfile.TemporaryDirectory() as pl, \
+            tempfile.TemporaryDirectory() as bundle:
+        skills_loader.SKILLS_DIR = sk
+        extensions.SKILLS_DIR = sk
+        extensions.PLUGINS_DIR = pl
+        try:
+            # A skill appears in the inventory and can be toggled off (a `_`
+            # rename the loader already skips) and back on.
+            os.makedirs(os.path.join(sk, "my-skill"))
+            with open(os.path.join(sk, "my-skill", "SKILL.md"), "w", encoding="utf-8") as fh:
+                fh.write("---\nname: my-skill\ndescription: A test skill.\n---\n# My Skill\n")
+            skills_loader.load_all()
+
+            by_id = {i["id"] + ":" + i["kind"]: i for i in extensions.inventory()}
+            assert by_id["my-skill:skill"]["enabled"] is True, by_id.keys()
+
+            r = extensions.set_enabled("skill", "my-skill", False)
+            assert r.get("ok") and r.get("restart") is False, r
+            assert skills_loader.get("my-skill") is None          # gone from the agent
+            by_id = {i["id"] + ":" + i["kind"]: i for i in extensions.inventory()}
+            assert by_id["my-skill:skill"]["enabled"] is False    # still listed
+
+            assert extensions.set_enabled("skill", "my-skill", True).get("ok")
+            assert skills_loader.get("my-skill") is not None
+
+            # A plugin is identified by ast (no import), and only MANIFEST files count.
+            with open(os.path.join(bundle, "thing.py"), "w", encoding="utf-8") as fh:
+                fh.write("MANIFEST = {'name': 'thing', 'title': 'Thing'}\n")
+            with open(os.path.join(bundle, "junk.py"), "w", encoding="utf-8") as fh:
+                fh.write("print('hi')\n")
+            assert extensions._manifest_meta(os.path.join(bundle, "thing.py"))["name"] == "thing"
+            assert extensions._is_plugin_asset(os.path.join(bundle, "thing.py")) is True
+            assert extensions._is_plugin_asset(os.path.join(bundle, "junk.py")) is False
+
+            # A bundle installs both skills/ and plugins/ subfolders at once.
+            os.makedirs(os.path.join(bundle, "skills", "extra-skill"))
+            with open(os.path.join(bundle, "skills", "extra-skill", "SKILL.md"),
+                      "w", encoding="utf-8") as fh:
+                fh.write("---\nname: extra-skill\ndescription: extra\n---\n# Extra\n")
+            os.makedirs(os.path.join(bundle, "plugins"))
+            with open(os.path.join(bundle, "plugins", "bundled.py"), "w", encoding="utf-8") as fh:
+                fh.write("MANIFEST = {'name': 'bundled'}\n")
+            res = extensions.install(bundle)
+            assert res.get("ok"), res
+            assert "extra-skill" in res.get("skills", []), res
+            assert "bundled" in res.get("plugins", []), res
+            assert skills_loader.get("extra-skill") is not None
+            assert os.path.isfile(os.path.join(pl, "bundled.py"))
+            # A plugin install flags a restart, because plugins import at startup.
+            assert res.get("restart") is True
+
+            r = extensions.remove("skill", "extra-skill")
+            assert r.get("ok"), r
+            assert skills_loader.get("extra-skill") is None
+
+            # A folder with nothing recognisable refuses cleanly.
+            empty = os.path.join(bundle, "empty")
+            os.makedirs(empty)
+            assert "error" in extensions.install(empty)
+        finally:
+            skills_loader.SKILLS_DIR = real_skill_dir
+            extensions.SKILLS_DIR = real_skill_dir
+            extensions.PLUGINS_DIR = real_plugin_dir
+            skills_loader.load_all()
+    print("  inventory, toggle, install-from-folder, remove -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1377,7 +1454,7 @@ def main() -> int:
              test_design_persists_in_conversation, test_design_artifacts_listing,
              test_design_run_terminal, test_design_runner_languages,
              test_plugin_tools, test_skills, test_mcp_client,
-             test_toolbar_icons_unique]
+             test_toolbar_icons_unique, test_extensions]
     failed = []
     for t in tests:
         try:

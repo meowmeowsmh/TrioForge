@@ -50,6 +50,10 @@ MANIFEST = {
     "title": "Gmail",
     "version": "1.3.0",
     "description": "Sign in with Google so the agent can read your Gmail.",
+    # Marks this as a CONNECTOR: a service the user signs into, which is a different
+    # thing from a plugin that merely exposes tools. Connectors appear in the 🔌
+    # panel, where the account and its sign-in state are the point.
+    "connector": True,
     # Rendered by the Connectors panel. This is the one-time APP setup, not a
     # per-user login - after it is saved, users only ever click Sign in with Google.
     "credentials": [

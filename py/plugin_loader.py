@@ -75,6 +75,11 @@ def _load_plugin(path: str) -> dict:
     tools = getattr(mod, "TOOLS", None) or []
     dispatch = getattr(mod, "dispatch", None)
     creds = manifest.get("credentials") or []
+    # A CONNECTOR is a service the user signs into (Gmail, Drive), which is a
+    # different category from a plugin that only exposes tools. Declared
+    # explicitly, with "it asks for credentials" as the fallback, so an existing
+    # connector written before this flag keeps working.
+    is_connector = bool(manifest.get("connector")) or bool(creds)
     return {
         "id": pid,
         "title": manifest.get("title", pid),
@@ -84,6 +89,7 @@ def _load_plugin(path: str) -> dict:
         "tools": tools,
         "dispatch": dispatch,
         "credentials": creds,
+        "connector": is_connector,
         "guide": manifest.get("guide") or [],
     }
 

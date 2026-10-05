@@ -568,6 +568,29 @@ def remove_server(sid: str) -> bool:
     return existed
 
 
+def set_enabled(sid: str, enabled: bool) -> bool:
+    """Toggle a server on/off. Disabling tears it down immediately."""
+    cfgs = load_config()
+    spec = cfgs.get(sid)
+    if not isinstance(spec, dict):
+        return False
+    spec["enabled"] = bool(enabled)
+    save_config(cfgs)
+    srv = _servers.get(sid)
+    if srv is None:
+        return True
+    if enabled:
+        if srv.status == STATUS_DISABLED:
+            srv.status = STATUS_CONNECTING
+            threading.Thread(target=_connect_then_index, args=(srv,), daemon=True).start()
+    else:
+        srv.close()
+        srv.status = STATUS_DISABLED
+        srv.tools = []
+        _reindex()
+    return True
+
+
 def reconnect_all() -> List[dict]:
     for srv in _servers.values():
         threading.Thread(target=_connect_then_index, args=(srv,), daemon=True).start()

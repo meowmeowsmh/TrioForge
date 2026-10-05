@@ -162,6 +162,7 @@ import rag
 import plugin_loader
 import skills_loader
 import mcp_client
+import extensions
 import setup_check
 import edits_store
 import video_to_text
@@ -4620,19 +4621,53 @@ def api_mcp_reconnect():
     return jsonify({"servers": mcp_client.reconnect_all()})
 
 
+@app.route('/api/extensions', methods=['GET'])
+def api_extensions():
+    """One inventory of everything installed: skills, plugins and MCP servers."""
+    return jsonify({"extensions": extensions.inventory()})
+
+
+@app.route('/api/extensions/toggle', methods=['POST'])
+def api_extensions_toggle():
+    """Enable or disable one extension."""
+    body = request.get_json(silent=True) or {}
+    kind = (body.get("kind") or "").strip()
+    sid = (body.get("id") or "").strip()
+    if not kind or not sid:
+        return jsonify({"error": "kind and id are required."}), 400
+    return jsonify(extensions.set_enabled(kind, sid, bool(body.get("enabled", True))))
+
+
+@app.route('/api/extensions/install', methods=['POST'])
+def api_extensions_install():
+    """Install from a local folder or a Git URL."""
+    body = request.get_json(silent=True) or {}
+    return jsonify(extensions.install(body.get("source", "")))
+
+
+@app.route('/api/extensions/<kind>/<sid>', methods=['DELETE'])
+def api_extensions_remove(kind, sid):
+    """Uninstall one extension."""
+    return jsonify(extensions.remove(kind, sid))
+
+
 @app.route('/api/connectors', methods=['GET'])
 def api_connectors():
-    """List the plugins that expose agent tools - i.e. the Connectors the AI can use."""
+    """List the CONNECTORS: services the user signs into, not every plugin with tools.
+
+    A plugin is the package; a connector is the account it manages. Gmail is a
+    connector; a hypothetical "read local files" plugin that exposes tools is a
+    plugin, not a connector, and belongs in the Plugins panel instead.
+    """
     items = []
     for p in plugin_loader.list_loaded():
-        names = p.get("tool_names") or []
-        if not names:
+        if not p.get("connector"):
             continue
         items.append({
             "id": p.get("id"),
             "title": p.get("title", p.get("id")),
             "description": p.get("description", ""),
-            "tools": names,
+            "tools": p.get("tool_names") or [],
             "credentials": p.get("credentials") or [],
             "guide": p.get("guide") or [],
         })
