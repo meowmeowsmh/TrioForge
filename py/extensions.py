@@ -20,6 +20,7 @@ connections are torn down and rebuilt).
 """
 
 import ast
+import json
 import logging
 import os
 import shutil
@@ -40,6 +41,12 @@ MCP = "mcp"
 
 SKILLS_DIR = skills_loader.SKILLS_DIR
 PLUGINS_DIR = plugin_loader.PLUGINS_DIR
+
+#: The browsable catalog shipped with the app: catalog.json plus a folder per
+#: entry. Installing from it is a local copy, so it works offline and can never
+#: 404 the way a remote package can.
+CATALOG_DIR = root_path("catalog")
+CATALOG_FILE = os.path.join(CATALOG_DIR, "catalog.json")
 
 #: Installed plugin paths to send back are relative to the project so they can
 #: be shown without leaking an absolute path, yet stay clickable in the UI.
@@ -296,6 +303,44 @@ def remove(kind: str, sid: str) -> dict:
     return {"ok": True, "removed": removed, "restart": (kind == PLUGIN)}
 
 
+# ── catalog ──────────────────────────────────────────────────────────────────
+
+def _catalog_installed(kind: str, eid: str) -> bool:
+    if kind == "skill":
+        return skills_loader.get(eid) is not None
+    if kind == "plugin":
+        return any(p["id"] == eid for p in plugin_loader.list_loaded())
+    if kind == MCP:
+        return any(m["id"] == eid for m in mcp_client.list_servers())
+    return False
+
+
+def catalog() -> List[dict]:
+    """The browsable catalog, each entry with its installed state."""
+    try:
+        with open(CATALOG_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return []
+    out = []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        eid = e.get("id", "")
+        out.append({
+            "id": eid,
+            "title": e.get("title", eid),
+            "kind": e.get("kind", "skill"),
+            "description": e.get("description", ""),
+            "author": e.get("author", ""),
+            "installed": _catalog_installed(e.get("kind", "skill"), eid),
+        })
+    return out
+
+
 # ── install ──────────────────────────────────────────────────────────────────
 
 def _git_clone(url: str, dest: str) -> None:
@@ -329,11 +374,17 @@ def install(source: str) -> dict:
     """
     src = (source or "").strip()
     if not src:
-        return {"error": "Give a folder path or a Git URL."}
+        return {"error": "Give a folder path, a Git URL, or a catalog: name."}
 
     tmp = None
+    catalog_id = None
     try:
-        if src.startswith(("http://", "https://", "git@", "ssh://", "git://")):
+        if src.startswith("catalog:"):
+            catalog_id = src[len("catalog:"):].strip()
+            root = os.path.join(CATALOG_DIR, catalog_id)
+            if not os.path.isdir(root):
+                return {"error": "No catalog entry named '{}'.".format(catalog_id)}
+        elif src.startswith(("http://", "https://", "git@", "ssh://", "git://")):
             tmp = tempfile.mkdtemp(prefix="trioforge-install-")
             _git_clone(src, tmp)
             root = tmp
@@ -373,17 +424,22 @@ def install(source: str) -> dict:
             else:
                 installed["skipped"].append(entry)
 
-    _collect(root)
-    # A repo may nest everything under one more directory (the top-level README
-    # plus a subfolder), so if nothing was recognised, look one level deeper.
-    if not installed["skills"] and not installed["plugins"]:
-        try:
-            children = [os.path.join(root, d) for d in os.listdir(root)
-                        if os.path.isdir(os.path.join(root, d))]
-        except OSError:
-            children = []
-        for child in children:
-            _collect(child)
+    if catalog_id and os.path.isfile(os.path.join(root, "SKILL.md")):
+        # A catalog entry is one skill folder whose id is its own name; install
+        # the folder as skills/<id>, not its SKILL.md as a stray loose file.
+        installed["skills"].append(_install_skill(root, catalog_id))
+    else:
+        _collect(root)
+        # A repo may nest everything under one more directory (the top-level
+        # README plus a subfolder), so if nothing was recognised, look one deeper.
+        if not installed["skills"] and not installed["plugins"]:
+            try:
+                children = [os.path.join(root, d) for d in os.listdir(root)
+                            if os.path.isdir(os.path.join(root, d))]
+            except OSError:
+                children = []
+            for child in children:
+                _collect(child)
 
     if tmp:
         shutil.rmtree(tmp, ignore_errors=True)

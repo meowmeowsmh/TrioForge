@@ -1441,6 +1441,15 @@ def test_extensions() -> None:
             empty = os.path.join(bundle, "empty")
             os.makedirs(empty)
             assert "error" in extensions.install(empty)
+
+            # The shipped catalog is browsable and installs as a local copy.
+            cat = {c["id"]: c for c in extensions.catalog()}
+            assert "refactor" in cat and cat["refactor"]["installed"] is False, cat
+            res = extensions.install("catalog:refactor")
+            assert res.get("ok") and "refactor" in res.get("skills", []), res
+            assert skills_loader.get("refactor") is not None
+            assert {c["id"]: c for c in extensions.catalog()}["refactor"]["installed"] is True
+            assert "error" in extensions.install("catalog:does-not-exist")
         finally:
             skills_loader.SKILLS_DIR = real_skill_dir
             extensions.SKILLS_DIR = real_skill_dir

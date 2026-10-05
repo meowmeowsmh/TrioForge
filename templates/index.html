@@ -8511,11 +8511,95 @@ document.addEventListener('fullscreenchange', function () {
 
 // ── Plugins panel: one inventory of everything installed ──
 var plugFilterKind = 'all';
+var plugView = 'installed';
 function openPluginsModal() {
     var m = document.getElementById('pluginsModal');
     if (m) m.style.display = 'flex';
     plugFilterKind = 'all';
-    loadPlugins();
+    plugTab('installed');
+}
+function plugTab(view) {
+    plugView = view;
+    var ti = document.getElementById('plugTabInstalled');
+    var tb = document.getElementById('plugTabBrowse');
+    var tools = document.getElementById('plugInstalledTools');
+    if (ti) ti.style.background = (view === 'installed') ? '#2ea043' : '#1c1c26';
+    if (tb) tb.style.background = (view === 'browse') ? '#2ea043' : '#1c1c26';
+    if (tools) tools.style.display = (view === 'installed') ? 'block' : 'none';
+    if (view === 'browse') loadCatalog(); else loadPlugins();
+}
+function loadCatalog() {
+    var box = document.getElementById('pluginsList');
+    if (!box) return;
+    box.innerHTML = '<div style="color:#8b949e; font-size:13px;">Loading…</div>';
+    fetch('/api/extensions/catalog')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          var list = (d && d.catalog) || [];
+          if (!list.length) {
+              box.innerHTML = '<div style="color:#8b949e; font-size:13px;">The catalog is empty.</div>';
+              return;
+          }
+          box.innerHTML = '';
+          list.forEach(function(c) { renderCatalogCard(box, c); });
+      })
+      .catch(function(e) {
+          box.innerHTML = '<div style="color:#f85149; font-size:13px;">Could not load the catalog: ' + e + '</div>';
+      });
+}
+function renderCatalogCard(box, c) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:12px 14px; margin-bottom:10px; background:#0e0e15;';
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex; align-items:center; gap:8px; flex-wrap:wrap;';
+    var icon = document.createElement('span');
+    icon.textContent = c.kind === 'plugin' ? '🐍' : (c.kind === 'mcp' ? '🔗' : '📘');
+    head.appendChild(icon);
+    var name = document.createElement('strong');
+    name.textContent = c.title || c.id;
+    name.style.cssText = 'font-size:14px;';
+    head.appendChild(name);
+    if (c.author) {
+        var auth = document.createElement('span');
+        auth.textContent = 'by ' + c.author;
+        auth.style.cssText = 'font-size:11px; color:#5a5a6a;';
+        head.appendChild(auth);
+    }
+    var btn = document.createElement('button');
+    btn.textContent = c.installed ? '✓ Installed' : 'Install';
+    btn.disabled = !!c.installed;
+    btn.style.cssText = 'margin-left:auto; padding:5px 12px; border:1px solid ' +
+        (c.installed ? '#333' : '#2ea043') + '; border-radius:6px; background:' +
+        (c.installed ? '#1c1c26' : '#1c3a22') + '; color:' + (c.installed ? '#8b949e' : '#3fb950') +
+        '; cursor:pointer; font-size:12px;';
+    btn.onclick = function() { installCatalog(c); };
+    head.appendChild(btn);
+    card.appendChild(head);
+    if (c.description) {
+        var desc = document.createElement('div');
+        desc.textContent = c.description;
+        desc.style.cssText = 'font-size:12px; color:#8b949e; margin-top:4px;';
+        card.appendChild(desc);
+    }
+    box.appendChild(card);
+}
+function installCatalog(c) {
+    fetch('/api/extensions/install', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({source: 'catalog:' + c.id})
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+          if (d && d.error) { alert(d.error); return; }
+          var msg = 'Installed:\n';
+          (d.skills || []).forEach(function(s) { msg += '  📘 ' + s + '\n'; });
+          (d.plugins || []).forEach(function(p) { msg += '  🐍 ' + p + '\n'; });
+          if (d.restart) msg += '\nRestart TrioForge to load the plugin(s).';
+          alert(msg);
+          loadCatalog();   // re-reads installed state so the button flips to ✓
+      })
+      .catch(function(x) { alert('Install failed: ' + x); });
 }
 function closePluginsModal() {
     var m = document.getElementById('pluginsModal');
@@ -9835,16 +9919,22 @@ if ('serviceWorker' in navigator) {
       A connector is a <em>service you sign into</em>; it lives here too, with the 🔌 badge.
     </p>
     <div style="display:flex; gap:8px; margin-bottom:12px;">
-      <input id="pluginsInstallSrc" type="text" placeholder="Paste a Git URL or a folder path to install…"
-             style="flex:1; background:#0e0e15; border:1px solid #333; border-radius:6px; padding:8px 10px; color:#e1e4e8; font-size:13px;">
-      <button onclick="installExtension()" style="padding:8px 14px; border:1px solid #2ea043; border-radius:6px; background:#1c3a22; color:#3fb950; cursor:pointer; font-size:13px; white-space:nowrap;">＋ Install</button>
+      <button id="plugTabInstalled" onclick="plugTab('installed')" style="padding:6px 14px; border:1px solid #333; border-radius:999px; background:#2ea043; color:#fff; cursor:pointer; font-size:13px;">📦 Installed</button>
+      <button id="plugTabBrowse" onclick="plugTab('browse')" style="padding:6px 14px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:13px;">🛍 Browse</button>
     </div>
-    <div style="display:flex; gap:6px; margin-bottom:12px;">
-      <button id="plugFilterAll" onclick="plugFilter('all')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">All</button>
-      <button id="plugFilterSkill" onclick="plugFilter('skill')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">Skills</button>
-      <button id="plugFilterPlugin" onclick="plugFilter('plugin')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">Plugins</button>
-      <button id="plugFilterConnector" onclick="plugFilter('connector')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">Connectors</button>
-      <button id="plugFilterMcp" onclick="plugFilter('mcp')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">MCP</button>
+    <div id="plugInstalledTools">
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input id="pluginsInstallSrc" type="text" placeholder="Paste a Git URL or a folder path to install…"
+               style="flex:1; background:#0e0e15; border:1px solid #333; border-radius:6px; padding:8px 10px; color:#e1e4e8; font-size:13px;">
+        <button onclick="installExtension()" style="padding:8px 14px; border:1px solid #2ea043; border-radius:6px; background:#1c3a22; color:#3fb950; cursor:pointer; font-size:13px; white-space:nowrap;">＋ Install</button>
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:12px;">
+        <button id="plugFilterAll" onclick="plugFilter('all')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">All</button>
+        <button id="plugFilterSkill" onclick="plugFilter('skill')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">Skills</button>
+        <button id="plugFilterPlugin" onclick="plugFilter('plugin')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">Plugins</button>
+        <button id="plugFilterConnector" onclick="plugFilter('connector')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">Connectors</button>
+        <button id="plugFilterMcp" onclick="plugFilter('mcp')" style="padding:5px 11px; border:1px solid #333; border-radius:999px; background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;">MCP</button>
+      </div>
     </div>
     <div id="pluginsList" style="max-height:52vh; overflow:auto;"></div>
   </div>

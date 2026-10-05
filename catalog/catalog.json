@@ -1,0 +1,25 @@
+{
+  "entries": [
+    {
+      "id": "refactor",
+      "title": "Refactor & Simplify",
+      "kind": "skill",
+      "description": "Make code clearer and smaller without changing what it does.",
+      "author": "TrioForge"
+    },
+    {
+      "id": "writing",
+      "title": "Clear Writing",
+      "kind": "skill",
+      "description": "Shorter, plainer, more direct prose for emails, docs and release notes.",
+      "author": "TrioForge"
+    },
+    {
+      "id": "api-design",
+      "title": "API Design",
+      "kind": "skill",
+      "description": "Design REST/HTTP APIs that are consistent and hard to misuse.",
+      "author": "TrioForge"
+    }
+  ]
+}

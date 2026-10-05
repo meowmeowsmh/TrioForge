@@ -37,7 +37,7 @@ MANIFEST_NAME = "integrity-manifest.json"
 # output - changes there are normal and would drown the signal. static/uploads and
 # static/generated* are named in SKIP_PREFIXES below, so widening this to "static" is
 # safe: it is what puts themes.css and theme-loader.js under the hash check.
-INCLUDE_DIRS = ("py", "templates", "static", "docker")
+INCLUDE_DIRS = ("py", "templates", "static", "docker", "catalog")
 INCLUDE_FILES = (
     "TrioForge.bat", "voice_agent.bat", ".gitattributes",
     "run.sh", "requirements.txt", "requirements-ml.txt", "pyproject.toml",

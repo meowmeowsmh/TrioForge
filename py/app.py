@@ -4627,6 +4627,12 @@ def api_extensions():
     return jsonify({"extensions": extensions.inventory()})
 
 
+@app.route('/api/extensions/catalog', methods=['GET'])
+def api_extensions_catalog():
+    """The browsable catalog shipped with the app, each entry with installed state."""
+    return jsonify({"catalog": extensions.catalog()})
+
+
 @app.route('/api/extensions/toggle', methods=['POST'])
 def api_extensions_toggle():
     """Enable or disable one extension."""

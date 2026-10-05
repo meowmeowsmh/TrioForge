@@ -53,7 +53,9 @@ with `"connector": True` in its `MANIFEST` (or implicitly, by declaring
 The **🧩 Plugins** panel is one inventory of everything — skills, plugins, and
 MCP servers — with an enable/disable toggle, an uninstall button, and an
 **install** box that accepts a Git URL or a local folder (a bundle with
-`skills/` and `plugins/` subfolders installs both at once).
+`skills/` and `plugins/` subfolders installs both at once). Its **🛍 Browse** tab
+is a shipped catalog you install in one click — add entries to
+`catalog/catalog.json` plus a `catalog/<id>/` folder, and they appear there.
 
 Enable/disable is a rename to a `_`-prefixed name on disk — `skills/_tdd` is
 visibly off. Skills and MCP servers apply immediately; a native plugin is
