@@ -246,6 +246,28 @@ def register(app):
     def _status_route():
         return jsonify(_status())
 
+    @app.route("/api/connectors/gmail/credentials", methods=["POST"])
+    def _save_credentials_route():
+        """Save the user's Google OAuth client id/secret from the Connectors panel.
+
+        Editing json_configuration/gmail_credentials.json by hand is the step people
+        skip; pasting the two values into the panel is the same thing minus the file.
+        """
+        data = request.get_json(silent=True) or {}
+        cid = (data.get("client_id") or "").strip()
+        secret = (data.get("client_secret") or "").strip()
+        if not cid or not secret:
+            return jsonify({"error": "Both Client ID and Client Secret are required."}), 400
+        try:
+            os.makedirs(os.path.dirname(_CRED_PATH), exist_ok=True)
+            _, _, scopes = _credentials_config()
+            with open(_CRED_PATH, "w", encoding="utf-8") as fh:
+                json.dump({"client_id": cid, "client_secret": secret, "scopes": scopes},
+                          fh, indent=2)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"ok": True})
+
     @app.route("/api/connectors/gmail/auth")
     def _auth_route():
         cc = _client_config()

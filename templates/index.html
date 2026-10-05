@@ -8564,8 +8564,33 @@ function renderConnectorCard(box, c) {
               statusEl.style.color = '#f0883e';
           }
           if (!st.connected) {
+              if (st.configured === false) {
+                  // Let the user paste the service's credentials right here instead of
+                  // editing a JSON file by hand - that hand-edit is the step people skip.
+                  var credRow = document.createElement('div');
+                  credRow.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;';
+                  var idIn = document.createElement('input');
+                  idIn.placeholder = 'Client ID';
+                  idIn.autocomplete = 'off';
+                  idIn.style.cssText = 'flex:1; min-width:170px; padding:7px 9px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;';
+                  var secIn = document.createElement('input');
+                  secIn.placeholder = 'Client Secret';
+                  secIn.type = 'password';
+                  secIn.autocomplete = 'off';
+                  secIn.style.cssText = idIn.style.cssText;
+                  var saveBtn = document.createElement('button');
+                  saveBtn.textContent = '💾 Save';
+                  saveBtn.style.cssText = 'background:#1f6feb;border:1px solid #1f6feb;color:#fff;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;';
+                  saveBtn.onclick = function() {
+                      saveConnectorCredentials(c.id, idIn.value, secIn.value);
+                  };
+                  credRow.appendChild(idIn);
+                  credRow.appendChild(secIn);
+                  credRow.appendChild(saveBtn);
+                  card.insertBefore(credRow, actions);
+              }
               var btn = document.createElement('button');
-              btn.textContent = st.configured ? '🔗 Connect' : '🔗 Connect (needs credentials)';
+              btn.textContent = st.configured ? '🔗 Connect' : '🔗 Connect (save credentials first)';
               btn.style.cssText = 'background:#238636;border:0;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
               btn.onclick = function() { connectConnector(c.id); };
               actions.appendChild(btn);
@@ -8598,6 +8623,20 @@ function disconnectConnector(id) {
     fetch('/api/connectors/' + id + '/disconnect', { method: 'POST' })
       .then(function() { loadConnectors(); })
       .catch(function(e) { alert('Could not disconnect: ' + e); });
+}
+function saveConnectorCredentials(id, clientId, clientSecret) {
+    if (!clientId || !clientSecret) { alert('Paste both the Client ID and the Client Secret.'); return; }
+    fetch('/api/connectors/' + id + '/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId.trim(), client_secret: clientSecret.trim() })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert(d.error); return; }
+        loadConnectors();     // the card now shows Connect instead of the fields
+    })
+    .catch(function(e) { alert('Could not save: ' + e); });
 }
 
 // ── Services control panel ──
