@@ -38,6 +38,12 @@ PLUGINS_DIR = root_path("plugins")
 
 _loaded: Dict[str, dict] = {}
 
+# Agent-facing tools that plugins expose. A plugin may define TOOLS (a list of
+# OpenAI function-calling tool objects) plus a dispatch(tool_name, args) callable;
+# the loader collects them here so the agent loop can offer and run them.
+_tool_defs: List[dict] = []
+_tool_owners: Dict[str, dict] = {}
+
 
 def _load_plugin(path: str) -> dict:
     """Import one plugin file and call its register() hook (if any)."""
@@ -66,12 +72,16 @@ def _load_plugin(path: str) -> dict:
         except Exception as e:
             return {"id": pid, "error": f"register() failed: {e}", "traceback": traceback.format_exc()}
 
+    tools = getattr(mod, "TOOLS", None) or []
+    dispatch = getattr(mod, "dispatch", None)
     return {
         "id": pid,
         "title": manifest.get("title", pid),
         "version": manifest.get("version", ""),
         "description": manifest.get("description", ""),
         "file": os.path.basename(path),
+        "tools": tools,
+        "dispatch": dispatch,
     }
 
 
@@ -93,6 +103,8 @@ def load_all(app) -> List[dict]:
     set_app(app)
     results = []
     _loaded.clear()
+    _tool_defs.clear()
+    _tool_owners.clear()
     os.makedirs(PLUGINS_DIR, exist_ok=True)
     try:
         entries = sorted(os.listdir(PLUGINS_DIR))
@@ -115,9 +127,52 @@ def load_all(app) -> List[dict]:
         else:
             _loaded[info["id"]] = info
             logger.info("Loaded plugin: %s", info["id"])
+            _register_tools(info)
         results.append(info)
     return results
 
 
+def _register_tools(info: dict) -> None:
+    """Index the tools a loaded plugin advertises so the agent can run them."""
+    pid = info.get("id")
+    for tool in info.get("tools") or []:
+        fn = (tool.get("function") or {})
+        name = fn.get("name")
+        if not name:
+            continue
+        _tool_defs.append(tool)
+        _tool_owners[name] = {"plugin": pid, "dispatch": info.get("dispatch")}
+
+
+def collect_tools() -> List[dict]:
+    """Every agent-facing tool the loaded plugins expose."""
+    return list(_tool_defs)
+
+
+def execute_tool(name: str, args: dict):
+    """Run a plugin tool by name; returns None when it is not a plugin tool."""
+    owner = _tool_owners.get(name)
+    if owner is None:
+        return None
+    dispatch = owner.get("dispatch")
+    if dispatch is None:
+        return {"error": "plugin '{}' has no dispatch for '{}'".format(owner["plugin"], name)}
+    try:
+        result = dispatch(name, args)
+    except Exception as e:
+        return {"error": "{}: {}".format(type(e).__name__, e)}
+    if not isinstance(result, dict):
+        result = {"result": result}
+    return result
+
+
 def list_loaded() -> List[dict]:
-    return list(_loaded.values())
+    # `dispatch` is a callable, so it cannot be jsonify'd; the UI only needs the
+    # metadata plus a tool-name list.
+    out = []
+    for info in _loaded.values():
+        clean = {k: v for k, v in info.items() if k != "dispatch"}
+        names = [t.get("function", {}).get("name") for t in (info.get("tools") or [])]
+        clean["tool_names"] = [n for n in names if n]
+        out.append(clean)
+    return out

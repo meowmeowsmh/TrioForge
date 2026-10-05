@@ -12,7 +12,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "3b08d4de522117cb5a856c4d3abad153b7c6239205201d3a054927331040910a",
+  "py/app.py": "213deca75453a14d0449088ca37b362101029a11b58026558e0c10fc4916aaf6",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -40,7 +40,7 @@
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
-  "py/plugin_loader.py": "3cbe70d93c453fb97b2ad18e3c7ba76b013aaf9e81c839b0951a7de22fc3dab0",
+  "py/plugin_loader.py": "94986f84b87deae4526e0f7b9da8b741c1f84046d27fad535178140c82f81df4",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "3559d3b0c0cf686bbb1d390f9fe37bc800ccf7ff124329a14ee50801a1496321",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
@@ -83,7 +83,7 @@
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
   "pyproject.toml": "fbf6c488f7dc8914fb48ee8d3bfc39d038fd4ee4052a8a7fd21586443de48616",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
-  "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
+  "requirements.txt": "cada955ce1ec279588e59c678fd3543e646bf6d86727ad920a1171377a459e9a",
   "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
   "static/image/icon_llm.png": "24aeef77274ef6820d3bc92060540b6a9078a9b1ecd8597677bd559e2f0a40a8",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
@@ -109,6 +109,6 @@
   "templates/index.html": "9e181274d3a9874f5bd14ad226aa130fe056f3c7f6dfc133d48016bb9ed035a5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T04:17:37",
- "note": "docker update = git pull + rebuild"
+ "generated": "2026-10-05T15:48:05",
+ "note": "plugin tools + gmail connector"
 }

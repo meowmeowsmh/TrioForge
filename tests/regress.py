@@ -1079,6 +1079,39 @@ def test_design_runner_languages() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_plugin_tools() -> None:
+    _title("plugin tools (agent reads plugins)")
+    import tempfile
+    import plugin_loader
+
+    # A plugin declares TOOLS + dispatch(); the loader hands them to the agent so a
+    # "read my gmail" request becomes a real function call instead of a refusal.
+    with tempfile.TemporaryDirectory() as tmp:
+        src = (
+            "MANIFEST = {'name': 'probe', 'title': 'Probe'}\n"
+            "TOOLS = [{'type': 'function', 'function': {'name': 'probe_echo', "
+            "'description': 'echo', 'parameters': {'type': 'object', 'properties': {}}}}]\n"
+            "def dispatch(name, args):\n"
+            "    return {'echoed': args.get('x')}\n"
+        )
+        path = os.path.join(tmp, "probe.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(src)
+
+        info = plugin_loader._load_plugin(path)
+        assert info.get("error") is None, info
+        assert [t["function"]["name"] for t in info["tools"]] == ["probe_echo"]
+        plugin_loader._register_tools(info)
+        assert plugin_loader.execute_tool("probe_echo", {"x": 1}) == {"echoed": 1}
+        assert plugin_loader.execute_tool("no_such_tool", {}) is None
+        assert "probe_echo" in [t["function"]["name"] for t in plugin_loader.collect_tools()]
+        plugin_loader._tool_owners.pop("probe_echo", None)
+        plugin_loader._tool_defs[:] = [t for t in plugin_loader._tool_defs
+                                       if t["function"]["name"] != "probe_echo"]
+    print("  plugin TOOLS collected + dispatched, unknown tool -> None -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1091,7 +1124,8 @@ def main() -> int:
              test_window_slot_is_exclusive, test_window_ready_means_visible,
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
              test_design_persists_in_conversation, test_design_artifacts_listing,
-             test_design_run_terminal, test_design_runner_languages]
+             test_design_run_terminal, test_design_runner_languages,
+             test_plugin_tools]
     failed = []
     for t in tests:
         try:

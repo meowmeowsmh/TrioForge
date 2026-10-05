@@ -18,6 +18,11 @@ groq>=0.3.0              # Groq provider (SDK)
 huggingface_hub>=0.16.0  # Hugging Face provider
 google-genai>=2.0.0      # Gemini provider (chat + image + video)
 
+# ── Connectors (plugins that let the agent reach services) ──────
+google-auth>=2.0.0            # OAuth credentials for Gmail/Drive connectors
+google-auth-oauthlib>=1.0.0   # OAuth flow for installed-app connectors
+google-api-python-client>=2.0 # Gmail API client (plugins/gmail.py)
+
 # ── File / PDF parsing ──────────────────────────────────────────
 pypdf>=3.0.0             # PDF text extraction (uploaded PDFs)
 

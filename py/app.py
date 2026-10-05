@@ -3477,7 +3477,13 @@ def _list_files_recursive(base, rel=""):
 
 
 def _execute_tool(name, args):
-    """Run a workspace-folder tool and return a JSON-serializable result."""
+    """Run a workspace-folder tool or a plugin tool; return JSON-serializable."""
+    # Plugin tools first: a connector (Gmail, Obsidian, …) the user installed in
+    # plugins/ gets its own tools here, so the agent can read those services.
+    plugin_result = plugin_loader.execute_tool(name, args)
+    if plugin_result is not None:
+        return plugin_result
+
     wid = _current_workspace_id()
     base = _workspace_setting(wid, "folder", "") or ""
 
@@ -3723,8 +3729,9 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
     if isinstance(provider, ClaudeProvider):
         return _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps)
     messages = list(messages)
+    tools = WORKSPACE_TOOLS + plugin_loader.collect_tools()
     for _ in range(max_steps):
-        resp = provider.generate_raw(messages, tools=WORKSPACE_TOOLS, **extra_kwargs)
+        resp = provider.generate_raw(messages, tools=tools, **extra_kwargs)
         content = resp.get("content")
         tool_calls = resp.get("tool_calls") or []
         if not tool_calls:
@@ -3765,7 +3772,7 @@ def _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps=20):
     }
 
     anthropic_tools = []
-    for t in WORKSPACE_TOOLS:
+    for t in WORKSPACE_TOOLS + plugin_loader.collect_tools():
         fn = t.get("function", {})
         anthropic_tools.append({
             "name": fn.get("name"),
