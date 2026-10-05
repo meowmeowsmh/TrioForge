@@ -53,6 +53,11 @@ CATALOGUE_LIMIT = 60
 
 _loaded: Dict[str, dict] = {}
 
+#: Skills that were found but could not be loaded, keyed by path. Kept so the UI
+#: can say "this one failed, here is why" rather than the skill silently not
+#: being there - a missing feature with no explanation is the worst outcome.
+_failed: Dict[str, dict] = {}
+
 
 def _slug(text: str) -> str:
     """Lowercase a name into a skill id. Empty when nothing usable survives.
@@ -171,19 +176,24 @@ def _discover() -> List[tuple]:
 def load_all() -> List[dict]:
     """Load every skill in skills/. Best-effort: a broken one is skipped."""
     _loaded.clear()
+    _failed.clear()
     results = []
     os.makedirs(SKILLS_DIR, exist_ok=True)
     for path, fallback in _discover():
         try:
             info = _load_skill(path, fallback)
         except Exception as e:  # a malformed file must never stop startup
-            info = {"id": fallback, "error": "{}: {}".format(type(e).__name__, e)}
+            info = {"id": fallback, "path": path,
+                    "error": "{}: {}".format(type(e).__name__, e)}
         if info.get("error"):
             logger.warning("Skill %s failed to load: %s", path, info["error"])
+            _failed[path] = info
         elif info["id"] in _loaded:
             # The likely user error: a copied skill folder that was never renamed.
-            info["error"] = "duplicate skill name '{}'".format(info["id"])
+            info["error"] = "duplicate skill name '{}' (already loaded from {})".format(
+                info["id"], _loaded[info["id"]].get("path"))
             logger.warning("Duplicate skill name: %s", info["id"])
+            _failed[path] = info
         else:
             _loaded[info["id"]] = info
             logger.info("Loaded skill: %s", info["id"])
@@ -222,6 +232,19 @@ def list_loaded() -> List[dict]:
     """Metadata for the UI - the body is summarised, never shipped whole."""
     out = []
     for info in _loaded.values():
+        clean = {k: v for k, v in info.items() if k != "body"}
+        out.append(clean)
+    return out
+
+
+def list_failed() -> List[dict]:
+    """Skills that were present but could not be loaded, with the reason.
+
+    So a broken skill shows as failed instead of just being absent - "not
+    installed" and "installed but broken" need completely different fixes.
+    """
+    out = []
+    for info in _failed.values():
         clean = {k: v for k, v in info.items() if k != "body"}
         out.append(clean)
     return out

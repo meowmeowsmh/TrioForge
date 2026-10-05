@@ -38,6 +38,11 @@ PLUGINS_DIR = root_path("plugins")
 
 _loaded: Dict[str, dict] = {}
 
+#: Plugins that were found but could not be loaded, keyed by file. Kept so the UI
+#: can show "this one failed, here is why" instead of the plugin simply not being
+#: there - a missing feature with no explanation is the worst failure mode.
+_failed: Dict[str, dict] = {}
+
 #: Module objects by plugin id, so a connector can expose a terminal connect flow
 #: (connect_info()) that the TUI reaches without re-importing the file.
 _mods: Dict[str, object] = {}
@@ -54,13 +59,13 @@ def _load_plugin(path: str) -> dict:
     name = os.path.splitext(os.path.basename(path))[0]
     spec = importlib.util.spec_from_file_location("trioforge_plugin_" + name, path)
     if spec is None or spec.loader is None:
-        return {"id": name, "error": "could not build import spec"}
+        return {"id": name, "file": os.path.basename(path), "error": "could not build import spec"}
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     try:
         spec.loader.exec_module(mod)
     except Exception as e:
-        return {"id": name, "error": f"import failed: {e}"}
+        return {"id": name, "file": os.path.basename(path), "error": f"import failed: {e}"}
 
     manifest = getattr(mod, "MANIFEST", None) or {}
     if not isinstance(manifest, dict):
@@ -117,6 +122,7 @@ def load_all(app) -> List[dict]:
     set_app(app)
     results = []
     _loaded.clear()
+    _failed.clear()
     _mods.clear()
     _tool_defs.clear()
     _tool_owners.clear()
@@ -136,9 +142,19 @@ def load_all(app) -> List[dict]:
         try:
             info = _load_plugin(path)
         except Exception as e:
-            info = {"id": entry, "error": str(e)}
+            info = {"id": entry, "file": entry, "error": str(e)}
         if info.get("error"):
             logger.warning("Plugin %s failed to load: %s", entry, info["error"])
+            info.setdefault("file", entry)
+            _failed[info.get("file") or info.get("id") or entry] = info
+        elif info["id"] in _loaded:
+            # Two files claiming one id: the second used to overwrite the first in
+            # silence, so the plugin list quietly lied about what was loaded.
+            clash = dict(info, error="duplicate plugin id '{}' (already loaded "
+                                     "from {})".format(info["id"],
+                                                       _loaded[info["id"]].get("file")))
+            logger.warning("Duplicate plugin id: %s (%s)", info["id"], entry)
+            _failed[entry] = clash
         else:
             _loaded[info["id"]] = info
             logger.info("Loaded plugin: %s", info["id"])
@@ -208,5 +224,20 @@ def list_loaded() -> List[dict]:
         clean = {k: v for k, v in info.items() if k != "dispatch"}
         names = [t.get("function", {}).get("name") for t in (info.get("tools") or [])]
         clean["tool_names"] = [n for n in names if n]
+        out.append(clean)
+    return out
+
+
+def list_failed() -> List[dict]:
+    """Plugins that were present but could not be loaded, with the reason.
+
+    Exposed so a broken plugin is *visible* rather than absent: the UI shows it
+    as failed, which is the difference between "not installed" and "installed but
+    broken" - two problems with completely different fixes.
+    """
+    out = []
+    for info in _failed.values():
+        clean = {k: v for k, v in info.items() if k not in ("dispatch", "traceback")}
+        clean["tool_names"] = []
         out.append(clean)
     return out

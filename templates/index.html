@@ -8642,8 +8642,10 @@ function loadPlugins() {
 function renderPluginsCard(box, e) {
     var kindBadge = {skill: ['📘', '#d2a8ff'], plugin: ['🐍', '#3fb950'], mcp: ['🔗', '#ffc478']}[e.kind] || ['❓', '#8b949e'];
     var card = document.createElement('div');
-    card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:12px 14px; margin-bottom:10px; background:#0e0e15; ' +
-        (e.enabled ? '' : 'opacity:0.6;');
+    // A failed entry is highlighted, not dimmed - it is the one you need to see.
+    card.style.cssText = 'border:1px solid ' + (e.failed ? '#f85149' : '#333') +
+        '; border-radius:10px; padding:12px 14px; margin-bottom:10px; background:#0e0e15; ' +
+        ((!e.enabled && !e.failed) ? 'opacity:0.6;' : '');
 
     var head = document.createElement('div');
     head.style.cssText = 'display:flex; align-items:center; gap:8px; flex-wrap:wrap;';
@@ -8673,12 +8675,21 @@ function renderPluginsCard(box, e) {
             (e.status === 'ready' ? '#3fb950' : e.status === 'error' ? '#f85149' : '#d29922') + ';';
         head.appendChild(st);
     }
-    var toggle = document.createElement('button');
-    toggle.textContent = e.enabled ? 'Disable' : 'Enable';
-    toggle.style.cssText = 'margin-left:auto; padding:4px 10px; border:1px solid #333; border-radius:6px; ' +
-        'background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;';
-    toggle.onclick = function() { toggleExtension(e, !e.enabled); };
-    head.appendChild(toggle);
+    if (e.failed) {
+        // No Enable toggle: this is not switched off, it does not work. Offering
+        // "Enable" here would suggest a click could fix it.
+        var failedTag = document.createElement('span');
+        failedTag.textContent = '⊘ failed to load';
+        failedTag.style.cssText = 'margin-left:auto; font-size:12px; color:#f85149; font-weight:600;';
+        head.appendChild(failedTag);
+    } else {
+        var toggle = document.createElement('button');
+        toggle.textContent = e.enabled ? 'Disable' : 'Enable';
+        toggle.style.cssText = 'margin-left:auto; padding:4px 10px; border:1px solid #333; border-radius:6px; ' +
+            'background:#1c1c26; color:#e1e4e8; cursor:pointer; font-size:12px;';
+        toggle.onclick = function() { toggleExtension(e, !e.enabled); };
+        head.appendChild(toggle);
+    }
     var del = document.createElement('button');
     del.textContent = '✕';
     del.title = 'Uninstall';

@@ -156,6 +156,17 @@ def inventory() -> List[dict]:
                     "chars": s.get("chars", 0), "needs_restart": False})
     out.extend(_disabled_skills())
 
+    # Skills that are present but could not be loaded. Shown as failed rather
+    # than omitted: a skill that is missing and a skill that is broken look
+    # identical to the user unless the reason is put in front of them.
+    for s in skills_loader.list_failed():
+        path = s.get("path", "") or ""
+        out.append({"kind": SKILL, "id": s["id"], "title": s.get("title") or s["id"],
+                    "description": s.get("description", ""), "enabled": False,
+                    "failed": True, "error": s.get("error", ""),
+                    "path": _rel(path) if path else "", "target": path,
+                    "needs_restart": False})
+
     for p in plugin_loader.list_loaded():
         filepath = os.path.join(PLUGINS_DIR, p.get("file", ""))
         out.append({"kind": PLUGIN, "id": p["id"], "title": p.get("title", p["id"]),
@@ -165,6 +176,16 @@ def inventory() -> List[dict]:
                     "tool_names": p.get("tool_names") or [],
                     "needs_restart": True})
     out.extend(_disabled_plugins())
+
+    # Same for plugins: an import error or a duplicate id must be visible, not
+    # silently dropped from a list the user is reading to find out what happened.
+    for p in plugin_loader.list_failed():
+        filepath = os.path.join(PLUGINS_DIR, p.get("file") or (p["id"] + ".py"))
+        out.append({"kind": PLUGIN, "id": p["id"], "title": p.get("title") or p["id"],
+                    "description": p.get("description", ""), "enabled": False,
+                    "failed": True, "error": p.get("error", ""),
+                    "path": _rel(filepath), "target": filepath,
+                    "connector": bool(p.get("connector")), "needs_restart": True})
 
     for m in mcp_client.list_servers():
         out.append({"kind": MCP, "id": m["id"], "title": m["id"],

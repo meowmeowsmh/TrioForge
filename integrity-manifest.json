@@ -21,7 +21,7 @@
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
-  "py/extensions.py": "1f35a31e393be7225e20a8952327dbbe68fe7365e45560245120bdc492371998",
+  "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
   "py/features/cork_board.py": "cde6c56b506e9e73b0da97ea36e29dc0b6298fc228ee9dc2b2c56d4891a11f16",
@@ -46,12 +46,12 @@
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
-  "py/plugin_loader.py": "1731207f9ca10e83d0c7fee743d69947f32cd38755311c2de12ec6a4478c5044",
+  "py/plugin_loader.py": "3298b5f6c8524ab38905e3d10896d940d79e2afc431ada15f4858617fa8874f1",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "3559d3b0c0cf686bbb1d390f9fe37bc800ccf7ff124329a14ee50801a1496321",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "27df446aaacdab083b25a595c42190bb2bea0c425c6c6fa49426201b935da31c",
-  "py/skills_loader.py": "882ec0f9a64c75027853737a30f6e856e8bc6ca601a9a2b16b0698ed619da2a2",
+  "py/skills_loader.py": "b23ae52b2daab7c5294a51ef3abf1ede22c7bb3a262c2a808169a2a28567db99",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/tools/app_window.py": "b15626b457050c66f22f3e2bc5977687a28101f75bb5a298aaedec993236eeb6",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
@@ -113,9 +113,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "c9622c5146ec0be3d4d9b3ad09aa0d446533a70efd4182646ea039928bbd290d",
+  "templates/index.html": "5d1b7d00707c7cb8ad5a08d9cd5e7fb5f864eabf4053ca14665d06bf9cf4d79b",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T03:47:11",
- "note": "obsidian connector"
+ "generated": "2026-10-06T03:55:35",
+ "note": "surface load failures + route contract test"
 }

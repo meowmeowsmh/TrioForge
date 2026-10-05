@@ -1594,7 +1594,76 @@ def test_shipped_plugins_load() -> None:
     names = {t["function"]["name"] for t in plugin_loader.collect_tools()}
     for expected in ("gmail_status", "obsidian_status", "obsidian_read"):
         assert expected in names, "{} missing from {}".format(expected, sorted(names))
+
+    # The connector card fetches these for EVERY connector, so a missing one is a
+    # button that 404s. This is the route-contract half of the Obsidian bug: the
+    # card assumed Gmail's routes and would have broken on any other connector.
+    rules = {str(r.rule) for r in app.url_map.iter_rules()}
+    for info in results:
+        if not info.get("connector"):
+            continue
+        for suffix in ("status", "credentials", "disconnect"):
+            want = "/api/connectors/{}/{}".format(info["id"], suffix)
+            assert want in rules, "connector '{}' has no route {}".format(info["id"], want)
     print("  {} plugin(s) loaded, no route-name collisions -> OK".format(len(results)))
+
+
+# ---------------------------------------------------------------------------
+def test_failures_are_visible() -> None:
+    """A plugin or skill that fails to load must be VISIBLE, not just absent.
+
+    This is the bug class behind the Obsidian connector going missing: the loader
+    knew it had failed, logged a warning, and then every UI-facing list omitted
+    it. "Not installed" and "installed but broken" need completely different
+    fixes, so the second one has to be shown with its reason.
+    """
+    _title("a broken extension is visible, not silently absent")
+    import tempfile
+    import extensions
+    import plugin_loader
+    import skills_loader
+    from flask import Flask
+
+    real = (plugin_loader.PLUGINS_DIR, skills_loader.SKILLS_DIR,
+            extensions.PLUGINS_DIR, extensions.SKILLS_DIR)
+    with tempfile.TemporaryDirectory() as pl, tempfile.TemporaryDirectory() as sk:
+        plugin_loader.PLUGINS_DIR = pl
+        skills_loader.SKILLS_DIR = sk
+        extensions.PLUGINS_DIR = pl
+        extensions.SKILLS_DIR = sk
+        try:
+            # A plugin that raises on import.
+            with open(os.path.join(pl, "brokenplugin.py"), "w", encoding="utf-8") as fh:
+                fh.write("MANIFEST = {'name': 'brokenplugin'}\nraise RuntimeError('boom')\n")
+            # Two skills claiming one name - the second cannot be loaded.
+            for folder in ("dup-a", "dup-b"):
+                os.makedirs(os.path.join(sk, folder))
+                with open(os.path.join(sk, folder, "SKILL.md"), "w", encoding="utf-8") as fh:
+                    fh.write("---\nname: duplicate\ndescription: x\n---\nbody\n")
+
+            results = plugin_loader.load_all(Flask("probe-fail"))
+            assert any(r.get("error") for r in results), results
+            assert not any(p["id"] == "brokenplugin" for p in plugin_loader.list_loaded())
+            failed = plugin_loader.list_failed()
+            assert failed and "boom" in failed[0].get("error", ""), failed
+
+            skills_loader.load_all()
+            assert len(skills_loader.all_skills()) == 1, skills_loader.all_skills()
+            assert skills_loader.list_failed(), "the duplicate skill must be recorded"
+
+            inv = extensions.inventory()
+            broken_plugins = [e for e in inv if e.get("kind") == "plugin" and e.get("failed")]
+            broken_skills = [e for e in inv if e.get("kind") == "skill" and e.get("failed")]
+            assert broken_plugins, "a broken plugin must appear in the inventory"
+            assert "boom" in broken_plugins[0]["error"], broken_plugins[0]
+            assert broken_skills, "a broken skill must appear in the inventory"
+            assert "duplicate" in broken_skills[0]["error"].lower(), broken_skills[0]
+        finally:
+            (plugin_loader.PLUGINS_DIR, skills_loader.SKILLS_DIR,
+             extensions.PLUGINS_DIR, extensions.SKILLS_DIR) = real
+            plugin_loader.load_all(Flask("probe-fail-restore"))
+            skills_loader.load_all()
+    print("  loader failure + duplicate name both reach the panel -> OK")
 
 
 # ---------------------------------------------------------------------------
@@ -1614,7 +1683,7 @@ def main() -> int:
              test_plugin_tools, test_skills, test_mcp_client,
              test_toolbar_icons_unique, test_extensions,
              test_tui_plugin_commands, test_obsidian_connector,
-             test_shipped_plugins_load]
+             test_shipped_plugins_load, test_failures_are_visible]
     failed = []
     for t in tests:
         try:
