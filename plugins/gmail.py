@@ -8,8 +8,9 @@
 # One-time setup (only you can do this part):
 #   1. console.cloud.google.com -> create a project -> enable the Gmail API
 #   2. OAuth consent screen -> add yourself as a test user
-#   3. Credentials -> OAuth client ID -> "Desktop app"
-#   4. Add this redirect URI:  https://127.0.0.1:5003/api/connectors/gmail/oauth2callback
+#   3. Credentials -> OAuth client ID -> "Web application"  (NOT "Desktop app")
+#   4. Under Authorized redirect URIs add exactly:
+#          https://127.0.0.1:5003/api/connectors/gmail/oauth2callback
 #   5. Put the client id/secret into json_configuration/gmail_credentials.json:
 #          {"client_id": "…", "client_secret": "…"}
 #   6. GET /api/connectors/gmail/auth  (or use the Connect button) -> click Allow.
@@ -262,9 +263,22 @@ def register(app):
 
     @app.route("/api/connectors/gmail/oauth2callback")
     def _callback_route():
+        # Google sends back EITHER ?code=… on success OR ?error=… when it refuses.
+        # Surfacing that error is the difference between a helpful diagnosis and a
+        # bare "missing code" (the most common is redirect_uri_mismatch).
+        oauth_error = request.args.get("error")
+        if oauth_error:
+            desc = request.args.get("error_description") or ""
+            return ("<html><body style='background:#0b0d12;color:#f0883e;font-family:Segoe UI;"
+                    "text-align:center;padding-top:12vh'><h2>Google refused the sign-in</h2>"
+                    "<p style='font-family:monospace'>{}</p><p style='color:#8b949e'>{}</p>"
+                    "<p style='color:#8b949e'>Fix: the OAuth client must be a <b>Web application</b> "
+                    "(not Desktop app), and this exact redirect URI must be listed under "
+                    "Authorized redirect URIs.</p></body></html>".format(oauth_error, desc))
         code = request.args.get("code")
         if not code:
-            return "<h3>missing code</h3>", 400
+            return ("<h3>missing code</h3><p>Open <code>/api/connectors/gmail/auth</code> "
+                    "first and follow the link it returns.</p>"), 400
         cc = _client_config()
         if cc is None:
             return "<h3>Gmail not configured.</h3>", 400

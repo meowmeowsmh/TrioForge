@@ -109,6 +109,6 @@
   "templates/index.html": "9e181274d3a9874f5bd14ad226aa130fe056f3c7f6dfc133d48016bb9ed035a5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-05T15:48:05",
- "note": "plugin tools + gmail connector"
+ "generated": "2026-10-05T15:53:09",
+ "note": "gmail oauth error surfacing"
 }
