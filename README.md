@@ -308,6 +308,18 @@ quality depend on what fits on your hardware:
 HuggingFace and Gemini do not forward tools, so plugins are unavailable on those
 two providers.
 
+#### Obsidian (local) vs Gmail (cloud)
+
+| Connector | Reads | Sign-in | Offline? |
+|---|---|---|---|
+| **Obsidian** | your local vault folder (`.md` notes) | ❌ just a folder path | ✅ fully offline |
+| **Gmail** | your Google inbox | ✅ OAuth | ❌ needs Google |
+
+The **Obsidian** connector searches, reads and writes plain `.md` notes inside one
+vault folder. Nothing leaves your machine and no account is needed — just point it
+at the folder that contains `.obsidian`. So with a local model (Ollama or
+llama.cpp), Obsidian is **end-to-end offline**.
+
 ---
 
 ## ⚙️ Configuration
