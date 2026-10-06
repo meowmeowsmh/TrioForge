@@ -484,7 +484,17 @@ def dispatch(tool_name, args):
     if tool_name == "gmail_read_message":
         return _read_message(args.get("id"))
     if tool_name == "gmail_status":
-        return _status()
+        # A plain-language summary, NOT the raw card flags (needs_client /
+        # can_sign_in / needs_setup). Those UI flags are what made a model read
+        # "connected:true, can_sign_in:false" as "not signed in" and refuse.
+        st = _status()
+        if st.get("connected"):
+            return {"connected": True, "account": st.get("account"),
+                    "summary": "Gmail IS signed in as {}. You can list and read email "
+                               "right now — call gmail_list_inbox.".format(st.get("account"))}
+        return {"connected": False,
+                "summary": "Gmail is not signed in yet. Ask the user to connect it "
+                           "in the Connectors panel."}
     return {"error": "unknown tool " + str(tool_name)}
 
 

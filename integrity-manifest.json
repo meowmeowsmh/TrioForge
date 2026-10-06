@@ -116,6 +116,6 @@
   "templates/index.html": "597ff5d23acd99be5f62aa42ea3499fee3440c3f2cb884e4939b7519b4b41337",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T22:55:06",
- "note": "fix: inject tool protocol into user turn for local models"
+ "generated": "2026-10-06T23:00:33",
+ "note": "gmail_status: plain-language summary for the agent"
 }
