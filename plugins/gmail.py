@@ -85,11 +85,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "gmail_list_inbox",
-            "description": "List recent emails in the connected Gmail account. Query uses Gmail syntax, e.g. 'is:unread', 'from:someone@x.com', 'newer_than:2d'.",
+            "description": "List the user's recent Gmail emails. Use an EMPTY query ('') for the most recent messages, or 'is:unread' for unread ones. Only add a filter (from:, subject:, newer_than:) when the user explicitly asks — do NOT invent filters such as 'is:important'.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Gmail search query, e.g. is:unread"},
+                    "query": {"type": "string", "description": "Gmail search query, e.g. 'is:unread' or 'from:x@y.com'. Leave empty ('') for the most recent emails."},
                     "max": {"type": "integer", "description": "max messages to return (default 10)"},
                 },
                 "additionalProperties": False,
