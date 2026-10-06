@@ -5,14 +5,19 @@ GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
 ## [Unreleased]
 
-### Link-buttons keep their own colour
+### Links that are really controls keep their own colour
 
 The theme stylesheet coloured every `<a>` with the theme accent (`!important`), which
-also caught links styled as buttons — the Setup modal's **"⬇ Download"** and the
-Design Studio's **"⬇ HTML"** — repainting their white/light labels bright pink (very
-obvious in the Galaxy theme) on top of a blue or near-black button. The `a` rule now
-skips any link that carries its own background, so text links stay accented and
-button-links stay readable.
+also caught links used as UI controls, repainting their own colours bright pink (very
+obvious in the Galaxy theme):
+
+- link-buttons — the Setup modal's **"⬇ Download"** and the Design Studio's
+  **"⬇ HTML"** (white/light labels on a blue or near-black button)
+- the **Chat / Notes / Cork Board** pills — Chat is a `<button>` but Notes and Cork
+  Board are `<a>`, so only those two were recoloured and the row looked inconsistent
+
+The `a` rule now skips any link that carries its own background, or that is a
+`.tab-btn`; plain text links stay accented.
 
 ## [1.4.9] — search & download models, and Docker on Apple Silicon
 
