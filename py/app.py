@@ -3977,21 +3977,26 @@ def _tools_protocol_text(tools) -> str:
     for a model that can call functions and one that can only write text.
     """
     out = [
-        "## Calling tools",
-        "When a tool is needed, reply with EXACTLY one fenced block and nothing else:",
+        "## Tools",
+        "To call a tool, reply with ONE fenced block and nothing else:",
         "```tool",
-        '{"name": "<tool name>", "args": { }}',
+        '{"name": "<tool>", "args": { }}',
         "```",
-        "Then stop and wait - the result is sent back to you before you continue.",
+        "Then stop and wait for the result.",
         "",
-        "### Available tools",
     ]
+    # Terse by design: a local model often runs with a small context (8192), and
+    # the full list — name + args + description for every tool, MCP servers
+    # included — alone could overflow it. Names + argument keys is enough for the
+    # model to pick a tool; a wrong argument comes back as a tool error to fix.
     for t in tools:
         fn = t.get("function") or {}
+        name = fn.get("name")
+        if not name:
+            continue
         props = (fn.get("parameters") or {}).get("properties") or {}
-        args = ", ".join(props) or "no arguments"
-        out.append("- `{}({})` - {}".format(fn.get("name"), args,
-                                            (fn.get("description") or "").strip()))
+        args = ", ".join(props)
+        out.append("- {}{}".format(name, "(" + args + ")" if args else ""))
     return "\n".join(out)
 
 

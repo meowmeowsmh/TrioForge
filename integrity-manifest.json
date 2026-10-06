@@ -16,7 +16,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "6d87976fd123b26c023dbf44aa0aacf2a35ff9c72b8231639165a9643e8d5c81",
+  "py/app.py": "c4875e6b1284cc9e553fced2f1246d7a5624f60d47b037775a9d7893d448a5c6",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -48,7 +48,7 @@
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "3298b5f6c8524ab38905e3d10896d940d79e2afc431ada15f4858617fa8874f1",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/providers/llm_providers.py": "3559d3b0c0cf686bbb1d390f9fe37bc800ccf7ff124329a14ee50801a1496321",
+  "py/providers/llm_providers.py": "c016ff65882866bd7de20a96d3da11a2db9a51ca90b917208e5285a40f2883f3",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "27df446aaacdab083b25a595c42190bb2bea0c425c6c6fa49426201b935da31c",
   "py/skills_loader.py": "b23ae52b2daab7c5294a51ef3abf1ede22c7bb3a262c2a808169a2a28567db99",
@@ -116,6 +116,6 @@
   "templates/index.html": "597ff5d23acd99be5f62aa42ea3499fee3440c3f2cb884e4939b7519b4b41337",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T23:00:33",
- "note": "gmail_status: plain-language summary for the agent"
+ "generated": "2026-10-06T23:24:07",
+ "note": "terse tool protocol + longer llama.cpp timeout"
 }

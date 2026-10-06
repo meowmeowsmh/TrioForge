@@ -898,7 +898,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=180
+                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
@@ -964,7 +964,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=180
+                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
@@ -1141,7 +1141,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=180
+                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
@@ -1195,7 +1195,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=180
+                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
