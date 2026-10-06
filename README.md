@@ -412,6 +412,34 @@ It's an installable **PWA** (Android/iOS/desktop). **Host mode** (`--host`, or `
 
 ---
 
+## 🪟 Desktop webview (webview-alt)
+
+For a native desktop window around the app, a thin **`webview-alt`** layer picks
+the right platform backend automatically — no source builds, no Docker:
+
+| Backend | Platform | Native engine | Setup |
+|---|---|---|---|
+| **`apple-webview`** | macOS / iOS | WKWebView | ✅ built in — nothing to install |
+| **`linux-webview`** | Linux | WebKitGTK | `sudo apt install libwebkit2gtk-4.1-dev` |
+| **`win-webview`** | Windows | WebView2 (Edge) | ✅ built in |
+
+### Linux
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev
+```
+
+This installs the prebuilt WebKitGTK library that `linux-webview` links against
+(~200 MB). Do **not** build WebKitGTK from source — the package is the same
+library, and a from-source build needs ~50 GB of disk and several hours.
+
+### macOS / iOS
+
+`apple-webview` uses the WKWebView that ships with the OS — there is nothing to
+install.
+
+---
+
 ## 🔄 Staying up to date
 
 Every launcher checks for a new version on start and applies it before the app comes up — your data is never part of an update (local edits are stashed, not lost).
