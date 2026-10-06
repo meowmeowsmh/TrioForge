@@ -3,6 +3,17 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### Link-buttons keep their own colour
+
+The theme stylesheet coloured every `<a>` with the theme accent (`!important`), which
+also caught links styled as buttons — the Setup modal's **"⬇ Download"** and the
+Design Studio's **"⬇ HTML"** — repainting their white/light labels bright pink (very
+obvious in the Galaxy theme) on top of a blue or near-black button. The `a` rule now
+skips any link that carries its own background, so text links stay accented and
+button-links stay readable.
+
 ## [1.4.9] — search & download models, and Docker on Apple Silicon
 
 ### Search and download GGUF models from the terminal

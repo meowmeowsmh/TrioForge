@@ -334,8 +334,13 @@ html[data-theme] .search-input:focus {
     box-shadow: 0 0 0 2px var(--tf-accent-soft) !important;
 }
 
-/* Accents: links, active rows, badges, the thinking block */
-html[data-theme] a,
+/* Accents: links, active rows, badges, the thinking block.
+   The `a` rule deliberately SKIPS link-buttons: an <a> that carries its own
+   background/colour (the Setup modal's "⬇ Download", the Design Studio's
+   "⬇ HTML") is a button, not a text link. Without the :not(), the !important
+   here repainted their white/light labels with the theme accent — bright pink
+   in Galaxy — on top of a blue or near-black button. */
+html[data-theme] a:not([style*="background"]),
 html[data-theme] .accent,
 html[data-theme] .note-item.active,
 html[data-theme] .note-item-sidebar.active {
