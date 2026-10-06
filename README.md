@@ -292,6 +292,22 @@ The reply cap takes effect on the very next message; the context window applies 
 - **Look & feel** — dark UI, seven themes + custom, one stylesheet across all three screens.
 - **Run anywhere** — Windows/macOS/Linux/WSL/Docker, installable PWA, LAN + tunnel remote access, plugins, live RAM/VRAM monitor.
 
+### 🧩 Plugins & connectors — which models can call them
+
+Plugins (Gmail, Obsidian, …) and connectors are exposed to the model as tools. A
+cloud model calls them natively; a local model can too, but speed and tool-calling
+quality depend on what fits on your hardware:
+
+| Provider | Tool calling | Speed | Offline? |
+|---|---|---|---|
+| **Claude** | ✅ native, excellent | fast | ❌ cloud |
+| **Groq / DeepSeek / OpenRouter** | ✅ native | fast | ❌ cloud |
+| **Ollama + qwen2.5:7b** | ✅ native, good | fast (on GPU) | ✅ offline |
+| **llama.cpp (gemma/nemotron 12B)** | ⚠️ weak / text-protocol | ~1 tok/s | ✅ offline |
+
+HuggingFace and Gemini do not forward tools, so plugins are unavailable on those
+two providers.
+
 ---
 
 ## ⚙️ Configuration
