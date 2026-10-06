@@ -123,7 +123,9 @@ Then in the app: **🚀 Setup → ⚡ Auto-install** (llama.cpp) → **⬇** to 
 | 🪟 Windows (browser) | `TrioForge.bat` | ⚡ Auto-install | `https://localhost:5003` |
 | 🪟 Windows (window) | `TrioForge.bat --window` | ⚡ Auto-install | own window |
 | 🐧 Linux | `run.sh` | ⚡ Auto-install | `http://localhost:5003` |
+| 🐧 Linux (window) | `run.sh --window` | ⚡ Auto-install | own window |
 | 🍎 macOS | `run.sh` | `brew install llama.cpp` or ⚡ Auto-install | `http://localhost:5003` |
+| 🍎 macOS (window) | `run.sh --window` | `brew install llama.cpp` or ⚡ Auto-install | own window |
 | 🐳 Docker | `docker/application.sh` | host llama-server via `LLAMA_HOST` | `http://localhost:5002` |
 
 **First-run setup checker** (🚀 panel) detects what's present vs missing: Ollama (manual), llama.cpp (⚡ Auto-install), voice-to-voice (⚡ Install), GGUF models (⬇), ComfyUI (optional). Nothing is hand-configured — the GPU backend, `llama-server`, ffmpeg, ComfyUI and the port are all auto-located.
@@ -415,7 +417,18 @@ It's an installable **PWA** (Android/iOS/desktop). **Host mode** (`--host`, or `
 ## 🪟 Desktop webview (webview-alt)
 
 For a native desktop window around the app, a thin **`webview-alt`** layer picks
-the right platform backend automatically — no source builds, no Docker:
+the right platform backend automatically — no source builds, no Docker.
+
+**Open it in a window:**
+
+```bash
+./run.sh --window          # Linux / macOS / WSL
+TrioForge.bat --window     # Windows
+```
+
+Same server, same data as the browser — the window is just a native frame around
+the same HTML. Running with `--window` also creates the **`TrioForge (window)`**
+shortcut, so next time you can just double-click it.
 
 | Backend | Platform | Native engine | Setup |
 |---|---|---|---|
