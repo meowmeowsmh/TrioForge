@@ -3965,6 +3965,50 @@ def _dispatch_tool(name, args):
 
 
 _TEXT_CALL_RE = re.compile(r"```tool\s*(\{.*?\})\s*```", re.S)
+# A code-oriented local model often ignores the JSON example and writes the call
+# as a function: ```tool gmail_list_inbox(query="is:unread", max=5)```. Accept it.
+_FN_CALL_RE = re.compile(r"```tool\s*([A-Za-z_][A-Za-z0-9_]*)\((.*?)\)\s*```", re.S)
+
+
+def _split_top_commas(s: str):
+    parts, cur, q = [], [], None
+    for ch in s:
+        if q:
+            cur.append(ch)
+            if ch == q:
+                q = None
+        elif ch in "\"'":
+            q = ch
+            cur.append(ch)
+        elif ch == ',':
+            parts.append(''.join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+    if ''.join(cur).strip():
+        parts.append(''.join(cur).strip())
+    return [p for p in parts if p]
+
+
+def _parse_kv_args(s: str) -> dict:
+    """Lenient ``key="value", key=5, flag`` -> dict."""
+    out = {}
+    for p in _split_top_commas(s):
+        if '=' in p:
+            k, v = p.split('=', 1)
+            k, v = k.strip(), v.strip()
+            if len(v) >= 2 and v[0] in "\"'" and v[-1] == v[0]:
+                v = v[1:-1]
+            elif v.lstrip('-').isdigit():
+                v = int(v)
+            elif v.lower() in ('true', 'false'):
+                v = v.lower() == 'true'
+            elif v.lower() in ('none', 'null') or v == '':
+                v = None
+            out[k] = v
+        elif p:
+            out[p] = True
+    return out
 
 
 def _tools_protocol_text(tools) -> str:
@@ -4001,7 +4045,12 @@ def _tools_protocol_text(tools) -> str:
 
 
 def _parse_text_calls(text: str):
-    """Pull ```tool {...}``` calls out of a reply: [(name, args)]."""
+    """Pull tool calls out of a reply: [(name, args)].
+
+    Accepts both forms a local model produces:
+      ```tool {"name": "...", "args": {...}}```   (the JSON example we show)
+      ```tool gmail_list_inbox(query="is:unread", max=5)```   (function style)
+    """
     calls = []
     for m in _TEXT_CALL_RE.finditer(text or ""):
         try:
@@ -4024,6 +4073,8 @@ def _parse_text_calls(text: str):
                 args = flat
         if name:
             calls.append((name, args if isinstance(args, dict) else {}))
+    for m in _FN_CALL_RE.finditer(text or ""):
+        calls.append((m.group(1), _parse_kv_args(m.group(2))))
     return calls
 
 
