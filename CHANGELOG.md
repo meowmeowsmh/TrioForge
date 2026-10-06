@@ -19,6 +19,13 @@ obvious in the Galaxy theme):
 The `a` rule now skips any link that carries its own background, or that is a
 `.tab-btn`; plain text links stay accented.
 
+### Your name above a message is white again
+
+The theme stylesheet painted `.msg-name` with the accent, so the name you set in your
+profile showed up bright pink instead of the white the message component intends (the
+bot's name stays its own blue). The override is gone, and the message timestamp below
+it is now readable white rather than the faint half-dim it used to be.
+
 ## [1.4.9] — search & download models, and Docker on Apple Silicon
 
 ### Search and download GGUF models from the terminal

@@ -103,7 +103,7 @@
   "static/pwa/icon-512.png": "3335491a65af909a59a781a8f1488d7c9793ef076e37e4306d1f3a9322e08122",
   "static/pwa/icon-maskable-512.png": "a4832110159ec599f8a566cb60bc89361ab7dda57e05b431bcad343b604b21e6",
   "static/theme-loader.js": "be0245f7f30854a5b52c83b865649feeccded3bd0d238831f4c1743c87e68546",
-  "static/themes.css": "edd0d277447a44025785ae56ca371949c879dd939ff9a6c905399b8ce7247886",
+  "static/themes.css": "22a20bba232c4a8d2d1f68c41ec1f82f2d99b5841f63ade03c4c65cd6dcb98cc",
   "static/vendor/atom-one-dark.min.css": "4237ffca7ce6aadb438c457e0a675b125c534bbdda5b87f41f3a1495603bcc9b",
   "static/vendor/highlight.min.js": "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846",
   "static/vendor/highlight/highlight.min.js": "73494b2994bc44c564de13f27bde34d575398c3e3168ba716fb16b9e39e1f398",
@@ -113,9 +113,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "38eff0d3c7164af7a42a079d6a11f79dbfcb6d55aa31494fbf5d24b9883efa92",
+  "templates/index.html": "597ff5d23acd99be5f62aa42ea3499fee3440c3f2cb884e4939b7519b4b41337",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-06T21:10:30",
- "note": "fix: tab links keep their colour too"
+ "generated": "2026-10-06T21:15:40",
+ "note": "fix: message name + timestamp readable white"
 }

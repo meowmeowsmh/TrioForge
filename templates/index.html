@@ -514,7 +514,10 @@ html.view-embed #liveCodePanel {
 }
 .msg .ts {
     font-size: 10px;
-    opacity: 0.5;
+    /* Full opacity + a white colour (see themes.css): the owner wants the timestamp
+       readable white, not the faint 50%-dim it used to be. */
+    opacity: 1;
+    color: #ffffff;
     margin-top: 8px;
     text-align: right;
 }

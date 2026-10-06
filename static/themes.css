@@ -356,8 +356,14 @@ html[data-theme] .conv-item.active {
     background: var(--tf-accent-soft) !important;
     border-left-color: var(--tf-accent) !important;
 }
-html[data-theme] .msg-name { color: var(--tf-accent) !important; }
-html[data-theme] .ts, html[data-theme] .msg .ts { color: var(--tf-text-dim) !important; }
+/* The message name line keeps the component's OWN colours — white for you, blue for
+   the bot (`.msg.user .msg-name` / `.msg.bot .msg-name` in index.html). Painting it
+   with the accent turned a user's own name (set in the profile) bright pink.
+   The timestamp is plain theme text, not the faint dim colour. */
+html[data-theme] .msg-name { color: inherit !important; }
+html[data-theme] .msg.user .msg-name { color: #ffffff !important; }
+html[data-theme] .msg.bot .msg-name { color: #58a6ff !important; }
+html[data-theme] .ts, html[data-theme] .msg .ts { color: var(--tf-text) !important; }
 
 /* The corkboard: keep it tactile, but tint it to the theme */
 html[data-theme] .board {
