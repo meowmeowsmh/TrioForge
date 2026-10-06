@@ -4055,7 +4055,16 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
             first["content"] = (first.get("content") or "") + "\n\n" + protocol
             messages[0] = first
         else:
-            messages.insert(0, {"role": "system", "content": protocol})
+            # Local models fold the system prompt into the user turn
+            # (include_system=False in _build_messages); a bare "system" message is
+            # ignored by their chat template, which is exactly why the tool list
+            # was never seen. Prepend to the LAST user turn instead.
+            for m in reversed(messages):
+                if m.get("role") == "user":
+                    m["content"] = protocol + "\n\n" + (m.get("content") or "")
+                    break
+            else:
+                messages.insert(0, {"role": "user", "content": protocol})
     for _ in range(max_steps):
         resp = provider.generate_raw(messages, tools=tools, **extra_kwargs)
         content = resp.get("content")
