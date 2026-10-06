@@ -5,6 +5,19 @@ GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
 ## [Unreleased]
 
+### Local models can reach plugins — no workspace needed, no tool template needed
+
+Two things had locked offline (llama.cpp) models out of plugins and connectors:
+
+- the agent only ran when a **workspace folder** was set, so Gmail/Obsidian/skills/MCP
+  — which don't need a folder — were unreachable until you created one. Workspace
+  file tools still require a folder, but plugin/connector/skill/MCP tools are now
+  offered on their own.
+- local models that ignore the native `tools` parameter (gemma-3 and friends) could
+  never call a tool. The web app now offers them the same fenced ```tool {…}```
+  text protocol the terminal client already uses, so any GGUF can reach the
+  connectors, not just models with a function-calling template.
+
 ### Links that are really controls keep their own colour
 
 The theme stylesheet coloured every `<a>` with the theme accent (`!important`), which

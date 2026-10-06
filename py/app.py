@@ -3643,11 +3643,32 @@ def _agent_tools():
     contribute the two that load their own instructions, and MCP servers bring
     whatever someone else already wrote. Assembled here so a new source cannot be
     wired into the OpenAI path and forgotten in the Claude one.
+
+    The workspace (file) tools are only offered when a workspace FOLDER is set -
+    reading and writing files needs one. Plugins, connectors, skills and MCP
+    servers do NOT need a folder, so they are always offered: gating every tool on
+    a workspace is what left a local model unable to reach Gmail/Obsidian until the
+    user happened to set one up.
     """
-    return (WORKSPACE_TOOLS
+    workspace = WORKSPACE_TOOLS if _workspace_setting(
+        _current_workspace_id(), "folder", "") else []
+    return (workspace
             + plugin_loader.collect_tools()
             + skills_loader.collect_tools()
             + mcp_client.collect_tools())
+
+
+def _agent_has_tools() -> bool:
+    """Whether ANY tool is callable here: a folder, a plugin, a skill or an MCP server.
+
+    Used to decide whether to run the agent loop at all, so a connector alone is
+    enough - the user should not have to create a workspace to use Gmail.
+    """
+    if _workspace_setting(_current_workspace_id(), "folder", ""):
+        return True
+    return bool(plugin_loader.collect_tools()
+                or skills_loader.collect_tools()
+                or mcp_client.collect_tools())
 
 
 def _tool_source(name, args):
@@ -3943,20 +3964,113 @@ def _dispatch_tool(name, args):
     return {"error": "Unknown tool: {}".format(name)}
 
 
+_TEXT_CALL_RE = re.compile(r"```tool\s*(\{.*?\})\s*```", re.S)
+
+
+def _tools_protocol_text(tools) -> str:
+    """A plain-language tool protocol for models that ignore native ``tools``.
+
+    A local GGUF model whose chat template has no tool support (gemma-3 and
+    friends) ignores the OpenAI ``tools`` array completely, so it can never reach
+    a plugin or connector. This is the same fenced ```tool {...}``` protocol the
+    terminal client uses, built from the very same schemas - so one tool set works
+    for a model that can call functions and one that can only write text.
+    """
+    out = [
+        "## Calling tools",
+        "When a tool is needed, reply with EXACTLY one fenced block and nothing else:",
+        "```tool",
+        '{"name": "<tool name>", "args": { }}',
+        "```",
+        "Then stop and wait - the result is sent back to you before you continue.",
+        "",
+        "### Available tools",
+    ]
+    for t in tools:
+        fn = t.get("function") or {}
+        props = (fn.get("parameters") or {}).get("properties") or {}
+        args = ", ".join(props) or "no arguments"
+        out.append("- `{}({})` - {}".format(fn.get("name"), args,
+                                            (fn.get("description") or "").strip()))
+    return "\n".join(out)
+
+
+def _parse_text_calls(text: str):
+    """Pull ```tool {...}``` calls out of a reply: [(name, args)]."""
+    calls = []
+    for m in _TEXT_CALL_RE.finditer(text or ""):
+        try:
+            obj = std_json.loads(m.group(1))
+        except Exception:  # noqa: BLE001 - a malformed call is simply ignored
+            continue
+        name = obj.get("name") or obj.get("tool")
+        args = obj.get("args") or obj.get("arguments") or {}
+        if isinstance(args, str):
+            try:
+                args = std_json.loads(args)
+            except Exception:  # noqa: BLE001
+                args = {}
+        if not args:
+            # Small models often put the arguments at the top level:
+            # {"name": "memory", "action": "remember", "key": "x"}
+            flat = {k: v for k, v in obj.items()
+                    if k not in ("name", "tool", "args", "arguments")}
+            if flat:
+                args = flat
+        if name:
+            calls.append((name, args if isinstance(args, dict) else {}))
+    return calls
+
+
+def _is_local_provider(provider) -> bool:
+    """True for a llama-server/Ollama on this machine (or the Docker host).
+
+    Local models are the ones that may not implement function calling, so they are
+    the ones that also need the text protocol offered.
+    """
+    url = (getattr(provider, "server_url", "")
+           or getattr(provider, "base_url", "") or "")
+    return any(h in url for h in ("127.0.0.1", "localhost", "host.docker.internal"))
+
+
 def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
     """Run an OpenAI-style tool-calling loop against an OpenAI-compatible provider.
 
     max_steps caps the number of modelâ†’tool round-trips (a "coding agent" loop:
     read, edit, run, repeat until done). 20 is enough for a multi-file task.
+
+    Local providers get BOTH: the native ``tools`` array (used when the model
+    supports it) and the text protocol in the prompt (used when it does not), so a
+    local model is never locked out of plugins just because of its chat template.
     """
     if isinstance(provider, ClaudeProvider):
         return _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps)
     messages = list(messages)
     tools = _agent_tools()
+    local = _is_local_provider(provider)
+    if local and tools:
+        protocol = _tools_protocol_text(tools)
+        if messages and messages[0].get("role") == "system":
+            first = dict(messages[0])
+            first["content"] = (first.get("content") or "") + "\n\n" + protocol
+            messages[0] = first
+        else:
+            messages.insert(0, {"role": "system", "content": protocol})
     for _ in range(max_steps):
         resp = provider.generate_raw(messages, tools=tools, **extra_kwargs)
         content = resp.get("content")
         tool_calls = resp.get("tool_calls") or []
+        if not tool_calls and local:
+            # The model wrote its call as text instead of using the tools API.
+            text_calls = _parse_text_calls(content)
+            if text_calls:
+                messages.append({"role": "assistant", "content": content or ""})
+                for name, args in text_calls:
+                    result = _execute_tool(name, args)
+                    messages.append({"role": "user", "content":
+                                     '<tool_result name="{}">\n{}\n</tool_result>'.format(
+                                         name, std_json.dumps(result, ensure_ascii=False))})
+                continue
         if not tool_calls:
             return content or ""
         assistant = {"role": "assistant", "content": content}
@@ -5106,7 +5220,7 @@ def chat():
             extra_kwargs['low_vram'] = mem_settings['low_vram']
 
         use_tools = (not images and not videos and not audio_files) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
-            and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
+            and _agent_has_tools()
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
         # so the user never has to launch it manually.
@@ -5388,7 +5502,7 @@ def chat_stream():
             if videos and _model_has_audio(provider_name, model):
                 transcription_sources.extend(_with_source_path(v) for v in videos)
         use_tools = (not vision_images and not audio_files and not transcription_sources) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
-            and bool(_workspace_setting(_current_workspace_id(), "folder", ""))
+            and _agent_has_tools()
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
         # so the user never has to launch it manually. This MUST happen in the
