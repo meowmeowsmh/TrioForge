@@ -633,6 +633,49 @@ def test_router_repair_is_complex() -> None:
     print("  repair verbs route complex, grammar/hello stay simple -> OK")
 
 
+def test_launcher_recognises_its_own_exe() -> None:
+    """The single-instance guard must recognise the SHIPPED launcher's name.
+
+    The allow-list in _pid_is_our_app() read "triorforge.exe" - one extra 'r', 14
+    characters where the real file is 13. _pid_is_our_app() therefore always
+    returned False for the launcher that actually ships, so:
+      * the single-instance guard never fired,
+      * every second click deleted the marker and started a WHOLE second instance,
+      * the two fought over port 5003 and the one locked WebView2 profile, so
+        neither window painted - the reported "I launch it and it does not respond".
+
+    test_window_slot_is_exclusive() did not catch it because it plays the live
+    owner with sys.executable (python.exe), which IS in the list. This test uses
+    the real launcher name, which is the string that was wrong.
+    """
+    _title("launcher recognises its own executable")
+    from tools import app_window, autostart
+
+    names = app_window._OUR_EXE_NAMES
+    assert "python.exe" in names and "pythonw.exe" in names, names
+
+    # The launcher name must be DERIVED from the product name, so the typo that
+    # caused this cannot be reintroduced. Any literal here is a future outage.
+    derived = [n for n in names if n not in ("python.exe", "pythonw.exe")]
+    assert derived == [app_window.APP_NAME.lower() + ".exe"], derived
+    assert app_window.APP_NAME == autostart.APP_NAME, (
+        app_window.APP_NAME, autostart.APP_NAME)
+
+    # And it must match the launcher that actually ships on disk.
+    root = Path(__file__).resolve().parent.parent
+    shim = root / ".venv" / "Scripts" / (app_window.APP_NAME + ".exe")
+    if shim.is_file():
+        assert shim.name.lower() in names, (shim.name, names)
+        assert len(shim.name) == len(app_window.APP_NAME) + 4, shim.name
+    else:
+        # No shim on this machine: the derivation still has to be self-consistent.
+        assert (app_window.APP_NAME + ".exe").lower() in names, names
+
+    print("  allow-list derives {!r} and matches the shipped launcher -> OK".format(
+        app_window.APP_NAME.lower() + ".exe"))
+
+
+# ---------------------------------------------------------------------------
 def test_window_slot_is_exclusive() -> None:
     _title("one app window only")
     import subprocess
@@ -1733,6 +1776,7 @@ def main() -> int:
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
+             test_launcher_recognises_its_own_exe,
              test_deepseek_catalog, test_design_feature, test_workspace_path_guard,
              test_design_persists_in_conversation, test_design_artifacts_listing,
              test_design_run_terminal, test_design_runner_languages,

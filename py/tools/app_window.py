@@ -181,6 +181,25 @@ def window_pid_file() -> Path:
     return user_data_dir().parent / "app_window.pid"
 
 
+#: Product name - matches py/tools/autostart.py and shortcuts.py.
+APP_NAME = "TrioForge"
+
+#: Image names that count as "our app" when checking whether the pid in the window
+#: marker is really a TrioForge window. The launcher ships as TrioForge.exe; a dev
+#: run may be pythonw.exe or python.exe. sys.executable's own name is also added at
+#: call time, so a renamed or custom-built launcher is still recognised.
+#:
+#: The launcher name is DERIVED, never written out. A hard-coded "triorforge.exe"
+#: carried an extra 'r' (14 characters where the real file is 13), so the SHIPPED
+#: launcher never matched its own marker: _pid_is_our_app() always returned False,
+#: the single-instance guard never fired, and every second click deleted the marker
+#: and started a whole second instance. The two then fought over port 5003 and the
+#: one locked WebView2 profile, so neither window painted - the reported "I launch
+#: it and it does not respond". Building it from APP_NAME makes that typo
+#: impossible, and a regression test pins it against the real file on disk.
+_OUR_EXE_NAMES = ("pythonw.exe", "python.exe", APP_NAME.lower() + ".exe")
+
+
 def _pid_is_our_app(pid: int) -> bool:
     """True when `pid` really is a TrioForge/pywebview process, not a reused pid.
 
@@ -202,7 +221,12 @@ def _pid_is_our_app(pid: int) -> bool:
             buf = ctypes.create_unicode_buffer(size.value)
             if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
                 name = os.path.basename(buf.value).lower()
-                return name in ("pythonw.exe", "python.exe", "triorforge.exe")
+                ours = set(_OUR_EXE_NAMES)
+                try:
+                    ours.add(os.path.basename(sys.executable).lower())
+                except Exception:
+                    pass
+                return name in ours
         finally:
             k32.CloseHandle(handle)
     except Exception:
