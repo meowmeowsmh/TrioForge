@@ -313,6 +313,29 @@ def _voice_agent_ready():
         return False
 
 
+def _deepseek_harness():
+    """(path, version) for DeepSeek Harness, or (None, "") when it is not installed.
+
+    Reuses the plugin's own detector so the 🔌 panel and the 🚀 panel can never
+    disagree about what is installed (it already knows that Debian/Ubuntu ship a
+    different program called `dsh`). A broken plugin just reads as "not found".
+    """
+    try:
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "plugins", "deepseek_harness.py")
+        spec = importlib.util.spec_from_file_location("trioforge_plugin_deepseek_harness", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        exe = mod._find_dsh()
+        if not exe:
+            return None, ""
+        ver = mod._dsh_version(exe)
+        return exe, (".".join(str(x) for x in ver) if ver else "installed")
+    except Exception:
+        return None, ""
+
+
 def check_all():
     """Return the full setup status list."""
     items = []
@@ -400,6 +423,20 @@ def check_all():
         "required": True,
         "hint": ("Voice-to-voice ships with llama.cpp. Install the speech-to-speech package "
                  "(⚡ Install) to talk to the app by voice. It runs on its own port 8082."),
+    })
+
+    # 6. DeepSeek Harness (optional — hand a whole task to the dsh agent)
+    dsh_path, dsh_version = _deepseek_harness()
+    items.append({
+        "id": "deepseek-harness",
+        "name": "DeepSeek Harness (dsh)",
+        "status": "ok" if dsh_path else "missing",
+        "detail": ("dsh {} — {}".format(dsh_version, dsh_path)) if dsh_path
+                  else "Not found on PATH or in the npx cache",
+        "url": "https://www.npmjs.com/package/@deepseek-ai/dsh",
+        "required": False,
+        "hint": ("Optional. Install DeepSeek Harness (npm/npx) to let the agent hand a "
+                 "whole task to dsh with the dsh_run tool."),
     })
 
     return items

@@ -40,6 +40,9 @@ MANIFEST = {
     "title": "DeepSeek Harness",
     "version": "1.0.0",
     "description": "Delegate a whole task to the DeepSeek Harness coding agent (dsh).",
+    # Not a connector: dsh is a local tool, not a service you sign into. Whether
+    # the dsh binary is present is detected by the 🚀 Setup panel (setup_check.py),
+    # which reuses this plugin's own _find_dsh()/_dsh_version().
 }
 
 TOOLS = [
