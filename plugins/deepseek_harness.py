@@ -68,16 +68,42 @@ TOOLS = [
 ]
 
 
+def _is_deepseek_harness(exe):
+    """True only for DeepSeek Harness.
+
+    Debian/Ubuntu ship a DIFFERENT program also called ``dsh`` — "Distributed
+    Shell / Dancer's shell" — which is first on PATH and answers
+    "dsh: no machine specified" to anything it is given. Checking the version
+    banner keeps us from driving that one by mistake.
+    """
+    try:
+        p = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=15)
+        out = ((p.stdout or "") + (p.stderr or "")).lower()
+    except Exception:
+        return False
+    if not out.strip():
+        return False
+    return "dancer" not in out and "distributed shell" not in out
+
+
 def _find_dsh():
-    """The dsh launcher: PATH first, then the npx cache."""
-    exe = shutil.which("dsh")
-    if exe:
-        return exe
+    """The DeepSeek Harness launcher: the npx cache first, then a verified PATH dsh."""
     for pattern in _NPX_GLOBS:
-        for cand in sorted(glob.glob(pattern)):
+        for cand in sorted(glob.glob(pattern), reverse=True):
             if os.path.isfile(cand):
                 return cand
+    exe = shutil.which("dsh")
+    if exe and _is_deepseek_harness(exe):
+        return exe
     return None
+
+
+def _conflicting_dsh():
+    """A different `dsh` on PATH (Dancer's shell), when there is one."""
+    exe = shutil.which("dsh")
+    if exe and not _is_deepseek_harness(exe):
+        return exe
+    return ""
 
 
 def _dsh_home():
@@ -101,6 +127,7 @@ def _status():
         "profiles": profs,
         "headless_ready": "headless" in profs,
         "dsh_home": _dsh_home(),
+        "conflicting_dsh": _conflicting_dsh(),
     }
 
 
