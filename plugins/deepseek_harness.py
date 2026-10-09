@@ -10,9 +10,10 @@ and exits:
 
     dsh headless "run the tests"
 
-Setup (once, on the machine that runs TrioForge):
-    dsh headless --from-default-profile web     # create the profile if missing
-    dsh --version                              # sanity check it is on PATH
+`headless` is a SHIPPED profile — there is nothing to create or configure first,
+and `--from-default-profile` is rejected for it ("shipped and cannot be a custom
+profile target"). Just run it. The only real prerequisites are that `dsh` is
+installed and its credentials are already set up (the ones the web profile uses).
 
 The task runs synchronously and can take minutes, so the tool takes a timeout and
 returns whatever dsh printed. Each call spends DeepSeek tokens — it is a
@@ -157,7 +158,9 @@ def _status():
         "installed": bool(exe),
         "path": exe or "",
         "profiles": profs,
-        "headless_ready": "headless" in profs,
+        # `headless` is a shipped profile, so it is always available even when it
+        # has never been run and has no directory under $DSH_HOME/profiles yet.
+        "headless_available": True,
         "dsh_home": _dsh_home(),
         "conflicting_dsh": _conflicting_dsh(),
     }
@@ -175,12 +178,9 @@ def _run(task, timeout):
     except (TypeError, ValueError):
         timeout = DEFAULT_TIMEOUT
 
-    st = _status()
-    if not st["headless_ready"]:
-        return {"error": "the 'headless' profile does not exist yet. Create it once with:\n"
-                         "  dsh headless --from-default-profile web",
-                "profiles": st["profiles"]}
-
+    # No profile check: `headless` ships with dsh and is never created by hand
+    # (--from-default-profile refuses it as a shipped profile). A missing local
+    # profile dir means "not run yet", not "not set up".
     try:
         proc = subprocess.run([exe, "headless", str(task).strip()],
                               capture_output=True, text=True, timeout=timeout,
@@ -211,8 +211,10 @@ def dispatch(tool_name, args):
         st = _status()
         if not st["installed"]:
             return {"summary": "DeepSeek Harness (dsh) is NOT installed / not found."}
-        return dict(st, summary="DeepSeek Harness found at {}. Profiles: {}.{}".format(
-            st["path"], ", ".join(st["profiles"]) or "(none)",
-            "" if st["headless_ready"] else " No 'headless' profile yet — create it with "
-            "'dsh headless --from-default-profile web'."))
+        summary = ("DeepSeek Harness found at {}. dsh_run works out of the box — the "
+                   "headless profile ships with dsh, nothing to create.").format(st["path"])
+        if st.get("conflicting_dsh"):
+            summary += (" Note: a DIFFERENT program named dsh is on PATH ({}); this "
+                        "plugin ignores it.").format(st["conflicting_dsh"])
+        return dict(st, summary=summary)
     return {"error": "unknown tool " + str(tool_name)}
