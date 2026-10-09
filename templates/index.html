@@ -9350,7 +9350,8 @@ function renderConnectorCard(box, c) {
                   errBox.style.cssText = 'font-size:11px; color:#f0883e; margin-top:8px; line-height:1.5;';
                   card.insertBefore(errBox, actions);
               }
-              // Show the declared settings when the connector needs them filled in.
+          }
+          // Show the declared settings when the connector needs them filled in.
               // `needs_client` is Gmail's older name for the same idea - kept so an
               // existing connector keeps working.
               // The fields are ALWAYS built and only HIDDEN once the connector looks
@@ -9415,7 +9416,6 @@ function renderConnectorCard(box, c) {
                   btn.onclick = function() { connectConnector(c.id); };
                   actions.appendChild(btn);
               }
-          }
           // Disconnect whenever there is something to clear — a live sign-in OR
           // saved app credentials. Without the second case, a connector set up with
           // the wrong Client ID/Secret showed no Disconnect button at all.

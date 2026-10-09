@@ -113,9 +113,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "451fee77e5d8470ee4c44094fe01d6ba23b3d3a494417f3abf175c5676f6ef26",
+  "templates/index.html": "113c3a4e48f1ff307afc2849b01c5b144e696488fdb2e4d6ae8453012b8fa9d5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T04:25:03",
- "note": "connectors: drop back links, show Disconnect when configured"
+ "generated": "2026-10-10T04:26:10",
+ "note": "connectors: Change keys available on connected cards too (gmail)"
 }
