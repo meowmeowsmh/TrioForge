@@ -10008,7 +10008,10 @@ if ('serviceWorker' in navigator) {
   <div style="background:#14141c; border:1px solid #333; border-radius:12px; padding:20px; width:min(520px, 94vw);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
       <strong style="font-size:16px;">🔌 Connectors</strong>
-      <button onclick="closeConnectorsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button onclick="loadConnectors()" title="Re-check every connector now" style="background:transparent;border:1px solid #333;color:#58a6ff;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">🔄 Reload</button>
+        <button onclick="closeConnectorsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+      </div>
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">Connect services so the AI can read and use them when you ask.</p>
     <div id="connectorsList" style="max-height:60vh; overflow:auto;"></div>
