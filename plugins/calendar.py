@@ -41,14 +41,23 @@ MANIFEST = {
     "description": "Sign in with Google so the agent can read your calendar.",
     "connector": True,
     "credentials": [
-        {
-            "key": "oauth_client_id",
-            "label": "Google Client ID (one-time app setup)",
-            "type": "password",
-            "placeholder": "….apps.googleusercontent.com",
-            "hint": "Separate from Gmail — Gmail and Calendar are different services, "
-                    "so this connector has its own Google app and sign-in.",
-        },
+        {"key": "oauth_client_id", "label": "Google Client ID (one-time app setup)",
+         "type": "text", "placeholder": "….apps.googleusercontent.com"},
+        {"key": "oauth_client_secret", "label": "Google Client Secret", "type": "password",
+         "placeholder": "GOCSPX-…"},
+    ],
+    "guide": [
+        "1. console.cloud.google.com -> create a project (or reuse your Gmail project), "
+        "and stay in THAT project for every step below.",
+        "2. APIs & Services -> Library -> search 'Google Calendar API' -> ENABLE.",
+        "3. Google Auth Platform -> Audience -> Test users -> add YOUR OWN Gmail address "
+        "-> Save. (Skip this and Google answers with 'access_denied'.)",
+        "4. Credentials -> + Create credentials -> OAuth client ID -> type: Web application.",
+        "5. Authorized redirect URIs -> + ADD URI -> paste exactly "
+        "https://127.0.0.1:5003/api/connectors/calendar/oauth2callback -> then click SAVE.",
+        "6. Copy the Client ID + Client secret, paste them here -> Save app.",
+        "7. Click 'Sign in with Google' -> pick your account -> Continue. The tab then "
+        "says 'Calendar connected'.",
     ],
 }
 
