@@ -161,3 +161,6 @@ backups/
 # scratch config dir the regression suite uses when FORGE_CONFIG_DIR is unset
 tests/.tmp/
 
+# Local WebKitGTK Docker build (unrelated to TrioForge — personal experiment)
+webkit-build/
+
