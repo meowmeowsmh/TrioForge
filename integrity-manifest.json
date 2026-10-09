@@ -116,6 +116,6 @@
   "templates/index.html": "e199e37d1f53ff189aaaab1720087d0272a39dda0b2f79bc2c0c86ac839ed888",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T03:43:08",
- "note": "connector card: one-click Enable the API button"
+ "generated": "2026-10-10T03:48:05",
+ "note": "calendar: create/read/delete events (read-write scope)"
 }

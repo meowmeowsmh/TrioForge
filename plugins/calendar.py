@@ -28,7 +28,7 @@ _CRED_PATH = os.path.join(REPO_ROOT, "json_configuration", "calendar_credentials
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
 CAL_API = "https://www.googleapis.com/calendar/v3/"
-SCOPES = "https://www.googleapis.com/auth/calendar.readonly"
+SCOPES = "https://www.googleapis.com/auth/calendar.events"
 
 # ── Bake the app in here to make the fields disappear for ever ────────────────
 DEFAULT_CLIENT_ID = ""
@@ -38,7 +38,7 @@ MANIFEST = {
     "name": "calendar",
     "title": "Google Calendar",
     "version": "1.0.0",
-    "description": "Sign in with Google so the agent can read your calendar.",
+    "description": "Sign in with Google so the agent can read and schedule events on your calendar.",
     "connector": True,
     # One click in the 🔌 panel opens this to enable the Calendar API in Google Cloud.
     "enable_url": "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com",
@@ -76,6 +76,64 @@ TOOLS = [
                     "days": {"type": "integer", "description": "how many days ahead to look (default 7)"},
                     "query": {"type": "string", "description": "optional search text (matches summary/location)"},
                 },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calendar_create_event",
+            "description": "Create an event on the user's primary calendar. Give a title and a start time as an ISO datetime or a date (end defaults to start + 1 hour).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string", "description": "event title"},
+                    "start": {"type": "string", "description": "start time — ISO '2026-10-10T15:00' or a date '2026-10-10'"},
+                    "end": {"type": "string", "description": "optional end time (defaults to start + 1 hour)"},
+                    "description": {"type": "string", "description": "optional event description"},
+                    "location": {"type": "string", "description": "optional location"},
+                },
+                "required": ["summary", "start"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calendar_quick_add",
+            "description": "Create an event from one natural-language line, e.g. 'Lunch with Sam tomorrow at noon'. Google parses the time itself.",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "description": "the event as one line"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calendar_read_event",
+            "description": "Read one event by its id (from calendar_list_events).",
+            "parameters": {
+                "type": "object",
+                "properties": {"event_id": {"type": "string", "description": "event id"}},
+                "required": ["event_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calendar_delete_event",
+            "description": "Delete an event by id (from calendar_list_events).",
+            "parameters": {
+                "type": "object",
+                "properties": {"event_id": {"type": "string", "description": "event id"}},
+                "required": ["event_id"],
                 "additionalProperties": False,
             },
         },
@@ -188,15 +246,20 @@ def _access_token():
     return data.get("access_token"), None
 
 
-def _api(path, params=None):
+def _request(method, path, params=None, body=None):
     tok, err = _access_token()
     if tok is None:
         return None, err
-    r = requests.get(CAL_API + path, headers={"Authorization": "Bearer " + tok},
-                     params=params or {}, timeout=30)
-    if r.status_code != 200:
-        return None, "Calendar API {}: {}".format(r.status_code, r.text[:200])
-    return r.json(), None
+    r = requests.request(method, CAL_API + path,
+                         headers={"Authorization": "Bearer " + tok},
+                         params=params or {}, json=body, timeout=30)
+    if r.status_code not in (200, 201, 204):
+        return None, "Calendar API {} {}: {}".format(method, r.status_code, r.text[:200])
+    return (r.json() if r.content else {}), None
+
+
+def _api(path, params=None):
+    return _request("GET", path, params=params)
 
 
 # ── tools ─────────────────────────────────────────────────────────────────────
@@ -240,6 +303,68 @@ def _list_events(query, max_results, days):
         return {"error": err}
     return {"events": [_event_dict(e) for e in data.get("items", [])],
             "count": len(data.get("items", []))}
+
+
+def _parse_iso(text):
+    """ISO datetime or date -> timezone-aware datetime, or None."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2}))?", text)
+    if not m:
+        return None
+    y, mo, d, h, mi = m.groups()
+    return datetime(int(y), int(mo), int(d), int(h or 0), int(mi or 0), tzinfo=timezone.utc)
+
+
+def _create_event(summary, start, end, description, location):
+    if not summary or not str(summary).strip():
+        return {"error": "summary is required"}
+    start_dt = _parse_iso(start)
+    if start_dt is None:
+        return {"error": "start must be an ISO datetime ('2026-10-10T15:00') or a date ('2026-10-10')"}
+    end_dt = _parse_iso(end) if end else (start_dt + timedelta(hours=1))
+    body = {
+        "summary": str(summary).strip(),
+        "start": {"dateTime": _rfc3339(start_dt)},
+        "end": {"dateTime": _rfc3339(end_dt)},
+    }
+    if description:
+        body["description"] = str(description)
+    if location:
+        body["location"] = str(location)
+    data, err = _request("POST", "calendars/primary/events", body=body)
+    if err:
+        return {"error": err}
+    return {"ok": True, "event": _event_dict(data), "htmlLink": data.get("htmlLink", "")}
+
+
+def _quick_add(text):
+    if not text or not str(text).strip():
+        return {"error": "text is required"}
+    data, err = _request("POST", "calendars/primary/events/quickAdd",
+                         params={"text": str(text).strip()})
+    if err:
+        return {"error": err}
+    return {"ok": True, "event": _event_dict(data), "htmlLink": data.get("htmlLink", "")}
+
+
+def _read_event(event_id):
+    if not event_id:
+        return {"error": "event_id is required"}
+    data, err = _api("calendars/primary/events/" + str(event_id))
+    if err:
+        return {"error": err}
+    return {"event": _event_dict(data), "htmlLink": data.get("htmlLink", "")}
+
+
+def _delete_event(event_id):
+    if not event_id:
+        return {"error": "event_id is required"}
+    data, err = _request("DELETE", "calendars/primary/events/" + str(event_id))
+    if err:
+        return {"error": err}
+    return {"ok": True, "deleted": str(event_id)}
 
 
 def _status():
@@ -287,12 +412,21 @@ def dispatch(tool_name, args):
     args = args or {}
     if tool_name == "calendar_list_events":
         return _list_events(args.get("query"), args.get("max"), args.get("days"))
+    if tool_name == "calendar_create_event":
+        return _create_event(args.get("summary"), args.get("start"), args.get("end"),
+                             args.get("description"), args.get("location"))
+    if tool_name == "calendar_quick_add":
+        return _quick_add(args.get("text"))
+    if tool_name == "calendar_read_event":
+        return _read_event(args.get("event_id"))
+    if tool_name == "calendar_delete_event":
+        return _delete_event(args.get("event_id"))
     if tool_name == "calendar_status":
         st = _status()
         if st.get("connected"):
             return {"connected": True, "account": st.get("account"),
-                    "summary": "Google Calendar IS signed in as {}. You can list events "
-                               "right now — call calendar_list_events.".format(st.get("account"))}
+                    "summary": "Google Calendar IS signed in as {}. You can list, read, "
+                               "create and delete events right now.".format(st.get("account"))}
         return {"connected": False,
                 "summary": "Google Calendar is not signed in yet. Ask the user to connect "
                            "it in the Connectors panel."}
