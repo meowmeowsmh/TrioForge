@@ -9328,13 +9328,6 @@ function renderConnectorCard(box, c) {
         cBtn.onclick = function() { window.open(c.consent_url, '_blank'); };
         card.appendChild(cBtn);
     }
-    // A back link on every connector card — return to the app.
-    var backBtn = document.createElement('button');
-    backBtn.textContent = '← back';
-    backBtn.title = 'Close this panel';
-    backBtn.style.cssText = 'background:transparent;border:none;color:#8b949e;cursor:pointer;font-size:12px;margin-top:8px;padding:0;';
-    backBtn.onclick = function() { closeConnectorsModal(); };
-    card.appendChild(backBtn);
     box.appendChild(card);
 
     // Generic: each connector has /api/connectors/<id>/status and /auth.
@@ -9422,7 +9415,11 @@ function renderConnectorCard(box, c) {
                   btn.onclick = function() { connectConnector(c.id); };
                   actions.appendChild(btn);
               }
-          } else {
+          }
+          // Disconnect whenever there is something to clear — a live sign-in OR
+          // saved app credentials. Without the second case, a connector set up with
+          // the wrong Client ID/Secret showed no Disconnect button at all.
+          if (st.connected || st.configured) {
               var disc = document.createElement('button');
               disc.textContent = 'Disconnect';
               disc.style.cssText = 'background:#1c1c26;border:1px solid #333;color:#f0883e;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;';
