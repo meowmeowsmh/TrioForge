@@ -3,7 +3,40 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
+## [1.5.0] — plugins, connectors & DeepSeek Harness
+
+### Plugins, skills & MCP — one inventory
+
+A full extension system, gathered in one 🧩 **Plugins** panel (and `/plugins` in the terminal):
+
+- **plugins** — a single `.py` file in `plugins/` exposes agent tools (`TOOLS` + a
+  `dispatch(name, args)` callable), plus an optional `register(app)` for HTTP routes.
+- **skills** — Markdown instruction packs in `skills/`; only their name/description is
+  advertised until the model opts in with `use_skill`.
+- **MCP** — external servers are borrowed as tools (`mcp__server__tool`), with enable/disable.
+- A browsable **catalog**, install-by-Git-URL/folder, and a failed extension is shown as
+  *broken*, not silently missing.
+
+### Connectors — Gmail, Obsidian, Google Calendar
+
+- **Gmail** — `gmail_list_inbox` / `gmail_read_message` / `gmail_status`, through real
+  "Sign in with Google" OAuth (with an App Password over IMAP fallback). Credentials stay
+  local-only; disconnecting keeps the one-time Google app.
+- **Obsidian** — read, search and write notes in a local vault (fully offline — just a folder path).
+- **Google Calendar** — `calendar_list_events` / `calendar_status`, its own OAuth app,
+  kept deliberately separate from Gmail.
+
+### DeepSeek Harness plugin
+
+`dsh_run` / `dsh_status` hand a whole coding task to DeepSeek Harness (`dsh headless`) and
+read back the finished result. It ships **disabled by default** (enable it in the 🧩 Plugins
+panel to use) and is detected in the 🚀 Setup panel — which also ignores the unrelated
+Debian program that happens to be called `dsh`.
+
+### Docker launcher: backup, restore, download, update
+
+`docker/application.sh` gained `--backup`, `--restore <tar.gz>`, `--download "<query>"` (they
+work even without Docker), and `--update` now does `git pull --ff-only` + rebuild + `up -d`.
 
 ### Local models can reach plugins — no workspace needed, no tool template needed
 
@@ -38,6 +71,15 @@ The theme stylesheet painted `.msg-name` with the accent, so the name you set in
 profile showed up bright pink instead of the white the message component intends (the
 bot's name stays its own blue). The override is gone, and the message timestamp below
 it is now readable white rather than the faint half-dim it used to be.
+
+### Timestamps & the desktop window
+
+- History timestamps that came back as raw ISO (`2026-09-28T00:56:07.893032`) now render
+  as `Sep 28, 2026 · 12:56 AM`.
+- A one-character typo had disabled the Windows single-instance guard, so a second launch
+  fought the first over the port and neither painted — fixed, and covered by a regression test.
+- `--window` on Linux now checks for the WebKitGTK engine up front and prints exactly what
+  to install instead of dying with an opaque GTK error.
 
 ## [1.4.9] — search & download models, and Docker on Apple Silicon
 

@@ -6,7 +6,7 @@
 
 ![A chat answer imported onto the corkboard as a pin, rewritten by the local model, then linked to another pin](demo.gif)
 
-**What it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), a file-editing coding agent with a live diff panel, a **full-screen terminal client (`trioforge`)** with its own agent and file tools, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation — on Windows / macOS / Linux / WSL / Docker, installable on your phone.
+**What it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), connectors that let the agent read your Gmail, Google Calendar and Obsidian notes, a plugins/skills/MCP system, a file-editing coding agent with a live diff panel, a **full-screen terminal client (`trioforge`)** with its own agent and file tools, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation — on Windows / macOS / Linux / WSL / Docker, installable on your phone.
 
 **How it opens** — double-click **`TrioForge.bat`** (Windows) or run **`./run.sh`** (Linux/macOS/WSL): the server starts hidden and the app opens in your browser. Add **`--window`** for a real window of its own. There is **no `.exe` to download** — it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
 
@@ -14,6 +14,19 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 
 **Jump to:** [Start](#-start) · [Quick start](#-quick-start) · [Model folders](#-model-folders) · [Terminal client](#-the-terminal-client--forge) · [Features](#-features) · [Configuration](#-configuration) · [Workspaces](#-workspaces--folder-access) · [Generation](#-image-video--audio-generation) · [Remote access](#-remote-access) · [Docker](#-docker) · [Your data](#-where-your-data-lives) · [Project structure](#-project-structure)
+
+---
+
+## 🆕 What's new in 1.5 — plugins, connectors & DeepSeek Harness
+
+**1.5 turns the agent from "talks about things" into "does things."** It can now read your email, calendar and notes — and hand a whole coding task to DeepSeek Harness:
+
+- **🧩 Plugins, skills & MCP** — one inventory panel. A plugin is a single `.py` file that exposes tools; a skill is a Markdown instruction pack; an MCP server is borrowed as tools. Browse a catalog, enable/disable, install by Git URL or folder.
+- **✉️ Gmail connector** — "Sign in with Google" and the agent reads your inbox (`gmail_list_inbox`, `gmail_read_message`).
+- **📝 Obsidian connector** — read/search/write notes in a local vault (fully offline).
+- **🗓️ Google Calendar connector** — `calendar_list_events` / `calendar_status`.
+- **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
+- **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` text protocol covers models without native function calling, and no workspace folder is required.
 
 ---
 
