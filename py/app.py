@@ -5039,6 +5039,7 @@ def api_connectors():
             "credentials": p.get("credentials") or [],
             "guide": p.get("guide") or [],
             "enable_url": p.get("enable_url") or "",
+            "consent_url": p.get("consent_url") or "",
         })
     return jsonify({"connectors": items})
 

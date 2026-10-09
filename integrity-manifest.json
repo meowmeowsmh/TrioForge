@@ -16,7 +16,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "b57f0af65b9eff17225a51128116d645066252142ae2846a0ca6f9ac32358b59",
+  "py/app.py": "d8340935047c6aef982cc2f2370913a32f24138778969fc9a1a913e6c8d6be9b",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -46,7 +46,7 @@
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
-  "py/plugin_loader.py": "eacf2240becf9744810c5e1de1929fb36b11ab8ac330a134cfd4466fb6e22980",
+  "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "c016ff65882866bd7de20a96d3da11a2db9a51ca90b917208e5285a40f2883f3",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
@@ -113,9 +113,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "13b756613f07059e56b32b77777972e85e6685e78efcec579b49b31f4e56767c",
+  "templates/index.html": "32a81ab5b1c3df688b44671e2888c8c523638721875fcf620eed1b46199b4dc4",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T03:59:00",
- "note": "connectors panel: add a Back button"
+ "generated": "2026-10-10T04:04:32",
+ "note": "connector card: OAuth consent screen button (Test users / Publish)"
 }

@@ -42,6 +42,8 @@ MANIFEST = {
     "connector": True,
     # One click in the 🔌 panel opens this to enable the Calendar API in Google Cloud.
     "enable_url": "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com",
+    # OAuth consent screen: add Test Users (private) or Publish the app (public).
+    "consent_url": "https://console.cloud.google.com/auth/audience",
     "credentials": [
         {"key": "oauth_client_id", "label": "Google Client ID (one-time app setup)",
          "type": "text", "placeholder": "….apps.googleusercontent.com"},

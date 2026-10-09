@@ -102,6 +102,7 @@ def _load_plugin(path: str) -> dict:
         "connector": is_connector,
         "guide": manifest.get("guide") or [],
         "enable_url": manifest.get("enable_url") or "",
+        "consent_url": manifest.get("consent_url") or "",
     }
 
 

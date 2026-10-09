@@ -9319,6 +9319,15 @@ function renderConnectorCard(box, c) {
         eBtn.onclick = function() { window.open(c.enable_url, '_blank'); };
         card.appendChild(eBtn);
     }
+    // OAuth consent screen: add Test Users (private) or Publish (public).
+    if (c.consent_url) {
+        var cBtn = document.createElement('button');
+        cBtn.textContent = '🌐 OAuth consent screen';
+        cBtn.title = 'Add Test Users (private) or click "Publish app" (public)';
+        cBtn.style.cssText = 'background:transparent;border:1px solid #333;color:#58a6ff;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;margin-top:6px;display:block;';
+        cBtn.onclick = function() { window.open(c.consent_url, '_blank'); };
+        card.appendChild(cBtn);
+    }
     box.appendChild(card);
 
     // Generic: each connector has /api/connectors/<id>/status and /auth.
@@ -9983,9 +9992,6 @@ if ('serviceWorker' in navigator) {
     </div>
     <p style="font-size:12px; color:#8b949e; margin:0 0 14px;">Connect services so the AI can read and use them when you ask.</p>
     <div id="connectorsList" style="max-height:60vh; overflow:auto;"></div>
-    <div style="margin-top:14px; text-align:right;">
-      <button onclick="closeConnectorsModal()" style="background:transparent;border:1px solid #333;color:#e1e4e8;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;">← Back</button>
-    </div>
   </div>
 </div>
 

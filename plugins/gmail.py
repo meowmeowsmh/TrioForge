@@ -56,6 +56,8 @@ MANIFEST = {
     "connector": True,
     # One click in the 🔌 panel opens this to enable the Gmail API in Google Cloud.
     "enable_url": "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
+    # OAuth consent screen: add Test Users (private) or Publish the app (public).
+    "consent_url": "https://console.cloud.google.com/auth/audience",
     # Rendered by the Connectors panel. This is the one-time APP setup, not a
     # per-user login - after it is saved, users only ever click Sign in with Google.
     "credentials": [
