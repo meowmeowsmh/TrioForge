@@ -116,6 +116,6 @@
   "templates/index.html": "419d05aafea226e84e0cd1c61704406f26da66344cdba80cdefacdf05c3d1b59",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T02:23:04",
- "note": "add Google Calendar connector"
+ "generated": "2026-10-10T02:36:13",
+ "note": "calendar: expose can_sign_in/sign_in_label"
 }

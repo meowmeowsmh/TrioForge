@@ -237,19 +237,27 @@ def _list_events(query, max_results, days):
 
 
 def _status():
+    """Status plus the two flags the connector card renders from.
+
+    Mirrors gmail.py: ``can_sign_in`` shows the Sign-in button and
+    ``sign_in_label`` is its text — without them the card says "Not connected"
+    but offers no way to actually connect.
+    """
     cfg = _cfg()
     cid, secret = _oauth_client()
+    st = {"connected": False, "configured": bool(cid and secret)}
     if cfg.get("refresh_token") and cid:
         data, err = _api("calendars/primary")
         if err:
-            return {"connected": False, "configured": True, "error": err}
-        return {"connected": True, "configured": True, "method": "oauth",
-                "account": data.get("id")}
-    if cid and secret:
-        return {"connected": False, "configured": True}
-    return {"connected": False, "configured": False,
-            "hint": "Set the Google app once (shared with Gmail), then click "
-                    "Sign in with Google."}
+            st["configured"] = True
+            st["error"] = err
+        else:
+            st["connected"] = True
+            st["method"] = "oauth"
+            st["account"] = data.get("id")
+    st["can_sign_in"] = bool(st.get("configured")) and not bool(st.get("connected"))
+    st["sign_in_label"] = "🔗 Sign in with Google"
+    return st
 
 
 def connect_info():
