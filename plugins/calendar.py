@@ -1,18 +1,17 @@
 # calendar.py — a TrioForge PLUGIN that gives the agent a Google Calendar connector.
 #
 # Same OAuth pattern as gmail.py: click "Sign in with Google", pick an account, Allow.
-# The one-time Google app (Client ID + Secret) is SHARED with the Gmail connector, so
-# if Gmail is already set up, Calendar just needs one extra "Sign in" click — Google
-# asks for the calendar.readonly scope on top of the gmail.readonly one already granted.
+# Gmail and Calendar are different Google services, so this connector is kept fully
+# SEPARATE from Gmail — its own Google app (Client ID + Secret) and its own token.
 #
-# One-time app setup (only if Gmail is not set up yet):
-#   1. console.cloud.google.com -> new project
+# One-time app setup (~5 minutes, once):
+#   1. console.cloud.google.com -> new project (or reuse your Gmail project)
 #   2. APIs & Services -> Library -> enable "Google Calendar API"
 #   3. OAuth consent screen -> add yourself as a Test user
-#   4. Credentials -> OAuth client ID -> "Web application"
+#   4. Credentials -> Create credentials -> OAuth client ID -> "Web application"
 #   5. Authorized redirect URIs -> add exactly:
 #          https://127.0.0.1:5003/api/connectors/calendar/oauth2callback
-#   6. Paste the Client ID + Secret into 🔌 Connectors -> Save app
+#   6. Paste the Client ID + Secret into 🔌 Connectors -> Google Calendar -> Save app
 #   7. Click "Sign in with Google". Done.
 
 import json
@@ -25,7 +24,6 @@ import requests
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CRED_PATH = os.path.join(REPO_ROOT, "json_configuration", "calendar_credentials.json")
-_GMAIL_CRED_PATH = os.path.join(REPO_ROOT, "json_configuration", "gmail_credentials.json")
 
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
@@ -48,8 +46,8 @@ MANIFEST = {
             "label": "Google Client ID (one-time app setup)",
             "type": "password",
             "placeholder": "….apps.googleusercontent.com",
-            "hint": "Shared with Gmail — if Gmail already works, leave this blank and "
-                    "just click Sign in.",
+            "hint": "Separate from Gmail — Gmail and Calendar are different services, "
+                    "so this connector has its own Google app and sign-in.",
         },
     ],
 }
@@ -104,21 +102,18 @@ def _save_cfg(updates):
 
 
 def _oauth_client():
-    """Client id/secret, preferring this plugin's own file, then the Gmail plugin's
-    (the same Google app), then the environment, then the baked-in default."""
+    """Calendar's OWN Google app credentials.
+
+    Kept deliberately separate from Gmail's: Gmail and Calendar are different
+    services with their own consent and scope, so each connector carries its own
+    Client ID + Secret and its own token.
+    """
     cfg = _cfg()
-    cid = (cfg.get("oauth_client_id") or "").strip()
-    secret = (cfg.get("oauth_client_secret") or "").strip()
-    if not (cid and secret) and os.path.isfile(_GMAIL_CRED_PATH):
-        try:
-            with open(_GMAIL_CRED_PATH, encoding="utf-8") as fh:
-                g = json.load(fh) or {}
-            cid = cid or (g.get("oauth_client_id") or "").strip()
-            secret = secret or (g.get("oauth_client_secret") or "").strip()
-        except Exception:
-            pass
-    cid = cid or os.environ.get("CALENDAR_CLIENT_ID", "").strip() or DEFAULT_CLIENT_ID.strip()
-    secret = (secret or os.environ.get("CALENDAR_CLIENT_SECRET", "").strip()
+    cid = ((cfg.get("oauth_client_id") or "").strip()
+           or os.environ.get("CALENDAR_CLIENT_ID", "").strip()
+           or DEFAULT_CLIENT_ID.strip())
+    secret = ((cfg.get("oauth_client_secret") or "").strip()
+              or os.environ.get("CALENDAR_CLIENT_SECRET", "").strip()
               or DEFAULT_CLIENT_SECRET.strip())
     return cid, secret
 
