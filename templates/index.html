@@ -9360,11 +9360,14 @@ function renderConnectorCard(box, c) {
               // Show the declared settings when the connector needs them filled in.
               // `needs_client` is Gmail's older name for the same idea - kept so an
               // existing connector keeps working.
+              // The fields are ALWAYS built and only HIDDEN once the connector looks
+              // configured. That hidden-ness is what made "I typed the wrong key"
+              // unfixable: there was no way back to the Client ID / Secret.
               var needsSettings = !!(st.needs_setup || st.needs_client) || st.configured === false;
-              var spec = needsSettings ? (c.credentials || []) : [];
+              var spec = c.credentials || [];
               if (spec.length) {
                   var wrap = document.createElement('div');
-                  wrap.style.cssText = 'margin-top:8px;';
+                  wrap.style.cssText = 'margin-top:8px; display:' + (needsSettings ? 'block' : 'none') + ';';
                   var inputs = {};
                   spec.forEach(function(f) {
                       var lbl = document.createElement('div');
@@ -9395,6 +9398,19 @@ function renderConnectorCard(box, c) {
                   };
                   wrap.appendChild(saveBtn);
                   card.insertBefore(wrap, actions);
+                  if (!needsSettings) {
+                      // Already configured: keep a way back to the keys so a wrong
+                      // Client ID/Secret can be corrected without reinstalling.
+                      var editBtn = document.createElement('button');
+                      editBtn.textContent = '✏️ Change keys';
+                      editBtn.style.cssText = 'margin-top:8px;background:transparent;border:1px solid #333;color:#e1e4e8;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;display:block;';
+                      editBtn.onclick = function() {
+                          var isOpen = wrap.style.display !== 'none';
+                          wrap.style.display = isOpen ? 'none' : 'block';
+                          editBtn.textContent = isOpen ? '✏️ Change keys' : '✕ Hide keys';
+                      };
+                      card.insertBefore(editBtn, actions);
+                  }
               }
               // A sign-in button only for a connector that actually has one. A
               // folder connector (Obsidian) has nothing to sign into, so it gets
