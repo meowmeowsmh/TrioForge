@@ -372,6 +372,13 @@ def _delete_event(event_id):
 def _status():
     """Status plus the two flags the connector card renders from.
 
+    Verifies with EVENTS, not with ``calendars/primary``: this connector's scope is
+    ``calendar.events``, which allows every ``events.*`` method but NOT
+    ``calendars.get``. Checking the calendar first made a perfectly good token
+    answer "403 insufficient authentication scopes" — so the card looked broken,
+    AND the OAuth callback's "am I connected now?" check failed with it, which is
+    why a *successful* sign-in got reported as "this sign-in link was already used".
+
     Mirrors gmail.py: ``can_sign_in`` shows the Sign-in button and
     ``sign_in_label`` is its text — without them the card says "Not connected"
     but offers no way to actually connect.
@@ -380,14 +387,18 @@ def _status():
     cid, secret = _oauth_client()
     st = {"connected": False, "configured": bool(cid and secret)}
     if cfg.get("refresh_token") and cid:
-        data, err = _api("calendars/primary")
+        data, err = _api("calendars/primary/events", {"maxResults": 1})
         if err:
             st["configured"] = True
             st["error"] = err
         else:
             st["connected"] = True
             st["method"] = "oauth"
-            st["account"] = data.get("id")
+            # The account email lives on the calendar resource, which this scope
+            # cannot read; try it best-effort and carry on if Google refuses.
+            who, werr = _api("calendars/primary")
+            if not werr and isinstance(who, dict):
+                st["account"] = who.get("id")
     st["can_sign_in"] = bool(st.get("configured")) and not bool(st.get("connected"))
     st["sign_in_label"] = "🔗 Sign in with Google"
     return st

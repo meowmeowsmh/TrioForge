@@ -116,6 +116,6 @@
   "templates/index.html": "113c3a4e48f1ff307afc2849b01c5b144e696488fdb2e4d6ae8453012b8fa9d5",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T04:26:10",
- "note": "connectors: Change keys available on connected cards too (gmail)"
+ "generated": "2026-10-10T04:28:55",
+ "note": "calendar: status checks events (calendar.events scope has no calendars.get)"
 }
