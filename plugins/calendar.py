@@ -305,12 +305,13 @@ def register(app):
         return "{}://{}/api/connectors/calendar/oauth2callback".format(
             request.scheme or "https", request.host)
 
-    @app.route("/api/connectors/calendar/status")
-    def _status_route():
+    @app.route("/api/connectors/calendar/status", endpoint="calendar_status_route")
+    def _calendar_status_route():
         return jsonify(_status())
 
-    @app.route("/api/connectors/calendar/credentials", methods=["POST"])
-    def _credentials_route():
+    @app.route("/api/connectors/calendar/credentials", methods=["POST"],
+               endpoint="calendar_credentials_route")
+    def _calendar_credentials_route():
         data = request.get_json(silent=True) or {}
         cid = (data.get("oauth_client_id") or "").strip()
         secret = (data.get("oauth_client_secret") or "").strip()
@@ -319,16 +320,16 @@ def register(app):
         _save_cfg({"oauth_client_id": cid, "oauth_client_secret": secret})
         return jsonify({"ok": True})
 
-    @app.route("/api/connectors/calendar/auth")
-    def _auth_route():
+    @app.route("/api/connectors/calendar/auth", endpoint="calendar_auth_route")
+    def _calendar_auth_route():
         url, err = auth_url(_redirect_uri())
         if url is None:
             return jsonify({"error": "Set the Google app first (Client ID + Secret).",
                             "needs_client": True}), 400
         return jsonify({"auth_url": url})
 
-    @app.route("/api/connectors/calendar/oauth2callback")
-    def _callback_route():
+    @app.route("/api/connectors/calendar/oauth2callback", endpoint="calendar_callback_route")
+    def _calendar_callback_route():
         oauth_error = request.args.get("error")
         if oauth_error:
             return ("<html><body style='background:#0b0d12;color:#f0883e;font-family:Segoe UI;"
@@ -364,14 +365,15 @@ def register(app):
                 "<p>{}</p><p style='color:#8b949e'>You can close this tab.</p></body></html>"
                 ).format(st.get("account") or "")
 
-    @app.route("/api/connectors/calendar/events")
-    def _events_route():
+    @app.route("/api/connectors/calendar/events", endpoint="calendar_events_route")
+    def _calendar_events_route():
         return jsonify(_list_events(request.args.get("query", ""),
                                     request.args.get("max"),
                                     request.args.get("days")))
 
-    @app.route("/api/connectors/calendar/disconnect", methods=["POST"])
-    def _disconnect_route():
+    @app.route("/api/connectors/calendar/disconnect", methods=["POST"],
+               endpoint="calendar_disconnect_route")
+    def _calendar_disconnect_route():
         try:
             cfg = _cfg()
             for key in ("refresh_token", "access_token", "token_expires"):
