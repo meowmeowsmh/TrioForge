@@ -21,6 +21,7 @@ delegation, not a cheap lookup.
 
 import glob
 import os
+import re
 import shutil
 import subprocess
 
@@ -68,34 +69,65 @@ TOOLS = [
 ]
 
 
-def _is_deepseek_harness(exe):
-    """True only for DeepSeek Harness.
+def _dsh_version(exe):
+    """(major, minor, patch) for DeepSeek Harness, or None for a different `dsh`.
 
     Debian/Ubuntu ship a DIFFERENT program also called ``dsh`` — "Distributed
     Shell / Dancer's shell" — which is first on PATH and answers
-    "dsh: no machine specified" to anything it is given. Checking the version
-    banner keeps us from driving that one by mistake.
+    "dsh: no machine specified" to whatever it is given. Its banner is how we
+    tell the two apart.
     """
     try:
-        p = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=15)
-        out = ((p.stdout or "") + (p.stderr or "")).lower()
+        p = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=20)
+        text = ((p.stdout or "") + (p.stderr or "")).strip()
     except Exception:
-        return False
-    if not out.strip():
-        return False
-    return "dancer" not in out and "distributed shell" not in out
+        return None
+    if not text:
+        return None
+    if "dancer" in text.lower() or "distributed" in text.lower():
+        return None
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+
+
+def _is_deepseek_harness(exe):
+    return _dsh_version(exe) is not None
+
+
+def _dsh_candidates():
+    seen, out = set(), []
+    for pattern in _NPX_GLOBS:
+        for cand in glob.glob(pattern):
+            if os.path.isfile(cand) and cand not in seen:
+                seen.add(cand)
+                out.append(cand)
+    exe = shutil.which("dsh")
+    if exe and exe not in seen:
+        out.append(exe)
+    return out
+
+
+_find_cache = {"done": False, "exe": None}
 
 
 def _find_dsh():
-    """The DeepSeek Harness launcher: the npx cache first, then a verified PATH dsh."""
-    for pattern in _NPX_GLOBS:
-        for cand in sorted(glob.glob(pattern), reverse=True):
-            if os.path.isfile(cand):
-                return cand
-    exe = shutil.which("dsh")
-    if exe and _is_deepseek_harness(exe):
-        return exe
-    return None
+    """The NEWEST DeepSeek Harness launcher.
+
+    The npx cache can hold several versions side by side (0.1.x next to 0.2.x),
+    and PATH may hold an unrelated namesake, so pick the highest real version
+    rather than whichever path sorts first.
+    """
+    if _find_cache["done"]:
+        return _find_cache["exe"]
+    best, best_v = None, None
+    for cand in _dsh_candidates():
+        v = _dsh_version(cand)
+        if v is None:
+            continue
+        if best_v is None or v > best_v:
+            best, best_v = cand, v
+    _find_cache.update(done=True, exe=best)
+    return best
 
 
 def _conflicting_dsh():
