@@ -53,7 +53,7 @@
   "py/setup_check.py": "27df446aaacdab083b25a595c42190bb2bea0c425c6c6fa49426201b935da31c",
   "py/skills_loader.py": "b23ae52b2daab7c5294a51ef3abf1ede22c7bb3a262c2a808169a2a28567db99",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/tools/app_window.py": "a7eed9e40e0aad1cccf113e4c83f86a570867357872073feeed97b9116e6a391",
+  "py/tools/app_window.py": "d8fc0b6131f625f0d34f35277d8da82954c18b544f071d9d47980ae9d47d332a",
   "py/tools/autostart.py": "fc62439bf7f7b97f790268836f216128f7b6fcaf148d9e9fddd81958b9f44fde",
   "py/tools/browser_picker.py": "a77ec789f9194dcdc64ab783857c8e757f2b101a9cc9df9325105186df9b30b7",
   "py/tools/ensure_deps.py": "4ec807a9023ac32c6505e23e90773a8f0ee12ed3a9cc976a9a11e54800cff729",
@@ -113,9 +113,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "597ff5d23acd99be5f62aa42ea3499fee3440c3f2cb884e4939b7519b4b41337",
+  "templates/index.html": "419d05aafea226e84e0cd1c61704406f26da66344cdba80cdefacdf05c3d1b59",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-08T03:04:56",
- "note": "single-instance guard typo fixed"
+ "generated": "2026-10-10T02:12:06",
+ "note": "format history timestamps + Linux window engine check"
 }

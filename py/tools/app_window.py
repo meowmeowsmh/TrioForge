@@ -16,7 +16,8 @@ whole interface would have to be rebuilt by hand - and it would do less.
 
     python py/tools/app_window.py --url https://localhost:5003
 
-Exit codes: 0 closed normally, 3 pywebview is not installed, 4 could not open.
+Exit codes: 0 closed normally, 3 pywebview is not installed, 4 could not open,
+5 Linux WebKitGTK engine missing.
 """
 
 import argparse
@@ -981,6 +982,28 @@ def _stop_child(child, timeout: float = 6.0) -> None:
                 pass
 
 
+def _linux_webkit_missing() -> str:
+    """On Linux, return a help message when the WebKitGTK engine is absent.
+
+    The native window renders through pywebview's GTK backend, which links against
+    WebKitGTK (libwebkit2gtk). On macOS/Windows the engine ships with the OS, but on
+    Linux it is a separate package - without it the window dies with an opaque GTK
+    import error. This checks first and says exactly what to install instead.
+    """
+    if sys.platform != "linux":
+        return ""
+    try:
+        import ctypes.util
+        for lib in ("webkit2gtk-4.1", "webkit2gtk-4.0"):
+            if ctypes.util.find_library(lib):
+                return ""
+    except Exception:
+        pass
+    return ("Linux needs the WebKitGTK engine to draw the window. Install it once:\n"
+            "  sudo apt install libwebkit2gtk-4.1-dev\n"
+            "(then run TrioForge --window again)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="TrioForge app window")
     parser.add_argument("--url", default="", help="Explicit server URL (optional).")
@@ -1033,6 +1056,11 @@ def main() -> int:
     except Exception:
         print("pywebview is not installed - run: uv pip install pywebview")
         return 3
+
+    _missing_engine = _linux_webkit_missing()
+    if _missing_engine:
+        print("[window] " + _missing_engine)
+        return 5
 
     # The window OWNS the server (see _spawn_server). Start it first, then wait for
     # it to come up. With an explicit --url we point at a remote server and start

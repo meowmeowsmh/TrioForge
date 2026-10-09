@@ -4970,6 +4970,22 @@ function renderMarkdown(text) {
     try { return DOMPurify.sanitize(html); } catch (e) { return html; }
 }
 
+function formatTs(ts) {
+    // History stores a raw ISO timestamp ("2026-09-28T00:56:07.893032"); live
+    // messages store an already-formatted time ("7:15 PM"). Format the ISO form,
+    // leave the pre-formatted one untouched.
+    if (!ts) return '';
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(ts)) {
+        var d = new Date(ts);
+        if (!isNaN(d.getTime())) {
+            return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) +
+                   ' · ' +
+                   d.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'});
+        }
+    }
+    return ts;
+}
+
 function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
@@ -5099,7 +5115,7 @@ function renderMsg(role, entry, msgIndex) {
     div.appendChild(body);
     var ts = document.createElement('div');
     ts.className = 'ts';
-    ts.textContent = entry.ts || '';
+    ts.textContent = formatTs(entry.ts);
     div.appendChild(ts);
     if (role === 'user') {
         var actions = document.createElement('div');
