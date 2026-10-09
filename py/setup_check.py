@@ -320,20 +320,27 @@ def _deepseek_harness():
     disagree about what is installed (it already knows that Debian/Ubuntu ship a
     different program called `dsh`). A broken plugin just reads as "not found".
     """
-    try:
-        import importlib.util
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "plugins", "deepseek_harness.py")
-        spec = importlib.util.spec_from_file_location("trioforge_plugin_deepseek_harness", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        exe = mod._find_dsh()
-        if not exe:
-            return None, ""
-        ver = mod._dsh_version(exe)
-        return exe, (".".join(str(x) for x in ver) if ver else "installed")
-    except Exception:
-        return None, ""
+    import importlib.util
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "plugins")
+    # The plugin ships DISABLED as _deepseek_harness.py and becomes
+    # deepseek_harness.py once the user enables it; detect either way.
+    for name in ("deepseek_harness.py", "_deepseek_harness.py"):
+        path = os.path.join(base, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("trioforge_plugin_deepseek_harness", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            exe = mod._find_dsh()
+            if not exe:
+                return None, ""
+            ver = mod._dsh_version(exe)
+            return exe, (".".join(str(x) for x in ver) if ver else "installed")
+        except Exception:
+            continue
+    return None, ""
 
 
 def check_all():
