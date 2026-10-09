@@ -54,6 +54,8 @@ MANIFEST = {
     # thing from a plugin that merely exposes tools. Connectors appear in the 🔌
     # panel, where the account and its sign-in state are the point.
     "connector": True,
+    # One click in the 🔌 panel opens this to enable the Gmail API in Google Cloud.
+    "enable_url": "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
     # Rendered by the Connectors panel. This is the one-time APP setup, not a
     # per-user login - after it is saved, users only ever click Sign in with Google.
     "credentials": [

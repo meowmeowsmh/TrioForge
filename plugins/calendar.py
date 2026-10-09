@@ -40,6 +40,8 @@ MANIFEST = {
     "version": "1.0.0",
     "description": "Sign in with Google so the agent can read your calendar.",
     "connector": True,
+    # One click in the 🔌 panel opens this to enable the Calendar API in Google Cloud.
+    "enable_url": "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com",
     "credentials": [
         {"key": "oauth_client_id", "label": "Google Client ID (one-time app setup)",
          "type": "text", "placeholder": "….apps.googleusercontent.com"},

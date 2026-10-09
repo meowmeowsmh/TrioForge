@@ -9311,6 +9311,14 @@ function renderConnectorCard(box, c) {
         gWrap.appendChild(gBody);
         card.appendChild(gWrap);
     }
+    // One click straight to the Google Cloud page that enables this API.
+    if (c.enable_url) {
+        var eBtn = document.createElement('button');
+        eBtn.textContent = '🔑 Enable ' + (c.title || c.id) + ' API';
+        eBtn.style.cssText = 'background:#1c3a22;border:1px solid #2ea043;color:#3fb950;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;margin-top:10px;display:block;';
+        eBtn.onclick = function() { window.open(c.enable_url, '_blank'); };
+        card.appendChild(eBtn);
+    }
     box.appendChild(card);
 
     // Generic: each connector has /api/connectors/<id>/status and /auth.
