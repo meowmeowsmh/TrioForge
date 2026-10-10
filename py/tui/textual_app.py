@@ -1208,6 +1208,27 @@ class ForgeApp(App):
                     cloud = (provider, entry["base_url"], model)
         return local_model, cloud
 
+    def _sync_route_pool_local(self, model: str = "") -> None:
+        """Point the route pool's local entry at ``model`` (default: the current one).
+
+        The pool is a SEPARATE persisted list from the model, and with auto-route ON
+        the router reads it on EVERY send. So changing the model without changing
+        the pool means the very next message routes straight back to the old one:
+        the switch silently undoes itself and the sidebar's green "active" marker
+        never moves. Every path that changes the model must come through here.
+        """
+        if not self._auto_route or not self._is_local():
+            return
+        want = (model or self.session.model or "").strip()
+        if not want:
+            return
+        rest = [k for k in self._route_pool if not k.startswith("local:")]
+        new_pool = ["local:" + want] + rest
+        if new_pool != self._route_pool:
+            self._route_pool = new_pool
+            self.cfg.route_pool = list(new_pool)
+            providers.save(self.cfg)
+
     async def _router_panel(self) -> None:
         """ctrl+a with no prompt: pick models and toggle auto-route."""
         import asyncio
@@ -2002,21 +2023,13 @@ class ForgeApp(App):
         self.backend, self.real_backend = ctx.backend, ctx.real_backend
         if captured.plain.strip():
             self._add_plain(captured, "bot")
-        # /model AND /start change which model is in play. With auto-route ON the
-        # route pool still holds the OLD local model, and _route() puts it straight
-        # back on the very next message — so the switch silently undid itself and
-        # the sidebar's green "active" marker never moved. (/start was the worse
-        # case: the server really was serving the new model while the UI still
-        # named the old one.) Keep the pool in step. self.session.model is used
-        # rather than the typed arg because /start resolves partial names, and it
-        # is the resolved model that matters.
-        if name in ("/model", "/start") and self._auto_route and self._is_local():
-            want = (self.session.model or "").strip()
-            if want:
-                rest = [k for k in self._route_pool if not k.startswith("local:")]
-                self._route_pool = ["local:" + want] + rest
-                self.cfg.route_pool = list(self._route_pool)
-                providers.save(self.cfg)
+        # Any command that can change the model must leave the route pool pointing
+        # at it. With auto-route ON the router reads the pool on every send, so a
+        # stale entry silently reverts the switch and freezes the sidebar's green
+        # "active" marker on the old model. /start was the worst case: the server
+        # really was serving the new model while the UI still named the old one.
+        if name in ("/model", "/start", "/provider"):
+            self._sync_route_pool_local()
         self._refresh()
 
     # ---------------------------------------------------------------- actions
@@ -2116,6 +2129,9 @@ class ForgeApp(App):
             # a local model means the local endpoint, whatever was selected
             self.cfg.provider = "local"
             self.cfg.set_base_url("http://127.0.0.1:8080/v1")
+        # The ctrl+l picker is just as much a model change as /model is, so the
+        # route pool has to follow it too or auto-route reverts it on the next send.
+        self._sync_route_pool_local(name)
         if not isinstance(self.backend, EchoBackend):
             self.backend = OpenAICompatBackend(
                 base_url=self.cfg.base_url, model=self.cfg.model,
