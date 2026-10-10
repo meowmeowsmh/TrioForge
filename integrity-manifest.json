@@ -65,7 +65,7 @@
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "e90fc7c1c67d718173c357e6eaca90432f138a8f02cb85a2f4d9e8c3e9593edd",
   "py/tui/README.md": "562cdb6e2b1dc22b728d11fc8c765cc31c60e479595194e4c5bc2dddbf5401c9",
-  "py/tui/__init__.py": "827411d26812c0e78459d053089b0d6628d1b9ec3bc2502f173efe7b07f21318",
+  "py/tui/__init__.py": "35bdaff977256f53f2863b840627a63bed83b1241b9edaa466a8c55a2e7106b2",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
@@ -86,10 +86,10 @@
   "py/tui/tools.py": "a60903fead0fa795a2ea6c81274c7beadeb8b6a25d0268437ccac36b6beae402",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
-  "py/version.py": "cd13040d2252ef1166691a7227570f2fadaac4b133fb6d150aaf2a7230149c9d",
+  "py/version.py": "0b5372563a3e33cdc9ef65d32a3e5f493fe34ca68b40007bf8027af7e1eb773b",
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "8167e3dd0294f68dd983bb2ced2fc37c081b9e572b2eeedae6623746b35b21f8",
+  "pyproject.toml": "3bf3dd7470fdccce15506a1a86c4d41a49cf8061e12a3f582b1d7e268518c3e0",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
   "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
   "run.sh": "a6e599d6523ad7cc1473ad1f8df278f82e3dc4ccbf4421ec54a902bb8b3c52f8",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-11T03:50:21",
- "note": "run.sh: newest Python, TRIOFORGE_PYTHON override, enforced floor"
+ "generated": "2026-10-11T03:53:15",
+ "note": "1.5.3: newest-Python launcher, faster start, CI python matrix"
 }

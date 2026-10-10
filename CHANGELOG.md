@@ -3,7 +3,13 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
+## [1.5.3] — the newest Python, and a faster start
+
+### Startup is quicker again
+
+`pynvml`, `duckduckgo-search` and `frontmatter` are imported when they are first
+needed rather than at import time, so launching the app no longer pays for the GPU
+library and the search client before it has drawn anything.
 
 ### The launcher uses the newest Python you have
 
@@ -21,6 +27,18 @@ interpreter sat unused. It now:
   that rebuilds it when a newer one is available.
 
 Verified on 3.14.8: the whole suite passes and the app boots with all 186 routes.
+
+### CI: the Python range is proven, not claimed
+
+A new **Python version matrix** job runs the regression suite on **3.10, 3.12 and
+3.14** — so `requires-python >=3.10` is something CI checks rather than a hope.
+Every GitHub Action was also moved off the deprecated Node 20 runtime
+(`checkout`/`upload-artifact` v7, `docker/*` v4/v7, `action-gh-release` v3).
+
+### Launcher
+
+`--background-update` only worked together with `--detach`; `run.sh` now passes
+both, so the flag does what its name says.
 
 ## [1.5.2] — the terminal can see images
 
