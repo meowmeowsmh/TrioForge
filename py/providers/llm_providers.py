@@ -14,6 +14,9 @@ import json
 import threading
 import time
 import unicodedata
+
+# PEP 810: lazy on 3.15+, an ignored module name on 3.12-3.14 (see app.py).
+__lazy_modules__ = ["requests"]
 import requests
 import logging
 from typing import List, Dict, Optional

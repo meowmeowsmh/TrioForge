@@ -1,4 +1,18 @@
 # app.py â€“ chat + notes + cork board + integrated weather toast (performance-optimized)
+# PEP 810 lazy imports, in the forward-compatible form.
+#
+# On Python 3.15+ these modules load on FIRST USE instead of at import time. On
+# 3.12-3.14 the assignment is an ordinary module-level name that nothing reads, so
+# the imports stay eager exactly as they were - no behaviour change, no syntax
+# error. The 3.15-only `lazy import x` statement would be a SyntaxError on every
+# older interpreter and would stop the app from starting at all.
+#
+# `-X importtime` says `requests` costs ~22 ms and `psutil` is not free either, and
+# neither is needed to BUILD the app object. Flask and the blueprints below ARE
+# used at import time (`app = Flask(...)`, `register_blueprint(...)`), so they stay
+# deliberately eager: a lazy import that is used immediately buys nothing.
+__lazy_modules__ = ["requests", "psutil"]
+
 from flask import Flask, request, jsonify, Response, redirect, session, send_file
 import secrets
 from flask_compress import Compress

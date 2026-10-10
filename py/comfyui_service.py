@@ -26,6 +26,8 @@ import time
 import uuid
 from urllib.parse import quote
 
+# PEP 810: lazy on 3.15+, an ignored module name on 3.12-3.14 (see app.py).
+__lazy_modules__ = ["requests"]
 import requests
 
 # Raised for every provider failure, so callers have one exception to catch. This module

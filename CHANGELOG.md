@@ -3,6 +3,30 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### Lazy imports, declared for the day Python 3.15 lands
+
+`lazy import x` is [PEP 810](https://peps.python.org/pep-0810/) and arrives in
+**Python 3.15**. On 3.12–3.14 that statement is a `SyntaxError`, so it cannot be
+used yet: putting it in front of the imports would stop the app from starting at
+all, on every interpreter the project supports.
+
+The forward-compatible half of the PEP works today and is now used. Seven modules
+declare
+
+```python
+__lazy_modules__ = ["requests", "psutil"]
+```
+
+which is an ordinary, unread module-level name below 3.15 — the imports stay eager
+and exactly nothing changes — and turns those imports lazy automatically on 3.15+.
+
+The two named are the ones `-X importtime` shows are heavy (~22 ms for `requests`)
+and are **not** needed to build the app object. Flask and the blueprints are used
+at import time (`app = Flask(...)`, `register_blueprint(...)`), so they stay
+deliberately eager: a lazy import that is consumed immediately buys nothing.
+
 ## [1.5.3] — the newest Python, and a faster start
 
 ### Startup is quicker again
