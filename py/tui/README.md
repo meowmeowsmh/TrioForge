@@ -279,6 +279,41 @@ not report multi-click events.
 Tool approval prompts are clickable too: **allow** / **allow all** / **deny** are
 buttons as well as `enter` / `a` / `n`.
 
+## Images — name a path, the model looks
+
+A terminal has no drag-and-drop, so there is no attachment UI: **a path in your
+message IS the attachment.** Any token that resolves to an image file is sent as an
+`image_url` part, and naming a **folder** attaches the images inside it (sorted, at
+most 4).
+
+```
+what is in ~/Pictures/cat.jpg?
+describe ./screenshots
+compare ".vtest/before.png" and ".vtest/after.png"
+```
+
+Every token is simply *tested as a path*, which is what makes all the shapes people
+actually type work:
+
+| You type | It means |
+|---|---|
+| `~/Pictures/cat.jpg` | that file |
+| `./shot.png` | that file |
+| `screenshots/cat.jpg` | that file |
+| `cat.jpg` | that file in the current directory |
+| `~/Pictures` | the images inside that folder |
+| `"My Pictures/cat.jpg"` | quote it when the path contains spaces |
+
+**The model has to be able to see.** A vision model is a GGUF **plus a projector**
+(`mmproj`); the model list marks those `vision projector paired`
+(`NVIDIA-Nemotron-Nano-12B-v2-VL`, `gemma-3-12b-it`). A text-only GGUF such as
+`qwen2.5-7b-instruct` does **not** reject an image part — it silently ignores it, so
+you get a confident answer about nothing. Forge checks first and tells you when the
+loaded model has no projector.
+
+Vision models are bigger, so they are likelier to split GPU+CPU and reply slowly:
+weights *and* projector only both fit an 8 GB card for a small model.
+
 ## Reasoning / thinking
 
 Reasoning models (DeepSeek's reasoner, Claude with thinking, and Ollama's

@@ -1368,6 +1368,7 @@ class ForgeApp(App):
         self._add(text, "user", force_scroll=True)
         self._route(text)
         self._set_status(self._status_combined())
+        self._warn_if_image_blind(text)
         self._ask(text)
 
     @on(PromptArea.Submitted, "#prompt")
@@ -1395,7 +1396,32 @@ class ForgeApp(App):
         # Enter is the moment to say where this actually went, and whether that
         # destination is usable right now.
         self._set_status(self._status_combined())
+        self._warn_if_image_blind(text)
         self._ask(text)
+
+    def _warn_if_image_blind(self, text: str) -> None:
+        """Say so when the message names an image the selected model cannot see.
+
+        A text-only GGUF does not reject an ``image_url`` part — it ignores it — so
+        without this the answer arrives confidently and describes nothing.
+        """
+        from . import vision
+
+        if not vision.paths_in(text, limit=1):
+            return
+        if not self._is_local():
+            return                      # a hosted vision model decides for itself
+        try:
+            import llamacpp_service as svc
+
+            if svc.find_mmproj(self.cfg.model):
+                return                  # this one really can see
+        except Exception:               # noqa: BLE001 - a failed probe is not a reason to nag
+            return
+        self._add_meta(
+            "⚠ {} has no vision projector — the image will be ignored. Load a model "
+            "marked 'vision projector paired' (e.g. /start gemma-3-12b-it) to have it "
+            "read.".format(self._short_model()))
 
     # ------------------------------------------------------------------ copy
     def _copy_text(self, text: str) -> bool:

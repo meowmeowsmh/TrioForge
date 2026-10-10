@@ -216,8 +216,15 @@ class Agent:
         # first, and only the most recent turns follow. Without this a long
         # session keeps growing and the model drifts off into its own old
         # answers instead of answering the current message.
+        from . import vision
         from .session import window
-        msgs.extend(m.as_dict() for m in window(self.session.messages))
+        for m in window(self.session.messages):
+            d = m.as_dict()
+            if m.role == "user":
+                # A path the user named becomes an image part. A terminal has no
+                # drag-and-drop, so naming the file IS the attachment.
+                d = vision.attach(d)
+            msgs.append(d)
         return msgs
 
     # -------------------------------------------------------------------- gate

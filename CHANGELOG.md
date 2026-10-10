@@ -3,6 +3,24 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### The terminal reads images by path
+
+A terminal has no drag-and-drop, so the terminal client takes the other route: **a
+path in your message IS the attachment.** Any token that resolves to an image file
+is sent as an `image_url` part, and naming a folder attaches the images inside it.
+
+```
+what is in ~/Pictures/cat.jpg?
+describe ./screenshots
+```
+
+Every token is tested as a path, so `~/a.png`, `./a.png`, `shots/a.png`, a bare
+`a.png`, a folder, and a quoted `"My Pictures/a.png"` all work. Forge also warns
+when the loaded model has no vision projector, instead of letting a text-only GGUF
+silently ignore the image and answer confidently about nothing.
+
 ## [1.5.1] — a calendar that does things, and a model switch that sticks
 
 ### Google Calendar can change your calendar now, not only read it
