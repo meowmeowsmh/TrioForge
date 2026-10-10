@@ -4383,8 +4383,9 @@ def _check_input_capability(provider_name, model, has_image, has_video, has_audi
         return ("This model's folder does not declare audio input. "
                 "Use a model in universal_models_to_text/ for audio-to-text.")
     if has_image and "image" not in caps:
-        return ("This model's folder does not declare image input. "
-                "Use a model in models/ or universal_models_to_text/ for image-to-text.")
+        return ("This model cannot read images — no vision projector (mmproj) is "
+                "paired with it. Load a vision model instead (the model list marks "
+                "them 'vision projector paired').")
     return None
 
 

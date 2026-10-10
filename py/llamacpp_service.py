@@ -169,10 +169,17 @@ def model_capabilities(model_path):
     The folder is the restriction: it tells the app what the model is allowed to
     read, so a video posted to a models/ model is rejected instead of silently fed
     frames. Returns a set like {"text", "image"} / {"video"} / {"text","image","video","audio"}.
+
+    "Allowed by the folder" is then narrowed by what the GGUF can really do: a model
+    only SEES if a vision projector (mmproj) is paired with it, so a projector-less
+    model in models/ drops back to {"text"}. Without that, EVERY text-only model in
+    models/ advertised "text+image" (qwen2.5-7b-instruct has no projector at all) and
+    an image could be attached to a model that cannot read it.
     """
     mp = os.path.abspath(model_path or "")
+    models_root = os.path.abspath(root_path("models"))
     roots = {
-        os.path.abspath(root_path("models")): {"text", "image"},
+        models_root: {"text", "image"},
         os.path.abspath(root_path("video_model")): {"video"},
         os.path.abspath(root_path("universal_models_to_text")): {"text", "image", "video", "audio"},
     }
@@ -182,7 +189,16 @@ def model_capabilities(model_path):
         if mp == root or mp.startswith(root + os.sep):
             if best is None or len(root) > len(best[0]):
                 best = (root, caps)
-    return best[1] if best else {"text", "image"}  # default: treat unknown as text+image
+    if best is None:
+        return {"text", "image"}  # default: treat unknown as text+image
+    root, caps = best
+    if root == models_root and "image" in caps:
+        try:
+            if not find_mmproj(mp):
+                caps = set(caps) - {"image"}
+        except Exception:  # noqa: BLE001 - a failed probe must not drop a capability
+            pass
+    return caps
 
 
 def _list_gguf_files(subdir=None):

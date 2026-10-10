@@ -16,7 +16,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "a9a6ee62140c8f32667c7584d47b9b7408f619d1cac59195df4bba4b4acdf23c",
+  "py/app.py": "fc31a83981e5e6bdf641e5dae114b0d56a86d9f9ac3338370c62e418aa47a16b",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -39,7 +39,7 @@
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_cpp.py": "1a2f1339acf99d6f38629c33d5a9b1e9627483412dadf5a698d491c41df8bec7",
   "py/llama_installer.py": "376ce0bf8f23f2c84dc4287c840a6f2ab58fe7f51f496fa3c2bc26e6fae5802e",
-  "py/llamacpp_service.py": "c4f49b627c726e7c1b6a84cfc0b9559dc1da2b35bf9d1194e7f61d9703ebccc0",
+  "py/llamacpp_service.py": "fc3d0ed6d2839f818826ec6fd70fbaac0874bba2c52279b6cff8ba22dd0cd99f",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/mcp_client.py": "609f30eefca01d3106ea18c06f1002ba46b191115f12e1a2ea852666d7364d8c",
@@ -115,6 +115,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T23:49:53",
- "note": "tui: all model-switch paths sync the route pool (picker + /provider too)"
+ "generated": "2026-10-11T00:49:38",
+ "note": "caps: a model only claims image if it has a vision projector"
 }
