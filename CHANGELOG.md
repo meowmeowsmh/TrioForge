@@ -32,6 +32,19 @@ Two bugs found while using it, both fixed:
   became "it appears to be an image of a cat". `view` now refuses an image outright
   and says not to guess.
 
+### Gemma rejected whole turns with HTTP 400
+
+```
+Jinja Exception: Conversation roles must alternate user/assistant/user/assistant/…
+```
+
+llama.cpp's chat template for gemma-3 **requires** strict alternation, and the agent
+loop could emit two `user` turns in a row: a round with two tool calls appends two
+tool-result user messages, and the anti-stall nudge lands directly after tool
+results. The model never saw the request. Consecutive user turns are now merged into
+one (content preserved, images stay image *parts*), and a sliding window that begins
+mid-pair drops the orphaned answer, so a turn can no longer die on the way out.
+
 ## [1.5.1] — a calendar that does things, and a model switch that sticks
 
 ### Google Calendar can change your calendar now, not only read it
