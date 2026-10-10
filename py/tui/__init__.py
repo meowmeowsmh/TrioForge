@@ -10,4 +10,4 @@ Run it with the ``forge`` script at the repo root, or::
     PYTHONPATH=py .venv-linux/bin/python -m tui
 """
 
-__version__ = "1.5.3"
+__version__ = "1.5.4"

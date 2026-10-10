@@ -3,7 +3,7 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
+## [1.5.4] — lazy imports, declared for Python 3.15
 
 ### Lazy imports, declared for the day Python 3.15 lands
 
