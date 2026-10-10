@@ -792,18 +792,36 @@ class ForgeApp(App):
         host = url.hostname or "127.0.0.1"
         port = url.port or 8080
 
-        if svc.server_ready(host, port, timeout=2):
-            return None                      # already up - reuse it
-
         model = (self.session.model or "").strip() or getattr(self.cfg, "model", "")
         if not model:
+            if svc.server_ready(host, port, timeout=2):
+                return None                  # something is up - better than nothing
             return ("no local model is selected — press ctrl+l to pick one, "
                     "or run /start <model>")
-        if not os.path.isfile(os.path.expanduser(model)):
+
+        # The picker and the route pool hold SHORT names ("qwen2.5-7b-instruct"),
+        # which are not paths and never match what /v1/models reports
+        # ("qwen2.5-7b-instruct-q4_k_m.gguf"). Resolve to a real .gguf first, or the
+        # comparison below is always false and the server would restart every turn.
+        from . import localmodels as lm
+
+        found = lm.find(model)
+        model_path = found.path if found else (svc.resolve_model(model) or model)
+
+        # A local llama-server IGNORES the request's "model" field: it answers with
+        # whatever GGUF is loaded. So "the port is up" is NOT "the model you picked
+        # is loaded". Returning early on server_ready() alone is why /model looked
+        # like it worked while the OLD model kept replying — 37 s a turn when that
+        # one did not fit in VRAM. Reuse a server only when it already serves the
+        # RIGHT model; otherwise hand it to start(), which swaps it out.
+        if svc.serves_model(host, port, model_path):
+            return None
+
+        if not os.path.isfile(model_path):
             return "local model not found: {}".format(model)
 
         try:
-            result = svc.start(model, ctx_size=self.cfg.ctx_size or None)
+            result = svc.start(model_path, ctx_size=self.cfg.ctx_size or None)
         except Exception as exc:            # noqa: BLE001
             return "could not start llama.cpp: {}".format(exc)
         if not result.get("running"):

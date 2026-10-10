@@ -540,6 +540,23 @@ def status():
     return {"running": running, "host": host, "port": port, "model": model}
 
 
+def serves_model(host, port, model_ref) -> bool:
+    """True when the llama-server on host:port already has ``model_ref`` loaded.
+
+    A local llama-server IGNORES the "model" field of an OpenAI-compatible request
+    and answers with whatever GGUF is loaded. So "the server is up" is NOT the same
+    as "the model you picked is loaded", and a caller that treats a listening port
+    as a match never swaps the model: the user switches models, the old one keeps
+    replying. The bare name is resolved to a real path first, because the model
+    picker holds short names ("qwen2.5-7b-instruct") while /v1/models reports the
+    file name.
+    """
+    if not model_ref or not server_ready(host, port, timeout=2):
+        return False
+    want = resolve_model(model_ref) or model_ref
+    return _same_model(_server_model(host, port), want)
+
+
 def server_url():
     """Base URL (…/v1) of the llama.cpp server the app should TALK to.
 
