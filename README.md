@@ -11,7 +11,7 @@
 **How it opens** — double-click **`TrioForge.bat`** (Windows) or run **`./run.sh`** (Linux/macOS/WSL): the server starts hidden and the app opens in your browser. Add **`--window`** for a real window of its own. There is **no `.exe` to download** — it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
 **Jump to:** [Start](#-start) · [Quick start](#-quick-start) · [Model folders](#-model-folders) · [Terminal client](#-the-terminal-client--forge) · [Features](#-features) · [Configuration](#-configuration) · [Workspaces](#-workspaces--folder-access) · [Generation](#-image-video--audio-generation) · [Remote access](#-remote-access) · [Docker](#-docker) · [Your data](#-where-your-data-lives) · [Project structure](#-project-structure)
 
