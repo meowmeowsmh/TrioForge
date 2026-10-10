@@ -1,0 +1,67 @@
+name: Feature request
+description: Suggest something TrioForge should do.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful thing here is the **problem**, not the solution. "I want to do X
+        and there's no way to" tells me more than a proposed implementation, because
+        there may already be a better route to X.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation, not the feature. What are you doing when you hit the wall?
+      placeholder: |
+        I keep doing X by hand and it's slow / impossible. What I'm actually after is ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you handle it today?
+      description: A workaround, another tool, or "I can't". All three are useful answers.
+    validations:
+      required: false
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Any idea how it should work? (optional)
+      description: Sketches and half-thoughts welcome. This is a preference, not a spec.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - Chat
+        - Notes
+        - Cork Board
+        - Local models (Ollama / llama.cpp setup, GPU, context)
+        - An API provider (Groq, DeepSeek, Claude, Gemini, OpenRouter, HF)
+        - Agent / tools / plugins / MCP
+        - Terminal client (forge)
+        - Documents (RAG) / search
+        - Voice
+        - Image / video / audio generation
+        - Docker / install / packaging
+        - Not sure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and CODE_REVIEW.md's open follow-ups.
+          required: true
+        - label: I understand TrioForge is local-first with no telemetry, and this request respects that.
+          required: true

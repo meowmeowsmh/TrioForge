@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security issue
+    url: https://github.com/meowmeowsmh/TrioForge/security/policy
+    about: Please report vulnerabilities privately — see SECURITY.md. Do not open a public issue.
+  - name: 📖 Setup and configuration help
+    url: https://github.com/meowmeowsmh/TrioForge#-start
+    about: Install steps, model folders, Docker, remote access and workspaces are all in the README.
+  - name: 🧩 Writing a plugin or a skill
+    url: https://github.com/meowmeowsmh/TrioForge/blob/main/CONTRIBUTING.md
+    about: A plugin is one .py file, a skill is one Markdown file — no core changes needed.
+  - name: 🏗️ Architecture and known follow-ups
+    url: https://github.com/meowmeowsmh/TrioForge/blob/main/CODE_REVIEW.md
+    about: What the codebase looks like, how it is verified, and what is still open.

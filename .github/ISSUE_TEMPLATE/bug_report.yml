@@ -1,0 +1,115 @@
+name: Bug report
+description: Something is broken, or behaves differently from what the docs say.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Two things make a bug report easy to act on:
+        **the Logs panel output** and **exactly which provider/model you were using**.
+        If you can include those, this usually gets solved in one round trip.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+      placeholder: |
+        I clicked X and it did Y. I expected Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If it happens every time, say so. If it's intermittent, roughly how often?
+      placeholder: |
+        1. Start with ./run.sh (or TrioForge.bat)
+        2. Select provider ...
+        3. Send a message with ...
+        4. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Run `./forge --status` (or `TrioForge.bat --status`) — the first line reports it.
+      placeholder: "1.5.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: how-run
+    attributes:
+      label: How are you running it?
+      options:
+        - run.sh (Linux / macOS / WSL)
+        - TrioForge.bat (Windows)
+        - Docker
+        - Terminal client (forge / trioforge)
+        - Installed as a PWA on my phone/desktop
+        - Other (explain below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      description: Which model backend was selected when it happened?
+      options:
+        - llama.cpp (local GGUF)
+        - Ollama
+        - Groq
+        - DeepSeek
+        - Claude (Anthropic)
+        - Gemini (Google)
+        - OpenRouter
+        - Hugging Face
+        - Not provider-specific (UI, notes, corkboard, launcher…)
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The exact model id or GGUF filename, if a model was involved.
+      placeholder: "e.g. Qwen3.5-9B-Uncensored-...Q4_K_M.gguf  /  llama3.2:3b"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs panel output
+      description: |
+        In the app: 🗒️ (Logs) → pick the **Server**, **Chat** or **Voice** tab → copy the
+        relevant lines. This is the single most useful thing you can attach.
+      render: shell
+      placeholder: "Paste the log lines here"
+    validations:
+      required: false
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS and hardware
+      description: OS + version, and GPU if the bug involves local models or VRAM.
+      placeholder: "Windows 11 + RTX 3060 8GB / Ubuntu 24.04 + no GPU / macOS 15 M2"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for this.
+          required: true
+        - label: This is not a security issue (those go to SECURITY.md, not a public issue).
+          required: true
