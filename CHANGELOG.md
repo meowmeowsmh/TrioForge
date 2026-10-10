@@ -3,6 +3,71 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.5.1] — a calendar that does things, and a model switch that sticks
+
+### Google Calendar can change your calendar now, not only read it
+
+The connector had one tool (`calendar_list_events`); it has six:
+
+- `calendar_create_event` — create an event (title + start; end defaults to +1 hour)
+- `calendar_quick_add` — one natural line, e.g. *"Lunch with Sam tomorrow at noon"*;
+  Google parses the time itself
+- `calendar_read_event` / `calendar_delete_event` — by id, from a listing
+- `calendar_list_events` and `calendar_status` — as before
+
+The scope is now `calendar.events` (read **and** write events), so a connector that
+was signed in before this release needs one more sign-in.
+
+### One bad line caused two confusing symptoms
+
+The status check called `calendars/primary`, which the `calendar.events` scope does
+**not** permit. That single call produced both:
+
+- a bogus `403 insufficient authentication scopes` on the card, and
+- **"this sign-in link was already used"** *after a successful sign-in* — the OAuth
+  callback asks the status "are we connected now?", and that check was failing.
+
+It now verifies with an events call, which the scope does allow.
+
+### The Connectors panel grew up
+
+- **🔑 Enable <API>** — one click to the Google Cloud page that turns the API on
+- **🌐 OAuth consent screen** — straight to Test users / Publish (private ↔ public)
+- **✏️ Change keys** — re-enter the Client ID / Secret at any time, signed in or not.
+  Before this the fields vanished once anything was saved, so a typo was unfixable
+- **Disconnect** now appears whenever there is something to clear, not only while
+  connected — so a connector set up with the wrong keys can be cleared from its card
+- **🔄 Reload** — re-check every connector's status without restarting the app
+- the stray "back" links are gone
+
+### Terminal: switching the model finally switches it
+
+Two independent bugs made `/model` look broken while auto-route was on:
+
+- `/model`, `/start`, `/provider` and the `ctrl+l` picker never updated the **route
+  pool**, and the router reads that pool on *every* send — so a stale entry silently
+  reverted the switch, and the sidebar's green "active" marker never moved
+- the local server was reused whenever the port was up, and llama-server **ignores**
+  the request's `model` field: the old model kept answering (37 s a turn when it did
+  not fit in VRAM) while the UI named the new one
+
+Both are fixed: every switch path syncs the pool, and the server is reloaded when it
+is serving a different GGUF.
+
+### Local models tell the truth about what they can read
+
+A model now advertises `text+image` **only when a vision projector (mmproj) is
+actually paired with it**. Everything under `models/` used to claim image input, so
+`qwen2.5-7b-instruct` — no projector, cannot see — looked like a vision model and an
+image could be attached to it.
+
+### Faster, and better tested
+
+- startup is much quicker: NVML init and the llama.cpp probe are deferred
+  (**3.4 s → 0.6 s**)
+- CI now genuinely runs `tests/regress.py` on Linux, macOS and Windows
+- added CONTRIBUTING.md and issue templates
+
 ## [1.5.0] — plugins, connectors & DeepSeek Harness
 
 ### Plugins, skills & MCP — one inventory
