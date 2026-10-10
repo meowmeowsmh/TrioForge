@@ -43,6 +43,18 @@
 - **Model capability labels tell the truth** — a model only claims `text+image` when a
   vision projector (mmproj) is really paired with it.
 
+### 1.5.2 — the terminal can see images
+
+- **Name a path, the model looks.** A terminal has no drag-and-drop, so in `forge`
+  the path *is* the attachment: type `what is in ~/Pictures/shot.png?`, or name a
+  folder to attach the images inside it. Absolute paths, `./relative`, bare
+  filenames and quoted paths with spaces all work, and Forge warns when the loaded
+  model has no vision projector instead of letting a text-only GGUF ignore the image.
+- **Three bugs that came out of using it** — an absolute path was eaten as a slash
+  command; `view` on an image fed the model pixel noise and it invented a
+  description; and gemma-3 rejected whole turns with `HTTP 400 — Conversation roles
+  must alternate` because the agent loop could emit two user turns in a row.
+
 ---
 
 ## 🆕 What's new in 1.4 — cross-platform, end to end

@@ -3,7 +3,7 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
+## [1.5.2] — the terminal can see images
 
 ### The terminal reads images by path
 
