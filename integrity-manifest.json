@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-11T01:30:31",
- "note": "tui: a path is not a command; view refuses images"
+ "generated": "2026-10-11T01:35:00",
+ "note": "tests: cover image-by-path + view refusing images"
 }

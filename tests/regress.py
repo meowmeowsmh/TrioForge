@@ -1766,6 +1766,80 @@ def test_tool_calls_are_recorded() -> None:
 
 
 # ---------------------------------------------------------------------------
+# vision — a path in a message becomes an image the model can actually see
+# ---------------------------------------------------------------------------
+def _tiny_png(path: Path) -> None:
+    """A real 2x2 PNG, built by hand so the test needs no image library."""
+    import struct
+    import zlib
+
+    raw = b"".join(b"\x00" + bytes([255, 0, 0, 0, 255, 0]) for _ in range(2))
+
+    def chunk(tag: bytes, body: bytes) -> bytes:
+        block = tag + body
+        return (struct.pack(">I", len(body)) + block
+                + struct.pack(">I", zlib.crc32(block) & 0xFFFFFFFF))
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b""))
+
+
+def test_vision_paths() -> None:
+    _title("images by path")
+    import tempfile
+
+    from tui import vision
+    from tui.commands import is_command
+    from tui.tools import t_view
+
+    def names(paths):
+        return [Path(p).name for p in paths]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _tiny_png(root / "shot.png")
+        _tiny_png(root / "second.png")
+        (root / "notes.txt").write_text("not an image", encoding="utf-8")
+
+        # An absolute path, a folder, and a quoted path containing spaces.
+        assert names(vision.paths_in(f"{root}/shot.png what is this?")) == ["shot.png"]
+        assert names(vision.paths_in(f"describe {root}")) == ["second.png", "shot.png"]
+        spaced = root / "my pics"
+        spaced.mkdir()
+        _tiny_png(spaced / "a.png")
+        assert names(vision.paths_in(f'look at "{spaced}/a.png"')) == ["a.png"]
+
+        # A text file, and a plain sentence, name no image.
+        assert vision.paths_in(f"read {root}/notes.txt") == []
+        assert vision.paths_in("hello there") == []
+        print("  file / folder / quoted paths found; text and chat ignored -> OK")
+
+        # The message goes multimodal; a message with no image is left alone.
+        msg = vision.attach({"role": "user", "content": f"what is {root}/shot.png?"})
+        kinds = [p["type"] for p in msg["content"]]
+        assert kinds[0] == "text" and "image_url" in kinds, kinds
+        url = [p for p in msg["content"] if p["type"] == "image_url"][0]["image_url"]["url"]
+        assert url.startswith("data:image/png;base64,"), url[:40]
+        plain = vision.attach({"role": "user", "content": "hi"})
+        assert isinstance(plain["content"], str), "a plain chat must stay a string"
+        print("  image attaches as a data: image_url part -> OK")
+
+        # Pixels read as text are noise, and a model asked to explain noise invents
+        # an answer ("it appears to be an image of a cat"). view must refuse.
+        refusal = t_view(str(root / "shot.png"))
+        assert "is an image" in refusal and "NOT guess" in refusal, refusal
+        print("  view refuses an image instead of inventing a description -> OK")
+
+    # A path is not a slash command: pasting one used to answer "unknown command".
+    assert is_command("/model") is True
+    assert is_command("/home/tc/Pictures/shot.png") is False
+    print("  an absolute path is not a slash command -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1784,7 +1858,7 @@ def main() -> int:
              test_toolbar_icons_unique, test_extensions,
              test_tui_plugin_commands, test_obsidian_connector,
              test_shipped_plugins_load, test_failures_are_visible,
-             test_tool_calls_are_recorded]
+             test_tool_calls_are_recorded, test_vision_paths]
     failed = []
     for t in tests:
         try:
