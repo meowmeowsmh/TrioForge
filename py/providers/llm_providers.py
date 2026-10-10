@@ -715,7 +715,17 @@ class LlamaCppProvider(LLMProvider):
         self.server_url = (server_url or _default_llamacpp_url()).rstrip("/")
         self.context_length = context_length
         self._ensure_models_dir()
-        self.available_models = self._discover_models()
+        # Local GGUF scan only here - that is a glob, i.e. microseconds. Asking a
+        # llama-server which models it serves is a NETWORK call, and on Windows a
+        # refused connection to a closed port costs ~2 s (the TCP stack retries the
+        # SYN before giving up). This constructor runs at import, inside the
+        # module-level `providers` dict, so probing here made every startup wait
+        # ~2 s for a server that usually is not running yet. The server's models
+        # are merged in from a background thread instead, so the list fills in
+        # when (and only when) something actually answers.
+        self.available_models = self._discover_local_models()
+        self._server_models_merged = False
+        threading.Thread(target=self._merge_server_models, daemon=True).start()
 
     def get_system_prompt(self) -> str:
         """Uncensored system prompt for local (llama.cpp) models.
@@ -738,12 +748,15 @@ class LlamaCppProvider(LLMProvider):
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir, exist_ok=True)
 
-    def _discover_models(self) -> List[str]:
-        # Text GGUF models only. mmproj/*.mmproj .gguf files are vision projectors —
-        # they must be paired with their text model via --mmproj (see llamacpp_service),
-        # so they are NOT listed as standalone selectable models here. Scan models/,
-        # video_model/ AND universal_models_to_text/ recursively (one subfolder per
-        # model) so each root's capability restriction applies without overlap.
+    def _discover_local_models(self) -> List[str]:
+        """GGUF files on disk. No network - safe to call at import time.
+
+        Text GGUF models only. mmproj/*.mmproj .gguf files are vision projectors —
+        they must be paired with their text model via --mmproj (see llamacpp_service),
+        so they are NOT listed as standalone selectable models here. Scan models/,
+        video_model/ AND universal_models_to_text/ recursively (one subfolder per
+        model) so each root's capability restriction applies without overlap.
+        """
         roots = [self.models_dir, root_path("video_model"), root_path("universal_models_to_text")]
         local_models = []
         for root in roots:
@@ -756,28 +769,56 @@ class LlamaCppProvider(LLMProvider):
                 # Prefix with the root name so folders are distinguishable in the UI.
                 rel = os.path.relpath(f, os.path.dirname(root))
                 local_models.append(rel)
+        return local_models
 
-        server_models = []
+    def _discover_server_models(self) -> List[str]:
+        """Models a RUNNING llama-server reports. Network call - never at import.
+
+        The connect timeout is deliberately short: a closed port on Windows costs
+        seconds of SYN retries before it refuses, while a reachable server answers
+        in microseconds - so waiting longer only ever buys a slower failure.
+        """
         try:
-            resp = requests.get(f"{self.server_url}/models", timeout=3)
+            resp = requests.get(f"{self.server_url}/models", timeout=(1.0, 3))
             if resp.status_code == 200:
                 data = resp.json()
                 if "data" in data:
-                    server_models = [m["id"] for m in data["data"]
-                                     if not str(m["id"]).lower().startswith("mmproj-")]
+                    return [m["id"] for m in data["data"]
+                            if not str(m["id"]).lower().startswith("mmproj-")]
         except Exception:
             pass
+        return []
 
-        # Dedupe by basename (a running server may return absolute paths that
-        # duplicate the local basenames).
+    @staticmethod
+    def _merge_model_lists(*lists) -> List[str]:
+        """Dedupe by basename (a running server may return absolute paths that
+        duplicate the local basenames)."""
         all_models = []
         seen = set()
-        for m in local_models + server_models:
-            key = os.path.basename(str(m)).lower()
-            if key not in seen:
-                seen.add(key)
-                all_models.append(m)
+        for lst in lists:
+            for m in lst:
+                key = os.path.basename(str(m)).lower()
+                if key not in seen:
+                    seen.add(key)
+                    all_models.append(m)
         return all_models
+
+    def _merge_server_models(self) -> None:
+        """Background: fold a running server's model list into available_models."""
+        server_models = self._discover_server_models()
+        self._server_models_merged = True
+        if server_models:
+            self.available_models = self._merge_model_lists(self.available_models,
+                                                            server_models)
+
+    def _discover_models(self) -> List[str]:
+        """Local + server models in one blocking call.
+
+        Kept for the explicit refresh after a model is downloaded (app.py), where
+        paying the network round-trip is the whole point.
+        """
+        return self._merge_model_lists(self._discover_local_models(),
+                                       self._discover_server_models())
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
         return self.available_models

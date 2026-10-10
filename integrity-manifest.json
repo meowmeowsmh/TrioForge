@@ -16,7 +16,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "d8340935047c6aef982cc2f2370913a32f24138778969fc9a1a913e6c8d6be9b",
+  "py/app.py": "a9a6ee62140c8f32667c7584d47b9b7408f619d1cac59195df4bba4b4acdf23c",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -48,7 +48,7 @@
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/providers/llm_providers.py": "c016ff65882866bd7de20a96d3da11a2db9a51ca90b917208e5285a40f2883f3",
+  "py/providers/llm_providers.py": "9560e752c5486c63f336329ed32ee67bd1846faa3a97ac9125b6385c54d629f2",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "926ab5b42e0c21920a870bb83afd786c1b901b50cfa2fcfeb759c1e6b5942130",
   "py/skills_loader.py": "b23ae52b2daab7c5294a51ef3abf1ede22c7bb3a262c2a808169a2a28567db99",
@@ -115,6 +115,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T15:59:21",
- "note": "baseline: drop unused static/image/icon_llm.png"
+ "generated": "2026-10-10T16:07:17",
+ "note": "startup: defer NVML init and the llama.cpp server probe"
 }

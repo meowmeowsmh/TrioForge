@@ -169,10 +169,29 @@ import video_to_text
 
 try:
     import pynvml
-    pynvml.nvmlInit()
-    NVML_AVAILABLE = True
 except Exception:
-    NVML_AVAILABLE = False
+    pynvml = None
+
+# nvmlInit() is deferred. It costs ~0.75 s on Windows (it loads the driver
+# library) and used to run at import, so EVERY startup paid it - including on
+# machines with no NVIDIA card at all. The first caller that actually needs VRAM
+# figures pays it once; nobody else ever does.
+_nvml_state = None
+
+
+def nvml_available() -> bool:
+    """True when NVML answers. Runs the one-time nvmlInit() on first call."""
+    global _nvml_state
+    if _nvml_state is None:
+        if pynvml is None:
+            _nvml_state = False
+        else:
+            try:
+                pynvml.nvmlInit()
+                _nvml_state = True
+            except Exception:
+                _nvml_state = False
+    return _nvml_state
 
 app = Flask(__name__, static_folder=root_path("static"))
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25 MB request body cap (uploads + chat JSON)
@@ -1284,7 +1303,7 @@ def get_ollama_memory_settings():
         low_ram = ram_free_gb < 2.0
         vram_available = False
         vram_free_gb = 0
-        if NVML_AVAILABLE:
+        if nvml_available():
             try:
                 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                 info = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -1843,7 +1862,7 @@ def get_resources():
         ram = psutil.virtual_memory()
         ram_used_gb = (ram.total - ram.available) / (1024**3)
         vram_used_gb = None
-        if NVML_AVAILABLE:
+        if nvml_available():
             try:
                 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                 info = pynvml.nvmlDeviceGetMemoryInfo(handle)
