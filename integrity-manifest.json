@@ -92,7 +92,6 @@
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
   "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
   "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
-  "static/image/icon_llm.png": "24aeef77274ef6820d3bc92060540b6a9078a9b1ecd8597677bd559e2f0a40a8",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
   "static/logo/mark.png": "e389a687e93d4dc048423c1e2e4a02916f0ddc0f91bbc6c3c57f67e69106ecd0",
@@ -116,6 +115,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T04:32:06",
- "note": "connectors panel: Reload button to re-check statuses"
+ "generated": "2026-10-10T15:59:21",
+ "note": "baseline: drop unused static/image/icon_llm.png"
 }
