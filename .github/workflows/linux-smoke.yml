@@ -60,6 +60,18 @@ jobs:
             .venv-linux/bin/python -c "import $m" && echo "ok: $m"
           done
 
+      # ── The regression suite ───────────────────────────────────────────────
+      # tests/regress.py needs no network, no GPU and no model, and it exits
+      # non-zero if ANY test fails - so running it here is the whole contract.
+      # It is in the repo rather than in /tmp precisely so it can run on every
+      # push; a suite nobody runs is a script, not a regression suite.
+      - name: Regression suite (behaviour that has actually broken before)
+        run: |
+          set -e
+          export PYTHONWARNINGS=ignore
+          .venv-linux/bin/python tests/regress.py
+          echo "PASS: regression suite"
+
       - name: Undefined-name scan (the ProviderError class of bug)
         run: |
           .venv-linux/bin/python tools/undefined-names-check.py py

@@ -68,6 +68,17 @@ jobs:
           .venv\Scripts\python.exe -m pip install --upgrade pip
           .venv\Scripts\python.exe -m pip install -r requirements.txt
 
+      # ── The regression suite (no network, no GPU, no model needed) ────────
+      # The explicit errorlevel check matters: a bare `if errorlevel 1` would be
+      # masked by the echo on the next line, and cmd would report success.
+      - name: Regression suite (behaviour that has actually broken before)
+        shell: cmd
+        run: |
+          set PYTHONWARNINGS=ignore
+          .venv\Scripts\python.exe tests\regress.py
+          if errorlevel 1 (echo FAIL: regression suite failed & exit /b 1)
+          echo PASS: regression suite
+
       # ── 3. The Windows-only logic nothing had ever executed ───────────────
       - name: Windows platform-logic checks
         # The VENV python, not the runner's. This imports app, which needs flask:

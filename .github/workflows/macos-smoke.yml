@@ -52,6 +52,14 @@ jobs:
             .venv-linux/bin/python -c "import $m" && echo "ok: $m"
           done
 
+      # ── The regression suite (no network, no GPU, no model needed) ────────
+      - name: Regression suite (behaviour that has actually broken before)
+        run: |
+          set -e
+          export PYTHONWARNINGS=ignore
+          .venv-linux/bin/python tests/regress.py
+          echo "PASS: regression suite"
+
       # ── 2. macOS-specific logic (Metal, brew paths, no CUDA, http scheme) ──
       - name: macOS platform-logic checks
         run: |
