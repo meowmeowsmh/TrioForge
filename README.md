@@ -87,7 +87,7 @@ dependency (web app *and* terminal client), puts `forge` / `trioforge` on your
 PATH and pre-fetches llama.cpp.
 
 **Or skip it entirely — just run `./forge`.** It installs Python if you do not
-have 3.10+, creates the venv, installs every library for *both* interfaces, and
+have 3.10+ (3.12+ recommended), creates the venv, installs every library for *both* interfaces, and
 starts. Nothing else to remember:
 
 ```
@@ -271,7 +271,7 @@ forge --specs                   # hardware that was detected, and what fits
 forge --version                 # -> forge 1.4.0: the CLI prints the name you typed
 ```
 
-Requires **Python 3.10+** (see `pyproject.toml`), and the client tracks the web app's version — **1.4.0**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. The client tracks the web app's version — **1.4.0**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 
