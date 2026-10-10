@@ -1984,6 +1984,15 @@ class ForgeApp(App):
         self.backend, self.real_backend = ctx.backend, ctx.real_backend
         if captured.plain.strip():
             self._add_plain(captured, "bot")
+        # /model switched the model. With auto-route ON the route pool still holds
+        # the OLD local model, and _route() puts it straight back on the next
+        # message — so the switch silently undid itself and the sidebar's green
+        # "active" marker never moved. Keep the pool in step so /model sticks.
+        if name == "/model" and arg and arg != "auto" and self._auto_route and self._is_local():
+            rest = [k for k in self._route_pool if not k.startswith("local:")]
+            self._route_pool = ["local:" + arg] + rest
+            self.cfg.route_pool = list(self._route_pool)
+            providers.save(self.cfg)
         self._refresh()
 
     # ---------------------------------------------------------------- actions

@@ -81,7 +81,7 @@
   "py/tui/router.py": "5262e56a7d9f1e3981f507caf92b4be042e065acb0fae86f780f51c72554229c",
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
-  "py/tui/textual_app.py": "6940221cd0dc1382769e8fb3cb76347bacc1be80c2f6b1820f2c9f86cc6cb02d",
+  "py/tui/textual_app.py": "e4607d785afe199baa068e48644364fe271ed1c6cc928bbfe0c69831c09e6eaa",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "d7316f95a6f58e1cb601a1a3b1b95afbb1bd5fdd0b4a6b795205e844bedb8d9e",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
@@ -115,6 +115,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-10T16:07:17",
- "note": "startup: defer NVML init and the llama.cpp server probe"
+ "generated": "2026-10-10T23:35:59",
+ "note": "tui: /model updates the route pool so auto-route does not revert it"
 }
