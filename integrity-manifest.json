@@ -67,7 +67,7 @@
   "py/tui/README.md": "562cdb6e2b1dc22b728d11fc8c765cc31c60e479595194e4c5bc2dddbf5401c9",
   "py/tui/__init__.py": "66bd16cf68a081b036331aa0f6966b596314d645d76432208f46f3a4de62460c",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "0b3b32a22b2fa28314a7f73bb9f5a7afc2e8f3bc2f7e4748d0ac91985cac7727",
+  "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
   "py/tui/backend.py": "387ba89a60465033ea591c06fe2eadca4e97410fb5cde727d62649debb043f17",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-11T01:35:00",
- "note": "tests: cover image-by-path + view refusing images"
+ "generated": "2026-10-11T01:47:27",
+ "note": "tui: coalesce consecutive user turns so gemma's template accepts the request"
 }

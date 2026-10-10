@@ -1840,6 +1840,52 @@ def test_vision_paths() -> None:
 
 
 # ---------------------------------------------------------------------------
+# role alternation — gemma's chat template rejects two "user" turns in a row
+# ---------------------------------------------------------------------------
+def test_role_alternation() -> None:
+    _title("role alternation (gemma's chat template)")
+    from tui.agent import coalesce
+
+    # The exact shape that produced HTTP 400: one round with two tool calls, each
+    # result appended as a user message, then the anti-stall nudge right after.
+    msgs = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "fix the button"},
+        {"role": "assistant", "content": "looking"},
+        {"role": "user", "content": '<tool_result name="view">a</tool_result>'},
+        {"role": "user", "content": '<tool_result name="grep">b</tool_result>'},
+        {"role": "assistant", "content": "writing"},
+        {"role": "user", "content": '<tool_result name="write">ok</tool_result>'},
+        {"role": "user", "content": "STOP READING. Act now."},
+    ]
+    out = coalesce(msgs)
+    roles = [m["role"] for m in out]
+    assert not any(roles[i] == "user" and roles[i + 1] == "user"
+                   for i in range(len(roles) - 1)), roles
+    flat = "\n".join(str(m["content"]) for m in out)
+    assert all(t in flat for t in ("view", "grep", "ok", "STOP READING")), flat
+    print("  consecutive users merged, nothing lost -> OK")
+
+    # The sliding window trims by size, so it can begin mid-pair. Gemma needs the
+    # conversation to start with a user turn.
+    trimmed = [{"role": "system", "content": "s"},
+               {"role": "assistant", "content": "old answer"},
+               {"role": "user", "content": "hi"}]
+    assert [m["role"] for m in coalesce(trimmed)] == ["system", "user"]
+    print("  a window starting on an answer drops it -> OK")
+
+    # An attached image must survive the merge as a PART, not be stringified.
+    merged = coalesce([
+        {"role": "user", "content": [{"type": "text", "text": "a"},
+                                     {"type": "image_url",
+                                      "image_url": {"url": "data:x"}}]},
+        {"role": "user", "content": "and this"},
+    ])
+    assert [p["type"] for p in merged[0]["content"]] == ["text", "image_url", "text"]
+    print("  a multimodal turn stays multimodal -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1858,7 +1904,8 @@ def main() -> int:
              test_toolbar_icons_unique, test_extensions,
              test_tui_plugin_commands, test_obsidian_connector,
              test_shipped_plugins_load, test_failures_are_visible,
-             test_tool_calls_are_recorded, test_vision_paths]
+             test_tool_calls_are_recorded, test_vision_paths,
+             test_role_alternation]
     failed = []
     for t in tests:
         try:

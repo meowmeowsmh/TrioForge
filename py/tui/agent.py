@@ -51,6 +51,49 @@ STALL_NUDGE = (
     "and stop. Do not view, grep or glob again."
 )
 
+def _merge_user(a: dict, b: dict) -> dict:
+    """One user message carrying both contents — as text, or as multimodal parts."""
+    merged = dict(a)
+    ca, cb = a.get("content"), b.get("content")
+    if isinstance(ca, str) and isinstance(cb, str):
+        merged["content"] = ca + "\n\n" + cb
+        return merged
+    parts = list(ca) if isinstance(ca, list) else [{"type": "text", "text": ca or ""}]
+    parts += list(cb) if isinstance(cb, list) else [{"type": "text", "text": cb or ""}]
+    merged["content"] = parts
+    return merged
+
+
+def coalesce(messages: list[dict]) -> list[dict]:
+    """Merge consecutive ``user`` messages into one, leaving everything else alone.
+
+    llama.cpp's chat template for gemma-3 REQUIRES strict user/assistant
+    alternation, and this loop can produce two users in a row: a round with two
+    tool calls emits two tool-result user messages, and the anti-stall nudge lands
+    directly after tool results. Gemma then rejects the WHOLE request with
+
+        HTTP 400 — Jinja Exception: Conversation roles must alternate
+        user/assistant/user/assistant/…
+
+    so the turn died before the model saw anything. Merging keeps the content and
+    satisfies the template; for native tool calling the ``tool`` role messages are
+    untouched, which is what OpenAI-compatible endpoints require.
+    """
+    out: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        if role == "assistant" and not any(x.get("role") == "user" for x in out):
+            # The sliding window trims by size, so it can begin mid-pair and leave
+            # an answer with no question in front of it. Gemma requires the
+            # conversation to START with a user turn, so drop it rather than die.
+            continue
+        if role == "user" and out and out[-1].get("role") == "user":
+            out[-1] = _merge_user(out[-1], m)
+        else:
+            out.append(m)
+    return out
+
+
 # Adapted from Crush's internal/agent/templates/coder.md.tpl. The rules are kept
 # because they are what makes an agent behave; the parts about MCP, LSP, skills
 # and git attribution are dropped because forge has none of those.
@@ -351,7 +394,7 @@ class Agent:
 
         self.backend.tools = TL.schemas() if (self.use_tools and self.native_tools) else []
         try:
-            for kind, payload in self.backend.stream(messages):
+            for kind, payload in self.backend.stream(coalesce(messages)):
                 if should_stop and should_stop():
                     # Keep whatever was streamed so far - a half answer the user
                     # chose to cut short is still worth showing.
