@@ -143,4 +143,10 @@ echo "[TrioForge] Launching TrioForge..."
 echo "[TrioForge] (Models: drop .gguf files into models/, video_model/ or universal_models_to_text/)"
 # No --no-install here: the launcher reinstalls only when requirements/lock files
 # changed since the last install — which is exactly what an auto-update needs.
-exec "$VENV/bin/python" py/tools/launcher.py "$@"
+#
+# --background-update: the same flag TrioForge.bat (Windows) and autostart already
+# pass. The launcher checks for and APPLIES updates as a hidden process, so the app is
+# on screen immediately and the new code lands on the next launch — no prompt, no
+# manual `git pull`. Without it, run.sh did the same update synchronously, blocking
+# the start while git ran. Appended after "$@" so an explicit --no-update still wins.
+exec "$VENV/bin/python" py/tools/launcher.py "$@" --background-update

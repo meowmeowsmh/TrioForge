@@ -58,7 +58,7 @@
   "py/tools/browser_picker.py": "a77ec789f9194dcdc64ab783857c8e757f2b101a9cc9df9325105186df9b30b7",
   "py/tools/ensure_deps.py": "4ec807a9023ac32c6505e23e90773a8f0ee12ed3a9cc976a9a11e54800cff729",
   "py/tools/integrity.py": "f1051688f39b0d477b9ff98603a39b12510de9fcc001db9feebc766bebd4fc78",
-  "py/tools/launcher.py": "7a91c5c9839990c0bf990303a7e4259c907b68b7273fad5895b2e5223b4cc979",
+  "py/tools/launcher.py": "40a622a411c75143ec36dfd0f35c9afb34332724a15cec90342881d8bd9f472e",
   "py/tools/launcher_gui.py": "d076f1c40b57ce297018da2a230aa9ccb1bbf63663be227e000d4e3849d91857",
   "py/tools/procutil.py": "9c6b45306a76e570b3c1dd16c67507e92c9afd2a4e6970d81373ba3f3215fff6",
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
@@ -92,7 +92,7 @@
   "pyproject.toml": "8167e3dd0294f68dd983bb2ced2fc37c081b9e572b2eeedae6623746b35b21f8",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
   "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
-  "run.sh": "052eabdd3df1adf79bac594cf71bf6553c7af4f41d05e734301db9aeeefec1db",
+  "run.sh": "ac2371bdbdb4a3daa49a5de83ef2affad601b5ab23f50cfe0f65116a9c95f3fe",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
   "static/logo/mark.png": "e389a687e93d4dc048423c1e2e4a02916f0ddc0f91bbc6c3c57f67e69106ecd0",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-11T02:28:29",
- "note": "startup: lazy-import pynvml, duckduckgo_search and frontmatter"
+ "generated": "2026-10-11T02:35:46",
+ "note": "launcher: --background-update now works without --detach; run.sh passes it"
 }

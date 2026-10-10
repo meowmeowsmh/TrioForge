@@ -750,6 +750,16 @@ def prepare_and_run(project: Path, args) -> int:
             _spawn_background_update(project)
         return 0
 
+    # --background-update WITHOUT --detach: this entry point keeps the server in the
+    # foreground (run.sh and `forge` do), so the updater has to be spawned HERE.
+    #
+    # The flag suppresses the foreground update further up, and the only other spawn
+    # site is inside the --detach branch above - which returns before reaching this
+    # line. So before this block, `--background-update` on its own did not move the
+    # update to the background, it switched updating OFF. --no-update still wins.
+    if getattr(args, "background_update", False) and not args.no_update:
+        _spawn_background_update(project)
+
     watch = getattr(args, "watch_updates", -1)
     if watch is None or watch < 0:
         # Unset: a background/autostart instance keeps itself current, an
