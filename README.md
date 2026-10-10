@@ -24,9 +24,24 @@
 - **🧩 Plugins, skills & MCP** — one inventory panel. A plugin is a single `.py` file that exposes tools; a skill is a Markdown instruction pack; an MCP server is borrowed as tools. Browse a catalog, enable/disable, install by Git URL or folder.
 - **✉️ Gmail connector** — "Sign in with Google" and the agent reads your inbox (`gmail_list_inbox`, `gmail_read_message`).
 - **📝 Obsidian connector** — read/search/write notes in a local vault (fully offline).
-- **🗓️ Google Calendar connector** — `calendar_list_events` / `calendar_status`.
+- **🗓️ Google Calendar connector** — read **and write**: list, create, quick-add, read and delete events (`calendar_list_events`, `calendar_create_event`, `calendar_quick_add`, `calendar_read_event`, `calendar_delete_event`, `calendar_status`).
 - **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
-- **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` text protocol covers models without native function calling, and no workspace folder is required.
+- **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` code-block protocol covers models without native function calling, and no workspace folder is required.
+
+### 1.5.1 — bug-fix release
+
+- **The Calendar connector writes, not just reads** — and its status check no longer
+  reports a bogus `403` (which also made a *successful* sign-in say "this sign-in link
+  was already used").
+- **A Connectors panel you can fix mistakes in** — **✏️ Change keys** re-opens the
+  Client ID/Secret fields at any time (they used to vanish once saved, so a typo was
+  unfixable), **Disconnect** shows whenever there is something to clear, and **🔄
+  Reload** re-checks every connector without restarting.
+- **The terminal's model switch actually sticks** — `/model`, `/start`, `/provider`
+  and the `ctrl+l` picker all update the route pool auto-route reads, and llama-server
+  is reloaded when it is serving a different model instead of being reused blindly.
+- **Model capability labels tell the truth** — a model only claims `text+image` when a
+  vision projector (mmproj) is really paired with it.
 
 ---
 
