@@ -21,6 +21,17 @@ Every token is tested as a path, so `~/a.png`, `./a.png`, `shots/a.png`, a bare
 when the loaded model has no vision projector, instead of letting a text-only GGUF
 silently ignore the image and answer confidently about nothing.
 
+Two bugs found while using it, both fixed:
+
+- **an absolute path was eaten as a command.** Pasting
+  `/home/tc/Pictures/shot.png` was answered with "unknown command — try /help", so
+  the image was never seen. A known command still wins; an unknown word that names
+  an existing path is now a message.
+- **`view` on an image made the model invent one.** Read as text an image is pixel
+  noise, and a model asked to make sense of noise answers anyway — a screenshot
+  became "it appears to be an image of a cat". `view` now refuses an image outright
+  and says not to guess.
+
 ## [1.5.1] — a calendar that does things, and a model switch that sticks
 
 ### Google Calendar can change your calendar now, not only read it

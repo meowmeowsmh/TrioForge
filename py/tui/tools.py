@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from .vision import IMAGE_EXTS as _IMAGE_EXTS
+
 # ============================================================ implementation
 
 MAX_OUTPUT = 3_000           # characters of tool output kept
@@ -91,6 +93,14 @@ def t_view(file_path: str = "", offset: int = 1, limit: int = DEFAULT_READ_LIMIT
         return f"error: {p} is a folder, not a file — pass a file path"
     if not p.is_file():
         return f"error: no such file: {p}"
+    if p.suffix.lower() in _IMAGE_EXTS:
+        # Read as text (errors="replace") an image is pixel noise, and a model asked
+        # to make sense of noise INVENTS an answer — a screenshot of anything became
+        # "it appears to be an image of a cat". Say plainly that it cannot be read,
+        # and forbid the guess.
+        return (f"error: {p.name} is an image, not text — view cannot read it, and "
+                f"you must NOT guess what it shows. Name this path in your reply and "
+                f"a vision-capable model sees it directly.")
     try:
         size = p.stat().st_size
         if size > 2_000_000:

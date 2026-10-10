@@ -1282,6 +1282,17 @@ def _apply(ctx) -> None:
     ctx.real_backend = ctx.backend
 
 
+def is_command(line: str) -> bool:
+    """True when the first word of ``line`` is a command this build knows.
+
+    Needed because a PATH also begins with ``/``: pasting
+    ``/home/tc/Pictures/shot.png`` used to be answered with "unknown command", and
+    the image was never seen. The caller can ask this first and treat an unknown
+    word that names a real path as a message instead.
+    """
+    return line.strip().partition(" ")[0] in _TABLE
+
+
 def handle(line: str, ctx) -> bool:
     """Run a slash command. Returns True if the line was consumed."""
     name, _, arg = line.strip().partition(" ")

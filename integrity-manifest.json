@@ -71,7 +71,7 @@
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
   "py/tui/backend.py": "387ba89a60465033ea591c06fe2eadca4e97410fb5cde727d62649debb043f17",
   "py/tui/cli.py": "1d7a85ea29c392149659e879270eac8cf10066080e55cc4218a5f2c4f95f8c30",
-  "py/tui/commands.py": "70bc91e53bc60ed3eab29a7531634bf2b5fd16b8807a622fd71744909cab8fc9",
+  "py/tui/commands.py": "42a16d2069191d346644a352233458b7bae1f80beaf3fd995122efd1cc862e36",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
@@ -81,9 +81,9 @@
   "py/tui/router.py": "5262e56a7d9f1e3981f507caf92b4be042e065acb0fae86f780f51c72554229c",
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
-  "py/tui/textual_app.py": "4732960bb64bf35efb54315c54549d9fedebd6dc1c68e315b4095bf082f18b9c",
+  "py/tui/textual_app.py": "5f60ad39577a6986ec4b31734b371c78038029d58adcae28481c9f0c4b2bc9e1",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
-  "py/tui/tools.py": "d7316f95a6f58e1cb601a1a3b1b95afbb1bd5fdd0b4a6b795205e844bedb8d9e",
+  "py/tui/tools.py": "a60903fead0fa795a2ea6c81274c7beadeb8b6a25d0268437ccac36b6beae402",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
   "py/version.py": "7c999b1a3c2d4735ceedfc6fc1ffccdeaa528bc12969060745f4d1bce1239089",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-11T01:17:13",
- "note": "tui: read images named by path in a message"
+ "generated": "2026-10-11T01:30:31",
+ "note": "tui: a path is not a command; view refuses images"
 }

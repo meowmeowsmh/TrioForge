@@ -1385,9 +1385,17 @@ class ForgeApp(App):
         if not text:
             return
         if text.startswith("/"):
-            self._command(text)
-            self._refresh()
-            return
+            # A PATH starts with "/" too. Pasting /home/tc/Pictures/shot.png is the
+            # most natural way to point at an image, and it used to be answered with
+            # "unknown command — try /help". A real command still wins; an unknown
+            # word that names an existing path is a message, not a typo.
+            from . import commands as C
+            from . import vision
+
+            if C.is_command(text) or not vision.paths_in(text, limit=1):
+                self._command(text)
+                self._refresh()
+                return
         self.session.add_user(text)
         self._add(text, "user", force_scroll=True)
         self._route_note = ""      # never let the previous send's route leak here
