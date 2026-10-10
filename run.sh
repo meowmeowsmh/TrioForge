@@ -26,12 +26,34 @@ done
 [ "$TRIOFORGE_ML" = "1" ] && INSTALL_ML=1
 
 # ---- 1) Locate or install Python 3 ----------------------------------------
-PY=""
+# Take the NEWEST python3.X on the machine, not whatever `python3` happens to
+# alias to. On a distro that still points python3 at 3.12 while 3.14 is
+# installed, the alias quietly decides the interpreter for the whole install;
+# asking for the newest by name is what actually uses it.
+#
+# TRIOFORGE_PYTHON overrides the choice (TRIOFORGE_PYTHON=python3.12 ./run.sh).
+PY="${TRIOFORGE_PYTHON:-}"
 
-if command -v python3 >/dev/null 2>&1; then
-    PY=python3
-elif command -v python >/dev/null 2>&1; then
-    PY=python
+pick_python() {
+    # Newest first. 3.15/3.16 are listed ahead of time on purpose: they become
+    # the default the day they appear on PATH, with no edit needed here.
+    for cand in python3.16 python3.15 python3.14 python3.13 python3.12 \
+                python3.11 python3.10 python3 python; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            echo "$cand"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [ -n "$PY" ]; then
+    if ! command -v "$PY" >/dev/null 2>&1; then
+        echo "[TrioForge] TRIOFORGE_PYTHON=$PY is not on PATH." >&2
+        exit 1
+    fi
+else
+    PY="$(pick_python)" || PY=""
 fi
 
 if [ -z "$PY" ]; then
@@ -57,16 +79,21 @@ if [ -z "$PY" ]; then
         exit 1
     fi
 
-    if command -v python3 >/dev/null 2>&1; then
-        PY=python3
-    elif command -v python >/dev/null 2>&1; then
-        PY=python
-    fi
+    PY="$(pick_python)" || PY=""
     [ -z "$PY" ] && { echo "[TrioForge] Installed but not on PATH; open a NEW terminal and re-run."; exit 1; }
 fi
 
+# Enforce the floor pyproject.toml declares (requires-python >=3.10). Without
+# this a 3.9 fails much later, inside a dependency, with a message that says
+# nothing about Python being the reason.
+if ! "$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+    echo "[TrioForge] $PY is $("$PY" --version 2>&1 | awk '{print $2}'), but TrioForge needs Python 3.10 or newer." >&2
+    echo "[TrioForge] Install a newer Python, or point TRIOFORGE_PYTHON at one." >&2
+    exit 1
+fi
+
 echo ""
-echo "[TrioForge] Using Python: $PY"
+echo "[TrioForge] Using Python: $PY ($("$PY" --version 2>&1 | awk '{print $2}'))"
 
 # ---- 2) Create the venv and install deps into it ---------------------------
 # Use a Unix-specific venv folder: the Windows venv lives in .venv/Scripts,
@@ -76,6 +103,19 @@ VENV=".venv-linux"
 if [ ! -x "$VENV/bin/python" ]; then
     echo "[TrioForge] Creating virtual environment ($VENV)..."
     "$PY" -m venv "$VENV" || { echo "[TrioForge] Could not create venv (install python3-venv)."; echo "[TrioForge] On Debian/Ubuntu: sudo apt install python3-venv"; exit 1; }
+fi
+
+# An EXISTING venv keeps its own interpreter — that is the whole point of one — so
+# an install first created under 3.12 stays on 3.12 even once 3.14 is present. Say
+# so, with the one command that changes it, or the newest-first choice above looks
+# like it silently did nothing.
+NEWEST="$(pick_python)" || NEWEST=""
+NEWEST_VER=""
+[ -n "$NEWEST" ] && NEWEST_VER="$("$NEWEST" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)"
+VENV_VER="$("$VENV/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)"
+if [ -n "$NEWEST_VER" ] && [ -n "$VENV_VER" ] && [ "$NEWEST_VER" != "$VENV_VER" ]; then
+    echo "[TrioForge] Note: $VENV runs Python $VENV_VER, and $NEWEST ($NEWEST_VER) is also installed."
+    echo "[TrioForge]       To rebuild it on $NEWEST_VER:  rm -rf $VENV && ./run.sh"
 fi
 
 # Install deps if ANY critical module can't be imported — not just flask.

@@ -14,6 +14,9 @@ wheels/
 # Virtual environments
 .venv/
 .venv-linux/
+# A venv set aside when the interpreter moved on (e.g. .venv-linux-312-backup
+# after switching to 3.14). 285 MB of site-packages must never be committed.
+.venv-linux-*/
 .venv-broken-*/
 venv/
 env/

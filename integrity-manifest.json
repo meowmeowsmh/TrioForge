@@ -92,7 +92,7 @@
   "pyproject.toml": "8167e3dd0294f68dd983bb2ced2fc37c081b9e572b2eeedae6623746b35b21f8",
   "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
   "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
-  "run.sh": "ac2371bdbdb4a3daa49a5de83ef2affad601b5ab23f50cfe0f65116a9c95f3fe",
+  "run.sh": "a6e599d6523ad7cc1473ad1f8df278f82e3dc4ccbf4421ec54a902bb8b3c52f8",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
   "static/logo/mark.png": "e389a687e93d4dc048423c1e2e4a02916f0ddc0f91bbc6c3c57f67e69106ecd0",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-11T02:35:46",
- "note": "launcher: --background-update now works without --detach; run.sh passes it"
+ "generated": "2026-10-11T03:50:21",
+ "note": "run.sh: newest Python, TRIOFORGE_PYTHON override, enforced floor"
 }

@@ -3,6 +3,25 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### The launcher uses the newest Python you have
+
+`./run.sh` used to take whatever `python3` resolved to — so a machine with 3.14
+installed still built its venv on the distro's 3.12 alias, and the newest
+interpreter sat unused. It now:
+
+- picks the **newest `python3.X` on PATH** (3.16 → 3.10, listed ahead of time so a
+  future release becomes the default the day it appears);
+- honours **`TRIOFORGE_PYTHON=python3.12 ./run.sh`** to force a specific one;
+- **enforces the declared floor** (`requires-python >=3.10`), failing immediately
+  with a message that names Python — instead of a confusing error later, inside a
+  dependency;
+- and, because an existing venv keeps its own interpreter, prints the one command
+  that rebuilds it when a newer one is available.
+
+Verified on 3.14.8: the whole suite passes and the app boots with all 186 routes.
+
 ## [1.5.2] — the terminal can see images
 
 ### The terminal reads images by path
