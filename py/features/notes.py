@@ -32,8 +32,16 @@ from providers.llm_providers import get_provider, sanitize_api_key
 import personas
 
 # ---------- Obsidian sync imports ----------
-import frontmatter
+# `frontmatter` is imported LAZILY, inside _frontmatter() below. It pulls in PyYAML,
+# and the pair cost ~25 ms of every startup for a feature (vault import/export) that
+# most sessions never touch. The same pattern the RAG and memory modules already use.
 from pathlib import Path
+
+
+def _frontmatter():
+    """The frontmatter module, imported on first use so startup does not pay for it."""
+    import frontmatter
+    return frontmatter
 
 # ======================================================================
 # SQLite storage layer
@@ -487,7 +495,7 @@ def import_from_obsidian(vault_path=None):
             with open(md_file, "r", encoding="utf-8") as f:
                 raw = f.read()
             try:
-                post = frontmatter.loads(raw)
+                post = _frontmatter().loads(raw)
                 title = post.get("title", md_file.stem)
                 content = post.content
                 tags = post.get("tags", [])
@@ -583,10 +591,10 @@ def export_to_obsidian(vault_path=None):
         }
         frontmatter_dict = {k:v for k,v in frontmatter_dict.items() if v is not None}
         content = note.get("content", "")
-        post = frontmatter.Post(content, **frontmatter_dict)
+        post = _frontmatter().Post(content, **frontmatter_dict)
         try:
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write(frontmatter.dumps(post))
+                f.write(_frontmatter().dumps(post))
             exported += 1
         except Exception as e:
             logger.warning("Failed to export %s: %s", file_path, e)

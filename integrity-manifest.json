@@ -16,7 +16,7 @@
   "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "fc31a83981e5e6bdf641e5dae114b0d56a86d9f9ac3338370c62e418aa47a16b",
+  "py/app.py": "fa3bf8329f63adb219daf610530ecc1c5868baafcd3bc6d32d847d10b4968e69",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "95d8e86b8a3f192224801f3e0e175f803f47a51216577fb1cef838ccf25ea7d8",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -27,7 +27,7 @@
   "py/features/cork_board.py": "cde6c56b506e9e73b0da97ea36e29dc0b6298fc228ee9dc2b2c56d4891a11f16",
   "py/features/design.py": "52e372d38e96244341551c1dcfdf5452ce62476cd68afe99f6f58cc589a3a29f",
   "py/features/model_browser.py": "054366993bf07b092c99ed7db1c4d856ccfcfbffdc5237a6db87b5fcb87c15ef",
-  "py/features/notes.py": "9b722781f471c1f11eabddbc1d94f76134d9be040033f2860c577f82a61de65b",
+  "py/features/notes.py": "d73da10c8534596d3c112dae6fba94b0514dfd04e71eb424f75ecd44d59305d0",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
   "py/features/openai_api.py": "f9c43b218b0310de0f10faa162ba9f7a9bff88996b663651654988a67a75b2ec",
   "py/features/screen_ask.py": "0d9ac7eb8f25ba71b8dc7c94d50f2755ee6b6d963229a5f219c68a3158c2684f",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-11T01:52:07",
- "note": "1.5.2: terminal images by path + three fix-ups"
+ "generated": "2026-10-11T02:28:29",
+ "note": "startup: lazy-import pynvml, duckduckgo_search and frontmatter"
 }

@@ -167,30 +167,27 @@ import setup_check
 import edits_store
 import video_to_text
 
-try:
-    import pynvml
-except Exception:
-    pynvml = None
-
-# nvmlInit() is deferred. It costs ~0.75 s on Windows (it loads the driver
-# library) and used to run at import, so EVERY startup paid it - including on
-# machines with no NVIDIA card at all. The first caller that actually needs VRAM
-# figures pays it once; nobody else ever does.
+# NVML is imported AND initialised lazily - both steps are expensive and neither is
+# needed on most starts. Importing pynvml costs ~75 ms (it is a deprecation shim that
+# pulls in _pynvml), and nvmlInit() costs another ~0.75 s on Windows while it loads
+# the driver library. Together that was ~10% of startup, paid by every user - including
+# everyone with no NVIDIA card at all. `pynvml` stays a module global so the VRAM call
+# sites below work normally once nvml_available() has returned True.
+pynvml = None
 _nvml_state = None
 
 
 def nvml_available() -> bool:
-    """True when NVML answers. Runs the one-time nvmlInit() on first call."""
-    global _nvml_state
+    """True when NVML answers. Imports and initialises it on first call, then caches."""
+    global pynvml, _nvml_state
     if _nvml_state is None:
-        if pynvml is None:
+        try:
+            import pynvml as _pynvml
+            _pynvml.nvmlInit()
+            pynvml = _pynvml
+            _nvml_state = True
+        except Exception:
             _nvml_state = False
-        else:
-            try:
-                pynvml.nvmlInit()
-                _nvml_state = True
-            except Exception:
-                _nvml_state = False
     return _nvml_state
 
 app = Flask(__name__, static_folder=root_path("static"))
@@ -574,11 +571,30 @@ CURRENT_WORKSPACE_FILE = os.path.join(WORKSPACES_DIR, "current.txt")
 if not os.path.exists(WORKSPACES_DIR):
     os.makedirs(WORKSPACES_DIR, exist_ok=True)
 
-try:
-    from duckduckgo_search import DDGS
-    SEARCH_AVAILABLE = True
-except ImportError:
-    SEARCH_AVAILABLE = False
+# duckduckgo_search is imported LAZILY. It drags in primp (a Rust HTTP client) and
+# lxml, which together cost ~65 ms to import at startup - for optional web search,
+# which most sessions never switch on. _ddgs() performs the import on first use and
+# caches the class, so the cost is paid once, by the people who actually search.
+_ddgs_cls = None
+_ddgs_tried = False
+
+
+def _ddgs():
+    """The DDGS class, or None when duckduckgo-search is not installed."""
+    global _ddgs_cls, _ddgs_tried
+    if not _ddgs_tried:
+        _ddgs_tried = True
+        try:
+            from duckduckgo_search import DDGS
+            _ddgs_cls = DDGS
+        except ImportError:
+            _ddgs_cls = None
+    return _ddgs_cls
+
+
+def _search_available() -> bool:
+    """True when web search can run (the old SEARCH_AVAILABLE flag, resolved lazily)."""
+    return _ddgs() is not None
 
 os.makedirs(os.path.dirname(CONVERSATIONS_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
@@ -3893,10 +3909,10 @@ def _dispatch_tool(name, args):
         query = (args.get("query") or "").strip()
         if not query:
             return {"error": "Query is required."}
-        if not SEARCH_AVAILABLE:
+        if not _search_available():
             return {"error": "Web search unavailable (install duckduckgo-search)."}
         try:
-            future = _executor.submit(lambda: DDGS().text(query, max_results=3))
+            future = _executor.submit(lambda: _ddgs().text(query, max_results=3))
             results = future.result(timeout=3)
             snippets = [r.get("body", "") for r in results if r.get("body")]
             return {"results": snippets[:3]}
@@ -4261,10 +4277,10 @@ def _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps=20):
 # â”€â”€ Route helpers â”€â”€
 def _run_web_search(user_message: str, enabled: bool) -> str:
     """Return up to 3 web-search snippets joined into one context string."""
-    if not (enabled and SEARCH_AVAILABLE and user_message.strip()):
+    if not (enabled and _search_available() and user_message.strip()):
         return ""
     try:
-        future = _executor.submit(lambda: DDGS().text(user_message, max_results=3))
+        future = _executor.submit(lambda: _ddgs().text(user_message, max_results=3))
         results = future.result(timeout=3)
         snippets = [r['body'] for r in results if 'body' in r]
         return " ".join(snippets[:3])
