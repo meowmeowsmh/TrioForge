@@ -74,7 +74,7 @@
 
 ## ⚡ Start
 
-**One line, Linux / macOS / WSL** — downloads, installs, starts the web app, and puts `trioforge` (the TUI) on your PATH (no git, no cd):
+**One line, Linux / macOS / WSL** — downloads, installs, starts the web app, and puts `forge` / `trioforge` (the TUI) on your PATH (no git, no cd):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.sh | sh
@@ -99,7 +99,19 @@ docker run -d --name trioforge -p 5002:5001 \
 
 Everything below is the full, manual version of those three one-liners.
 
-**Windows** — one file: `TrioForge-Web.bat`.
+**Windows**
+
+Double-click **`TrioForge-Web.bat`** (the web app). It opens in your browser, the server hidden behind it. Add **`--window`** for its own window (WebView2, ~600 MB) instead of a browser tab (~150–300 MB) — same server, same data; the window hands back to the browser automatically if your GPU can't draw it. It creates **`TrioForge`** (browser) and **`TrioForge (window)`** shortcuts per-user, no admin. Skip with `TRIOFORGE_NO_SHORTCUT=1`.
+
+Or run the commands from any terminal (run `.\install.ps1` once, then open a **new** terminal):
+
+```bash
+forge               # terminal client
+trioforge           # same terminal client
+trioforge-web       # web app (windowless launch, opens the browser)
+```
+
+**Linux / macOS / WSL**
 
 ```bash
 git clone https://github.com/meowmeowsmh/TrioForge.git
@@ -128,17 +140,10 @@ forge: dependencies ready — both interfaces are installed:
 After that, a plain `git pull` is enough: `forge` re-installs by itself when a
 requirement changes, and costs nothing (~0.2s) when nothing has.
 
-Double-click **`TrioForge-Web.bat`**. It opens in your browser, the server hidden behind it. Add **`--window`** for its own window (WebView2, ~600 MB) instead of a browser tab (~150–300 MB) — same server, same data; the window hands back to the browser automatically if your GPU can't draw it. It creates **`TrioForge`** (browser) and **`TrioForge (window)`** shortcuts per-user, no admin. Skip with `TRIOFORGE_NO_SHORTCUT=1`.
-
-**Linux / macOS / WSL**
-
-```bash
-./run.sh              # first time: chmod +x run.sh
-```
-
-Then open **http://localhost:5003** (the app prints the exact URL).
-`run.sh` installs the web dependencies itself, so `./setup.sh` is only needed
-if you also want the `forge` terminal client on your PATH.
+For the web app on Linux/macOS: **`./run.sh`** (first time: `chmod +x run.sh`),
+then open **http://localhost:5003** (the app prints the exact URL). `run.sh`
+installs the web dependencies itself, so `./setup.sh` is only needed if you also
+want the `forge` terminal client on your PATH.
 
 **Docker** — one line, if you already run Ollama:
 
@@ -278,7 +283,7 @@ That route needs the four packages by hand: `python -m pip install rich prompt_t
 
 Both install `rich`, `prompt_toolkit`, `textual` and `duckdb` into the repo's own venv, then put the commands on your PATH:
 
-- **Windows** writes a `forge.cmd` shim into `%USERPROFILE%\bin` and appends that folder to your **user** PATH — **open a new terminal** before `forge` resolves.
+- **Windows** writes three shims into `%USERPROFILE%\bin` — `forge.cmd` and `trioforge.cmd` (the terminal client) plus `trioforge-web.cmd` (the web app) — and appends that folder to your **user** PATH — **open a new terminal** before they resolve.
 - **Linux / macOS** symlinks `forge` and `trioforge` into the first writable folder already on your PATH (`~/.local/bin`, `~/bin`, `~/.bin`), falling back to `~/.local/bin`, and prints the exact `export PATH=...` line to add if that folder is not on your PATH yet.
 
 Neither needs admin, and both are safe to re-run. Both also fetch the prebuilt llama.cpp for your GPU (`TRIOFORGE_SKIP_LLAMA=1` skips that). If the packages cannot be installed, **nothing is linked, on purpose** — a `forge` that exists and then dies with `ModuleNotFoundError: textual` is worse than no launcher at all, which is why both scripts verify the imports before they link anything.
