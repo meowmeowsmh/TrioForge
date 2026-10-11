@@ -150,8 +150,27 @@ class _StdioTransport:
             env[str(key)] = str(value)
         kwargs = {}
         if os.name == "nt":
-            # Without this a console window flashes up for every server.
-            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            # A hidden console for the WHOLE tree - not CREATE_NO_WINDOW.
+            #
+            # CREATE_NO_WINDOW gives the direct child no console at all, so when
+            # npx (node) later runs npm's own shim as `cmd /d /s /c <bin>`, that
+            # cmd.exe has NOTHING to inherit and Windows hands it a brand new
+            # console window. That is the "cmd pops up twice after the app
+            # launches" report: `cmd /c npx.CMD ...` plus npm's inner cmd.exe.
+            #
+            # CREATE_NEW_CONSOLE + SW_HIDE makes ONE console for the whole tree and
+            # creates it hidden, so every descendant - node, npm's shim, the server
+            # itself - inherits the hidden one instead of allocating its own.
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+            try:
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = subprocess.SW_HIDE
+                kwargs["startupinfo"] = si
+            except Exception:
+                # STARTUPINFO unavailable: fall back to the old behaviour rather
+                # than risk creating a VISIBLE console.
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             self.proc = subprocess.Popen(
                 self.argv,

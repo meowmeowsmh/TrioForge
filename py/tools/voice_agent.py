@@ -33,6 +33,20 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG = HERE / "voiceguide_llama.cpp_guide" / "config.json"
 
+
+def _hidden_console_flags() -> int:
+    """CREATE_NO_WINDOW on Windows.
+
+    llama-server and the speech-to-speech agent are both console programs, and
+    this process usually has no console of its own (TrioForge starts it hidden).
+    Without the flag Windows hands EACH of them a brand-new console window - the
+    "a cmd window pops up twice after the app launches" report.
+    """
+    if os.name != "nt":
+        return 0
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 DEFAULT_CONFIG_DATA = {
     "llama_server": "llama-server",
     "model": "models/qwen-uncensored/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
@@ -222,7 +236,8 @@ def main():
         "--port", str(port),
     ] + [str(a) for a in config.get("llama_args", [])]
     llama_proc = subprocess.Popen(
-        llama_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+        llama_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        creationflags=_hidden_console_flags(),
     )
     _tee(llama_proc, [agent_log], "LLM")
 
@@ -238,7 +253,8 @@ def main():
     _write("[{}] Starting speech-to-speech agent ...".format(_now()), [agent_log])
     s2s_cmd = [_find_executable(config.get("speech_to_speech"))] + config.get("speech_args", [])
     s2s_proc = subprocess.Popen(
-        s2s_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+        s2s_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        creationflags=_hidden_console_flags(),
     )
     _tee(s2s_proc, [agent_log, conversations], "VOICE")
 

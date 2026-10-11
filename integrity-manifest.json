@@ -42,7 +42,7 @@
   "py/llamacpp_service.py": "1032384c6d916b211a752dee470eafab938bb9fe35e7678021e29b24094b2d80",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
-  "py/mcp_client.py": "0827744ad71d9f71e0dd99c569a9e9a12f162ab6d154a91d4b4a8d55351ddff5",
+  "py/mcp_client.py": "6ded3ba6b5ca0e3640943b7b6f514ee97740d9f28c44082505a400080d2c70ab",
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
@@ -63,7 +63,7 @@
   "py/tools/procutil.py": "9adaeda1af4e6094af9f30afaf27aa4db9afad5add5e7fd39b2610827c45edf5",
   "py/tools/shortcuts.py": "7b35ee35bc5226d023cd01e2c2d6ba6a26011baaec89680af6db62f9fe54ce0b",
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
-  "py/tools/voice_agent.py": "e90fc7c1c67d718173c357e6eaca90432f138a8f02cb85a2f4d9e8c3e9593edd",
+  "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
   "py/tui/README.md": "8e6b70a2b782dd1e9cd13ec44393c964a8c29d028cd51d48683399ac3d813e6e",
   "py/tui/__init__.py": "b73fd697cc1e5b7ed5cbe0c07af99666484e976aa90d20321b4cc8b31badd8b4",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T05:34:28",
- "note": "deps: cap huggingface-hub<2; optionals documented in requirements-ml.txt"
+ "generated": "2026-10-12T05:40:02",
+ "note": "fix(console): MCP servers get a hidden console for the whole tree"
 }
