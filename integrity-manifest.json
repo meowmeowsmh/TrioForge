@@ -58,7 +58,7 @@
   "py/tools/browser_picker.py": "a77ec789f9194dcdc64ab783857c8e757f2b101a9cc9df9325105186df9b30b7",
   "py/tools/ensure_deps.py": "4ec807a9023ac32c6505e23e90773a8f0ee12ed3a9cc976a9a11e54800cff729",
   "py/tools/integrity.py": "f1051688f39b0d477b9ff98603a39b12510de9fcc001db9feebc766bebd4fc78",
-  "py/tools/launcher.py": "7bfb911040c46997df728891bf3f4fec149408a632403d24cd89687a912d17c0",
+  "py/tools/launcher.py": "1e973d590135a7197d945890a4bb32fd7be18b9c60198f1978fc70b8b374317f",
   "py/tools/launcher_gui.py": "d076f1c40b57ce297018da2a230aa9ccb1bbf63663be227e000d4e3849d91857",
   "py/tools/procutil.py": "9c6b45306a76e570b3c1dd16c67507e92c9afd2a4e6970d81373ba3f3215fff6",
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-12T01:06:31",
- "note": "launcher: --auto-upgrade / TRIOFORGE_AUTO_UPGRADE for newest-resolvable deps"
+ "generated": "2026-10-12T01:12:51",
+ "note": "launcher: dependency auto-upgrade on by default (opt-out --no-auto-upgrade)"
 }

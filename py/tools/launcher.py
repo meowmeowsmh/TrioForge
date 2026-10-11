@@ -193,9 +193,9 @@ def install_deps(project: Path) -> None:
 
 
 def _auto_upgrade_deps(project: Path) -> None:
-    """Upgrade to the newest versions requirements.txt resolves to (opt-in).
+    """Upgrade to the newest versions requirements.txt resolves to (on by default).
 
-    Enabled by --auto-upgrade or TRIOFORGE_AUTO_UPGRADE=1. Because requirements.txt
+    Off via --no-auto-upgrade or TRIOFORGE_NO_AUTO_UPGRADE=1. Because requirements.txt
     uses `>=` floors, "the latest version" is never known in advance - the resolver
     decides it at install time. The resolver runs in --dry-run FIRST: only when the
     newest set resolves cleanly do we apply it, so a conflicting upgrade never
@@ -697,10 +697,13 @@ def prepare_and_run(project: Path, args) -> int:
         if not args.no_install:
             install_deps(project)
 
-    # Opt-in: on every launch, re-resolve requirements.txt to the newest versions
-    # (the `>=` floors make "latest" unknowable in advance, so the resolver decides).
-    # Dry-run guarded - a conflicting resolution never touches the venv.
-    if getattr(args, "auto_upgrade", False) or os.environ.get("TRIOFORGE_AUTO_UPGRADE") == "1":
+    # On by default for everyone: re-resolve requirements.txt to the newest versions
+    # on every launch (the `>=` floors make "latest" unknowable in advance, so the
+    # resolver decides). Dry-run guarded - a conflicting resolution never touches the
+    # venv. Opt out with --no-auto-upgrade or TRIOFORGE_NO_AUTO_UPGRADE=1.
+    auto_upgrade = (not getattr(args, "no_auto_upgrade", False)
+                    and os.environ.get("TRIOFORGE_NO_AUTO_UPGRADE") != "1")
+    if auto_upgrade:
         _auto_upgrade_deps(project)
 
     # --window: open TrioForge in its own WebView2 window (no browser, no console).
@@ -1730,10 +1733,9 @@ def main() -> int:
                         help="Start the server (and window) in the background and return immediately.")
     parser.add_argument("--background-update", action="store_true",
                         help="Do not wait for an update: start now, check quietly in the background.")
-    parser.add_argument("--auto-upgrade", action="store_true",
-                        help="On launch, upgrade dependencies to the newest versions "
-                             "requirements.txt resolves to (dry-run guarded). "
-                             "Also on via TRIOFORGE_AUTO_UPGRADE=1.")
+    parser.add_argument("--no-auto-upgrade", action="store_true",
+                        help="Turn OFF the automatic dependency upgrade on launch "
+                             "(it is on by default). Also off via TRIOFORGE_NO_AUTO_UPGRADE=1.")
     parser.add_argument("--install-shortcut", action="store_true",
                         help="Put a TrioForge shortcut (with its icon) on the Desktop and Start Menu.")
     parser.add_argument("--remove-shortcut", action="store_true",
