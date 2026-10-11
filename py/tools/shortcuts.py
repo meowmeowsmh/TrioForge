@@ -2,7 +2,7 @@
 
 Per-user only: the Desktop and the Start Menu of the person running it, no admin
 rights and nothing machine-wide. Every shortcut points at the SAME launcher -
-TrioForge.bat on Windows, launcher.py everywhere else - and the mode is an
+TrioForge-Web.bat on Windows, launcher.py everywhere else - and the mode is an
 argument, so there is one file to know about instead of one per mode.
 
     from shortcuts import install, remove, state
@@ -21,20 +21,20 @@ from uuid import uuid4
 APP_NAME = "TrioForge"
 
 # Both flavours now point at the ONE launcher and differ only by argument:
-#   TrioForge.bat            -> "TrioForge"           (opens in the browser - the default)
-#   TrioForge.bat --window   -> "TrioForge (window)"  (its own WebView2 window)
+#   TrioForge-Web.bat            -> "TrioForge"           (opens in the browser - the default)
+#   TrioForge-Web.bat --window   -> "TrioForge (window)"  (its own WebView2 window)
 # They keep separate names, so launching one still never tramples the other.
 FLAVORS = {
     "web": {
         "suffix": "",
-        "script": "TrioForge.bat",
+        "script": "TrioForge-Web.bat",
         "args": "",
         "fallbacks": (),
         "desc": "TrioForge - opens in your browser (the server runs hidden)",
     },
     "window": {
         "suffix": " (window)",
-        "script": "TrioForge.bat",
+        "script": "TrioForge-Web.bat",
         "args": "--window",
         "fallbacks": (),
         "desc": "TrioForge - opens in its own window (the server runs hidden)",

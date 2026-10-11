@@ -184,7 +184,7 @@ echo "[TrioForge] (Models: drop .gguf files into models/, video_model/ or univer
 # No --no-install here: the launcher reinstalls only when requirements/lock files
 # changed since the last install — which is exactly what an auto-update needs.
 #
-# --background-update: the same flag TrioForge.bat (Windows) and autostart already
+# --background-update: the same flag TrioForge-Web.bat (Windows) and autostart already
 # pass. The launcher checks for and APPLIES updates as a hidden process, so the app is
 # on screen immediately and the new code lands on the next launch — no prompt, no
 # manual `git pull`. Without it, run.sh did the same update synchronously, blocking

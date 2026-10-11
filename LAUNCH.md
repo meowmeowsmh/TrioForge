@@ -73,7 +73,7 @@ Two annoyances. One: ask a local model something genuinely useful → it scrolls
 
 git clone https://github.com/meowmeowsmh/TrioForge && cd TrioForge && ./forge
 
-Windows: double-click TrioForge.bat. Docker one-liner is in the README.
+Windows: double-click TrioForge-Web.bat. Docker one-liner is in the README.
 
 **Screenshots + full breakdown:** https://github.com/meowmeowsmh/TrioForge
 

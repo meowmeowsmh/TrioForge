@@ -55,8 +55,8 @@ To run it from any directory, install the command once:
 powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows
 ```
 
-Then `forge` works anywhere (`trioforge` is the Linux/macOS alias — on Windows it
-collides with `TrioForge.bat`). Both names run the same program, and
+Then `forge` and `trioforge` work anywhere, and `trioforge-web` launches the web
+app. Both TUI names run the same program, and
 `--version` / `--help` print the name you used. The installers also install
 `rich`, `prompt_toolkit`, `textual` and `duckdb`: the first three are deliberately
 not in `requirements.txt` (that covers the Flask web app), and `duckdb` is shared

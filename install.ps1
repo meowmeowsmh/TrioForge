@@ -1,12 +1,11 @@
 # ============================================================
-#  install.ps1 - put the `forge` command on your PATH (Windows).
+#  install.ps1 - put the `forge` / `trioforge` (TUI) and `trioforge-web` (web
+#                app) commands on your PATH (Windows).
 #
 #      powershell -ExecutionPolicy Bypass -File .\install.ps1
 #
-#  Creates a small shim in %USERPROFILE%\bin and adds that folder to your
-#  user PATH, so `forge` works from any directory. No admin needed.
-#  (`trioforge` is the Linux/macOS alias only: on Windows it collides with
-#  TrioForge.bat.)
+#  Creates shims in %USERPROFILE%\bin and adds that folder to your user PATH,
+#  so the commands work from any directory. No admin needed.
 #
 #  Safe to re-run: it only rewrites the shims and the PATH entry.
 #
@@ -91,23 +90,31 @@ if (Test-TuiDeps $py) {
 }
 
 # ---------------------------------------------------------------- shims
-# Only `forge` on Windows. `trioforge` is the Linux/macOS alias: on a
-# case-insensitive filesystem the typed name `trioforge` collides with
-# TrioForge.bat (the web launcher) and TrioForge.exe (its windowed interpreter),
-# so `trioforge --version` launched the SERVER instead of the TUI. `forge` has
-# no such collision and is the same program.
+# Three commands, all in %USERPROFILE%\bin:
+#   forge           -> the terminal client (--help/--version say "forge")
+#   trioforge       -> the same terminal client (--help/--version say "trioforge")
+#   trioforge-web   -> the web app (TrioForge-Web.bat)
+# The web launcher lives at TrioForge-Web.bat so the typed command `trioforge`
+# no longer collides with it on the case-insensitive filesystem (previously
+# `trioforge --version` launched the SERVER instead of the TUI).
 $bin = Join-Path $env:USERPROFILE "bin"
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 
-$target = Join-Path $Root "forge.cmd"
-foreach ($name in @("forge")) {
+# TUI shims - both names run the same program. FORGE_PROG carries the invoked
+# name through to the CLI, so `trioforge --version` says trioforge.
+$tuiTarget = Join-Path $Root "forge.cmd"
+foreach ($name in @("forge", "trioforge")) {
     $shim = Join-Path $bin "$name.cmd"
-    # FORGE_PROG carries the invoked name through to the CLI, so `forge
-    # --version` says forge.
-    "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$target`" %*" |
+    "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$tuiTarget`" %*" |
         Set-Content -Path $shim -Encoding ASCII
     Write-Host "  shim:   $shim"
 }
+
+# Web app shim.
+$webTarget = Join-Path $Root "TrioForge-Web.bat"
+$webShim = Join-Path $bin "trioforge-web.cmd"
+"@echo off`r`ncall `"$webTarget`" %*" | Set-Content -Path $webShim -Encoding ASCII
+Write-Host "  shim:   $webShim"
 
 # ---------------------------------------------------------------- llama.cpp
 # So a local model works with no manual setup. TrioForge also fetches this on
@@ -142,4 +149,6 @@ if ($userPath -split ";" -notcontains $bin) {
 }
 
 Write-Host
-Write-Host "Done. Try:  forge --version"
+Write-Host "Done. Try:  trioforge --version    (terminal client)"
+Write-Host "            trioforge-web          (web app)"
+Write-Host "            forge --version        (same terminal client)"

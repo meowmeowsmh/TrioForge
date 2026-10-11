@@ -6078,7 +6078,7 @@ def _auto_open_browser(url: str) -> None:
 
     This makes the launcher a true "press the app and it opens itself" experience â€”
     no need to manually open a browser tab. Set TRIOFORGE_NO_BROWSER=1 to disable,
-    which is what `TrioForge.bat --window` does: there TrioForge opens in its own
+    which is what `TrioForge-Web.bat --window` does: there TrioForge opens in its own
     window, so a browser tab as well would be one window too many.
     """
     if os.environ.get("TRIOFORGE_NO_BROWSER") == "1":

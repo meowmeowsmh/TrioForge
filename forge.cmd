@@ -9,8 +9,8 @@ rem      forge --version              print the version
 rem      forge --help                 all options
 rem
 rem  Same program as ./forge on Linux/macOS. Run install.ps1 once to get
-rem  `forge` on your PATH. (Windows uses `forge` only: `trioforge` collides
-rem  with TrioForge.bat on a case-insensitive filesystem.)
+rem  `forge` (and `trioforge`, the same program) on your PATH. `trioforge-web`
+rem  launches the web app (TrioForge-Web.bat).
 rem ============================================================
 setlocal
 set "ROOT=%~dp0"
@@ -31,7 +31,7 @@ if exist "%VENV%" "%VENV%" -c "" >nul 2>&1 && set "PY=%VENV%"
 if not defined PY for /f "delims=" %%P in ('where py 2^>nul') do if not defined PY set "PY=%%P"
 if not defined PY for /f "delims=" %%P in ('where python 2^>nul') do if not defined PY set "PY=%%P"
 if not defined PY (
-    echo forge: no Python found. Install Python 3, or run TrioForge.bat once. 1>&2
+    echo forge: no Python found. Install Python 3, or run TrioForge-Web.bat once. 1>&2
     exit /b 1
 )
 

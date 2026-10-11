@@ -15,7 +15,7 @@ for /f "delims=" %%P in ('where py 2^>nul') do if not defined PY set "PY=%%P"
 if not defined PY for /f "delims=" %%P in ('where python 2^>nul') do if not defined PY set "PY=%%P"
 if not defined PY (
     echo.
-    echo [TrioForge] No Python found. Run TrioForge.bat once first - it installs it,
+    echo [TrioForge] No Python found. Run TrioForge-Web.bat once first - it installs it,
     echo            creates the venv and installs what the voice agent needs.
     echo.
     if not defined CI if not defined TRIOFORGE_NO_PAUSE pause

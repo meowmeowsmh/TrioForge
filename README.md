@@ -8,7 +8,7 @@
 
 **What it does** — local + API models (Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter), connectors that let the agent read your Gmail, Google Calendar and Obsidian notes, a plugins/skills/MCP system, a file-editing coding agent with a live diff panel, a **full-screen terminal client (`trioforge`)** with its own agent and file tools, full-text search over every message, export/import, local voice-to-voice, document chat (RAG), image/video generation — on Windows / macOS / Linux / WSL / Docker, installable on your phone.
 
-**How it opens** — double-click **`TrioForge.bat`** (Windows) or run **`./run.sh`** (Linux/macOS/WSL): the server starts hidden and the app opens in your browser. Add **`--window`** for a real window of its own. There is **no `.exe` to download** — it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
+**How it opens** — double-click **`TrioForge-Web.bat`** (Windows) or run **`./run.sh`** (Linux/macOS/WSL): the server starts hidden and the app opens in your browser. Add **`--window`** for a real window of its own. There is **no `.exe` to download** — it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -80,7 +80,7 @@
 curl -fsSL https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.sh | sh
 ```
 
-**One line, Windows (PowerShell)** — same thing: web app + `forge` (TUI) on your PATH, no git, no cd:
+**One line, Windows (PowerShell)** — same thing: web app (`trioforge-web`) + `forge` / `trioforge` (TUI) on your PATH, no git, no cd:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"
@@ -99,7 +99,7 @@ docker run -d --name trioforge -p 5002:5001 \
 
 Everything below is the full, manual version of those three one-liners.
 
-**Windows** — one file: `TrioForge.bat`.
+**Windows** — one file: `TrioForge-Web.bat`.
 
 ```bash
 git clone https://github.com/meowmeowsmh/TrioForge.git
@@ -128,7 +128,7 @@ forge: dependencies ready — both interfaces are installed:
 After that, a plain `git pull` is enough: `forge` re-installs by itself when a
 requirement changes, and costs nothing (~0.2s) when nothing has.
 
-Double-click **`TrioForge.bat`**. It opens in your browser, the server hidden behind it. Add **`--window`** for its own window (WebView2, ~600 MB) instead of a browser tab (~150–300 MB) — same server, same data; the window hands back to the browser automatically if your GPU can't draw it. It creates **`TrioForge`** (browser) and **`TrioForge (window)`** shortcuts per-user, no admin. Skip with `TRIOFORGE_NO_SHORTCUT=1`.
+Double-click **`TrioForge-Web.bat`**. It opens in your browser, the server hidden behind it. Add **`--window`** for its own window (WebView2, ~600 MB) instead of a browser tab (~150–300 MB) — same server, same data; the window hands back to the browser automatically if your GPU can't draw it. It creates **`TrioForge`** (browser) and **`TrioForge (window)`** shortcuts per-user, no admin. Skip with `TRIOFORGE_NO_SHORTCUT=1`.
 
 **Linux / macOS / WSL**
 
@@ -162,7 +162,7 @@ The launcher finds or installs **Python**, creates the venv and installs deps on
 ```bash
 git clone https://github.com/meowmeowsmh/TrioForge.git
 cd TrioForge
-./run.sh              # Windows: double-click TrioForge.bat
+./run.sh              # Windows: double-click TrioForge-Web.bat
 ```
 
 <details>
@@ -185,8 +185,8 @@ Then in the app: **🚀 Setup → ⚡ Auto-install** (llama.cpp) → **⬇** to 
 
 | Your OS | File | Local llama.cpp | Default URL |
 |---|---|---|---|
-| 🪟 Windows (browser) | `TrioForge.bat` | ⚡ Auto-install | `https://localhost:5003` |
-| 🪟 Windows (window) | `TrioForge.bat --window` | ⚡ Auto-install | own window |
+| 🪟 Windows (browser) | `TrioForge-Web.bat` | ⚡ Auto-install | `https://localhost:5003` |
+| 🪟 Windows (window) | `TrioForge-Web.bat --window` | ⚡ Auto-install | own window |
 | 🐧 Linux | `run.sh` | ⚡ Auto-install | `http://localhost:5003` |
 | 🐧 Linux (window) | `run.sh --window` | ⚡ Auto-install | own window |
 | 🍎 macOS | `run.sh` | `brew install llama.cpp` or ⚡ Auto-install | `http://localhost:5003` |
@@ -247,7 +247,7 @@ A full-screen terminal chat (Crush-style) that shares TrioForge's models and key
 
 ![The forge terminal client: a user message, a tool-call card and an answer, with a sidebar showing the machine, the offline models and the bot's mood face](forge.png)
 
-**`forge` and `trioforge` are the same program.** On Linux/macOS `trioforge` is a symlink to the `forge` launcher, and `--version` / `--help` print whichever name you typed. **On Windows the terminal command is `forge` only**: the Windows filesystem is case-insensitive, so `trioforge` collides with `TrioForge.bat` (the web launcher) — typing `trioforge` would start the web app instead of the terminal client. `forge` has no such collision and does the same thing.
+**`forge` and `trioforge` are the same program** (the terminal client); `--version` / `--help` print whichever name you typed. On Linux/macOS `trioforge` is a symlink to the `forge` launcher; on Windows it is a `.cmd` shim. **`trioforge-web`** launches the web app.
 
 ### Try it without installing anything
 
@@ -288,15 +288,16 @@ Neither needs admin, and both are safe to re-run. Both also fetch the prebuilt l
 ### Then just use it
 
 ```bash
-forge                           # interactive session
+forge                           # interactive session (terminal client)
 forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
-forge --version                 # -> forge 1.4.0: the CLI prints the name you typed
+forge --version                 # -> forge 1.5.4 (prints the name you typed)
+trioforge-web                   # start the web app (same as double-clicking)
 ```
 
-Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.4.0**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.4**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 
@@ -488,7 +489,7 @@ the right platform backend automatically — no source builds, no Docker.
 
 ```bash
 ./run.sh --window          # Linux / macOS / WSL
-TrioForge.bat --window     # Windows
+TrioForge-Web.bat --window     # Windows
 ```
 
 Same server, same data as the browser — the window is just a native frame around
@@ -524,7 +525,7 @@ Every launcher checks for a new version on start and applies it before the app c
 
 ```bash
 launcher.py --status / --update / --no-update / --force-update / --verify
-TrioForge.bat --install-autostart      # also: ./run.sh --install-autostart
+TrioForge-Web.bat --install-autostart      # also: ./run.sh --install-autostart
 ```
 
 **🛡️ Is my copy untouched?** The 🛡️ button (or `launcher.py --verify`) hashes the app's own files against `integrity-manifest.json` and scans for injected-code fingerprints (`eval`, `atob`, `new Function`, long base64, `curl | sh`…). **0 % = nothing changed.** After your own edits, `--verify-baseline` re-records the baseline.
@@ -633,7 +634,7 @@ TrioForge/
 ├── docker/                          # Dockerfile, compose, application.sh
 ├── .github/workflows/               # CI incl. real Windows + Apple Silicon smoke tests
 ├── templates/ · static/             # frontend (Jinja + JS/CSS)
-├── forge · forge.cmd · TrioForge.bat · run.sh   # launchers (Linux/macOS · Windows)
+├── forge · forge.cmd · TrioForge-Web.bat · run.sh   # launchers (Linux/macOS · Windows)
 ├── install.sh · install.ps1 · setup.sh · deps.sh  # one-time setup
 ├── models/ · video_model/ · universal_models_to_text/   # your GGUFs (git-ignored)
 └── requirements.txt · requirements-ml.txt · pyproject.toml · README.md · LICENSE

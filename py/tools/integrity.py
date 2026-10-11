@@ -39,12 +39,12 @@ MANIFEST_NAME = "integrity-manifest.json"
 # safe: it is what puts themes.css and theme-loader.js under the hash check.
 INCLUDE_DIRS = ("py", "templates", "static", "docker", "catalog")
 INCLUDE_FILES = (
-    "TrioForge.bat", "voice_agent.bat", ".gitattributes",
+    "TrioForge-Web.bat", "voice_agent.bat", ".gitattributes",
     "run.sh", "requirements.txt", "requirements-ml.txt", "pyproject.toml",
     # The terminal client's launchers and installers. run.sh was covered but
     # install.sh was not, and neither were install.ps1 or the forge launchers -
     # so an edit to the script that puts `trioforge` on PATH, or that installs its
-    # dependencies, went unnoticed. Same category as TrioForge.bat and run.sh.
+    # dependencies, went unnoticed. Same category as TrioForge-Web.bat and run.sh.
     "install.ps1", "install.sh", "forge", "forge.cmd",
 )
 # Skipped by their path FROM THE REPO ROOT only. Matching on any path component named

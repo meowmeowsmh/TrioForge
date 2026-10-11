@@ -7,7 +7,7 @@ whose venv happened to have been updated by hand.
 
 Does nothing (one hash of the requirement files) unless the project has no
 .venv or .deps_installed no longer matches requirements.txt & co. Then it
-creates .venv and installs into it with the same code TrioForge.bat uses.
+creates .venv and installs into it with the same code TrioForge-Web.bat uses.
 
 Exit status 0 means .venv is ready.
 """
@@ -54,7 +54,7 @@ def main() -> int:
     launcher.install_deps(project)          # exits non-zero itself on failure
     venv = launcher.project_venv_python(project)
     if not venv:
-        print("forge: could not create .venv - run TrioForge.bat once.", file=sys.stderr)
+        print("forge: could not create .venv - run TrioForge-Web.bat once.", file=sys.stderr)
         return 1
     if subprocess.run([venv, "-c", TUI_IMPORTS]).returncode != 0:
         print("forge: install finished but the terminal client's packages are "

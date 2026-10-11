@@ -2,13 +2,13 @@
 
 Everything TrioForge starts (git, uv, pip, mkcert, llama-server, the app itself) is
 a *console* program. When the parent has no console of its own - which is the case
-for every hidden launch: TrioForge.bat under pythonw, the low-level pythonw path - Windows
+for every hidden launch: TrioForge-Web.bat under pythonw, the low-level pythonw path - Windows
 gives each console child a brand-new console window. On a machine whose default
 terminal is Windows Terminal that appears as a terminal window titled with the
 child's path, which is exactly what "why is a command popping up" looks like.
 
 CREATE_NO_WINDOW suppresses it. When the parent *does* have a console (someone ran
-TrioForge.bat in a terminal) we leave the flag off, so output still lands in the
+TrioForge-Web.bat in a terminal) we leave the flag off, so output still lands in the
 terminal they are watching.
 """
 

@@ -6,28 +6,28 @@ rem  There used to be five files that all meant "start TrioForge" - start.bat,
 rem  start.vbs, start-web.bat, start-web.vbs and application.bat - and no way to
 rem  tell which one to run. They are now one file and a flag.
 rem
-rem      TrioForge.bat             start it in your browser (the default; the
+rem      TrioForge-Web.bat             start it in your browser (the default; the
 rem                                server runs hidden behind it)
-rem      TrioForge.bat --window    start it in its own window
-rem      TrioForge.bat --status    what is installed and what is running
-rem      TrioForge.bat --update    check for updates now
-rem      TrioForge.bat --help      show this text
+rem      TrioForge-Web.bat --window    start it in its own window
+rem      TrioForge-Web.bat --status    what is installed and what is running
+rem      TrioForge-Web.bat --update    check for updates now
+rem      TrioForge-Web.bat --help      show this text
 rem
 rem  Anything else after the file name goes to py\tools\launcher.py untouched,
 rem  so every launcher option still works from here:
 rem
-rem      TrioForge.bat --install-shortcut    put the desktop icons back
-rem      TrioForge.bat --remove-shortcut     take them away again
-rem      TrioForge.bat --install-autostart   start the server at login
-rem      TrioForge.bat --remove-autostart    stop starting it at login
-rem      TrioForge.bat --verify              check the app's own files
-rem      TrioForge.bat --menu                the interactive menu
+rem      TrioForge-Web.bat --install-shortcut    put the desktop icons back
+rem      TrioForge-Web.bat --remove-shortcut     take them away again
+rem      TrioForge-Web.bat --install-autostart   start the server at login
+rem      TrioForge-Web.bat --remove-autostart    stop starting it at login
+rem      TrioForge-Web.bat --verify              check the app's own files
+rem      TrioForge-Web.bat --menu                the interactive menu
 rem
 rem  Nothing has to be installed first: with no Python this installs one via
 rem  winget, then creates the venv and installs the dependencies by itself.
 rem ===========================================================================
 
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 rem Project folder without the trailing backslash (it would escape a quote).
@@ -55,7 +55,7 @@ if /i "%A%"=="-h" goto :usage
 if /i "%A%"=="/?" goto :usage
 if /i "%A%"=="--window" (set "MODE=window" & shift & goto :parse)
 if /i "%A%"=="--browser" (set "MODE=browser" & shift & goto :parse)
-if defined EXTRA (set "EXTRA=%EXTRA% %A") else (set "EXTRA=%A")
+if defined EXTRA (set "EXTRA=!EXTRA! !A!") else (set "EXTRA=!A!")
 shift
 goto :parse
 :parsed
@@ -103,7 +103,7 @@ goto :ready
 :no_winget
 echo.
 echo [TrioForge] That did not work. Install "Python" from the Microsoft Store,
-echo            then run TrioForge.bat again.
+echo            then run TrioForge-Web.bat again.
 start "" "https://apps.microsoft.com/detail/9NRWMJP3717K"
 echo.
 if not defined NOPAUSE pause
@@ -112,7 +112,7 @@ exit /b 1
 :path_stale
 echo.
 echo [TrioForge] Python is installed, but this window cannot see it yet.
-echo            Close this window and run TrioForge.bat again.
+echo            Close this window and run TrioForge-Web.bat again.
 echo.
 if not defined NOPAUSE pause
 exit /b 1
@@ -169,11 +169,11 @@ rem ----------------------------------------------------------------- usage ---
 echo.
 echo   TrioForge - the one launcher
 echo.
-echo   TrioForge.bat             start it in your browser (default)
-echo   TrioForge.bat --window    start it in its own window
-echo   TrioForge.bat --status    what is installed and what is running
-echo   TrioForge.bat --update    check for updates now
-echo   TrioForge.bat --help      this text
+echo   TrioForge-Web.bat             start it in your browser (default)
+echo   TrioForge-Web.bat --window    start it in its own window
+echo   TrioForge-Web.bat --status    what is installed and what is running
+echo   TrioForge-Web.bat --update    check for updates now
+echo   TrioForge-Web.bat --help      this text
 echo.
 echo   Every py\tools\launcher.py option works from here too, for example:
 echo     --install-shortcut   --remove-shortcut

@@ -26,7 +26,7 @@ cd TrioForge
 ./forge                 # installs Python-if-needed, the venv, deps, then starts
 ```
 
-Windows: double-click **`TrioForge.bat`**. Docker: the one-liner in the README.
+Windows: double-click **`TrioForge-Web.bat`**. Docker: the one-liner in the README.
 `./setup.sh` is only needed if you also want the `forge` terminal client on your `PATH`.
 
 You do **not** need a GPU, a model, or an API key to work on the app — it starts fine
@@ -65,7 +65,7 @@ git add integrity-manifest.json
 ```
 
 **In scope:** `py/`, `templates/`, `static/`, `docker/`, `catalog/`, plus the launcher
-scripts and packaging files listed in `py/tools/integrity.py` (`TrioForge.bat`,
+scripts and packaging files listed in `py/tools/integrity.py` (`TrioForge-Web.bat`,
 `run.sh`, `install.sh`, `install.ps1`, `forge`, `forge.cmd`, `requirements*.txt`,
 `pyproject.toml`, `.gitattributes`).
 

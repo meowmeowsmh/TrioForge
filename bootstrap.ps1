@@ -3,9 +3,9 @@
 #
 #      powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"
 #
-#  Downloads the repo as a zip (no git), puts the `forge` terminal command on
-#  your PATH (so the TUI works from ANY directory), then
-#  hands off to TrioForge.bat for the web app (Python, venv, deps, llama.cpp).
+#  Downloads the repo as a zip (no git), puts `forge` / `trioforge` (TUI) and
+#  `trioforge-web` (web app) on your PATH (works from ANY directory), then
+#  hands off to TrioForge-Web.bat for the web app (Python, venv, deps, llama.cpp).
 #  Re-running the same line just launches the already-installed copy.
 #
 #  $env:TRIOFORGE_DIR = "..."   install somewhere other than ~\TrioForge
@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 $repo    = "https://github.com/meowmeowsmh/TrioForge"
 $zipUrl  = "$repo/archive/refs/heads/main.zip"
 $dir     = if ($env:TRIOFORGE_DIR) { $env:TRIOFORGE_DIR } else { Join-Path $HOME "TrioForge" }
-$bat     = Join-Path $dir "TrioForge.bat"
+$bat     = Join-Path $dir "TrioForge-Web.bat"
 
 if (Test-Path $bat) {
     Write-Host "[trio] already installed at $dir"
@@ -40,22 +40,27 @@ if (Test-Path $bat) {
     }
 }
 
-# Put the TUI command (forge) on the PATH, so it works from any directory rather
-# than only this folder. `trioforge` is the Linux/macOS alias only: on Windows'
-# case-insensitive filesystem the typed name `trioforge` collides with
-# TrioForge.bat (web launcher) and TrioForge.exe (its windowed interpreter), so
-# it launched the SERVER instead of the TUI. Same shim + PATH step install.ps1
-# does, but done here before Python exists: forge.cmd self-installs its own deps
-# (rich / textual / duckdb) on first run.
+# Put the TUI commands (forge + trioforge) and the web app (trioforge-web) on
+# the PATH, so they work from any directory rather than only this folder. The
+# web launcher lives at TrioForge-Web.bat so the typed `trioforge` no longer
+# collides with it on the case-insensitive filesystem. Done here before Python
+# exists: forge.cmd self-installs its own deps (rich / textual / duckdb) on
+# first run.
 $bin = Join-Path $env:USERPROFILE "bin"
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
-$target = Join-Path $dir "forge.cmd"
-foreach ($name in @("forge")) {
+
+$tuiTarget = Join-Path $dir "forge.cmd"
+foreach ($name in @("forge", "trioforge")) {
     $shim = Join-Path $bin "$name.cmd"
-    "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$target`" %*" |
+    "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$tuiTarget`" %*" |
         Set-Content -Path $shim -Encoding ASCII
     Write-Host "  shim:   $shim"
 }
+
+$webTarget = Join-Path $dir "TrioForge-Web.bat"
+$webShim = Join-Path $bin "trioforge-web.cmd"
+"@echo off`r`ncall `"$webTarget`" %*" | Set-Content -Path $webShim -Encoding ASCII
+Write-Host "  shim:   $webShim"
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($null -eq $userPath) { $userPath = "" }

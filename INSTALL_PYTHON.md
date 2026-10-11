@@ -1,17 +1,17 @@
 # 🐍 Installing Python for TrioForge (no manual downloads)
 
 You **don't need Python or Docker already installed** to run TrioForge. The launcher
-(`TrioForge.bat` on Windows, `run.sh` on Linux/macOS) detects a missing Python,
+(`TrioForge-Web.bat` on Windows, `run.sh` on Linux/macOS) detects a missing Python,
 installs the **latest version**, and shows a **Launch** prompt.
 
-Just double-click **`TrioForge.bat`** (Windows) or run **`./run.sh`** (Linux/macOS),
+Just double-click **`TrioForge-Web.bat`** (Windows) or run **`./run.sh`** (Linux/macOS),
 then press **Enter** when it says "Launch".
 
 ---
 
 ## 🪟 Windows
 
-1. Double-click **`TrioForge.bat`**.
+1. Double-click **`TrioForge-Web.bat`**.
 2. It finds the **latest installed Python 3** automatically (`py -3`) — no version
    number is hard-coded.
 3. If Python isn't found, it installs the latest via **winget** (built into Windows 10/11).
@@ -62,7 +62,7 @@ page for Python (latest) so you click **Get** — still no manual file download.
 After an automatic install, the **current terminal window** sometimes can't see the
 new Python until you open a fresh one.
 
-- **Windows:** close the window, open a new Command Prompt, run `TrioForge.bat` again.
+- **Windows:** close the window, open a new Command Prompt, run `TrioForge-Web.bat` again.
 - **Linux/macOS:** open a new terminal, run `./run.sh` again.
 
 ---

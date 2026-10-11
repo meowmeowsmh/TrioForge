@@ -3,7 +3,7 @@
 TrioForge — cross-platform launcher.
 
 One entry point that runs on Windows, Linux, macOS, and WSL.
-`TrioForge.bat` and `run.sh` are thin wrappers that call this script
+`TrioForge-Web.bat` and `run.sh` are thin wrappers that call this script
 and open an interactive menu so the user can pick their environment.
 
 Usage:
@@ -314,7 +314,7 @@ def host_setup(project: Path, explicit: str = "") -> str:
     print("    internet (tunnel): cloudflared tunnel --url http://localhost:{}".format(
         os.environ.get("TRIOFORGE_PORT", "5003")))
     print("    Docker / server  : docker run -p 5002:5001 ... ghcr.io/meowmeowsmh/trioforge:latest")
-    print("    one person only  : point them at the repo (git clone + TrioForge.bat) - no password needed")
+    print("    one person only  : point them at the repo (git clone + TrioForge-Web.bat) - no password needed")
     print()
     print("  Everyone you share it with sees this workspace, including its notes,")
     print("  pins and conversations on this machine. Use --host-password to choose")
@@ -355,7 +355,7 @@ def _app_command(project: Path) -> List[str]:
     quiet, because .venv/Scripts/python.exe is a shim that starts the real
     interpreter as a child, and CREATE_NO_WINDOW only silences the shim - the child
     allocates a console window of its own. When we DO have a console (someone ran
-    TrioForge.bat in a terminal) the console interpreter is used, so the app's
+    TrioForge-Web.bat in a terminal) the console interpreter is used, so the app's
     output stays in the terminal they are watching.
     """
     app_path = project / "py" / "app.py"
@@ -715,7 +715,7 @@ def prepare_and_run(project: Path, args) -> int:
     # belongs, and only creates what is actually missing:
     #   (no --window) -> "TrioForge"          (browser)
     #   --window      -> "TrioForge (window)" (WebView2 window)
-    # Both point at the same TrioForge.bat and differ only by argument, so the
+    # Both point at the same TrioForge-Web.bat and differ only by argument, so the
     # flavour is taken from --window rather than from which file was launched.
     # So launching one never overwrites the other, and a deleted icon comes back the
     # next time that entry point is used. Skippable with TRIOFORGE_NO_SHORTCUT=1.
