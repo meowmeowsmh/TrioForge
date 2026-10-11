@@ -74,13 +74,13 @@
 
 ## ⚡ Start
 
-**One line, Linux / macOS / WSL** — downloads, installs, starts (no git, no cd):
+**One line, Linux / macOS / WSL** — downloads, installs, starts the web app, and puts `trioforge` (the TUI) on your PATH (no git, no cd):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.sh | sh
 ```
 
-**One line, Windows (PowerShell)** — same thing, no git, no cd:
+**One line, Windows (PowerShell)** — same thing: web app + `trioforge` (TUI) on your PATH, no git, no cd:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"

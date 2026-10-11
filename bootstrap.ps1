@@ -3,9 +3,10 @@
 #
 #      powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"
 #
-#  Downloads the repo as a zip (no git), then hands off to TrioForge.bat,
-#  which does the rest (Python, venv, deps, llama.cpp). Re-running the same
-#  line just launches the already-installed copy - no cd, no git pull.
+#  Downloads the repo as a zip (no git), puts the `forge` / `trioforge`
+#  terminal commands on your PATH (so the TUI works from ANY directory), then
+#  hands off to TrioForge.bat for the web app (Python, venv, deps, llama.cpp).
+#  Re-running the same line just launches the already-installed copy.
 #
 #  $env:TRIOFORGE_DIR = "..."   install somewhere other than ~\TrioForge
 #
@@ -20,28 +21,47 @@ $dir     = if ($env:TRIOFORGE_DIR) { $env:TRIOFORGE_DIR } else { Join-Path $HOME
 $bat     = Join-Path $dir "TrioForge.bat"
 
 if (Test-Path $bat) {
-    Write-Host "[trio] already installed at $dir - launching"
-    Set-Location $dir
-    & $bat
-    exit $LASTEXITCODE
+    Write-Host "[trio] already installed at $dir"
+} else {
+    Write-Host "[trio] installing to $dir (no git needed)"
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $tmp = Join-Path $env:TEMP ("trioforge-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $tmp | Out-Null
+    $zip = Join-Path $tmp "trioforge.zip"
+    try {
+        Write-Host "[trio] downloading TrioForge..."
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zip -UseBasicParsing
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        $src = Join-Path $tmp "TrioForge-main"
+        Copy-Item -Path (Join-Path $src "*") -Destination $dir -Recurse -Force
+    }
+    finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
 }
 
-Write-Host "[trio] installing to $dir (no git needed)"
-New-Item -ItemType Directory -Path $dir -Force | Out-Null
-
-$tmp = Join-Path $env:TEMP ("trioforge-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $tmp | Out-Null
-$zip = Join-Path $tmp "trioforge.zip"
-
-try {
-    Write-Host "[trio] downloading TrioForge..."
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zip -UseBasicParsing
-    Expand-Archive -Path $zip -DestinationPath $tmp -Force
-    $src = Join-Path $tmp "TrioForge-main"
-    Copy-Item -Path (Join-Path $src "*") -Destination $dir -Recurse -Force
+# Put the TUI commands (forge / trioforge) on the PATH, so they work from any
+# directory rather than only this folder. Same shim + PATH step install.ps1
+# does, but done here before Python exists: forge.cmd self-installs its own
+# deps (rich / textual / duckdb) on first run.
+$bin = Join-Path $env:USERPROFILE "bin"
+New-Item -ItemType Directory -Force -Path $bin | Out-Null
+$target = Join-Path $dir "forge.cmd"
+foreach ($name in @("forge", "trioforge")) {
+    $shim = Join-Path $bin "$name.cmd"
+    "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$target`" %*" |
+        Set-Content -Path $shim -Encoding ASCII
+    Write-Host "  shim:   $shim"
 }
-finally {
-    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($null -eq $userPath) { $userPath = "" }
+if ($userPath -split ";" -notcontains $bin) {
+    $joined = if ($userPath.TrimEnd(";") -eq "") { $bin } else { "$($userPath.TrimEnd(';'));$bin" }
+    [Environment]::SetEnvironmentVariable("Path", $joined, "User")
+    Write-Host "[trio] added $bin to your user PATH (open a NEW terminal to use 'trioforge')"
+} else {
+    Write-Host "[trio] $bin is already on your PATH"
 }
 
 Set-Location $dir
