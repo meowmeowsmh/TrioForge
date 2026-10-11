@@ -237,6 +237,42 @@ def _auto_upgrade_deps(project: Path) -> None:
         print("[deps] auto-upgrade not performed: {}".format(exc))
 
 
+def _ensure_webview(project: Path) -> bool:
+    """Install pywebview (the WebView2 glue) the first time --window is used.
+
+    app_window.py exits 3 when pywebview is missing, which used to mean "the window
+    simply never opens" with no explanation anywhere the user would look. pywebview
+    is only the ~1 MB glue for the engine Windows already ships, so it is installed
+    on demand rather than being a core requirement (Linux/Docker servers never need
+    it). Every child here is launched hidden: this must never flash a console.
+    """
+    venv_python = project_venv_python(project)
+    if venv_python is None:
+        return False
+    flags = _no_window_flags()
+    if os.name == "nt":
+        flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        probe = subprocess.run([venv_python, "-c", "import webview"],
+                               creationflags=flags, timeout=60,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if probe.returncode == 0:
+            return True
+    except Exception:
+        return False
+    uv = shutil.which("uv")
+    cmd = ([uv, "pip", "install", "--python", venv_python, "pywebview"] if uv
+           else [venv_python, "-m", "pip", "install", "pywebview"])
+    print("[window] installing the app window engine (one time, ~1 MB)...")
+    try:
+        result = subprocess.run(cmd, cwd=str(project), creationflags=flags,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        return result.returncode == 0
+    except Exception as exc:
+        print("[window] could not install pywebview: {}".format(exc))
+        return False
+
+
 def _voice_config_path(project: Path) -> Optional[Path]:
     """Return the voice agent config.json path if present, else None."""
     cfg = project / "voiceguide_llama.cpp_guide" / "config.json"
@@ -1480,6 +1516,10 @@ def _open_app_window(project: Path) -> None:
         script = project / "py" / "tools" / "app_window.py"
         if not script.is_file():
             print("[window] app_window.py not found; skipping.")
+            return
+        if not _ensure_webview(project):
+            print("[window] the window engine (pywebview) is unavailable - "
+                  "run TrioForge-Web.bat without --window to use your browser.")
             return
         pythonw = venv_pythonw(project)
         port = os.environ.get("TRIOFORGE_PORT", "5003")
