@@ -3,8 +3,8 @@
 #
 #      powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"
 #
-#  Downloads the repo as a zip (no git), puts the `forge` / `trioforge`
-#  terminal commands on your PATH (so the TUI works from ANY directory), then
+#  Downloads the repo as a zip (no git), puts the `forge` terminal command on
+#  your PATH (so the TUI works from ANY directory), then
 #  hands off to TrioForge.bat for the web app (Python, venv, deps, llama.cpp).
 #  Re-running the same line just launches the already-installed copy.
 #
@@ -62,7 +62,7 @@ if ($null -eq $userPath) { $userPath = "" }
 if ($userPath -split ";" -notcontains $bin) {
     $joined = if ($userPath.TrimEnd(";") -eq "") { $bin } else { "$($userPath.TrimEnd(';'));$bin" }
     [Environment]::SetEnvironmentVariable("Path", $joined, "User")
-    Write-Host "[trio] added $bin to your user PATH (open a NEW terminal to use 'trioforge')"
+    Write-Host "[trio] added $bin to your user PATH (open a NEW terminal to use 'forge')"
 } else {
     Write-Host "[trio] $bin is already on your PATH"
 }

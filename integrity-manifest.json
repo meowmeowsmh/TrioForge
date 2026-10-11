@@ -13,7 +13,7 @@
   "docker/docker-entrypoint.sh": "7c969f55b0b410e12f9369d5081364021f5ee92ecc11893d371c0dd833818f7b",
   "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
   "forge.cmd": "00dee35c6786d310e4770357962f8b5fe182cc4de2559c0f6789349a3935ebe8",
-  "install.ps1": "eb24bb8bd9487c5d780c27d68d3afa866d64434778f735f14d2ad0bde0785cc7",
+  "install.ps1": "9596cfae38950ef07e827a3ace49efccbbf2ec87fe0c85c95b30020237f96ea2",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "ca2b7405fe06b5855dc4fc643c106e0eacba78915a4651fadb19d6c284d236f3",
@@ -64,7 +64,7 @@
   "py/tools/shortcuts.py": "9997f35e82b9483a239e2a85e7fcf741652ac43f22685b09b45d490b1c168640",
   "py/tools/updater.py": "5a1e83445094195609094f8cad1cac250d1a29ed774291a2a49c1ab47e1063a2",
   "py/tools/voice_agent.py": "e90fc7c1c67d718173c357e6eaca90432f138a8f02cb85a2f4d9e8c3e9593edd",
-  "py/tui/README.md": "562cdb6e2b1dc22b728d11fc8c765cc31c60e479595194e4c5bc2dddbf5401c9",
+  "py/tui/README.md": "be46fdcdaa0ddd2fe568b17112452d3364f0c9c0e5bb6feeb21e0557bf9629c5",
   "py/tui/__init__.py": "b73fd697cc1e5b7ed5cbe0c07af99666484e976aa90d20321b4cc8b31badd8b4",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-12T03:42:07",
- "note": "fix: Windows TUI is forge (trioforge collides with TrioForge.bat)"
+ "generated": "2026-10-12T04:22:33",
+ "note": "fix: Windows TUI is forge; finish updating all references"
 }

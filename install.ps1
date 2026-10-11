@@ -1,10 +1,12 @@
 # ============================================================
-#  install.ps1 - put the `forge` (and `trioforge`) command on your PATH (Windows).
+#  install.ps1 - put the `forge` command on your PATH (Windows).
 #
 #      powershell -ExecutionPolicy Bypass -File .\install.ps1
 #
-#  Creates small shims in %USERPROFILE%\bin and adds that folder to your
-#  user PATH, so `trioforge` works from any directory. No admin needed.
+#  Creates a small shim in %USERPROFILE%\bin and adds that folder to your
+#  user PATH, so `forge` works from any directory. No admin needed.
+#  (`trioforge` is the Linux/macOS alias only: on Windows it collides with
+#  TrioForge.bat.)
 #
 #  Safe to re-run: it only rewrites the shims and the PATH entry.
 #
@@ -34,7 +36,7 @@ if (-not (Test-Path $py)) {
 # contains NO pip: `python -m pip` dies with "No module named pip". That is a
 # native command's non-zero exit, so $ErrorActionPreference = "Stop" does not stop
 # it, so the old version created the shims anyway and printed "Done", leaving
-# `trioforge` to fail later with ModuleNotFoundError: textual. Install with
+# `forge` to fail later with ModuleNotFoundError: textual. Install with
 # whatever this interpreter really has, prove the imports work, and refuse to
 # create a launcher that cannot run.
 # duckdb backs the memory vault (py/memory.py); forge imports it lazily, but the
@@ -78,7 +80,7 @@ if (Test-TuiDeps $py) {
         Write-Host "ERROR: could not install rich / prompt_toolkit / textual / duckdb into:" -ForegroundColor Red
         Write-Host "       $py" -ForegroundColor Red
         Write-Host ""
-        Write-Host "  No launcher was created, on purpose: a 'trioforge' that exists and then"
+        Write-Host "  No launcher was created, on purpose: a 'forge' that exists and then"
         Write-Host "  dies with ModuleNotFoundError: textual is worse than no launcher at all."
         Write-Host ""
         Write-Host "  Install them by hand, then re-run this script:"
@@ -140,4 +142,4 @@ if ($userPath -split ";" -notcontains $bin) {
 }
 
 Write-Host
-Write-Host "Done. Try:  trioforge --version"
+Write-Host "Done. Try:  forge --version"
