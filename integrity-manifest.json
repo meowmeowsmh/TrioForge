@@ -90,8 +90,8 @@
   "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
   "pyproject.toml": "22f15584d3834108c82b57c438375b23da259e8a4d25fb9832ce999cffb6af4d",
-  "requirements-ml.txt": "fa47afb6981b187293c00237b9b8b0a388d437d6bd06ad17b58acdd2f1616f2c",
-  "requirements.txt": "a9ed07f0d3add7f87fe032a033d077f3cea2b984cf9c714d05e0709595b69fd0",
+  "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
+  "requirements.txt": "30fe033cfc6d5a3b2e959fbbb2819317c4085f91dbefb2f13e6598c7daf46b16",
   "run.sh": "154cdfbb8e026dbe800d62aea1daca4ea77f4b5484e9884a79d892e1cf203fa2",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T05:27:33",
- "note": "fix(window): auto-install pywebview; --window was silently exiting 3"
+ "generated": "2026-10-12T05:34:28",
+ "note": "deps: cap huggingface-hub<2; optionals documented in requirements-ml.txt"
 }

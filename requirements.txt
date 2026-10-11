@@ -15,7 +15,11 @@ gunicorn==26.0.0         # Linux / Docker server
 
 # ── LLM providers ───────────────────────────────────────────────
 groq>=0.3.0              # Groq provider (SDK)
-huggingface_hub>=0.16.0  # Hugging Face provider
+# <2 is deliberate. The OPTIONAL semantic stack (requirements-ml.txt) pins
+# huggingface-hub<2, so an uncapped floor here lets the launch-time auto-upgrade
+# replace 1.x with 2.x and quietly break sentence-transformers. The app only uses
+# hf_hub_download/HfApi, which are unchanged in 1.x.
+huggingface_hub>=0.16.0,<2.0.0  # Hugging Face provider
 google-genai>=2.0.0      # Gemini provider (chat + image + video)
 
 # ── File / PDF parsing ──────────────────────────────────────────

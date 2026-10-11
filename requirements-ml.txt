@@ -1,7 +1,9 @@
-# ⚙️ TrioForge OPTIONAL ML stack — semantic RAG (embeddings)
+# ⚙️ TrioForge OPTIONAL extras — semantic RAG (embeddings) + small feature deps
 #
-# Install only if you want meaning-based document search. Without these, TrioForge
-# still works — document chat falls back to fast keyword matching.
+# Install these only if you want meaning-based document search and the optional
+# features listed below. Without them TrioForge still works: document chat falls
+# back to fast keyword matching, screenshots are sent full-size, and the agent's
+# type_text / press_keys tools report that pyautogui is missing.
 #
 # WARNING: sentence-transformers pulls in torch (~2 GB), so this is a large
 # install. Skip it unless you specifically want semantic search.
@@ -11,7 +13,22 @@
 # pinned here, so this same `python -m pip install` works on Windows, macOS and Linux.
 #
 #     python -m pip install -r requirements-ml.txt
+#
+# Re-run that one command after changing Python or rebuilding .venv: these are
+# NOT in requirements.txt, so an installer will not put them back by itself.
 
+# ── Semantic search / embeddings (the ~2 GB part) ───────────────────────────
 numpy>=1.24.0
 scikit-learn>=1.3.0
 sentence-transformers>=2.2.0
+
+# ── Small feature extras (a few MB) ─────────────────────────────────────────
+# Pillow — shrinks oversized screenshots for the "screen ask" feature
+# (py/features/screen_ask.py) and builds the brand assets (py/make_brand_assets.py).
+pillow>=10.0.0
+
+# pyautogui — the agent's type_text / press_keys tools (py/app.py).
+# Linux note: it also needs the X11 bits (`sudo apt install python3-xlib scrot`);
+# comment this line out if you do not want those tools.
+pyautogui>=0.9.54
+
