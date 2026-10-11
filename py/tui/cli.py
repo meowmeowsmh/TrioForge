@@ -26,12 +26,54 @@ def prog_name() -> str:
     return os.environ.get("FORGE_PROG", "").strip() or "trioforge"
 
 
+_EPILOG = """\
+GETTING STARTED
+  {prog} --setup      guided setup: pick a provider, paste its key, pick a model
+  {prog}              with nothing configured yet, the same wizard starts on its own
+  /setup              re-run the wizard from inside a running session
+  /help               every command, grouped, each with a runnable example
+
+PROVIDERS (pick one in the wizard)
+  Local - no key, works offline:
+    ollama         models via Ollama  (https://ollama.com, then: ollama pull llama3.2)
+    local          your own .gguf on llama.cpp  (endpoint http://127.0.0.1:8080/v1)
+  Hosted - needs an API key:
+    groq           free tier, very fast        key: console.groq.com
+    deepseek       cheap, strong at code       key: platform.deepseek.com
+    gemini         generous free tier          key: aistudio.google.com
+    huggingface    free tier                   key: huggingface.co/settings/tokens
+    openrouter     one key, many models        key: openrouter.ai/keys
+    claude         paid                        key: console.anthropic.com
+
+DOCKER (runs the web app; this terminal client talks to a model endpoint directly)
+  docker run -d --name trioforge -p 5002:5001 \\
+    --add-host host.docker.internal:host-gateway \\
+    -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \\
+    -v trioforge-data:/app/sqlite_data \\
+    -v trioforge-config:/app/json_configuration \\
+    ghcr.io/meowmeowsmh/trioforge:latest
+  then open http://localhost:5002
+
+ONE-SHOT VS INTERACTIVE
+  {prog} "explain this repo"   ask once, print the reply, exit
+  {prog}                       interactive full-screen session
+  {prog} --echo                offline demo, no model contacted
+  {prog} --specs               print detected hardware and what fits
+  {prog} --version             print the version
+
+CONFIG
+  Keys are saved to ~/.config/forge/config.json (mode 0600). Use ${{ENV_VAR}} to
+  keep a secret out of the file:
+    {prog} --provider deepseek --api-key '${{DEEPSEEK_API_KEY}}' --save
+"""
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog=prog_name(),
-        description="TrioForge terminal client — a Claude-style chat UI for your models.",
-        epilog="With no arguments it starts an interactive session. "
-               "Give it words and it sends one message, prints the reply and exits.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="TrioForge terminal client - a Claude-style chat UI for your models.",
+        epilog=_EPILOG.format(prog=prog_name()),
     )
     p.add_argument("prompt", nargs="*",
                    help="one-shot message; omit for interactive mode")
