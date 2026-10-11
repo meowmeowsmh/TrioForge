@@ -2,7 +2,7 @@
  "app": "TrioForge",
  "files": {
   ".gitattributes": "f1741ec13cd048ee99d864bddeb48e2b7b6560d6517e446fd3f01df6a45a859b",
-  "TrioForge-Web.bat": "4a1be177dd5bc1141cc0155c16e4f7dc8e27645965e5b829f5fd743c5d142eef",
+  "TrioForge-Web.bat": "f75677bea99b6dc832fec6fa719c17b801904ff24a7c5af75f54e9c2b09e3a84",
   "catalog/api-design/SKILL.md": "8027677858510df06ec126f58399e8ebfc4378fba037eb5532e5e25bd2e9d686",
   "catalog/catalog.json": "168c806600ccef42c174e8f961e4055985dddf95f304ec84b720dbccf1ba9c9f",
   "catalog/refactor/SKILL.md": "dcd60d3603d8c50729bf47d02934f7e0a827f83445a5b9c49091db2e7e829249",
@@ -58,7 +58,7 @@
   "py/tools/browser_picker.py": "a77ec789f9194dcdc64ab783857c8e757f2b101a9cc9df9325105186df9b30b7",
   "py/tools/ensure_deps.py": "b865e67ec5bc9aba83b79039449ab339d6842c03f709959f00ea1e4ce0ed40d9",
   "py/tools/integrity.py": "a8f71540c223856a486d2c5fae3905d70810461edc8ade43181d8d1796216f51",
-  "py/tools/launcher.py": "1b9f9884a9409a8805302feca928795c906ee8f907b3250370e97516a40e129c",
+  "py/tools/launcher.py": "91fa7b73302f8ac132bbc9cf634c154d39e0601061180e0c0e819b42c43daf09",
   "py/tools/launcher_gui.py": "c32d97c339b6f2612922e607f2f26091f1717e8e07d9875fc5e24f152aff0442",
   "py/tools/procutil.py": "9adaeda1af4e6094af9f30afaf27aa4db9afad5add5e7fd39b2610827c45edf5",
   "py/tools/shortcuts.py": "7b35ee35bc5226d023cd01e2c2d6ba6a26011baaec89680af6db62f9fe54ce0b",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T05:09:10",
- "note": "feat(launcher): add --quit to stop the running server"
+ "generated": "2026-10-12T05:17:13",
+ "note": "fix(launcher): silent windowless auto-upgrade and double-click relaunch"
 }

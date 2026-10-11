@@ -213,15 +213,22 @@ def _auto_upgrade_deps(project: Path) -> None:
         base = [uv, "pip", "install", "--python", venv_python]
     else:
         base = [venv_python, "-m", "pip", "install"]
+    flags = _no_window_flags()
+    if os.name == "nt":
+        # The resolver (uv/pip) is a console program: always hide it, even when
+        # the launcher itself has a console, so the auto-upgrade never pops a
+        # window. Its output is swallowed too - this is a silent background check.
+        flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         probe = subprocess.run(base + ["--dry-run", "--upgrade", "-r", str(req)],
-                               cwd=str(project), creationflags=_no_window_flags(),
+                               cwd=str(project), creationflags=flags,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if probe.returncode != 0:
             print("[deps] newest versions do not resolve - staying on the current, working set.")
             return
         result = subprocess.run(base + ["--upgrade", "-r", str(req)],
-                                cwd=str(project), creationflags=_no_window_flags())
+                                cwd=str(project), creationflags=flags,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
             print("[deps] dependencies are at the newest resolvable versions.")
         else:

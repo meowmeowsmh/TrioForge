@@ -138,15 +138,10 @@ rem whole point, so leave it alone.
 echo "%cmdcmdline%" | find /i "%~nx0" >nul 2>nul
 if errorlevel 1 goto :run_visible
 set "TRIOFORGE_HIDDEN=1"
-rem The mode has to be handed to the relaunched copy: --window is OURS, so it never
-rem reaches EXTRA, and a "TrioForge (window)" shortcut would otherwise come back up
-rem in the browser. Always pass one of the two explicitly - an empty -ArgumentList
-rem would be one more thing to get wrong.
-set "RELAUNCH=--browser"
-if /i "%MODE%"=="window" set "RELAUNCH=--window"
-powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath '%~f0' -ArgumentList '%RELAUNCH%' -WindowStyle Hidden" >nul 2>nul
-if not errorlevel 1 exit /b 0
-rem No usable PowerShell: fall through and start in this window instead.
+rem Launch the app hidden directly (pythonw is windowless) and close this window.
+rem No PowerShell relaunch - that briefly flashed its own console window.
+start "" "%PYW%" "%ROOT%\py\tools\launcher.py" "%ROOT%" %MODEFLAGS%
+exit /b 0
 
 :run_visible
 if defined EXTRA (
