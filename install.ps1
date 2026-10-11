@@ -113,7 +113,7 @@ foreach ($name in @("forge", "trioforge")) {
 # Web app shim.
 $webTarget = Join-Path $Root "TrioForge-Web.bat"
 $webShim = Join-Path $bin "trioforge-web.cmd"
-"@echo off`r`ncall `"$webTarget`" %*" | Set-Content -Path $webShim -Encoding ASCII
+"@echo off`r`nset `"TRIOFORGE_PROG=trioforge-web`"`r`ncall `"$webTarget`" %*" | Set-Content -Path $webShim -Encoding ASCII
 Write-Host "  shim:   $webShim"
 
 # ---------------------------------------------------------------- llama.cpp

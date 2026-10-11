@@ -28,6 +28,7 @@ rem  winget, then creates the venv and installs the dependencies by itself.
 rem ===========================================================================
 
 setlocal EnableExtensions EnableDelayedExpansion
+if not defined TRIOFORGE_PROG set "TRIOFORGE_PROG=TrioForge-Web.bat"
 cd /d "%~dp0"
 
 rem Project folder without the trailing backslash (it would escape a quote).
@@ -169,11 +170,11 @@ rem ----------------------------------------------------------------- usage ---
 echo.
 echo   TrioForge - the one launcher
 echo.
-echo   TrioForge-Web.bat             start it in your browser (default)
-echo   TrioForge-Web.bat --window    start it in its own window
-echo   TrioForge-Web.bat --status    what is installed and what is running
-echo   TrioForge-Web.bat --update    check for updates now
-echo   TrioForge-Web.bat --help      this text
+echo   !TRIOFORGE_PROG!             start it in your browser (default)
+echo   !TRIOFORGE_PROG! --window    start it in its own window
+echo   !TRIOFORGE_PROG! --status    what is installed and what is running
+echo   !TRIOFORGE_PROG! --update    check for updates now
+echo   !TRIOFORGE_PROG! --help      this text
 echo.
 echo   Every py\tools\launcher.py option works from here too, for example:
 echo     --install-shortcut   --remove-shortcut
