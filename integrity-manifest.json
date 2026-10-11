@@ -12,8 +12,8 @@
   "docker/docker-compose.yml": "90b9a8d50261bd1de28e2057789847609f5a5c4f163a5053a48313195f1b36a4",
   "docker/docker-entrypoint.sh": "7c969f55b0b410e12f9369d5081364021f5ee92ecc11893d371c0dd833818f7b",
   "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
-  "forge.cmd": "0455a8bab7f0eaa200aa316a9ba60b48fed2486505daabb176b38d68c9d2347c",
-  "install.ps1": "75bc2c35d1470741cf7e23cf6c0fa19b0501d2e564344e17b277a690a6cc5a98",
+  "forge.cmd": "00dee35c6786d310e4770357962f8b5fe182cc4de2559c0f6789349a3935ebe8",
+  "install.ps1": "eb24bb8bd9487c5d780c27d68d3afa866d64434778f735f14d2ad0bde0785cc7",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "ca2b7405fe06b5855dc4fc643c106e0eacba78915a4651fadb19d6c284d236f3",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "ab8afff18090591eb1c3ae286e1c468952374f7f01741454a6da1af9987d7d1a"
  },
- "generated": "2026-10-12T01:12:51",
- "note": "launcher: dependency auto-upgrade on by default (opt-out --no-auto-upgrade)"
+ "generated": "2026-10-12T03:42:07",
+ "note": "fix: Windows TUI is forge (trioforge collides with TrioForge.bat)"
 }

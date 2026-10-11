@@ -40,14 +40,17 @@ if (Test-Path $bat) {
     }
 }
 
-# Put the TUI commands (forge / trioforge) on the PATH, so they work from any
-# directory rather than only this folder. Same shim + PATH step install.ps1
-# does, but done here before Python exists: forge.cmd self-installs its own
-# deps (rich / textual / duckdb) on first run.
+# Put the TUI command (forge) on the PATH, so it works from any directory rather
+# than only this folder. `trioforge` is the Linux/macOS alias only: on Windows'
+# case-insensitive filesystem the typed name `trioforge` collides with
+# TrioForge.bat (web launcher) and TrioForge.exe (its windowed interpreter), so
+# it launched the SERVER instead of the TUI. Same shim + PATH step install.ps1
+# does, but done here before Python exists: forge.cmd self-installs its own deps
+# (rich / textual / duckdb) on first run.
 $bin = Join-Path $env:USERPROFILE "bin"
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 $target = Join-Path $dir "forge.cmd"
-foreach ($name in @("forge", "trioforge")) {
+foreach ($name in @("forge")) {
     $shim = Join-Path $bin "$name.cmd"
     "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$target`" %*" |
         Set-Content -Path $shim -Encoding ASCII

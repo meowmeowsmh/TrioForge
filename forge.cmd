@@ -9,7 +9,8 @@ rem      forge --version              print the version
 rem      forge --help                 all options
 rem
 rem  Same program as ./forge on Linux/macOS. Run install.ps1 once to get
-rem  `forge` and `trioforge` on your PATH.
+rem  `forge` on your PATH. (Windows uses `forge` only: `trioforge` collides
+rem  with TrioForge.bat on a case-insensitive filesystem.)
 rem ============================================================
 setlocal
 set "ROOT=%~dp0"

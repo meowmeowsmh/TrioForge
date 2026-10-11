@@ -89,14 +89,19 @@ if (Test-TuiDeps $py) {
 }
 
 # ---------------------------------------------------------------- shims
+# Only `forge` on Windows. `trioforge` is the Linux/macOS alias: on a
+# case-insensitive filesystem the typed name `trioforge` collides with
+# TrioForge.bat (the web launcher) and TrioForge.exe (its windowed interpreter),
+# so `trioforge --version` launched the SERVER instead of the TUI. `forge` has
+# no such collision and is the same program.
 $bin = Join-Path $env:USERPROFILE "bin"
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 
 $target = Join-Path $Root "forge.cmd"
-foreach ($name in @("forge", "trioforge")) {
+foreach ($name in @("forge")) {
     $shim = Join-Path $bin "$name.cmd"
-    # FORGE_PROG carries the invoked name through to the CLI, so `trioforge
-    # --version` says trioforge and `forge --version` says forge.
+    # FORGE_PROG carries the invoked name through to the CLI, so `forge
+    # --version` says forge.
     "@echo off`r`nset `"FORGE_PROG=%~n0`"`r`ncall `"$target`" %*" |
         Set-Content -Path $shim -Encoding ASCII
     Write-Host "  shim:   $shim"

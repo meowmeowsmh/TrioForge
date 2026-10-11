@@ -80,7 +80,7 @@
 curl -fsSL https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.sh | sh
 ```
 
-**One line, Windows (PowerShell)** — same thing: web app + `trioforge` (TUI) on your PATH, no git, no cd:
+**One line, Windows (PowerShell)** — same thing: web app + `forge` (TUI) on your PATH, no git, no cd:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"
@@ -247,7 +247,7 @@ A full-screen terminal chat (Crush-style) that shares TrioForge's models and key
 
 ![The forge terminal client: a user message, a tool-call card and an answer, with a sidebar showing the machine, the offline models and the bot's mood face](forge.png)
 
-**`forge` and `trioforge` are the same program.** `trioforge` is a symlink to the `forge` launcher, and `--version` / `--help` print whichever name you typed. On Windows that symlink cannot survive a checkout — git writes it out as a plain text file — so Windows gets a `.cmd` shim for each name instead.
+**`forge` and `trioforge` are the same program.** On Linux/macOS `trioforge` is a symlink to the `forge` launcher, and `--version` / `--help` print whichever name you typed. **On Windows the terminal command is `forge` only**: the Windows filesystem is case-insensitive, so `trioforge` collides with `TrioForge.bat` (the web launcher) — typing `trioforge` would start the web app instead of the terminal client. `forge` has no such collision and does the same thing.
 
 ### Try it without installing anything
 
@@ -278,7 +278,7 @@ That route needs the four packages by hand: `python -m pip install rich prompt_t
 
 Both install `rich`, `prompt_toolkit`, `textual` and `duckdb` into the repo's own venv, then put the commands on your PATH:
 
-- **Windows** writes `forge.cmd` and `trioforge.cmd` shims into `%USERPROFILE%\bin` and appends that folder to your **user** PATH — **open a new terminal** before `forge` resolves.
+- **Windows** writes a `forge.cmd` shim into `%USERPROFILE%\bin` and appends that folder to your **user** PATH — **open a new terminal** before `forge` resolves.
 - **Linux / macOS** symlinks `forge` and `trioforge` into the first writable folder already on your PATH (`~/.local/bin`, `~/bin`, `~/.bin`), falling back to `~/.local/bin`, and prints the exact `export PATH=...` line to add if that folder is not on your PATH yet.
 
 Neither needs admin, and both are safe to re-run. Both also fetch the prebuilt llama.cpp for your GPU (`TRIOFORGE_SKIP_LLAMA=1` skips that). If the packages cannot be installed, **nothing is linked, on purpose** — a `forge` that exists and then dies with `ModuleNotFoundError: textual` is worse than no launcher at all, which is why both scripts verify the imports before they link anything.
@@ -288,7 +288,7 @@ Neither needs admin, and both are safe to re-run. Both also fetch the prebuilt l
 ### Then just use it
 
 ```bash
-forge                           # interactive session (identical to trioforge)
+forge                           # interactive session
 forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
