@@ -3,8 +3,9 @@
 #
 #      powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"
 #
-#  Clones the repo (once), then hands off to TrioForge.bat, which does the
-#  rest (Python, venv, deps, llama.cpp). Requires git. No admin.
+#  Downloads the repo as a zip (no git), then hands off to TrioForge.bat,
+#  which does the rest (Python, venv, deps, llama.cpp). Re-running the same
+#  line just launches the already-installed copy - no cd, no git pull.
 #
 #  $env:TRIOFORGE_DIR = "..."   install somewhere other than ~\TrioForge
 #
@@ -13,22 +14,36 @@
 # ============================================================
 $ErrorActionPreference = "Stop"
 
-$repo = "https://github.com/meowmeowsmh/TrioForge.git"
-$dir  = if ($env:TRIOFORGE_DIR) { $env:TRIOFORGE_DIR } else { Join-Path $HOME "TrioForge" }
+$repo    = "https://github.com/meowmeowsmh/TrioForge"
+$zipUrl  = "$repo/archive/refs/heads/main.zip"
+$dir     = if ($env:TRIOFORGE_DIR) { $env:TRIOFORGE_DIR } else { Join-Path $HOME "TrioForge" }
+$bat     = Join-Path $dir "TrioForge.bat"
 
-if (Test-Path (Join-Path $dir ".git")) {
-    Write-Host "[trio] already installed at $dir - updating"
-    git -C $dir pull --ff-only --quiet
-    if ($LASTEXITCODE -ne 0) { Write-Host "[trio] update skipped (local changes or no network)" }
-} else {
-    Write-Host "[trio] installing to $dir"
-    git clone --depth 1 $repo $dir
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[trio] clone failed. Is git installed?" -ForegroundColor Red
-        exit 1
-    }
+if (Test-Path $bat) {
+    Write-Host "[trio] already installed at $dir - launching"
+    Set-Location $dir
+    & $bat
+    exit $LASTEXITCODE
+}
+
+Write-Host "[trio] installing to $dir (no git needed)"
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+
+$tmp = Join-Path $env:TEMP ("trioforge-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+$zip = Join-Path $tmp "trioforge.zip"
+
+try {
+    Write-Host "[trio] downloading TrioForge..."
+    Invoke-WebRequest -Uri $zipUrl -OutFile $zip -UseBasicParsing
+    Expand-Archive -Path $zip -DestinationPath $tmp -Force
+    $src = Join-Path $tmp "TrioForge-main"
+    Copy-Item -Path (Join-Path $src "*") -Destination $dir -Recurse -Force
+}
+finally {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
 Set-Location $dir
 Write-Host "[trio] starting TrioForge"
-& (Join-Path $dir "TrioForge.bat")
+& $bat

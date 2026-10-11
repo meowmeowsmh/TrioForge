@@ -74,13 +74,13 @@
 
 ## ⚡ Start
 
-**One line, Linux / macOS / WSL** — clones, installs, starts:
+**One line, Linux / macOS / WSL** — downloads, installs, starts (no git, no cd):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.sh | sh
 ```
 
-**One line, Windows (PowerShell):**
+**One line, Windows (PowerShell)** — same thing, no git, no cd:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/meowmeowsmh/TrioForge/main/bootstrap.ps1 | iex"
