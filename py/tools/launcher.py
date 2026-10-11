@@ -192,6 +192,44 @@ def install_deps(project: Path) -> None:
     print("Dependencies installed.")
 
 
+def _auto_upgrade_deps(project: Path) -> None:
+    """Upgrade to the newest versions requirements.txt resolves to (opt-in).
+
+    Enabled by --auto-upgrade or TRIOFORGE_AUTO_UPGRADE=1. Because requirements.txt
+    uses `>=` floors, "the latest version" is never known in advance - the resolver
+    decides it at install time. The resolver runs in --dry-run FIRST: only when the
+    newest set resolves cleanly do we apply it, so a conflicting upgrade never
+    touches the venv. Never blocks or breaks start-up: any failure just leaves the
+    current (working) versions in place.
+    """
+    venv_python = project_venv_python(project)
+    if venv_python is None:
+        return
+    req = project / "requirements.txt"
+    if not req.is_file():
+        return
+    uv = shutil.which("uv")
+    if uv:
+        base = [uv, "pip", "install", "--python", venv_python]
+    else:
+        base = [venv_python, "-m", "pip", "install"]
+    try:
+        probe = subprocess.run(base + ["--dry-run", "--upgrade", "-r", str(req)],
+                               cwd=str(project), creationflags=_no_window_flags(),
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if probe.returncode != 0:
+            print("[deps] newest versions do not resolve - staying on the current, working set.")
+            return
+        result = subprocess.run(base + ["--upgrade", "-r", str(req)],
+                                cwd=str(project), creationflags=_no_window_flags())
+        if result.returncode == 0:
+            print("[deps] dependencies are at the newest resolvable versions.")
+        else:
+            print("[deps] upgrade failed - keeping the current versions.")
+    except Exception as exc:  # pragma: no cover - defensive
+        print("[deps] auto-upgrade not performed: {}".format(exc))
+
+
 def _voice_config_path(project: Path) -> Optional[Path]:
     """Return the voice agent config.json path if present, else None."""
     cfg = project / "voiceguide_llama.cpp_guide" / "config.json"
@@ -658,6 +696,12 @@ def prepare_and_run(project: Path, args) -> int:
     if args.install or updater.deps_changed(project):
         if not args.no_install:
             install_deps(project)
+
+    # Opt-in: on every launch, re-resolve requirements.txt to the newest versions
+    # (the `>=` floors make "latest" unknowable in advance, so the resolver decides).
+    # Dry-run guarded - a conflicting resolution never touches the venv.
+    if getattr(args, "auto_upgrade", False) or os.environ.get("TRIOFORGE_AUTO_UPGRADE") == "1":
+        _auto_upgrade_deps(project)
 
     # --window: open TrioForge in its own WebView2 window (no browser, no console).
     # Spawned before the app so it can wait for the server to come up on its own.
@@ -1686,6 +1730,10 @@ def main() -> int:
                         help="Start the server (and window) in the background and return immediately.")
     parser.add_argument("--background-update", action="store_true",
                         help="Do not wait for an update: start now, check quietly in the background.")
+    parser.add_argument("--auto-upgrade", action="store_true",
+                        help="On launch, upgrade dependencies to the newest versions "
+                             "requirements.txt resolves to (dry-run guarded). "
+                             "Also on via TRIOFORGE_AUTO_UPGRADE=1.")
     parser.add_argument("--install-shortcut", action="store_true",
                         help="Put a TrioForge shortcut (with its icon) on the Desktop and Start Menu.")
     parser.add_argument("--remove-shortcut", action="store_true",
