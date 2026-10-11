@@ -173,6 +173,7 @@ echo.
 echo   !TRIOFORGE_PROG!             start it in your browser (default)
 echo   !TRIOFORGE_PROG! --window    start it in its own window
 echo   !TRIOFORGE_PROG! --status    what is installed and what is running
+echo   !TRIOFORGE_PROG! --quit      stop the running server
 echo   !TRIOFORGE_PROG! --update    check for updates now
 echo   !TRIOFORGE_PROG! --help      this text
 echo.

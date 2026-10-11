@@ -109,6 +109,7 @@ Or run the commands from any terminal (run `.\install.ps1` once, then open a **n
 forge               # terminal client
 trioforge           # same terminal client
 trioforge-web       # web app (windowless launch, opens the browser)
+trioforge-web --quit   # stop the running server
 ```
 
 **Linux / macOS / WSL**
@@ -300,6 +301,7 @@ forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
 forge --version                 # -> forge 1.5.4 (prints the name you typed)
 trioforge-web                   # start the web app (same as double-clicking)
+trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
 Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.4**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.

@@ -1663,6 +1663,41 @@ def menu_loop(args) -> int:
     return 0
 
 
+def do_quit() -> int:
+    """Stop the running TrioForge server via /api/shutdown, then exit.
+
+    ``trioforge-web --quit`` (and ``TrioForge-Web.bat --quit``) are the clean way
+    to shut the server down without opening Task Manager. The server already
+    exposes a local-only /api/shutdown that tears down llama.cpp, the voice agent
+    and the loaded Ollama model, then exits. We just POST to it (https first -
+    Windows serves HTTPS - then http), so the same flag works everywhere.
+    """
+    port = os.environ.get("TRIOFORGE_PORT", "5003")
+    try:
+        import json as _json
+        import ssl as _ssl
+        import urllib.request
+        ctx = _ssl._create_unverified_context()
+        for scheme in ("https", "http"):
+            url = "{}://127.0.0.1:{}/api/shutdown".format(scheme, port)
+            try:
+                req = urllib.request.Request(
+                    url, data=b"{}", method="POST",
+                    headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
+                    data = _json.loads(resp.read(400).decode("utf-8", "replace"))
+                if data.get("ok"):
+                    print("TrioForge is stopping ({}://127.0.0.1:{}).".format(scheme, port))
+                    return 0
+            except Exception:
+                continue
+        print("TrioForge is not running (nothing answered on port {}).".format(port))
+        return 0
+    except Exception as exc:  # pragma: no cover - defensive
+        print("Could not stop TrioForge: {}".format(exc))
+        return 1
+
+
 def main() -> int:
     # Claim the TrioForge identity before anything is spawned. Task Manager groups
     # processes by AppUserModelID and a child inherits its parent's, so a process
@@ -1721,6 +1756,8 @@ def main() -> int:
     parser.add_argument("--verify-baseline", action="store_true",
                         help="Rewrite integrity-manifest.json from the current files, "
                              "after a deliberate change.")
+    parser.add_argument("--quit", action="store_true",
+                        help="Stop the running TrioForge server (/api/shutdown), then exit.")
     # ── host it for other people ──
     parser.add_argument("--host", action="store_true",
                         help="Host mode: ask for a password before anything is served, "
@@ -1788,6 +1825,8 @@ def main() -> int:
                 print("Could not locate the TrioForge project.")
                 return 1
             return show_integrity(project, write_baseline=args.verify_baseline)
+        if args.quit:
+            return do_quit()
         if args.update:
             project = find_project(args.path)
             if project is None:
