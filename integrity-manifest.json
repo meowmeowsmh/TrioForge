@@ -13,7 +13,7 @@
   "docker/docker-entrypoint.sh": "7c969f55b0b410e12f9369d5081364021f5ee92ecc11893d371c0dd833818f7b",
   "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
   "forge.cmd": "39870b66c4b64f9a4ec5b43d0d6b907d6956faea4751e67a19d9748c5dd0084d",
-  "install.ps1": "3df50fb6a14d7b95f4dde399e5b2b9bdcdde2c74fab9412ada3f6ca1e27312ea",
+  "install.ps1": "4099d7b5d7627187626feeed351d426673bc364d406749de9d23cbf68973e085",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "333e9da2552568f9fe5c098b9b0c5751fccbafd15c0bb2ef8f0cdcf761c374a9",
@@ -116,6 +116,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T04:50:58",
- "note": "fix(launcher): help shows the trioforge-web command, not the file name"
+ "generated": "2026-10-12T04:59:45",
+ "note": "fix(launcher): trioforge-web launches windowless (no cmd flash)"
 }

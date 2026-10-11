@@ -59,7 +59,21 @@ foreach ($name in @("forge", "trioforge")) {
 
 $webTarget = Join-Path $dir "TrioForge-Web.bat"
 $webShim = Join-Path $bin "trioforge-web.cmd"
-"@echo off`r`nset `"TRIOFORGE_PROG=trioforge-web`"`r`ncall `"$webTarget`" %*" | Set-Content -Path $webShim -Encoding ASCII
+$pyw = Join-Path $dir ".venv\Scripts\pythonw.exe"
+$launcher = Join-Path $dir "py\tools\launcher.py"
+$webLines = @(
+    '@echo off',
+    'set "TRIOFORGE_PROG=trioforge-web"',
+    'if not "%~1"=="" goto :passthrough',
+    "set `"PYW=$pyw`"",
+    'if exist "%PYW%" (',
+    "    `"%PYW%`" `"$launcher`" `"$dir`" --no-banner --detach --background-update",
+    '    exit /b 0',
+    ')',
+    ':passthrough',
+    "call `"$webTarget`" %*"
+)
+($webLines -join "`r`n") | Set-Content -Path $webShim -Encoding ASCII
 Write-Host "  shim:   $webShim"
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

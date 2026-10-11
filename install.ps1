@@ -110,10 +110,25 @@ foreach ($name in @("forge", "trioforge")) {
     Write-Host "  shim:   $shim"
 }
 
-# Web app shim.
+# Web app shim: launch the server windowless via pythonw (no cmd flash), and
+# fall back to TrioForge-Web.bat for flags like --status/--help (console output).
 $webTarget = Join-Path $Root "TrioForge-Web.bat"
 $webShim = Join-Path $bin "trioforge-web.cmd"
-"@echo off`r`nset `"TRIOFORGE_PROG=trioforge-web`"`r`ncall `"$webTarget`" %*" | Set-Content -Path $webShim -Encoding ASCII
+$pyw = Join-Path $Root ".venv\Scripts\pythonw.exe"
+$launcher = Join-Path $Root "py\tools\launcher.py"
+$webLines = @(
+    '@echo off',
+    'set "TRIOFORGE_PROG=trioforge-web"',
+    'if not "%~1"=="" goto :passthrough',
+    "set `"PYW=$pyw`"",
+    'if exist "%PYW%" (',
+    "    `"%PYW%`" `"$launcher`" `"$Root`" --no-banner --detach --background-update",
+    '    exit /b 0',
+    ')',
+    ':passthrough',
+    "call `"$webTarget`" %*"
+)
+($webLines -join "`r`n") | Set-Content -Path $webShim -Encoding ASCII
 Write-Host "  shim:   $webShim"
 
 # ---------------------------------------------------------------- llama.cpp
