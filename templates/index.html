@@ -1620,7 +1620,7 @@ video.tf-video {
           </svg>
         </button>
         <button class="clear-btn" id="settingsBtn" onclick="openSettingsModal()" title="Context length for llama.cpp">✏️</button>
-        <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Keyboard shortcuts">⌨️</button>
+        <button class="clear-btn" id="shortcutsBtn" onclick="toggleShortcutsModal()" title="Help &amp; keyboard shortcuts (Ctrl+/)">⌨️</button>
         <button class="clear-btn" id="statsBtn" onclick="openStatsModal()" title="Token usage & cost">📊</button>
         <button class="clear-btn" id="compareBtn" onclick="toggleComparePanel()" title="A/B compare — run two models side-by-side" style="border-color:rgba(240,136,62,0.4); color:#f0883e;">⚔️</button>
         <button class="clear-btn" id="multiBtn" onclick="toggleMultiPanel()" title="Multi-agent — run several models on one task" style="border-color:rgba(63,185,80,0.4); color:#3fb950;">🤝</button>
@@ -10251,27 +10251,57 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <!-- Keyboard shortcuts modal -->
-<div id="shortcutsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10004; align-items:center; justify-content:center;">
-  <div style="background:#14141c; border:1px solid #333; border-radius:14px; padding:22px; width:min(400px, 94vw);">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-      <strong style="font-size:16px;">⌨️ Keyboard shortcuts</strong>
-      <button onclick="closeShortcutsModal()" style="background:transparent;border:none;color:#aaa;font-size:20px;cursor:pointer;">✕</button>
+<div id="shortcutsModal" onclick="if(event.target===this)closeShortcutsModal()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:10004; align-items:center; justify-content:center;">
+  <style>
+    #shortcutsModal .hp-card{background:var(--tf-surface,#14141c);color:var(--tf-text,#e6edf3);border:1px solid var(--tf-border,#333);border-radius:var(--tf-radius,14px);box-shadow:var(--tf-shadow,0 10px 30px rgba(0,0,0,.35));padding:22px;width:min(560px,94vw);max-height:88vh;overflow:auto}
+    #shortcutsModal .hp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+    #shortcutsModal .hp-head strong{font-size:17px}
+    #shortcutsModal .hp-x{background:transparent;border:none;color:var(--tf-text-dim,#8b949e);font-size:20px;cursor:pointer;border-radius:8px;padding:2px 8px}
+    #shortcutsModal .hp-x:hover{color:var(--tf-text,#e6edf3);background:var(--tf-accent-soft,rgba(88,166,255,.16))}
+    #shortcutsModal .hp-sub{color:var(--tf-text-dim,#8b949e);font-size:13px;margin:0 0 14px}
+    #shortcutsModal h4{margin:16px 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--tf-accent,#58a6ff)}
+    #shortcutsModal .hp-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--tf-border,rgba(255,255,255,.08))}
+    #shortcutsModal .hp-row:last-child{border-bottom:none}
+    #shortcutsModal .hp-desc{color:var(--tf-text-dim,#8b949e);text-align:right}
+    #shortcutsModal .hp-key{display:inline-block;min-width:22px;text-align:center;padding:2px 7px;margin:0 1px;font:600 12px/1.5 inherit;font-family:inherit;color:var(--tf-text,#e6edf3);background:var(--tf-surface-2,rgba(28,35,51,.85));border:1px solid var(--tf-border,#333);border-bottom-width:2px;border-radius:6px}
+    #shortcutsModal ul{margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:var(--tf-text-dim,#8b949e)}
+    #shortcutsModal ul b{color:var(--tf-text,#e6edf3);font-weight:600}
+    #shortcutsModal code{background:var(--tf-surface-2,rgba(28,35,51,.85));border:1px solid var(--tf-border,#333);border-radius:5px;padding:1px 5px;font-size:12px}
+  </style>
+  <div class="hp-card" role="dialog" aria-modal="true" aria-label="Help and keyboard shortcuts">
+    <div class="hp-head">
+      <strong>&#10067; Help &amp; shortcuts</strong>
+      <button class="hp-x" onclick="closeShortcutsModal()" aria-label="Close">&#10005;</button>
     </div>
-    <table style="width:100%; border-collapse:collapse; font-size:13px;">
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Enter</td><td style="padding:6px 0; color:#8b949e;">Send message</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Shift + Enter</td><td style="padding:6px 0; color:#8b949e;">New line</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + Enter</td><td style="padding:6px 0; color:#8b949e;">Send (alternate)</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + N</td><td style="padding:6px 0; color:#8b949e;">New chat</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + K</td><td style="padding:6px 0; color:#8b949e;">New chat</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + /</td><td style="padding:6px 0; color:#8b949e;">Show / hide this menu</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">?</td><td style="padding:6px 0; color:#8b949e;">Show this menu</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Esc</td><td style="padding:6px 0; color:#8b949e;">Close this menu</td></tr>
-      <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Alt + ↓</td><td style="padding:6px 0; color:#8b949e;">Scroll to bottom</td></tr>
-        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + +</td><td style="padding:6px 0; color:#8b949e;">Zoom in</td></tr>
-        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + &minus;</td><td style="padding:6px 0; color:#8b949e;">Zoom out</td></tr>
-        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + 0</td><td style="padding:6px 0; color:#8b949e;">Reset zoom</td></tr>
-        <tr><td style="padding:6px 0; color:#58a6ff; font-weight:600;">Ctrl + wheel</td><td style="padding:6px 0; color:#8b949e;">Zoom in / out</td></tr>
-    </table>
+    <p class="hp-sub">Chat is the input, the corkboard is the output. Everything stays on this machine.</p>
+
+    <h4>Getting started</h4>
+    <ul>
+      <li><b>Pick a model</b> from the top bar &mdash; local (Ollama, llama.cpp) or an API provider with your own key.</li>
+      <li><b>Keep an answer:</b> send it to the corkboard as a pin, let the model rewrite it, and link it to other pins or notes.</li>
+      <li><b>Plugins, skills &amp; MCP</b> give the agent tools such as Gmail, Calendar and Obsidian. Turn them on in their panels.</li>
+      <li><b>Themes:</b> the palette button in the top bar changes the look of chat, notes and the board together.</li>
+    </ul>
+
+    <h4>Chat</h4>
+        <div class="hp-row"><span><kbd class="hp-key">Enter</kbd></span><span class="hp-desc">Send message</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Shift</kbd> + <kbd class="hp-key">Enter</kbd></span><span class="hp-desc">New line</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">Enter</kbd></span><span class="hp-desc">Send (alternate)</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">N</kbd> or <kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">K</kbd></span><span class="hp-desc">New chat</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Alt</kbd> + <kbd class="hp-key">&darr;</kbd></span><span class="hp-desc">Scroll to bottom</span></div>
+
+    <h4>View &amp; help</h4>
+        <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">+</kbd> or <kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">&minus;</kbd></span><span class="hp-desc">Zoom in / out</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">0</kbd></span><span class="hp-desc">Reset zoom</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">wheel</kbd></span><span class="hp-desc">Zoom in / out</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">/</kbd> or <kbd class="hp-key">?</kbd></span><span class="hp-desc">Open or close this help</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Esc</kbd></span><span class="hp-desc">Close this help</span></div>
+
+    <h4>Closing &amp; troubleshooting</h4>
+    <ul>
+      <li><b>Quit completely:</b> close the window, or run <code>TrioForge-Web.bat --quit</code> (<code>trioforge-web --quit</code>) to stop the server and everything it started.</li>
+      <li><b>Something odd?</b> Run <code>TrioForge-Web.bat --status</code>, or open the Logs panel.</li>
+    </ul>
   </div>
 </div>
 
