@@ -1,4 +1,4 @@
-# app.py â€“ chat + notes + cork board + integrated weather toast (performance-optimized)
+# app.py – chat + notes + cork board + integrated weather toast (performance-optimized)
 # PEP 810 lazy imports, in the forward-compatible form.
 #
 # On Python 3.15+ these modules load on FIRST USE instead of at import time. On
@@ -55,7 +55,7 @@ from proc_util import hidden_flags as _no_window, install_hidden_consoles, kill_
 install_hidden_consoles()
 
 
-# â”€â”€ Try orjson â”€â”€
+# ── Try orjson ──
 try:
     import orjson
     def json_dumps(obj):
@@ -78,7 +78,7 @@ import backup_store
 import llamacpp_service
 import voice_service
 
-# â”€â”€ Server log file (tailable from the in-app Logs viewer) â”€â”€
+# ── Server log file (tailable from the in-app Logs viewer) ──
 # Written in addition to stderr so the UI can show the server log live,
 # without needing a terminal / VS Code open.
 _SERVER_LOG_PATH = root_path("logs", "server.log")
@@ -88,8 +88,8 @@ os.makedirs(os.path.dirname(_SERVER_LOG_PATH), exist_ok=True)
 class _RedactSecretsFilter(logging.Filter):
     """Mask API keys before anything is written to a log.
 
-    The UI sends some keys as query parameters (e.g. `/deepseek/status?api_key=sk-â€¦`),
-    and werkzeug logs the full request line â€” so keys used to land in
+    The UI sends some keys as query parameters (e.g. `/deepseek/status?api_key=sk-…`),
+    and werkzeug logs the full request line — so keys used to land in
     `logs/server.log` in plaintext. Logs get shared for debugging, so redact them.
     """
 
@@ -136,7 +136,7 @@ logging.getLogger().addHandler(_server_log_handler)
 logging.getLogger("werkzeug").addFilter(_redactor)
 logging.getLogger().addFilter(_redactor)
 
-# â”€â”€ Imports â”€â”€
+# ── Imports ──
 from providers.llm_providers import (
     OllamaProvider,
     LlamaCppProvider,
@@ -228,31 +228,31 @@ app.register_blueprint(browser_bp)
 app.register_blueprint(design_bp)
 app.register_blueprint(extensions_bp)
 
-# â”€â”€ Plugins (loaded best-effort at startup) â”€â”€
+# ── Plugins (loaded best-effort at startup) ──
 try:
     plugin_loader.load_all(app)
 except Exception as _plugin_exc:
     logger.warning("Plugin loading failed: %s", _plugin_exc)
 
-# â”€â”€ Skills: Markdown instruction packs (no register hook, nothing to inject) â”€â”€
+# ── Skills: Markdown instruction packs (no register hook, nothing to inject) ──
 try:
     skills_loader.load_all()
 except Exception as _skill_exc:
     logger.warning("Skill loading failed: %s", _skill_exc)
 
-# â”€â”€ MCP servers (connect in the background; a first npx run can be slow) â”€â”€
+# ── MCP servers (connect in the background; a first npx run can be slow) ──
 try:
     mcp_client.load_all()
 except Exception as _mcp_exc:
     logger.warning("MCP loading failed: %s", _mcp_exc)
 
-# â”€â”€ Live-coding edits: load persisted edits so the panel survives restarts â”€â”€
+# ── Live-coding edits: load persisted edits so the panel survives restarts ──
 try:
     edits_store.init()
 except Exception as _edits_exc:
     logger.warning("edits_store init failed: %s", _edits_exc)
 
-# â”€â”€ Lightweight per-IP rate limiting â”€â”€
+# ── Lightweight per-IP rate limiting ──
 _rate_limit_lock = threading.Lock()
 _rate_limit_buckets = {}
 
@@ -290,7 +290,7 @@ def _add_security_headers(response):
     return response
 
 
-# â”€â”€ Host mode: a password gate for instances other people can reach â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Host mode: a password gate for instances other people can reach ──────────
 # TrioForge has no accounts by design, which is fine while it is only listening on
 # your own machine. The moment it is on the LAN, behind a tunnel, or in a
 # container that others can open, it needs a door. Set TRIOFORGE_PASSWORD (or run
@@ -348,7 +348,7 @@ def _host_login_page(error: str = "", next_url: str = "/") -> str:
     return """<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TrioForge â€” sign in</title>
+<title>TrioForge — sign in</title>
 <link rel="icon" href="/static/logo/favicon.png">
 <style>
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
@@ -373,7 +373,7 @@ def _host_login_page(error: str = "", next_url: str = "/") -> str:
     <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">
     <input type="hidden" name="next" value="%s">
     <button type="submit">Sign in</button>
-    <p class="hint">TrioForge stays on this machine â€” signing in only unlocks the workspace.</p>
+    <p class="hint">TrioForge stays on this machine — signing in only unlocks the workspace.</p>
   </form>
 </body></html>""" % (err, next_url)
 
@@ -609,13 +609,13 @@ os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 os.makedirs(SQLITE_DIR, exist_ok=True)
 
-# â”€â”€ Model folders â”€â”€
+# ── Model folders ──
 # Always exist so a fresh `git clone` + run gives users a place to drop (or the
-# â¬‡ button to download) GGUFs â€” no manual mkdir.
+# ⬇ button to download) GGUFs — no manual mkdir.
 for _capability_dir in ("models", "video_model", "universal_models_to_text"):
     os.makedirs(root_path(_capability_dir), exist_ok=True)
 
-# â”€â”€ SQLite â”€â”€
+# ── SQLite ──
 _sqlite_conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
 _sqlite_lock = threading.Lock()
 # Set True when the FTS5 full-text index is available (falls back to LIKE otherwise).
@@ -687,7 +687,7 @@ def _init_sqlite():
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);")
         _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);")
 
-        # â”€â”€ Full-text search (FTS5) over message content â”€â”€
+        # ── Full-text search (FTS5) over message content ──
         # External-content FTS table: space-efficient, and kept in sync by the
         # triggers below. If this SQLite build lacks FTS5 we degrade to LIKE.
         try:
@@ -732,14 +732,14 @@ def _init_sqlite():
             _FTS_OK = True
         except sqlite3.OperationalError as e:
             _FTS_OK = False
-            logger.warning("FTS5 unavailable (%s) â€” message search falls back to LIKE.", e)
+            logger.warning("FTS5 unavailable (%s) — message search falls back to LIKE.", e)
 
         _sqlite_conn.commit()
 _init_sqlite()
 
-# â”€â”€ Migration: move existing JSON messages to SQLite â”€â”€
+# ── Migration: move existing JSON messages to SQLite ──
 def _migrate_json_to_sqlite():
-    """Oneâ€‘time copy of messages from conversations.json into SQLite,
+    """One‑time copy of messages from conversations.json into SQLite,
        then strips the 'messages' key from the JSON file."""
     if not os.path.exists(CONVERSATIONS_FILE):
         return
@@ -786,7 +786,7 @@ def _migrate_json_to_sqlite():
 
 _migrate_json_to_sqlite()
 
-# â”€â”€ Create JSON files if missing â”€â”€
+# ── Create JSON files if missing ──
 if not os.path.exists(CONVERSATIONS_FILE):
     with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
         std_json.dump({}, f, ensure_ascii=False, indent=2)
@@ -794,7 +794,7 @@ if not os.path.exists(MODEL_CONFIG_FILE):
     with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
         std_json.dump({"model": DEFAULT_MODEL}, f, ensure_ascii=False, indent=2)
 
-# â”€â”€ SSL â”€â”€
+# ── SSL ──
 def _mkcert_asset_name():
     """Return the mkcert release asset name for this OS/architecture."""
     system = platform.system()
@@ -862,7 +862,7 @@ def _mkcert_ca_trusted():
     mkcert -install writes its root CA to ~/.local/share/mkcert (Linux/macOS) or
     %LOCALAPPDATA%\\mkcert (Windows) and registers it with the system/NSS trust
     store. If the CA is NOT present, the generated cert is untrusted and browsers
-    show a scary "not secure" page â€” so we serve plain HTTP on localhost instead.
+    show a scary "not secure" page — so we serve plain HTTP on localhost instead.
     """
     home_ca = os.path.join(os.path.expanduser("~"), ".local", "share", "mkcert", "rootCA.pem")
     if os.path.isfile(home_ca):
@@ -872,7 +872,7 @@ def _mkcert_ca_trusted():
         return True
     return False
 
-# â”€â”€ Model persistence â”€â”€
+# ── Model persistence ──
 def load_model_config():
     if os.path.exists(MODEL_CONFIG_FILE):
         try:
@@ -887,7 +887,7 @@ def save_model_config(model):
         std_json.dump({"model": model}, f, ensure_ascii=False, indent=2)
 current_model = load_model_config()
 
-# â”€â”€ Conversation storage (JSON metadata only) â”€â”€
+# ── Conversation storage (JSON metadata only) ──
 _conversations_cache = {}
 _cache_loaded = False
 _cache_lock = threading.Lock()
@@ -1350,7 +1350,7 @@ def is_ollama_command(text):
 def execute_ollama_command_sync(text):
     parts = text.strip().split()
     if len(parts) < 2:
-        return "âŒ Usage: ollama <pull|list|ps|rm|push|stop|show> ..."
+        return "❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ..."
     cmd = parts[1].lower()
     args = parts[2:]
     try:
@@ -1365,29 +1365,29 @@ def execute_ollama_command_sync(text):
             return result.stdout or result.stderr
         elif cmd == 'show':
             if not args:
-                return "âŒ Usage: ollama show <model>"
+                return "❌ Usage: ollama show <model>"
             model = args[0]
             r = requests.post(f"{OLLAMA_BASE_URL}/api/show", json={"name": model}, timeout=10)
             r.raise_for_status()
             return json_dumps(r.json())
         elif cmd in ('rm', 'delete'):
             if not args:
-                return "âŒ Usage: ollama rm <model>"
+                return "❌ Usage: ollama rm <model>"
             model = args[0]
             r = requests.delete(f"{OLLAMA_BASE_URL}/api/delete", json={"name": model}, timeout=10)
             r.raise_for_status()
             _models_cache_clear()
-            return f"âœ… Model '{model}' deleted."
+            return f"✅ Model '{model}' deleted."
         elif cmd == 'stop':
             if not args:
-                return "âŒ Usage: ollama stop <model>"
+                return "❌ Usage: ollama stop <model>"
             model = args[0]
             subprocess.run(['ollama', 'stop', model], capture_output=True, text=True, timeout=10,
                            creationflags=_no_window())
-            return f"âœ… Model '{model}' stopped (unloaded from memory)."
+            return f"✅ Model '{model}' stopped (unloaded from memory)."
         elif cmd == 'pull':
             if not args:
-                return "âŒ Usage: ollama pull <model>"
+                return "❌ Usage: ollama pull <model>"
             model = args[0]
             r = requests.post(f"{OLLAMA_BASE_URL}/api/pull", json={"name": model}, stream=True, timeout=600)
             r.raise_for_status()
@@ -1398,12 +1398,12 @@ def execute_ollama_command_sync(text):
                     if 'status' in chunk:
                         last_status = chunk['status']
                     if 'error' in chunk:
-                        return f"âŒ Error pulling '{model}': {chunk['error']}"
+                        return f"❌ Error pulling '{model}': {chunk['error']}"
             _models_cache_clear()
-            return f"âœ… Model '{model}' pulled successfully.\nLast status: {last_status}"
+            return f"✅ Model '{model}' pulled successfully.\nLast status: {last_status}"
         elif cmd == 'push':
             if not args:
-                return "âŒ Usage: ollama push <model> [--insecure]"
+                return "❌ Usage: ollama push <model> [--insecure]"
             model = args[0]
             insecure = "--insecure" in args
             payload = {"name": model, "insecure": insecure}
@@ -1420,17 +1420,17 @@ def execute_ollama_command_sync(text):
                     if 'status' in chunk:
                         last_status = chunk['status']
                     if 'error' in chunk:
-                        return f"âŒ Error pushing '{model}': {chunk['error']}"
-            return f"âœ… Model '{model}' pushed successfully.\nLast status: {last_status}"
+                        return f"❌ Error pushing '{model}': {chunk['error']}"
+            return f"✅ Model '{model}' pushed successfully.\nLast status: {last_status}"
         else:
-            return f"âŒ Unknown command: {cmd}"
+            return f"❌ Unknown command: {cmd}"
     except Exception as e:
-        return f"âŒ Command failed: {str(e)}"
+        return f"❌ Command failed: {str(e)}"
 
 def handle_ollama_command_stream(conv_id, user_message, images, files):
     parts = user_message.strip().split()
     if len(parts) < 2:
-        yield f"data: {json_dumps({'token': 'âŒ Usage: ollama <pull|list|ps|rm|push|stop|show> ...'})}\n\n"
+        yield f"data: {json_dumps({'token': '❌ Usage: ollama <pull|list|ps|rm|push|stop|show> ...'})}\n\n"
         yield f"data: {json_dumps({'done': True, 'full_response': 'Invalid command.'})}\n\n"
         return
     cmd = parts[1].lower()
@@ -1439,7 +1439,7 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
     try:
         if cmd == 'pull':
             if not args:
-                full_response = "âŒ Usage: ollama pull <model>"
+                full_response = "❌ Usage: ollama pull <model>"
                 yield f"data: {json_dumps({'token': full_response})}\n\n"
             else:
                 model = args[0]
@@ -1453,15 +1453,15 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
                             full_response += status + "\n"
                             yield f"data: {json_dumps({'token': status + chr(10)})}\n\n"
                         if 'error' in chunk:
-                            err = 'âŒ ' + chunk['error']
+                            err = '❌ ' + chunk['error']
                             full_response += err
                             yield f"data: {json_dumps({'token': err})}\n\n"
-                final = f"\nâœ… Model '{model}' pulled successfully."
+                final = f"\n✅ Model '{model}' pulled successfully."
                 full_response += final
                 yield f"data: {json_dumps({'token': final})}\n\n"
         elif cmd == 'push':
             if not args:
-                full_response = "âŒ Usage: ollama push <model> [--insecure]"
+                full_response = "❌ Usage: ollama push <model> [--insecure]"
                 yield f"data: {json_dumps({'token': full_response})}\n\n"
             else:
                 model = args[0]
@@ -1481,10 +1481,10 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
                             full_response += status + "\n"
                             yield f"data: {json_dumps({'token': status + chr(10)})}\n\n"
                         if 'error' in chunk:
-                            err = 'âŒ ' + chunk['error']
+                            err = '❌ ' + chunk['error']
                             full_response += err
                             yield f"data: {json_dumps({'token': err})}\n\n"
-                final = f"\nâœ… Model '{model}' pushed successfully."
+                final = f"\n✅ Model '{model}' pushed successfully."
                 full_response += final
                 yield f"data: {json_dumps({'token': final})}\n\n"
         else:
@@ -1494,20 +1494,20 @@ def handle_ollama_command_stream(conv_id, user_message, images, files):
                 yield f"data: {json_dumps({'token': line + chr(10)})}\n\n"
         yield f"data: {json_dumps({'done': True, 'full_response': full_response})}\n\n"
     except Exception as e:
-        err = f"âŒ Command failed: {e}"
+        err = f"❌ Command failed: {e}"
         yield f"data: {json_dumps({'error': err})}\n\n"
     if conv_id:
         add_message(conv_id, "user", user_message, images, files)
         add_message(conv_id, "bot", full_response, [], [])
 
-# â”€â”€ HTML caching â”€â”€
+# ── HTML caching ──
 _cached_html = None
 _cached_html_key = None
 
 def get_cached_html():
     """Return the index.html contents, re-reading when the FILE changes.
 
-    The cache key is (mtime, size, model) â€” NOT just the model. Previously the
+    The cache key is (mtime, size, model) — NOT just the model. Previously the
     model was the only key, so the server kept serving a stale HTML page forever:
     editing templates/index.html or `git pull`-ing an update appeared to "do
     nothing" until a full server restart. Now a changed file is picked up on the
@@ -1524,7 +1524,7 @@ def get_cached_html():
         _cached_html_key = key
     return _cached_html
 
-# â”€â”€ Build HTML (served from templates/index.html) â”€â”€
+# ── Build HTML (served from templates/index.html) ──
 CHAT_HTML_PATH = root_path("templates", "index.html")
 
 UI_SETTINGS_PATH = root_path("json_configuration", "ui_settings.json")
@@ -1598,7 +1598,7 @@ def build_html(model_name=None):
     inject = "<script>window.__ui_settings = {};</script>".format(blob)
     return _stamp_assets(html.replace("<head>", "<head>\n" + inject, 1))
 
-# â”€â”€ Routes â”€â”€
+# ── Routes ──
 @app.route('/unload_model', methods=['POST'])
 def unload_model():
     try:
@@ -1778,21 +1778,21 @@ def api_ping():
     """Lightweight identity marker.
 
     The launcher calls this to tell TrioForge apart from some OTHER app that
-    happens to be holding the port â€” so it only says "already running" when it
+    happens to be holding the port — so it only says "already running" when it
     really is TrioForge, and otherwise picks a free port instead.
     """
     return jsonify({"app": "trioforge", "ok": True})
 
 
 _PWA_MANIFEST = {
-    "name": "TrioForge â€” AI Workspace",
+    "name": "TrioForge — AI Workspace",
     "short_name": "TrioForge",
-    "description": "Your own private AI workspace â€” chat, notes and corkboard with local + cloud models.",
+    "description": "Your own private AI workspace — chat, notes and corkboard with local + cloud models.",
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
-    # Installed, this runs the whole app WITHOUT browser chrome â€” so Chat â†’ Notes
-    # â†’ Corkboard stay full-screen with no taps. One tap of â›¶ can't do that in a
+    # Installed, this runs the whole app WITHOUT browser chrome — so Chat → Notes
+    # → Corkboard stay full-screen with no taps. One tap of ⛶ can't do that in a
     # normal tab: the Fullscreen API belongs to the current document, and switching
     # tabs is a real page load, which exits fullscreen. Chrome/Edge honour
     # display_override; iOS/Safari ignore it and fall back to `display`.
@@ -1808,7 +1808,7 @@ _PWA_MANIFEST = {
 }
 
 # Minimal service worker. Its job is to make the app INSTALLABLE ("Add to Home
-# Screen"); it deliberately does NOT cache "/" or the API â€” this app is local and
+# Screen"); it deliberately does NOT cache "/" or the API — this app is local and
 # dynamic, and caching the shell is exactly what caused the stale-UI bug.
 _SERVICE_WORKER = """\
 // v2: static assets are NETWORK-FIRST. v1 cached them cache-first, so any change to a
@@ -1918,7 +1918,7 @@ def get_resources():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# â”€â”€ Cached vision check â”€â”€
+# ── Cached vision check ──
 @lru_cache(maxsize=128)
 def cached_vision_check(provider_name, model):
     if provider_name == 'ollama' and model:
@@ -1937,7 +1937,7 @@ def cached_vision_check(provider_name, model):
             pass
     return model_supports_vision(provider_name, model)
 
-# Preâ€‘warm vision cache in background
+# Pre‑warm vision cache in background
 def prewarm_vision_cache():
     cached_vision_check("ollama", current_model)
     try:
@@ -2101,7 +2101,7 @@ def set_model():
     return jsonify({'ok': True, 'model': model})
 
 
-# â”€â”€ llama.cpp server lifecycle (auto-run when provider selected) â”€â”€
+# ── llama.cpp server lifecycle (auto-run when provider selected) ──
 @app.route('/api/llamacpp/status', methods=['GET'])
 def llamacpp_status():
     return jsonify(llamacpp_service.status())
@@ -2130,7 +2130,7 @@ def llamacpp_capabilities():
         return jsonify({'error': str(e)}), 500
 
 
-# â”€â”€ Services control panel (turn a specific service on/off) â”€â”€
+# ── Services control panel (turn a specific service on/off) ──
 @app.route('/api/services', methods=['GET'])
 def services_status():
     return jsonify({
@@ -2915,7 +2915,7 @@ def _fts_query(raw: str) -> str:
     """Turn free user text into a SAFE FTS5 MATCH expression.
 
     Every token is quoted (so FTS operators in the input can't raise a syntax
-    error) and gets a trailing ``*`` for prefix matching â€” so "hel wor" already
+    error) and gets a trailing ``*`` for prefix matching — so "hel wor" already
     finds "hello world" as you type. Tokens are ANDed.
     """
     toks = re.findall(r"[0-9A-Za-z_\u00c0-\uffff]{1,}", raw or "")[:12]
@@ -2950,7 +2950,7 @@ def search_messages():
                     cur = _sqlite_conn.cursor()
                     cur.execute(
                         "SELECT m.id, m.conversation_id, m.role, m.created_at, "
-                        "snippet(messages_fts, 0, ?, ?, 'â€¦', 14) AS snip, "
+                        "snippet(messages_fts, 0, ?, ?, '…', 14) AS snip, "
                         "bm25(messages_fts) AS rank "
                         "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
                         "WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?",
@@ -2970,9 +2970,9 @@ def search_messages():
                     })
                 return jsonify({"results": results, "fts": True, "query": q})
             except sqlite3.OperationalError as e:
-                logger.warning("FTS query failed (%s) â€” falling back to LIKE.", e)
+                logger.warning("FTS query failed (%s) — falling back to LIKE.", e)
 
-    # â”€â”€ Fallback: plain LIKE scan (no ranking, simple snippet) â”€â”€
+    # ── Fallback: plain LIKE scan (no ranking, simple snippet) ──
     with _sqlite_lock:
         cur = _sqlite_conn.cursor()
         cur.execute(
@@ -2986,7 +2986,7 @@ def search_messages():
         text = content or ""
         i = text.lower().find(q.lower())
         start = max(0, i - 60) if i >= 0 else 0
-        snip = ("â€¦" if start else "") + text[start:start + 180]
+        snip = ("…" if start else "") + text[start:start + 180]
         if i >= 0:
             rel = i - start
             snip = (snip[:rel] + _SNIP_OPEN + snip[rel:rel + len(q)] + _SNIP_CLOSE + snip[rel + len(q):])
@@ -3002,7 +3002,7 @@ def search_messages():
     return jsonify({"results": results, "fts": False, "query": q})
 
 
-# â”€â”€ Titles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Titles ───────────────────────────────────────────────────────────────────
 # Filler words stripped when turning a first message into a readable title.
 _TITLE_FILLER = re.compile(
     r'^(?:hi|hey|hello|please|pls|can you|could you|would you|can u|help me|i need|i want|'
@@ -3037,7 +3037,7 @@ def _heuristic_title(text: str, max_words: int = 7) -> str:
     words = t.split(' ')
     title = ' '.join(words[:max_words])
     if len(words) > max_words:
-        title += 'â€¦'
+        title += '…'
     return title[0].upper() + title[1:] if title else ""
 
 
@@ -3058,7 +3058,7 @@ def _set_conversation_title(cid: str, title: str) -> bool:
 
 
 def _llm_title(provider, model, api_key, user_text, bot_text) -> Optional[str]:
-    """Ask the current model for a 3â€“6 word title. Best-effort; returns None on any issue."""
+    """Ask the current model for a 3–6 word title. Best-effort; returns None on any issue."""
     prompt = (
         "Write a short title (3-6 words, no quotes, no trailing period) for a "
         "conversation that starts like this.\n\n"
@@ -3117,7 +3117,7 @@ def _auto_title(cid, user_text, bot_text, provider_name=None, model=None, api_ke
     threading.Thread(target=run, daemon=True).start()
 
 
-# â”€â”€ Export / import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Export / import ──────────────────────────────────────────────────────────
 def _conversation_payload(cid: str) -> dict:
     """Full exportable conversation (metadata + all messages)."""
     conv = load_conversations().get(cid) or {}
@@ -3197,7 +3197,7 @@ def export_all_conversations():
         }
         return _download(json_dumps_pretty(payload),
                          'trioforge-chats-%s.json' % stamp, 'application/json')
-    parts = ["# TrioForge â€” all conversations", "",
+    parts = ["# TrioForge — all conversations", "",
              "_Exported %s Â· %d conversation(s)_" % (datetime.now().isoformat(timespec='seconds'), len(convs)), "", "---", ""]
     for c in convs:
         parts.append(_conversation_markdown(c["id"]))
@@ -3285,7 +3285,7 @@ def search_conversations():
     results.sort(key=lambda c: (c.get('order', 0), c.get('created', '')))
     return jsonify(results)
 
-# â”€â”€ NEW ROUTE: Get conversation tree for import â”€â”€
+# ── NEW ROUTE: Get conversation tree for import ──
 @app.route('/api/conversations/<cid>/tools', methods=['GET'])
 def conversation_tools(cid):
     """Every tool the agent ran in this conversation, with where it came from.
@@ -3325,7 +3325,7 @@ def conversation_tree(cid):
     prev_id = None
     for row in rows:
         content = row[2] or ""
-        title = content[:40] + ("â€¦" if len(content) > 40 else "") or f"{row[1]} message"
+        title = content[:40] + ("…" if len(content) > 40 else "") or f"{row[1]} message"
         node = {
             "id": str(row[0]),
             "parent_id": prev_id,
@@ -3338,7 +3338,7 @@ def conversation_tree(cid):
         prev_id = str(row[0])
     return jsonify({"nodes": nodes})
 
-# â”€â”€ Workspaces (folder + thinking + dependencies) â”€â”€
+# ── Workspaces (folder + thinking + dependencies) ──
 def _ensure_workspace_default():
     os.makedirs(WORKSPACES_DIR, exist_ok=True)
     default = os.path.join(WORKSPACES_DIR, "default")
@@ -3411,7 +3411,7 @@ def _workspace_setting(wid, key, default=None):
     return default
 
 
-# â”€â”€ Live coding (agent edits) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Live coding (agent edits) ──────────────────────────
 # The agent's write_file / edit_file calls append a diff entry here, so the UI
 # can show a live "what the model is changing" panel. Edits are also persisted
 # to sqlite_data/edits.db (via edits_store) so they survive a restart.
@@ -3473,7 +3473,7 @@ def _record_code_blocks(text):
         body = body.rstrip("\n")
         if body.strip():
             blocks.append((lang, body))
-    # 2) Indented code blocks (4+ spaces or a tab) â€” collect contiguous lines.
+    # 2) Indented code blocks (4+ spaces or a tab) — collect contiguous lines.
     indented = []
     for ln in text.split("\n"):
         if re.match(r"^(?: {4,}|\t)\S", ln):
@@ -3501,7 +3501,7 @@ def _record_code_blocks(text):
     return count
 
 
-# â”€â”€ LLM tool definitions (workspace folder access) â”€â”€
+# ── LLM tool definitions (workspace folder access) ──
 WORKSPACE_TOOLS = [
     {
         "type": "function",
@@ -3903,7 +3903,7 @@ def _dispatch_tool(name, args):
         # even with the workspace set to read-only and full access disabled.
         if _workspace_setting(wid, "full_access", False) is not True:
             return {"error": "Shell commands need 'Full computer access'. Enable it in "
-                             "Workspace settings (âš™ï¸) if you want the model to run them."}
+                             "Workspace settings (⚙ï¸) if you want the model to run them."}
         if not base or not os.path.isdir(base):
             return {"error": "No workspace folder configured."}
         cmd = args.get("command", "")
@@ -3935,10 +3935,10 @@ def _dispatch_tool(name, args):
         except Exception as e:
             return {"error": "Search failed: {}".format(e)}
 
-    # â”€â”€ Computer control (gated by workspace "full_access") â”€â”€
+    # ── Computer control (gated by workspace "full_access") ──
     if name in ("open_url", "open_app", "type_text", "press_keys", "screenshot"):
         if _workspace_setting(wid, "full_access", False) is not True:
-            return {"error": "Full computer access is disabled. Enable it in Workspace settings (âš™ï¸)."}
+            return {"error": "Full computer access is disabled. Enable it in Workspace settings (⚙ï¸)."}
 
     if name == "open_url":
         url = (args.get("url") or "").strip()
@@ -4143,7 +4143,7 @@ def _is_local_provider(provider) -> bool:
 def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
     """Run an OpenAI-style tool-calling loop against an OpenAI-compatible provider.
 
-    max_steps caps the number of modelâ†’tool round-trips (a "coding agent" loop:
+    max_steps caps the number of model→tool round-trips (a "coding agent" loop:
     read, edit, run, repeat until done). 20 is enough for a multi-file task.
 
     Local providers get BOTH: the native ``tools`` array (used when the model
@@ -4290,7 +4290,7 @@ def _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps=20):
     return "The model did not finish within the tool-call limit."
 
 
-# â”€â”€ Route helpers â”€â”€
+# ── Route helpers ──
 def _run_web_search(user_message: str, enabled: bool) -> str:
     """Return up to 3 web-search snippets joined into one context string."""
     if not (enabled and _search_available() and user_message.strip()):
@@ -4342,7 +4342,7 @@ def _build_vision_messages(messages, images):
     OpenAI multimodal content array (image_url parts + the text).
 
     Used by the streaming path so attached images / extracted video frames are
-    actually sent to the model â€” otherwise a "what do you see here" video question
+    actually sent to the model — otherwise a "what do you see here" video question
     reaches the model as text-only and it returns an empty response.
     """
     if not images:
@@ -4461,7 +4461,7 @@ def _build_log_filters(conv_filter: str, date_from: str, date_to: str) -> tuple:
     return where, params
 
 
-# â”€â”€ SQLite Logs API â”€â”€
+# ── SQLite Logs API ──
 @app.route('/api/logs')
 def get_logs():
     page = request.args.get('page', 1, type=int)
@@ -4532,7 +4532,7 @@ def export_logs_csv():
     return Response(output.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=conversation_logs.csv'})
 
-# â”€â”€ Voice agent logs â”€â”€
+# ── Voice agent logs ──
 def _parse_voice_turns(text):
     """Extract only the real USER/ASSISTANT turns from the raw agent log."""
     turns = []
@@ -4615,26 +4615,26 @@ def voice_command():
             return jsonify({"ok": False, "message": "Could not clear: {}".format(e)}), 500
 
     if cmd in ('help', ''):
-        return jsonify({"ok": True, "message": "Voice commands:\n/bye  â€” stop the voice agent\n/clear â€” clear the conversation log\n/open <url-or-app> â€” open a website or app (needs full access)\n/help â€” show this"})
+        return jsonify({"ok": True, "message": "Voice commands:\n/bye  — stop the voice agent\n/clear — clear the conversation log\n/open <url-or-app> — open a website or app (needs full access)\n/help — show this"})
 
     if cmd.startswith('open '):
         target = raw[len('/open '):].strip()
         if not target:
             return jsonify({"ok": False, "message": "Usage: /open <url or app name>"}), 400
         if _workspace_setting(_current_workspace_id(), "full_access", False) is not True:
-            return jsonify({"ok": False, "message": "Full computer access is disabled. Enable it in Workspace settings (âš™ï¸)."})
+            return jsonify({"ok": False, "message": "Full computer access is disabled. Enable it in Workspace settings (⚙ï¸)."})
         if re.match(r"^https?://", target, re.I):
             res = _execute_tool("open_url", {"url": target})
         else:
             res = _execute_tool("open_app", {"app": target})
         if res.get("ok"):
-            return jsonify({"ok": True, "message": "âœ… Opened " + target})
+            return jsonify({"ok": True, "message": "✅ Opened " + target})
         return jsonify({"ok": False, "message": "Could not open: " + str(res.get("error", res))})
 
     return jsonify({"ok": False, "message": "Unknown command '{}'. Try /help.".format(raw)}), 400
 
 
-# â”€â”€ A/B model compare â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── A/B model compare ─────────────────────────────────────────
 def _compare_single(provider_name, model, api_key, system_prompt, user_message, persona, persona_custom):
     """Run one model and return {text, reasoning, error, duration_sec}."""
     provider = providers.get(provider_name)
@@ -4754,7 +4754,7 @@ def multi_agent():
     return jsonify({'prompt': user_message, 'agents': results})
 
 
-# â”€â”€ Workspace / API-key routes â”€â”€
+# ── Workspace / API-key routes ──
 @app.route('/api/workspaces', methods=['GET'])
 def list_workspaces():
     return jsonify({"workspaces": _list_workspaces(), "current": _current_workspace_id()})
@@ -4833,7 +4833,7 @@ def update_workspace(wid):
     return jsonify({"ok": True})
 
 
-# â”€â”€ Workspace folder access â”€â”€
+# ── Workspace folder access ──
 def _resolve_workspace_file(wid, rel_path):
     """Resolve a path inside the workspace folder, blocking traversal.
 
@@ -4936,14 +4936,14 @@ def workspace_raw_file():
         return jsonify({"error": str(exc)}), 500
 
 
-# â”€â”€ First-run setup checker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── First-run setup checker ───────────────────────────
 @app.route('/api/setup/check', methods=['GET'])
 def setup_check_status():
     """Return which local services/files are present vs. missing (with links)."""
     return jsonify(setup_check.summary())
 
 
-# â”€â”€ Live coding (agent edits) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Live coding (agent edits) ─────────────────────────
 @app.route('/api/agent/edits', methods=['GET'])
 def agent_edits():
     """Return the recent agent file edits (for the live coding panel)."""
@@ -4972,7 +4972,7 @@ def livecode_capture():
     return jsonify({"ok": True, "captured": n})
 
 
-# â”€â”€ RAG document chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── RAG document chat ───────────────────────────────────────────
 @app.route('/api/rag/documents', methods=['GET'])
 def rag_documents():
     """List indexed documents (for the RAG panel)."""
@@ -5012,7 +5012,7 @@ def rag_delete():
     return jsonify({'ok': True})
 
 
-# â”€â”€ Video-to-text (extract frames for a vision model) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Video-to-text (extract frames for a vision model) ───────────
 @app.route('/api/video/frames', methods=['POST'])
 def video_frames():
     """Extract sample frames from {b64} video (via ffmpeg, auto-detected)."""
@@ -5061,7 +5061,7 @@ def workspace_write_file():
         return jsonify({"error": str(e)}), 500
 
 
-# â”€â”€ Chat endpoints â”€â”€
+# ── Chat endpoints ──
 @app.route('/chat', methods=['POST'])
 @rate_limited(max_per_minute=20)
 def chat():
@@ -5146,7 +5146,7 @@ def chat():
                 + rag_context
                 + "\n\nThese are documents the user uploaded (RAG). Read them and use them to answer. "
                   "When the user says 'read it', 'read my rag', 'the material', 'what's in the documents' "
-                  "or asks about the material, READ the content above and answer from it directly â€” do not "
+                  "or asks about the material, READ the content above and answer from it directly — do not "
                   "search for the question's exact words. Give the answer from the provided content, and "
                   "do not ask for confirmation or what the user wants."
             )
@@ -5308,7 +5308,7 @@ def _openai_stream_target(provider_name, api_key):
 
 
 def _iter_openai_stream(url, headers, payload):
-    """Yield {'reasoning': â€¦} / {'token': â€¦} dicts from an OpenAI-compatible SSE stream."""
+    """Yield {'reasoning': …} / {'token': …} dicts from an OpenAI-compatible SSE stream."""
     resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=300)
     try:
         resp.raise_for_status()
@@ -5318,7 +5318,7 @@ def _iter_openai_stream(url, headers, payload):
             body = (e.response.text or "").strip()[:600]
         except Exception:
             body = ""
-        raise ProviderError("HTTP {} â€” {}".format(e.response.status_code, body or e)) from e
+        raise ProviderError("HTTP {} — {}".format(e.response.status_code, body or e)) from e
     for raw in resp.iter_lines():
         if not raw:
             continue
@@ -5391,9 +5391,9 @@ def chat_stream():
         # and written to tool_calls.
         start_tool_tracking(conv_id)
 
-        # Video â†’ frames: sample the clip into images so a vision model can
+        # Video → frames: sample the clip into images so a vision model can
         # "see" it (ffmpeg auto-detected). The frames are used ONLY for the model
-        # request (vision_images) â€” the ORIGINAL video stays a single playable
+        # request (vision_images) — the ORIGINAL video stays a single playable
         # file and is what gets stored/displayed, so the chat doesn't show a stack
         # of broken-out frame thumbnails.
         vision_images = list(images)
@@ -5437,7 +5437,7 @@ def chat_stream():
                 + rag_context
                 + "\n\nThese are documents the user uploaded (RAG). Read them and use them to answer. "
                   "When the user says 'read it', 'read my rag', 'the material', 'what's in the documents' "
-                  "or asks about the material, READ the content above and answer from it directly â€” do not "
+                  "or asks about the material, READ the content above and answer from it directly — do not "
                   "search for the question's exact words. Give the answer from the provided content, and "
                   "do not ask for confirmation or what the user wants."
             )
@@ -5465,7 +5465,7 @@ def chat_stream():
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
         # so the user never has to launch it manually. This MUST happen in the
-        # streaming path too â€” without it the model list shows, but every send
+        # streaming path too — without it the model list shows, but every send
         # fails with a connection refused.
         if provider_name == 'llamacpp':
             st = llamacpp_service.start(model=model, ctx_size=ctx_size)
@@ -5492,7 +5492,7 @@ def chat_stream():
 
         # Audio (llama.cpp universal models): full-length transcription runs
         # non-streaming (chunked into 30 s segments, then stitched), and the result
-        # is streamed back as one message â€” same pattern as the tools path above.
+        # is streamed back as one message — same pattern as the tools path above.
         # Sources are explicit audio clips plus the audio track of attached videos.
         audio_final_text = None
         audio_reasoning = ""
@@ -5570,7 +5570,7 @@ def chat_stream():
                 record_usage(provider_name, model, conv_id, _estimate_tokens(user_message), _estimate_tokens(audio_final_text))
                 return
 
-            # â”€â”€ Ollama: native NDJSON streaming with live `thinking` â”€â”€
+            # ── Ollama: native NDJSON streaming with live `thinking` ──
             if provider_name == "ollama":
                 payload = {
                     "model": model or current_model,
@@ -5608,7 +5608,7 @@ def chat_stream():
                 except Exception as e:
                     yield f"data: {json_dumps({'error': str(e)})}\n\n"
 
-            # â”€â”€ OpenAI-compatible providers: live reasoning_content deltas â”€â”€
+            # ── OpenAI-compatible providers: live reasoning_content deltas ──
             else:
                 target = _openai_stream_target(provider_name, api_key)
                 if target is None:
@@ -5636,7 +5636,7 @@ def chat_stream():
                     # Give the model room to finish: a reasoning-heavy model (e.g.
                     # VideoGuard / Qwen3.5) spends a lot of its budget on
                     # reasoning_content, and if max_tokens is too small it runs out
-                    # before producing any content â†’ an "(empty response)" to the user.
+                    # before producing any content → an "(empty response)" to the user.
                     try:
                         prov = providers.get(provider_name)
                         max_out = getattr(prov, "DEFAULT_MAX_TOKENS", 4096)
@@ -5670,7 +5670,7 @@ def chat_stream():
                     except Exception as e:
                         detail = str(e)
                         if provider_name == "llamacpp":
-                            detail += " â€” see logs/llamacpp.log for the server's full output."
+                            detail += " — see logs/llamacpp.log for the server's full output."
                         yield f"data: {json_dumps({'error': detail})}\n\n"
 
             # If the model produced no content (e.g. it put everything in its
@@ -5700,7 +5700,7 @@ def chat_stream():
         logger.error("chat_stream error: %s", e)
         return jsonify({'error': str(e)}), 500
 
-# â”€â”€â”€ UNCENSORED VISION MODELS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── UNCENSORED VISION MODELS ──────────────────
 UNCENSORED_VISION_MODELS = [
     "mikemikeok/Qwythos-9B-Uncensored",
     "baytout3/ultragemma4-12b-heretic-uncensored",
@@ -5797,7 +5797,7 @@ if "ollama" in VISION_MODELS:
 else:
     VISION_MODELS["ollama"] = list(UNCENSORED_VISION_MODELS)
 
-# â”€â”€ Backup / restore API (auto-archived deleted data) â”€â”€
+# ── Backup / restore API (auto-archived deleted data) ──
 @app.route('/api/backup/conversations', methods=['GET'])
 def backup_list_conversations():
     return jsonify(backup_store.list_conversations())
@@ -5918,7 +5918,7 @@ setup_viewer(app, get_conversation, get_messages)
 def _auto_open_browser(url: str) -> None:
     """Open the app in the default browser shortly after startup (unless disabled).
 
-    This makes the launcher a true "press the app and it opens itself" experience â€”
+    This makes the launcher a true "press the app and it opens itself" experience —
     no need to manually open a browser tab. Set TRIOFORGE_NO_BROWSER=1 to disable,
     which is what `TrioForge-Web.bat --window` does: there TrioForge opens in its own
     window, so a browser tab as well would be one window too many.
@@ -5968,28 +5968,28 @@ def _register_app_identity() -> None:
         pass
 
 
-# â”€â”€ Port selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Port selection ───────────────────────────────────────────────────────────
 # If the preferred port is held by ANOTHER app, move to the next free one instead
 # of wrongly reporting "TrioForge is already running" and exiting. Cross-platform:
 # this is what bit users behind Docker relays / other local servers on any OS.
 if __name__ == '__main__':
     # Port is configurable via TRIOFORGE_PORT (default 5003).
     # If that port is held by ANOTHER app (a stale Docker/wslrelay relay, some
-    # other local server, â€¦) we move to the next free port instead of wrongly
+    # other local server, …) we move to the next free port instead of wrongly
     # saying "already running". Only a real TrioForge on the port triggers the
     # "already running" path.
     PORT_PREF = int(os.environ.get('TRIOFORGE_PORT', '5003') or 5003)
     PORT, port_reason = choose_port(PORT_PREF)
     if port_reason == 'moved':
-        logger.warning("Port %d is in use by another app â€” using %d instead.", PORT_PREF, PORT)
-        print("[TrioForge] Port %d is busy (another app) â€” using %d instead." % (PORT_PREF, PORT))
+        logger.warning("Port %d is in use by another app — using %d instead.", PORT_PREF, PORT)
+        print("[TrioForge] Port %d is busy (another app) — using %d instead." % (PORT_PREF, PORT))
     elif port_reason == 'busy':
         logger.error("Ports %d-%d are all in use.", PORT_PREF, PORT_PREF + 20)
         print("[TrioForge] Ports %d-%d are all busy. Set TRIOFORGE_PORT=<free port> and re-run."
               % (PORT_PREF, PORT_PREF + 20))
         sys.exit(1)
 
-    # â”€â”€ Decide HTTP vs HTTPS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Decide HTTP vs HTTPS ────────────────────────────────────────────────
     # localhost is a "secure context", so plain HTTP has no scary browser warning
     # and mic/clipboard/crypto still work. HTTPS is only used when the mkcert local
     # CA is trusted (so browsers DON'T show a "not secure" page) or when
@@ -6001,7 +6001,7 @@ if __name__ == '__main__':
     elif ssl_env in ('0', 'false', 'off'):
         want_https = False
     else:
-        # Linux/macOS default to plain HTTP (no scary cert warning â€” those
+        # Linux/macOS default to plain HTTP (no scary cert warning — those
         # platforms have flaky mkcert-CA trust, especially Firefox's own store).
         # Windows keeps HTTPS by default (the CA is usually trust-installed with
         # admin there). Override anytime with TRIOFORGE_SSL=0/1.
@@ -6021,20 +6021,20 @@ if __name__ == '__main__':
         else:
             ssl_context = None
             scheme = 'http'
-            logger.warning("HTTPS requested but certs unavailable â€” falling back to HTTP.")
+            logger.warning("HTTPS requested but certs unavailable — falling back to HTTP.")
     else:
         ssl_context = None
         scheme = 'http'
-        logger.info("Running with HTTP â€” localhost is a secure context, no cert warning.")
+        logger.info("Running with HTTP — localhost is a secure context, no cert warning.")
 
     url = "%s://localhost:%d" % (scheme, PORT)
 
     # Already-running guard: exit only when it really IS TrioForge on the port
     # (confirmed via /api/ping in choose_port), so we never spawn a duplicate
-    # process fighting over the database â€” and never refuse to start just because
+    # process fighting over the database — and never refuse to start just because
     # some unrelated app happens to own the port.
     if port_reason == 'running':
-        print("TrioForge is already running at %s â€” opening it." % url)
+        print("TrioForge is already running at %s — opening it." % url)
         try:
             if os.environ.get('TRIOFORGE_NO_BROWSER', '').strip() in ('1', 'true', 'on'):
                 print("[TrioForge] (not opening a browser: TRIOFORGE_NO_BROWSER is set)")
@@ -6064,7 +6064,7 @@ if __name__ == '__main__':
     # explicit app identity on top so nothing resolves to "Python".
     _register_app_identity()
 
-    # â”€â”€ Which interface to listen on â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Which interface to listen on ─────────────────────────────────────────
     # Default is localhost only, exactly like Ollama's default. Listening on
     # 0.0.0.0 on every launch is what made Windows Defender Firewall ask "allow
     # this app to communicate on public networks?" every single time - and it also

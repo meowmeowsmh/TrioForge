@@ -45,10 +45,10 @@ def is_trioforge_on(port, host='127.0.0.1', timeout=1.5):
 def choose_port(preferred, host='127.0.0.1', tries=20):
     """Return (port, reason).
 
-    reason: 'free'    â†’ nothing listening; use it
-            'running' â†’ TrioForge is already there (open the browser, then exit)
-            'moved'   â†’ another app owns it; moved to the next free port
-            'busy'    â†’ no free port found in range
+    reason: 'free'    → nothing listening; use it
+            'running' → TrioForge is already there (open the browser, then exit)
+            'moved'   → another app owns it; moved to the next free port
+            'busy'    → no free port found in range
     """
     if port_is_free(preferred, host):
         return preferred, 'free'
