@@ -31,6 +31,43 @@
 <link rel="stylesheet" href="/static/vendor/atom-one-dark.min.css">
 <link rel="stylesheet" href="/static/themes.css">
 <script src="/static/theme-loader.js"></script>
+<!-- CSRF: every state-changing request carries this session's token. Done by
+     wrapping window.fetch once, here, instead of editing ~58 call sites. The
+     token is fetched lazily and cached, so a POST that fires before the page
+     has finished loading waits for it rather than failing with a 403. -->
+<script>
+(function () {
+    var orig = window.fetch;
+    var pending = null;
+
+    function csrf() {
+        if (window.__CSRF__) { return Promise.resolve(window.__CSRF__); }
+        if (!pending) {
+            pending = orig.call(window, '/api/csrf', {credentials: 'same-origin'})
+                .then(function (r) { return r.ok ? r.json() : {}; })
+                .then(function (d) { window.__CSRF__ = d.token || ''; return window.__CSRF__; })
+                .catch(function () { return ''; });
+        }
+        return pending;
+    }
+
+    window.fetch = function (input, init) {
+        init = init || {};
+        var method = String(
+            init.method || (typeof input === 'object' && input && input.method) || 'GET'
+        ).toUpperCase();
+        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+            return orig.call(window, input, init);
+        }
+        return csrf().then(function (tok) {
+            var headers = new Headers(init.headers || {});
+            if (tok) { headers.set('X-CSRF-Token', tok); }
+            init.headers = headers;
+            return orig.call(window, input, init);
+        });
+    };
+})();
+</script>
 <script src="/static/vendor/highlight.min.js" defer></script>
 <script>
 /* ── Fallback loader ───────────────────────────────────────────────────────────
@@ -6225,7 +6262,11 @@ function updateResources() {
 window.addEventListener('beforeunload', function() {
     if (resourceIntervalId) { clearInterval(resourceIntervalId); resourceIntervalId = null; }
     if (providerSelect && providerSelect.value === 'ollama') {
-        navigator.sendBeacon('/unload_model');
+        // sendBeacon cannot set a header, so the CSRF token rides in the body.
+        // Without it the unload is refused (403) and the model stays in memory.
+        var csrfBody = new FormData();
+        csrfBody.append('_csrf', window.__CSRF__ || '');
+        navigator.sendBeacon('/unload_model', csrfBody);
     }
 });
 resourceIntervalId = setInterval(updateResources, 15000);

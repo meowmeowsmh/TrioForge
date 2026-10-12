@@ -33,6 +33,18 @@ def _title(name: str) -> None:
     print(f"\n== {name} ==")
 
 
+def _csrf_ok(client):
+    """Give a test client the token a browser sends on state-changing requests.
+
+    A real page fetches /api/csrf and echoes the token; a client that skips that
+    now gets a 403, which is the point of the protection. Doing the round trip
+    here keeps the tests honest instead of switching CSRF off for them.
+    """
+    token = (client.get("/api/csrf").get_json() or {}).get("token") or ""
+    client.environ_base["HTTP_X_CSRF_TOKEN"] = token
+    return token
+
+
 # ---------------------------------------------------------------------------
 # tools.parse_text_calls — the wire format the text protocol depends on
 # ---------------------------------------------------------------------------
@@ -1077,6 +1089,7 @@ def test_design_run_terminal() -> None:
                 f.write("print('hello')\nx = input('? ')\nprint('got', x)\n")
 
             with forge_app.app.test_client() as client:
+                _csrf_ok(client)          # state-changing, so it needs the token
                 r = client.post("/api/design/run", json={"project": "p1", "entry": "main.py"})
                 assert r.status_code == 200, r.status_code
                 sid = r.get_json()["session"]
@@ -1886,6 +1899,44 @@ def test_role_alternation() -> None:
 
 
 # ---------------------------------------------------------------------------
+# CSRF — a state-changing request must prove it came from our own page
+# ---------------------------------------------------------------------------
+def test_csrf_protection() -> None:
+    _title("CSRF on state-changing requests")
+    import app as forge_app
+
+    with forge_app.app.test_client() as client:
+        # No token: refused, and told how to get one.
+        r = client.post("/api/design/run", json={"project": "x", "entry": "y.py"})
+        assert r.status_code == 403, r.status_code
+        assert "CSRF" in ((r.get_json() or {}).get("error") or ""), r.get_json()
+        print("  a tokenless POST is refused with 403 -> OK")
+
+        # With the token: past the gate and into the route, which answers
+        # "no such project" rather than 403.
+        token = _csrf_ok(client)
+        assert token, "no token was handed out"
+        r = client.post("/api/design/run",
+                        json={"project": "definitely-missing", "entry": "y.py"})
+        assert r.status_code != 403, r.status_code
+        print("  the same POST with X-CSRF-Token reaches the route -> OK")
+
+        # Reading never needs one.
+        assert client.get("/api/csrf").status_code == 200
+        print("  GET is unaffected -> OK")
+
+    # The exemptions, checked on the gate itself: calling /v1/ for real would
+    # start llama-server, which a test has no business doing.
+    with forge_app.app.test_request_context("/v1/chat/completions", method="POST"):
+        assert forge_app._csrf_protect() is None
+    with forge_app.app.test_request_context("/login", method="POST"):
+        assert forge_app._csrf_protect() is None
+    with forge_app.app.test_request_context("/api/design/run", method="POST"):
+        assert forge_app._csrf_protect() is not None
+    print("  /v1/ and /login exempt; everything else guarded -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -1905,7 +1956,7 @@ def main() -> int:
              test_tui_plugin_commands, test_obsidian_connector,
              test_shipped_plugins_load, test_failures_are_visible,
              test_tool_calls_are_recorded, test_vision_paths,
-             test_role_alternation]
+             test_role_alternation, test_csrf_protection]
     failed = []
     for t in tests:
         try:

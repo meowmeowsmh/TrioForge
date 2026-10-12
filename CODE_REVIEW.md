@@ -70,9 +70,22 @@ The original review's findings have been addressed:
 ## 🔭 Open follow-ups (optional, not required for core function)
 
 - **Content-Security-Policy** — still absent (only `X-Frame-Options`). The pages use inline scripts/styles and, historically, remote CDNs; adding CSP needs frontend testing so the UI does not break. Worth revisiting now that vendored JS lives under `static/vendor/`.
-- **CSRF on state-changing routes** — none. Historically low risk for a local-only tool, but it matters more since host mode (`TRIOFORGE_PASSWORD`) exposes the app beyond localhost.
 - **Ollama command dispatch** — `is_ollama_command`, `execute_ollama_command_sync` and `handle_ollama_command_stream` still share command parsing that could be consolidated into one parser.
-- **`requirements.txt` pinning** — only `waitress==3.0.2` and `gunicorn==26.0.0` are exactly pinned; the rest use `>=` floors. Consider pinning ranges for reproducible installs.
+
+### Closed since
+
+- **CSRF on state-changing routes** — ✅ done. A per-session token is issued at
+  `GET /api/csrf` and required on every non-safe method, compared in constant time.
+  `index.html` wraps `window.fetch` once, so all ~58 call sites send it without
+  being touched. `/v1/` (API-key callers, no session), `/login` and `/logout`
+  (no session yet), `/api/ping` and `/api/csrf` itself are exempt; `sendBeacon`
+  cannot set a header, so the token rides in its form body instead.
+- **`requirements.txt` pinning** — ✅ done. Every floor is now the tested release
+  and carries an upper bound (`flask>=3.1.3,<4.0.0`), so a fresh install cannot
+  resolve to a major version nobody has run. `waitress`/`gunicorn` stay exact.
+- **Dead no-op `save_notes_async` / `save_notes_sync`** — ✅ removed. Nothing had
+  called them for several releases; the `_schedule_backup` / `_write_backup_task`
+  functions they forwarded to are still used directly.
 
 ---
 
@@ -98,7 +111,7 @@ Line numbers are historical — the files have since moved under `py/` and grown
 | 1 | Attachment size cap | ✅ 25 MB cap added |
 | 2 | Rate-limiter IP bucket growth / spoofable header | ✅ prunes stale buckets |
 | 3 | Missing Content-Security-Policy | ⏸️ still open (see above) |
-| 4 | No CSRF on state-changing routes | ⏸️ still open (see above) |
+| 4 | No CSRF on state-changing routes | ✅ per-session token, required on every non-safe method |
 | 5 | `deepseek_status()` reached into private internals | ✅ public `get_status()` added |
 | 6 | Bare `except:` clauses | ✅ converted to `except Exception:` |
 | 7 | `_clean_api_key()` raised bare `Exception` | ✅ `ProviderError` used |
@@ -115,7 +128,7 @@ Line numbers are historical — the files have since moved under `py/` and grown
 | 5 | `get_logs()` / `export_logs_csv()` duplicate query logic | ✅ `_build_log_filters` shared |
 | 6 | Duplicate Ollama command dispatch | ⏸️ still open |
 | 7 | `import csv`/`StringIO` inside a route | ✅ moved to module top |
-| 8 | Legacy no-op `save_notes_async`/`save_notes_sync` | ⏸️ low priority |
+| 8 | Legacy no-op `save_notes_async`/`save_notes_sync` | ✅ removed (no callers) |
 
 ### P3 — Style & polish
 
@@ -125,4 +138,4 @@ Line numbers are historical — the files have since moved under `py/` and grown
 | 2 | Type hints in `app.py` | ✅ added to storage layer + common |
 | 3 | Generic `raise Exception` in providers | ✅ `ProviderError` |
 | 4 | No tests | ✅ 1,810-line regression suite + CI on 3 platforms |
-| 5 | Unpinned deps | ⏸️ partially pinned (see above) |
+| 5 | Unpinned deps | ✅ every requirement pinned to a tested floor + upper bound |

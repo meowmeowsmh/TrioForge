@@ -343,13 +343,10 @@ def load_notes():
         _notes_cache = notes
         return _notes_cache
 
-def save_notes_async(notes_data=None):
-    """Legacy: schedule a backup."""
-    _schedule_backup()
+# The legacy `save_notes_async` / `save_notes_sync` wrappers used to live here.
+# Nothing called them for several releases - they only forwarded to
+# `_schedule_backup` / `_write_backup_task`, which are still called directly.
 
-def save_notes_sync(notes_data=None):
-    """Legacy: force a synchronous backup (rarely used)."""
-    _write_backup_task()
 
 # ---------- Embedding (delegated to common) ----------
 def embed_note(note):

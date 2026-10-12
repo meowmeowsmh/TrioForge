@@ -405,6 +405,72 @@ def _host_password_gate():
     return Response(_host_login_page(next_url=path), mimetype="text/html"), 200
 
 
+# ── CSRF: a state-changing request must carry this session's token ───────────
+# Without this, any page on another origin could POST to a password-gated
+# instance using the browser's cookie — deleting chats, editing notes, moving
+# pins — and the host gate would never see it, because the cookie is what it
+# checks. (Local-only installs are near-harmless; host mode is not, which is why
+# this exists.)
+#
+# Deliberately exempt, and why:
+#   * /v1/   — the OpenAI-compatible API. Its callers are scripts holding an API
+#              key, not a browser, so they have no session and no token to send.
+#   * the rest of _CSRF_EXEMPT_PATHS — /login and /logout run BEFORE a session
+#              exists, so there is nothing to compare against yet; /api/ping is
+#              the launcher's unauthenticated health check; /api/csrf hands out
+#              the token itself.
+# A token may arrive as the X-CSRF-Token header, a form field, or a JSON field —
+# the last two because navigator.sendBeacon cannot set a header at all.
+CSRF_SESSION_KEY = "_csrf"
+CSRF_HEADER = "X-CSRF-Token"
+_CSRF_EXEMPT_PATHS = frozenset(("/login", "/logout", "/api/ping", "/api/csrf"))
+_CSRF_EXEMPT_PREFIXES = ("/v1/",)
+_CSRF_SAFE_METHODS = frozenset(("GET", "HEAD", "OPTIONS", "TRACE"))
+
+
+def csrf_token() -> str:
+    """This session's CSRF token, created once and then reused."""
+    token = session.get(CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session[CSRF_SESSION_KEY] = token
+    return token
+
+
+@app.route("/api/csrf")
+def _csrf_route():
+    """Hand the browser its token.
+
+    Safe to expose: the same-origin policy stops another site reading this
+    response, and the token alone is useless without the session cookie.
+    """
+    return jsonify({"token": csrf_token()})
+
+
+@app.before_request
+def _csrf_protect():
+    """Reject a state-changing request that does not carry the session token.
+
+    Registered AFTER the password gate on purpose: an unsigned-in browser should
+    be told to sign in (401), not handed a CSRF error it can do nothing about.
+    """
+    if request.method in _CSRF_SAFE_METHODS:
+        return None
+    path = request.path or "/"
+    if path in _CSRF_EXEMPT_PATHS or path.startswith(_CSRF_EXEMPT_PREFIXES):
+        return None
+    sent = request.headers.get(CSRF_HEADER) or request.form.get("_csrf") or ""
+    if not sent:
+        sent = (request.get_json(silent=True) or {}).get("_csrf") or ""
+    expected = session.get(CSRF_SESSION_KEY) or ""
+    if expected and sent and secrets.compare_digest(str(sent), str(expected)):
+        return None
+    return jsonify({
+        "error": "invalid or missing CSRF token",
+        "hint": "GET /api/csrf and send the token back as X-CSRF-Token",
+    }), 403
+
+
 def _request_hostname():
     """The host this request was really addressed to, or None if it is not parseable.
 

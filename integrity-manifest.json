@@ -16,7 +16,7 @@
   "install.ps1": "4099d7b5d7627187626feeed351d426673bc364d406749de9d23cbf68973e085",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "76c932682822e616ac50761bd6ec6a4ff802383be608ff8c9edf85fcba754f89",
+  "py/app.py": "dbdf8d0e1f0ddeeaeff3c3c9b98d2e29e2d9ccacd70c6299e61e3df68d1c69bd",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "5c343f774c463a61e04927d68f754d70ef2b2f3dfdfcc6b60f08961366518f6a",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -28,7 +28,7 @@
   "py/features/design.py": "52e372d38e96244341551c1dcfdf5452ce62476cd68afe99f6f58cc589a3a29f",
   "py/features/extensions_api.py": "b6f51aa4d9b59ba885c4c170f4fb8b9fe4a87b0af99f785f085da44858934d0e",
   "py/features/model_browser.py": "24b9d5e79c74721a4ca6a140c9d1bb88dc59e5659cff11b8e2131471a2eee2d0",
-  "py/features/notes.py": "d73da10c8534596d3c112dae6fba94b0514dfd04e71eb424f75ecd44d59305d0",
+  "py/features/notes.py": "98c44edd23900f67c5c0823ea529b6a89ca59637aa679ffc1f5bf267c5e120ea",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
   "py/features/openai_api.py": "8bdbce9d3c8414c1c18cf413dab8ce787e267c2d830dabf48d24c6b4cc2c299a",
   "py/features/screen_ask.py": "0d9ac7eb8f25ba71b8dc7c94d50f2755ee6b6d963229a5f219c68a3158c2684f",
@@ -94,7 +94,7 @@
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
   "pyproject.toml": "3b0d5c57a0c640d6939f3477957b11eccfca85a54b41ee14b9a92057ba982f4d",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
-  "requirements.txt": "30fe033cfc6d5a3b2e959fbbb2819317c4085f91dbefb2f13e6598c7daf46b16",
+  "requirements.txt": "739a2d8a7265a3eb63fac70b582432c6c0834c21b9d7526dcd670fe7a5368fb7",
   "run.sh": "154cdfbb8e026dbe800d62aea1daca4ea77f4b5484e9884a79d892e1cf203fa2",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
@@ -116,9 +116,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "f2d52e49242c7eae30b98692628bb0795cff7a5eb89ab360e8f9484cbf9504eb",
+  "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T19:50:15",
- "note": "fix: un-mojibake app.py and port_util.py (double-encoded UTF-8)"
+ "generated": "2026-10-13T00:07:59",
+ "note": "CSRF protection, pinned deps, dead code removed"
 }

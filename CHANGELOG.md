@@ -3,6 +3,31 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### The three open follow-ups are closed
+
+`CODE_REVIEW.md` listed three things as knowingly deferred. All three are done:
+
+- **CSRF protection.** A per-session token is issued at `GET /api/csrf` and required
+  on every state-changing request, compared with `secrets.compare_digest`. This
+  matters because host mode (`TRIOFORGE_PASSWORD`) puts the app on a network, where
+  another site could otherwise POST with the browser's cookie. Exempt on purpose:
+  `/v1/` (API-key callers have no session), `/login` and `/logout` (no session
+  exists yet), `/api/ping` and `/api/csrf`. `index.html` wraps `window.fetch` once,
+  so all ~58 call sites carry the token without being edited — and `sendBeacon`,
+  which cannot set a header, sends it in its form body instead.
+- **Dependency pinning.** Every floor is now the release this project is tested
+  against and carries an upper bound (`flask>=3.1.3,<4.0.0`), so a fresh install
+  cannot resolve to a major version nobody has run. `waitress`/`gunicorn` stay
+  exactly pinned.
+- **Dead code.** `save_notes_async` / `save_notes_sync` had no callers for several
+  releases and are gone; the backup functions they forwarded to are still used.
+
+Still open, deliberately: **Content-Security-Policy** (needs frontend testing
+because the pages use inline scripts) and the **Ollama command-dispatch
+consolidation** (a pure refactor).
+
 ## [1.5.5] — the last release: no console windows, and one command from anywhere
 
 **This is the final TrioForge release.** It is the one to install.
