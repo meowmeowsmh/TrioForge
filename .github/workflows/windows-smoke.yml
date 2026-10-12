@@ -7,7 +7,7 @@ name: Windows smoke test
 # llama.cpp .zip to fetch for cuda / rocm / vulkan / cpu, the mkcert .exe, taskkill
 # in place of SIGTERM, CREATE_NO_WINDOW so no console flashes - and until this
 # workflow NOTHING ran any of them. They could all have been broken with no red X
-# anywhere. It also runs the real TrioForge.bat, which no test ever did, so the
+# anywhere. It also runs the real TrioForge-Web.bat, which no test ever did, so the
 # launcher users actually double-click is now covered too.
 #
 # A GitHub runner has no GPU, so this covers the CPU paths and the CHOICE between
@@ -44,17 +44,17 @@ jobs:
       - name: Exactly one launcher, and the old five are gone
         shell: cmd
         run: |
-          if not exist TrioForge.bat (echo FAIL: TrioForge.bat is missing & exit /b 1)
-          echo ok: TrioForge.bat exists
+          if not exist TrioForge-Web.bat (echo FAIL: TrioForge-Web.bat is missing & exit /b 1)
+          echo ok: TrioForge-Web.bat exists
           for %%F in (start.bat start.vbs start-web.bat start-web.vbs application.bat) do (
-            if exist %%F (echo FAIL: %%F is still here - TrioForge.bat replaced it & exit /b 1)
+            if exist %%F (echo FAIL: %%F is still here - TrioForge-Web.bat replaced it & exit /b 1)
           )
           echo ok: no stale launchers
 
-      - name: TrioForge.bat --help answers before any setup exists
+      - name: TrioForge-Web.bat --help answers before any setup exists
         shell: cmd
         run: |
-          call TrioForge.bat --help > help.txt 2>&1
+          call TrioForge-Web.bat --help > help.txt 2>&1
           if errorlevel 1 (echo FAIL: --help exited non-zero & type help.txt & exit /b 1)
           type help.txt
           findstr /C:"the one launcher" help.txt >nul || (echo FAIL: --help did not print the usage & exit /b 1)
@@ -147,8 +147,8 @@ jobs:
           # carry --window - without it a "TrioForge (window)" icon would quietly
           # open the browser instead.
           import shortcuts
-          assert shortcuts.FLAVORS["web"]["script"] == "TrioForge.bat"
-          assert shortcuts.FLAVORS["window"]["script"] == "TrioForge.bat"
+          assert shortcuts.FLAVORS["web"]["script"] == "TrioForge-Web.bat"
+          assert shortcuts.FLAVORS["window"]["script"] == "TrioForge-Web.bat"
           assert shortcuts.FLAVORS["window"]["args"] == "--window"
           print("platform logic OK")
           PY
@@ -162,7 +162,7 @@ jobs:
         shell: cmd
         run: .venv\Scripts\python.exe tools\undefined-names-check.py py
 
-      - name: Run TrioForge.bat for real (finds Python, reaches the launcher)
+      - name: Run TrioForge-Web.bat for real (finds Python, reaches the launcher)
         shell: cmd
         run: |
           echo ===== which interpreters exist ===== > diag.txt
@@ -175,12 +175,12 @@ jobs:
           .venv\Scripts\python.exe py\tools\launcher.py . --status >> diag.txt 2>&1
           echo [direct exit=%errorlevel%] >> diag.txt
           echo. >> diag.txt
-          echo ===== B) the same thing through TrioForge.bat --status ===== >> diag.txt
-          call TrioForge.bat --status >> diag.txt 2>&1
+          echo ===== B) the same thing through TrioForge-Web.bat --status ===== >> diag.txt
+          call TrioForge-Web.bat --status >> diag.txt 2>&1
           echo [via .bat exit=%errorlevel%] >> diag.txt
           echo. >> diag.txt
-          echo ===== C) TrioForge.bat --help ===== >> diag.txt
-          call TrioForge.bat --help >> diag.txt 2>&1
+          echo ===== C) TrioForge-Web.bat --help ===== >> diag.txt
+          call TrioForge-Web.bat --help >> diag.txt 2>&1
           echo [help exit=%errorlevel%] >> diag.txt
           type diag.txt
           rem Publish it somewhere readable without a token: the job summary shows up
@@ -190,7 +190,7 @@ jobs:
           type diag.txt >> "%GITHUB_STEP_SUMMARY%"
           echo '```' >> "%GITHUB_STEP_SUMMARY%"
           findstr /C:"TrioForge status" diag.txt >nul || (echo FAIL: no "TrioForge status" banner anywhere in diag.txt & exit /b 1)
-          echo PASS: TrioForge.bat reached the launcher
+          echo PASS: TrioForge-Web.bat reached the launcher
 
       # ── 4. Does it actually serve? ────────────────────────────────────────
       - name: Start the app and smoke-test endpoints

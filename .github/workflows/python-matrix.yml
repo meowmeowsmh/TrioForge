@@ -4,7 +4,7 @@ name: Python version matrix
 # so "requires-python >=3.10" is a statement CI proves rather than a hope.
 #
 # Deliberately separate from the smoke workflows: those exercise the REAL entry
-# points (run.sh / TrioForge.bat / the launcher) on each OS. This one only asks
+# points (run.sh / TrioForge-Web.bat / the launcher) on each OS. This one only asks
 # "does the code actually work on this interpreter?" across the supported range.
 # 3.10 is the declared floor, 3.12 is what the Docker image ships, 3.14 is the
 # newest stable with full wheel coverage. 3.15 is added here the day its wheels
