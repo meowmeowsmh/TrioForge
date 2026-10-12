@@ -37,6 +37,22 @@ plugins/
 backups/
 tests/
 voiceguide_llama.cpp_guide/
+# README/demo screenshots and the demo frames — the container never reads them.
+#
+# Deliberately NOT a blanket "*.png"/"*.gif"/"*.mp4". The app SERVES
+# static/logo/*.png and static/pwa/*.png — the favicon, the header brand logo, and
+# the PWA icons (app.py:352/369/1804-1806 and templates/index.html:6,7,11,1543
+# reference them by path). A blanket rule silently stripped all eight out of the
+# image, so Docker shipped with a broken favicon, a broken brand logo and no
+# installable-app icon. The ! exceptions below put exactly those back, and they are
+# written per-directory on purpose: "!static/**" would also re-include
+# static/uploads/, which is deliberately excluded above as user data.
 *.png
+!static/logo/*.png
+!static/pwa/*.png
 *.gif
+!static/logo/*.gif
+!static/pwa/*.gif
 *.mp4
+!static/logo/*.mp4
+!static/pwa/*.mp4
