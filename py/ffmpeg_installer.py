@@ -19,17 +19,7 @@ import zipfile
 from paths import root_path
 
 
-def _no_window():
-    """CREATE_NO_WINDOW for console programs (see video_to_text._hidden_flags).
-
-    The app runs under pythonw, so a console program started without this makes
-    Windows allocate a NEW console window for it - the "cmd keeps popping up" bug.
-    """
-    import subprocess as _sp
-    import os as _os
-    if _os.name != "nt":
-        return 0
-    return getattr(_sp, "CREATE_NO_WINDOW", 0)
+from proc_util import hidden_flags as _no_window
 
 
 

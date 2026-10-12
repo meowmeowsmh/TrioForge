@@ -49,38 +49,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _no_window():
-    """CREATE_NO_WINDOW for console programs (see video_to_text._hidden_flags).
+from proc_util import hidden_flags as _no_window, install_hidden_consoles, kill_children
 
-    The app runs under pythonw, so a console program started without this makes
-    Windows allocate a NEW console window for it - the "cmd keeps popping up" bug.
-    """
-    import subprocess as _sp
-    import os as _os
-    if _os.name != "nt":
-        return 0
-    return getattr(_sp, "CREATE_NO_WINDOW", 0)
-
-
-def _hide_child_consoles():
-    """Every subprocess in this process starts without a console window (Windows).
-
-    Covers helper calls (git, ollama, nvidia-smi, shell tools...) that forgot the flag.
-    Callers that pass their own creationflags (e.g. the MCP hidden console) are untouched.
-    """
-    if os.name != "nt":
-        return
-    _orig = subprocess.Popen.__init__
-
-    def _init(self, *a, **kw):
-        if not kw.get("creationflags"):
-            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
-        _orig(self, *a, **kw)
-
-    subprocess.Popen.__init__ = _init
-
-
-_hide_child_consoles()
+install_hidden_consoles()
 
 
 # â”€â”€ Try orjson â”€â”€
@@ -2451,22 +2422,7 @@ def shutdown_all():
             mcp_client.shutdown()
         except Exception:
             pass
-        try:
-            me = psutil.Process()
-            kids = me.children(recursive=True)
-            for k in kids:
-                try:
-                    k.terminate()
-                except Exception:
-                    pass
-            _, alive = psutil.wait_procs(kids, timeout=3)
-            for k in alive:
-                try:
-                    k.kill()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        kill_children()
         os._exit(0)
 
     threading.Thread(target=_teardown, daemon=True).start()

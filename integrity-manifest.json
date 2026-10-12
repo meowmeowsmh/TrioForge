@@ -16,7 +16,7 @@
   "install.ps1": "4099d7b5d7627187626feeed351d426673bc364d406749de9d23cbf68973e085",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "f43e1a2b0593cb1bc68ddbd81705327af2c54d74a3171dfe4eb351c15318a1ff",
+  "py/app.py": "faa044fc44d08ceddfafa420124ffd0fc460a4a84f8d6bc77eb5d391180c6c16",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "5c343f774c463a61e04927d68f754d70ef2b2f3dfdfcc6b60f08961366518f6a",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -32,7 +32,7 @@
   "py/features/openai_api.py": "8bdbce9d3c8414c1c18cf413dab8ce787e267c2d830dabf48d24c6b4cc2c299a",
   "py/features/screen_ask.py": "0d9ac7eb8f25ba71b8dc7c94d50f2755ee6b6d963229a5f219c68a3158c2684f",
   "py/features/viewer.py": "7c92acf444c73eb1bbd06a095a3b53aed4806c1728699d4244eba59d320ce01d",
-  "py/ffmpeg_installer.py": "ee07162721290b81fee8f3abb57758211814d8cc2adbc426e0094f3e33e8b0aa",
+  "py/ffmpeg_installer.py": "65ec5e2d39bfce2ae51626ca80c291a237bb9018e3b6a010c1f45162ee477597",
   "py/generate_image.py": "6a7fd6815309055a0530d9a108d944adffe46768b7d386c18e1dbc3b688f3df6",
   "py/gunicorn_conf.py": "49aad15d5edaee40cde5db98c73db473de6060863c6eb9ad8d1eb4b028a14b5b",
   "py/hardware.py": "751119ef92c165ad0ebb293ee9b2fc4ba3164a03543a35191e39c8fc273f4370",
@@ -47,10 +47,11 @@
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
+  "py/proc_util.py": "6710ecf4cfb349056d5efa28389102c2911c8b61ff5543e06be3d41bc59c4e05",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "94b49dd6369857e1bbb04172a5f8da4e0c1c06723e21e686d6350e2536a8b9b5",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
-  "py/setup_check.py": "7319a2348a90ecf8d0801e0888326b62b0d29b9b9664cb10f07825083977099f",
+  "py/setup_check.py": "2ca5cd922f6566d28ac12009c2e817ebaec05ccfc59162c5a7d655b996a9522f",
   "py/skills_loader.py": "b23ae52b2daab7c5294a51ef3abf1ede22c7bb3a262c2a808169a2a28567db99",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/tools/app_window.py": "0e0156c2a89b1d983e382db1a84d843af785d4c4f6715053e4caeafd12f47ec9",
@@ -87,7 +88,7 @@
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
   "py/version.py": "6e7fa9001d6814edee864db8ed78f9c8e6cdb105b9dce2e6e4f4763a0ce771d6",
-  "py/video_to_text.py": "87980a31f861879cc7a38b53275fcde8c6d97373fadd656212a7aba94b950e73",
+  "py/video_to_text.py": "515ab66ca0c1138bf497855355bb67d565b2ba8509440e6851c007085068ece2",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
   "pyproject.toml": "22f15584d3834108c82b57c438375b23da259e8a4d25fb9832ce999cffb6af4d",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
@@ -116,6 +117,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T18:34:04",
- "note": "baseline refreshed after console/quit fixes"
+ "generated": "2026-10-12T18:46:15",
+ "note": "refresh after proc_util"
 }

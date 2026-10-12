@@ -46,17 +46,7 @@ def is_audio_file(name: str, mime: str = "") -> bool:
 _FFMPEG_CACHE = []          # [path] once resolved, so we probe the version only once
 
 
-def _hidden_flags() -> int:
-    """CREATE_NO_WINDOW for every ffmpeg run.
-
-    TrioForge runs under pythonw (no console). A console program started without this
-    flag makes Windows allocate a NEW console window for it - and a long recording is
-    converted one 30-second chunk at a time, so a 90-minute video flashed ~150 cmd
-    windows across the screen and hammered the machine. Never spawn ffmpeg without it.
-    """
-    if os.name != "nt":
-        return 0
-    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+from proc_util import hidden_flags as _hidden_flags
 
 
 # Why the most recent conversion/extraction produced nothing. Callers report this
