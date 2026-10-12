@@ -28,6 +28,27 @@
 - **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
 - **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` code-block protocol covers models without native function calling, and no workspace folder is required.
 
+### 1.5.5 — the last release
+
+**This is the final TrioForge release.** No console windows, a window that opens, and
+one command that works from anywhere.
+
+- **Windows stops popping cmd windows.** MCP servers now get one *hidden* console for
+  the whole process tree — npm's inner `cmd /d /s /c` shim was allocating a visible one
+  of its own — the voice agent's llama-server and speech-to-speech children are hidden
+  too, and the dependency upgrade and the update check run silently in the background.
+- **`trioforge-web --quit`** stops the server *and* everything it started — llama.cpp,
+  the voice agent, the MCP servers — without opening Task Manager.
+- **`--window` works again.** It needs `pywebview`, which only the control panel
+  installed on demand, so the window exited silently; the launcher now installs it
+  (hidden, one time, ~1 MB) and the WebView2 window actually opens.
+- **`forge` / `trioforge` / `trioforge-web`, from any directory.** The web launcher is
+  now `TrioForge-Web.bat`: as `TrioForge.bat` its name was the same letters as
+  `trioforge` to a case-insensitive filesystem, so typing `trioforge` started the web
+  app instead of the terminal client. The one-line installers no longer need git.
+- **`forge --help` teaches setup** (provider keys, the Docker one-liner, the config
+  file), and **⌨️ Help & shortcuts** (Ctrl+/) is a themed getting-started panel.
+
 ### 1.5.1 — bug-fix release
 
 - **The Calendar connector writes, not just reads** — and its status check no longer
@@ -299,12 +320,12 @@ forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
-forge --version                 # -> forge 1.5.4 (prints the name you typed)
+forge --version                 # -> forge 1.5.5 (prints the name you typed)
 trioforge-web                   # start the web app (same as double-clicking)
 trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
-Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.4**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.5**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 

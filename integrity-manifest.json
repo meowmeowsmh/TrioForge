@@ -68,7 +68,7 @@
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
   "py/tui/README.md": "8e6b70a2b782dd1e9cd13ec44393c964a8c29d028cd51d48683399ac3d813e6e",
-  "py/tui/__init__.py": "b73fd697cc1e5b7ed5cbe0c07af99666484e976aa90d20321b4cc8b31badd8b4",
+  "py/tui/__init__.py": "b0d4c20e42d7d2d2b4cefc911418cbe08b9bac2ad0b5ec5f5a051d67947ad920",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
@@ -89,10 +89,10 @@
   "py/tui/tools.py": "a60903fead0fa795a2ea6c81274c7beadeb8b6a25d0268437ccac36b6beae402",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
-  "py/version.py": "6e7fa9001d6814edee864db8ed78f9c8e6cdb105b9dce2e6e4f4763a0ce771d6",
+  "py/version.py": "525a201ed53d4ad927dac741de85348410e1101efb83146554ad13ca95219fb7",
   "py/video_to_text.py": "515ab66ca0c1138bf497855355bb67d565b2ba8509440e6851c007085068ece2",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "22f15584d3834108c82b57c438375b23da259e8a4d25fb9832ce999cffb6af4d",
+  "pyproject.toml": "3b0d5c57a0c640d6939f3477957b11eccfca85a54b41ee14b9a92057ba982f4d",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
   "requirements.txt": "30fe033cfc6d5a3b2e959fbbb2819317c4085f91dbefb2f13e6598c7daf46b16",
   "run.sh": "154cdfbb8e026dbe800d62aea1daca4ea77f4b5484e9884a79d892e1cf203fa2",
@@ -119,6 +119,6 @@
   "templates/index.html": "f2d52e49242c7eae30b98692628bb0795cff7a5eb89ab360e8f9484cbf9504eb",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T19:11:03",
- "note": "refactor: one shared console-flag helper (proc_util); py/tools/procutil.py re-exports"
+ "generated": "2026-10-12T19:20:31",
+ "note": "release: 1.5.5 - the final TrioForge release"
 }

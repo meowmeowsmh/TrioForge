@@ -3,6 +3,68 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.5.5] — the last release: no console windows, and one command from anywhere
+
+**This is the final TrioForge release.** It is the one to install.
+
+### Windows stops opening console windows
+
+Every child TrioForge starts is a console program, and Windows gives a console program
+a brand-new console window when its parent has no console of its own. That was the
+"a cmd window pops up twice whenever I open the app" report, and it had several causes
+at once:
+
+- **MCP servers.** `cmd /c npx.CMD …` was hidden with `CREATE_NO_WINDOW`, which hands
+  the child *no console at all* — so when npm later ran its own
+  `cmd /d /s /c <bin>` shim, that cmd had nothing to inherit and allocated a visible
+  window of its own. MCP servers now get **one console for the whole tree, created
+  hidden**, so every descendant inherits it instead of making its own.
+- **The voice agent** started llama-server and the speech-to-speech agent with no
+  window flag at all; both are hidden now.
+- **The dependency upgrade and the background update check** run with their window
+  hidden and their output swallowed. They are background work, not something to watch.
+- **Double-clicking the launcher** no longer goes through a PowerShell relaunch that
+  flashed on its own: it hands straight to the windowless `pythonw`.
+
+### `--quit`, and a window that opens
+
+- **`trioforge-web --quit`** stops the running server *and* the whole process tree it
+  started — llama.cpp, the voice agent, the MCP servers — instead of leaving you to
+  hunt through Task Manager.
+- **`--window` works again.** The WebView2 window needs `pywebview`, which only the
+  control panel ever installed on demand, so `app_window.py` exited with "pywebview is
+  not installed" and nothing appeared. The launcher now installs it itself (hidden, one
+  time, ~1 MB) before opening the window.
+
+### One command, from anywhere
+
+- The web launcher is now **`TrioForge-Web.bat`**. As `TrioForge.bat` its name was the
+  same letters as `trioforge` to a case-insensitive filesystem, so typing `trioforge`
+  resolved to the *web* launcher. Renaming it is what lets `trioforge` be a real
+  command, and you now get three — **`forge`** and **`trioforge`** (terminal client)
+  and **`trioforge-web`** (web app) — from any directory.
+- **The one-line installers** (`bootstrap.sh` / `bootstrap.ps1`) download the repository
+  archive instead of cloning it, so git is no longer required, and they put those
+  commands on your PATH.
+
+### A better first five minutes
+
+- **`forge --help`** now teaches setup: which provider to pick, where each API key comes
+  from, the Docker one-liner, and the config file — instead of only listing flags.
+- **⌨️ Help & shortcuts** (Ctrl+/) is a themed panel with a short getting-started guide,
+  key caps and quitting/troubleshooting notes, and it follows the app's palette.
+
+### Under the hood
+
+- `py/app.py` lost ~270 lines: the plugins/skills/MCP/extensions/connectors routes are a
+  blueprint (`py/features/extensions_api.py`) and port picking moved to
+  `py/port_util.py`. The route table is unchanged (186 routes, verified identical).
+- One shared helper (`py/proc_util.py`) owns console hiding and process-tree cleanup,
+  replacing two near-identically named modules plus a private third copy.
+- `huggingface-hub` is capped below 2.0, because the optional semantic stack
+  (`sentence-transformers`) pins `<2` — without the cap the launch-time auto-upgrade
+  would quietly replace it and break embeddings.
+
 ## [1.5.4] — lazy imports, declared for Python 3.15
 
 ### Lazy imports, declared for the day Python 3.15 lands
