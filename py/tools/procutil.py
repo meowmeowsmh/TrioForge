@@ -1,42 +1,39 @@
-"""Process helpers for launching things without a console window.
+"""Deprecated alias for the one shared helper, :mod:`proc_util`.
 
 Everything TrioForge starts (git, uv, pip, mkcert, llama-server, the app itself) is
 a *console* program. When the parent has no console of its own - which is the case
-for every hidden launch: TrioForge-Web.bat under pythonw, the low-level pythonw path - Windows
-gives each console child a brand-new console window. On a machine whose default
-terminal is Windows Terminal that appears as a terminal window titled with the
-child's path, which is exactly what "why is a command popping up" looks like.
+for every hidden launch: TrioForge-Web.bat under pythonw, the low-level pythonw
+path - Windows gives each console child a brand-new console window. On a machine
+whose default terminal is Windows Terminal that appears as a terminal window titled
+with the child's path, which is exactly what "why is a command popping up" looks
+like. ``no_window_flags()`` suppresses it; when the parent *does* have a console
+(someone ran a launcher in a terminal) the flag is left off, so output still lands
+in the terminal they are watching.
 
-CREATE_NO_WINDOW suppresses it. When the parent *does* have a console (someone ran
-TrioForge-Web.bat in a terminal) we leave the flag off, so output still lands in the
-terminal they are watching.
+This file used to carry its own copy of those helpers, which left two
+near-identically named modules - ``procutil`` here and ``proc_util`` in ``py/`` -
+doing the same job. The implementation now lives in ``py/proc_util.py`` and this
+module only re-exports it, so the existing ``from procutil import no_window_flags``
+imports in ``py/tools/updater.py`` and ``py/tools/shortcuts.py`` keep working
+unchanged.
+
+New code should import from ``proc_util`` directly.
 """
-
 import os
-import subprocess
 import sys
 
+# Make py/ importable: this file sits in py/tools/, one level below the module it
+# re-exports. Checked for shadowing first - py/ and py/tools/ share no module names
+# other than __init__.
+_PARENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PARENT not in sys.path:
+    sys.path.insert(0, _PARENT)
 
-def no_window_flags() -> int:
-    """Creation flags that stop a console child from opening its own window."""
-    if os.name != "nt":
-        return 0
-    try:
-        if sys.stdout is None or not sys.stdout.isatty():
-            return getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    except Exception:
-        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return 0
-
-
-def hidden_popen_kwargs() -> dict:
-    """Keyword arguments for Popen: detached, no console, no inherited handles."""
-    flags = no_window_flags()
-    if os.name == "nt":
-        flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
-    return {
-        "creationflags": flags,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "stdin": subprocess.DEVNULL,
-    }
+from proc_util import (                    # noqa: E402,F401
+    hidden_flags,
+    hidden_popen_kwargs,
+    install_hidden_consoles,
+    kill_children,
+    kill_tree,
+    no_window_flags,
+)

@@ -49,7 +49,7 @@
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
   "py/port_util.py": "4d247d03f53171fda504d83d9f260a6cef142eee5c4ff3cbd07413ebee8a853c",
-  "py/proc_util.py": "6710ecf4cfb349056d5efa28389102c2911c8b61ff5543e06be3d41bc59c4e05",
+  "py/proc_util.py": "65af30d802f37af4cc1adb8fac229d1f2ea7d16075c4091a47faaf4aa11fcc90",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "94b49dd6369857e1bbb04172a5f8da4e0c1c06723e21e686d6350e2536a8b9b5",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
@@ -63,7 +63,7 @@
   "py/tools/integrity.py": "a8f71540c223856a486d2c5fae3905d70810461edc8ade43181d8d1796216f51",
   "py/tools/launcher.py": "a1564ab69ebeea4aad977ec4b8da778fcbccac347a00c8bc3b5f6c28a402c73e",
   "py/tools/launcher_gui.py": "c32d97c339b6f2612922e607f2f26091f1717e8e07d9875fc5e24f152aff0442",
-  "py/tools/procutil.py": "9adaeda1af4e6094af9f30afaf27aa4db9afad5add5e7fd39b2610827c45edf5",
+  "py/tools/procutil.py": "e76efefbb03f70149d4b7579e30fd84a1f7e3aeb0929e57cf3d7f77767450a60",
   "py/tools/shortcuts.py": "7b35ee35bc5226d023cd01e2c2d6ba6a26011baaec89680af6db62f9fe54ce0b",
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
@@ -119,6 +119,6 @@
   "templates/index.html": "f2d52e49242c7eae30b98692628bb0795cff7a5eb89ab360e8f9484cbf9504eb",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T18:49:49",
- "note": "help panel"
+ "generated": "2026-10-12T19:11:03",
+ "note": "refactor: one shared console-flag helper (proc_util); py/tools/procutil.py re-exports"
 }

@@ -1,6 +1,26 @@
-"""One place for Windows console hiding and process-tree cleanup."""
+"""One place for Windows console hiding and process-tree cleanup.
+
+There are deliberately TWO policies here, because TrioForge needs both:
+
+* :func:`hidden_flags` - ALWAYS CREATE_NO_WINDOW. For anything the user must never
+  see: the dependency resolver, MCP servers, version probes.
+* :func:`no_window_flags` - CREATE_NO_WINDOW only when THIS process has no console
+  of its own. For a child whose output should still land in the terminal the user
+  is watching (git during a foreground update, the app under run.sh).
+
+These used to be two near-identically named modules (``py/proc_util.py`` and
+``py/tools/procutil.py``) plus a third private copy inside ``tools/launcher.py``.
+Everything now lives here; ``py/tools/procutil.py`` only re-exports, so old import
+paths keep working.
+
+:func:`install_hidden_consoles` is the belt-and-braces net: it patches
+``subprocess.Popen`` so any spawn that does not set its own creationflags is
+hidden. Explicit flags always win, so it never fights a call site that knows
+better.
+"""
 import os
 import subprocess
+import sys
 
 _installed = False
 
@@ -10,6 +30,36 @@ def hidden_flags() -> int:
     if os.name != "nt":
         return 0
     return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def no_window_flags() -> int:
+    """CREATE_NO_WINDOW only when we have no console of our own.
+
+    Deliberately NOT an alias of :func:`hidden_flags`: when a launcher runs inside
+    a terminal, that terminal IS the point, so the child's output must still reach
+    it instead of being muted.
+    """
+    if os.name != "nt":
+        return 0
+    try:
+        if sys.stdout is None or not sys.stdout.isatty():
+            return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    except Exception:
+        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return 0
+
+
+def hidden_popen_kwargs() -> dict:
+    """Popen kwargs for a detached, windowless child with no inherited handles."""
+    flags = no_window_flags()
+    if os.name == "nt":
+        flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+    return {
+        "creationflags": flags,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "stdin": subprocess.DEVNULL,
+    }
 
 
 def install_hidden_consoles() -> None:
