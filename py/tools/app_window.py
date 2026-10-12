@@ -965,13 +965,60 @@ def _spawn_server(port: int):
         return None
 
 
+def kill_port_owner(port: int, wait: float = 6.0) -> None:
+    """Make sure nothing is still listening on the port; kill the owner's tree if so."""
+    try:
+        import psutil
+    except Exception:
+        return
+    deadline = time.time() + wait
+    while True:
+        owners = set()
+        try:
+            for c in psutil.net_connections(kind="tcp"):
+                if c.status == psutil.CONN_LISTEN and c.laddr and c.laddr.port == port and c.pid:
+                    owners.add(c.pid)
+        except Exception:
+            return
+        if not owners:
+            return
+        if time.time() >= deadline:
+            break
+        time.sleep(0.5)
+    for pid in owners:
+        try:
+            p = psutil.Process(pid)
+            if "python" not in p.name().lower():
+                continue
+            procs = p.children(recursive=True) + [p]
+            for q in procs:
+                try:
+                    q.kill()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
 def _stop_child(child, timeout: float = 6.0) -> None:
     """Wait for the server child to exit, then force it if it lingers."""
-    if child is None or child.poll() is not None:
+    if child is None:
         return
     try:
         child.wait(timeout=timeout)
     except Exception:
+        pass
+    # Kill whatever is left of the whole tree: the venv launcher shim can exit while the
+    # real interpreter (and its MCP/llama children) lives on, holding memory and the port.
+    if os.name == "nt":
+        try:
+            import subprocess
+            subprocess.run(["taskkill", "/PID", str(child.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        except Exception:
+            pass
+    elif child.poll() is None:
         try:
             child.terminate()
             child.wait(timeout=5)
@@ -1242,6 +1289,7 @@ def main() -> int:
     if server_child is not None:
         _tell_server_to_shutdown(url)
         _stop_child(server_child)
+        kill_port_owner(args.port)
     else:
         print("[window] leaving the already-running server alone (this window did not start it)")
     return 0

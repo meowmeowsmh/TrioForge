@@ -1735,6 +1735,11 @@ def do_quit() -> int:
                     data = _json.loads(resp.read(400).decode("utf-8", "replace"))
                 if data.get("ok"):
                     print("TrioForge is stopping ({}://127.0.0.1:{}).".format(scheme, port))
+                    try:
+                        from app_window import kill_port_owner
+                        kill_port_owner(int(port))
+                    except Exception:
+                        pass
                     return 0
             except Exception:
                 continue

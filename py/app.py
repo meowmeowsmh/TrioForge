@@ -62,6 +62,26 @@ def _no_window():
     return getattr(_sp, "CREATE_NO_WINDOW", 0)
 
 
+def _hide_child_consoles():
+    """Every subprocess in this process starts without a console window (Windows).
+
+    Covers helper calls (git, ollama, nvidia-smi, shell tools...) that forgot the flag.
+    Callers that pass their own creationflags (e.g. the MCP hidden console) are untouched.
+    """
+    if os.name != "nt":
+        return
+    _orig = subprocess.Popen.__init__
+
+    def _init(self, *a, **kw):
+        if not kw.get("creationflags"):
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        _orig(self, *a, **kw)
+
+    subprocess.Popen.__init__ = _init
+
+
+_hide_child_consoles()
+
 
 # â”€â”€ Try orjson â”€â”€
 try:
@@ -2422,6 +2442,29 @@ def shutdown_all():
                 f"{OLLAMA_BASE_URL}/api/generate",
                 json={"model": current_model, "prompt": "", "keep_alive": 0},
                 timeout=3)
+        except Exception:
+            pass
+        # os._exit skips atexit, so MCP servers (node/npx trees) and any other
+        # children would be orphaned and pile up memory. Stop them explicitly.
+        try:
+            import mcp_client
+            mcp_client.shutdown()
+        except Exception:
+            pass
+        try:
+            me = psutil.Process()
+            kids = me.children(recursive=True)
+            for k in kids:
+                try:
+                    k.terminate()
+                except Exception:
+                    pass
+            _, alive = psutil.wait_procs(kids, timeout=3)
+            for k in alive:
+                try:
+                    k.kill()
+                except Exception:
+                    pass
         except Exception:
             pass
         os._exit(0)
