@@ -14,7 +14,7 @@
   "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
   "forge.cmd": "39870b66c4b64f9a4ec5b43d0d6b907d6956faea4751e67a19d9748c5dd0084d",
   "install.ps1": "4099d7b5d7627187626feeed351d426673bc364d406749de9d23cbf68973e085",
-  "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
+  "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "dbdf8d0e1f0ddeeaeff3c3c9b98d2e29e2d9ccacd70c6299e61e3df68d1c69bd",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
@@ -95,7 +95,7 @@
   "pyproject.toml": "3b0d5c57a0c640d6939f3477957b11eccfca85a54b41ee14b9a92057ba982f4d",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
   "requirements.txt": "739a2d8a7265a3eb63fac70b582432c6c0834c21b9d7526dcd670fe7a5368fb7",
-  "run.sh": "154cdfbb8e026dbe800d62aea1daca4ea77f4b5484e9884a79d892e1cf203fa2",
+  "run.sh": "44037fb1ecb5bd1610757d3dd7ab228fa41ed6b952c915e745472d804ffb0aa1",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
   "static/logo/mark.png": "e389a687e93d4dc048423c1e2e4a02916f0ddc0f91bbc6c3c57f67e69106ecd0",
@@ -119,6 +119,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-13T00:07:59",
- "note": "CSRF protection, pinned deps, dead code removed"
+ "generated": "2026-10-13T01:30:31",
+ "note": "trioforge-web: install it, and make run.sh survive a symlink"
 }

@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
 # ============================================================
-#  install.sh — put the `forge` (and `trioforge`) command on your PATH.
+#  install.sh — put `forge`, `trioforge` and `trioforge-web` on your PATH.
 #
 #      ./install.sh
 #
-#  After this you can run `trioforge` from any directory. It links the
-#  launcher into the first writable directory already on your PATH, and falls
+#  After this you can run any of the three from any directory. It links the
+#  launchers into the first writable directory already on your PATH, and falls
 #  back to ~/.local/bin. Works on Linux and macOS.
 #
-#  Safe to re-run: it only ever (re)creates two symlinks.
+#      trioforge        the terminal client
+#      forge            the same terminal client
+#      trioforge-web    the web app (opens in your browser)
+#
+#  Safe to re-run: it only ever (re)creates three symlinks.
 # ============================================================
 set -euo pipefail
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SELF")" && pwd)"
 LAUNCHER="$ROOT/forge"
+# The web app's entry point. run.sh already execs py/tools/launcher.py with "$@",
+# so every launcher flag (--quit, --status, --window, --help) works through it.
+WEB_LAUNCHER="$ROOT/run.sh"
 
 echo "TrioForge terminal client"
 echo "  repo: $ROOT"
@@ -70,11 +77,17 @@ else
 fi
 
 # ---------------------------------------------------------------- link it
+# Three commands, matching what install.ps1 puts in %USERPROFILE%\bin. The web
+# one used to be missing here while the README promised it, so on Linux and
+# macOS the one command that starts the server answered "command not found".
 chmod +x "$LAUNCHER"
 ln -sfn "$LAUNCHER" "$BIN/forge"
 ln -sfn "$LAUNCHER" "$BIN/trioforge"
+[ -f "$WEB_LAUNCHER" ] && chmod +x "$WEB_LAUNCHER"
+ln -sfn "$WEB_LAUNCHER" "$BIN/trioforge-web"
 echo "  linked: $BIN/forge -> $LAUNCHER"
 echo "          $BIN/trioforge -> $LAUNCHER"
+echo "          $BIN/trioforge-web -> $WEB_LAUNCHER"
 
 # ---------------------------------------------------------------- llama.cpp
 # So a local model works with no manual setup. It is also fetched on first use,
@@ -111,4 +124,6 @@ case ":${PATH:-}:" in
 esac
 
 echo
-echo "Done. Try:  trioforge --version"
+echo "Done. Try:"
+echo "    trioforge --version      the terminal client"
+echo "    trioforge-web            the web app (opens in your browser)"

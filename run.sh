@@ -14,7 +14,20 @@
 #
 # Usage: ./run.sh [--ml] [path] [--no-install] [--menu]
 
-cd "$(dirname "$0")"
+# Resolve symlinks BEFORE cd. `trioforge-web` is a symlink in ~/.local/bin, so $0
+# is the LINK's path there and `dirname` would make ~/.local/bin the project root
+# — the venv, models/ and py/ would all be looked for in the wrong directory (and
+# the venv creation failed with "Read-only file system").
+# Written as a loop rather than `readlink -f`: BSD/macOS readlink has no -f.
+SELF="$0"
+while [ -L "$SELF" ]; do
+    LINK="$(readlink "$SELF")"
+    case "$LINK" in
+        /*) SELF="$LINK" ;;
+        *)  SELF="$(dirname "$SELF")/$LINK" ;;
+    esac
+done
+cd "$(dirname "$SELF")"
 
 # ---- flags ---------------------------------------------------------------
 INSTALL_ML=0

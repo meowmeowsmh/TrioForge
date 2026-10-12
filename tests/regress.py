@@ -1899,6 +1899,39 @@ def test_role_alternation() -> None:
 
 
 # ---------------------------------------------------------------------------
+# run.sh through a symlink — the `trioforge-web` command depends on it
+# ---------------------------------------------------------------------------
+def test_launcher_symlink_resolution() -> None:
+    """`run.sh` must find the REPO through a symlink, not the link's directory.
+
+    install.sh drops `trioforge-web` in ~/.local/bin pointing at run.sh. Because
+    run.sh used `cd "$(dirname "$0")"`, $0 was the LINK, so the project root became
+    ~/.local/bin and creating the venv died with "Read-only file system".
+    """
+    _title("run.sh through a symlink (trioforge-web)")
+    import subprocess
+    import tempfile
+
+    root = Path(__file__).resolve().parent.parent
+    if not (root / ".venv-linux" / "bin" / "python").exists():
+        print("  skipped (no .venv-linux yet - run.sh has not been run here)")
+        return
+
+    with tempfile.TemporaryDirectory() as tmp:
+        link = Path(tmp) / "trioforge-web"
+        link.symlink_to(root / "run.sh")
+        try:
+            proc = subprocess.run([str(link), "--status"], cwd=tmp, timeout=240,
+                                  capture_output=True, text=True)
+        except subprocess.TimeoutExpired:
+            raise AssertionError("run.sh through a symlink did not finish")
+        out = (proc.stdout or "") + (proc.stderr or "")
+        assert "Read-only file system" not in out, out[-400:]
+        assert str(root) in out, out[-400:]      # it found the real project root
+        print("  resolves the repo root through the link -> OK")
+
+
+# ---------------------------------------------------------------------------
 # CSRF — a state-changing request must prove it came from our own page
 # ---------------------------------------------------------------------------
 def test_csrf_protection() -> None:
@@ -1956,7 +1989,8 @@ def main() -> int:
              test_tui_plugin_commands, test_obsidian_connector,
              test_shipped_plugins_load, test_failures_are_visible,
              test_tool_calls_are_recorded, test_vision_paths,
-             test_role_alternation, test_csrf_protection]
+             test_role_alternation, test_csrf_protection,
+             test_launcher_symlink_resolution]
     failed = []
     for t in tests:
         try:
