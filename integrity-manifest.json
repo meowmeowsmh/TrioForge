@@ -16,7 +16,7 @@
   "install.ps1": "4099d7b5d7627187626feeed351d426673bc364d406749de9d23cbf68973e085",
   "install.sh": "d9219aef898468bd2f1f34917450a6d5c0e277dfb65a00c44c080bbe779537cd",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "faa044fc44d08ceddfafa420124ffd0fc460a4a84f8d6bc77eb5d391180c6c16",
+  "py/app.py": "ae56b21522fddd61e441759618611e031905489f3db795e31a4cd6649b0c38c5",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "5c343f774c463a61e04927d68f754d70ef2b2f3dfdfcc6b60f08961366518f6a",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -26,6 +26,7 @@
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
   "py/features/cork_board.py": "cde6c56b506e9e73b0da97ea36e29dc0b6298fc228ee9dc2b2c56d4891a11f16",
   "py/features/design.py": "52e372d38e96244341551c1dcfdf5452ce62476cd68afe99f6f58cc589a3a29f",
+  "py/features/extensions_api.py": "b6f51aa4d9b59ba885c4c170f4fb8b9fe4a87b0af99f785f085da44858934d0e",
   "py/features/model_browser.py": "24b9d5e79c74721a4ca6a140c9d1bb88dc59e5659cff11b8e2131471a2eee2d0",
   "py/features/notes.py": "d73da10c8534596d3c112dae6fba94b0514dfd04e71eb424f75ecd44d59305d0",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
@@ -47,6 +48,7 @@
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
+  "py/port_util.py": "4d247d03f53171fda504d83d9f260a6cef142eee5c4ff3cbd07413ebee8a853c",
   "py/proc_util.py": "6710ecf4cfb349056d5efa28389102c2911c8b61ff5543e06be3d41bc59c4e05",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "94b49dd6369857e1bbb04172a5f8da4e0c1c06723e21e686d6350e2536a8b9b5",
@@ -117,6 +119,6 @@
   "templates/index.html": "bb7886d3b4fada6a8d3f936fe492c793a17c0dcea25ab8cc0b879df8077aab20",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-12T18:46:15",
- "note": "refresh after proc_util"
+ "generated": "2026-10-12T18:48:23",
+ "note": "app.py split: extensions_api, port_util"
 }
