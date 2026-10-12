@@ -255,6 +255,34 @@ llama.cpp loads a text `.gguf`; vision/video models also need a **projector** (`
 
 **Rules:** the projector sits next to the model (no name-matching) · the folder is the restriction (post a video to a `models/` model and you get a clear "can't read video" message) · any `mmproj` filename works · the dropdown lists every `.gguf` under all three roots recursively.
 
+**🔎 Auto-scan — you never name a model path.**
+
+Drop any `.gguf` into one of the three folders above and llama.cpp finds it on its
+own. Three things are automatic:
+
+- **Discovery** — the model dropdown scans the folders recursively (every `.gguf`,
+  including subfolders), and a vision projector (`mmproj`) is paired with its model
+  simply by sitting in the same folder.
+- **Self-heal** — if the model you saved is gone (renamed, moved, or a path recorded
+  on another machine), llama.cpp does not stay off. It re-scans the folders and starts
+  the best model that fits this machine instead.
+- **Best-fit choice** — no user in the loop. It picks, in order:
+  1. a model that fits **entirely in VRAM** (fastest),
+  2. else one that **splits GPU + CPU** (the normal laptop case),
+  3. else whatever still **runs on CPU** — only when nothing else is left.
+
+  Ties go to the **larger** model (the one you deliberately kept), and projector
+  (`mmproj`/`clip`) files are skipped — they're companions, not models.
+
+  Each choice is logged with its reason, e.g.:
+
+  ```
+  auto-scan: saved model 'models/old.gguf' is not here; starting 'qwen-7b.gguf' - splits across GPU and CPU
+  ```
+
+  If nothing is found, it says so and points at the download button instead of failing
+  silently.
+
 **Memory:** the GPU comes first (all layers offloaded when it fits); what won't fit is refused with an explanation; the model unloads 5 minutes after the last request (`TRIOFORGE_IDLE_UNLOAD=<seconds>`).
 
 **Search and download models from the terminal:**
