@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T04:20:37",
- "note": "1.5.6 - sidebar width fitting is cell-accurate (cross-platform)"
+ "generated": "2026-10-14T04:26:48",
+ "note": "1.5.6 - final release, all fixes included"
 }

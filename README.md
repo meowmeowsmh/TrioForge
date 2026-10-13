@@ -46,6 +46,10 @@ whose tag was cut before the security, terminal-client and performance work belo
 - **Typing no longer stalls.** The sidebar's GPU reads were freezing the UI thread —
   NVML was re-initialised on every read, and a 1.4–3.3 s device probe ran inline every
   5 s. Worst-case keystroke latency went from **1655 ms to 159 ms**.
+- **The sidebar fits, and steps aside.** Long `.gguf` names used to wrap mid-word
+  inside the fixed-width panel; they are truncated now (measured in terminal cells,
+  so emoji count correctly). Below 80 columns the panel hides and the chat takes the
+  full width — at 60 columns it used to leave the transcript just 24.
 - **`trioforge-web` on Linux/macOS**, and `run.sh` resolves symlinks.
 
 ### 1.5.5 — no console windows, and one command from anywhere

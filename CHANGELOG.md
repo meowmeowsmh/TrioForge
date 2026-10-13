@@ -58,6 +58,18 @@ below, so it carries the same version number on a build that is missing all of i
   continuous typing went from **1655 ms to 159 ms**.
 - **`/help` and the palette read one table**, so `/team`, `/auto`, `/route` and
   `/roles` cannot exist without being listed.
+- **The sidebar fits its width, and steps aside when there is none.** The panel is a
+  fixed 36 columns, so a long `.gguf` name used to WRAP mid-word —
+  `gemma-4-E4B-it-ultra-uncensored-heretic` drew as `…ultra-uncensored-h` / `eretic`
+  and pushed its own `5.4 GB` row out of line. Every value is truncated to the
+  panel's 34 text columns now, measured in terminal **cells** rather than
+  characters, because an emoji like 💻 occupies two columns and how wide one draws
+  varies by terminal. `_short_model()` also splits on `\` as well as `/`: on Windows
+  a model is `D:\…\name.gguf`, and splitting on `/` alone left the whole path on one
+  row. Below 80 columns the panel hides so the transcript gets the full width — at
+  60 it used to keep its 36 and leave the chat 24, at 50 it left 14. The resize
+  handler reads the event's size rather than the widget's, which was still the old
+  one, so the panel used to change one resize late and never come back.
 
 ### Install and packaging
 
