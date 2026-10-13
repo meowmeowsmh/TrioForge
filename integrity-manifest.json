@@ -74,7 +74,7 @@
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
   "py/tui/backend.py": "387ba89a60465033ea591c06fe2eadca4e97410fb5cde727d62649debb043f17",
   "py/tui/cli.py": "5241cf5aa16a3d415f0f699ad555c11efd5a571791063d0c1be8669ea53d5354",
-  "py/tui/commands.py": "323031c2776aa2ea6f995d2768737113cf3e93f4990540b6c368d3cda1559260",
+  "py/tui/commands.py": "e0a4911bee122fa471d4b49fa49e4c6a7c189bf6a0458306c87baf1d3f8b5bb4",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-13T19:23:37",
- "note": "1.5.5 - security floors (urllib3/pypdf/werkzeug) + manifest sync"
+ "generated": "2026-10-13T22:42:52",
+ "note": "1.5.5 - /roles senior/junior in /help + README"
 }

@@ -72,7 +72,7 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/route explain this error", "tui"),
         Cmd("/team", "every model in the pool works the task; first answer ships",
             "/team", "tui"),
-        Cmd("/roles", "planner → coder → reviewer → fixer pipeline (a working team)",
+        Cmd("/roles", "senior plans+reviews, junior codes+fixes (planner → coder → reviewer → fixer)",
             "/roles", "tui"),
         Cmd("/copy [n]", "copy an answer (n = how many answers back)", "/copy 2"),
     ]),

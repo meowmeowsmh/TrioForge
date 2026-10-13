@@ -315,12 +315,12 @@ async def _tui_checks() -> None:
         app._command("/help")
         await pilot.pause(0.5)
         body = _last_card(app)
-        for want in ("/team", "/auto", "/route", "e.g. /team"):
+        for want in ("/team", "/auto", "/route", "/roles", "e.g. /team"):
             assert want in body, want
-        app._command("/help /team")
+        app._command("/help /roles")
         await pilot.pause(0.4)
-        assert "/team" in _last_card(app)
-        print("  /help lists /team,/auto,/route + examples; /help <cmd> -> OK")
+        assert "/roles" in _last_card(app)
+        print("  /help lists /team,/auto,/route,/roles + examples; /help <cmd> -> OK")
 
         # meta lines are dim, not green bot bubbles
         assert "from-meta" in app._add_meta("x").classes
