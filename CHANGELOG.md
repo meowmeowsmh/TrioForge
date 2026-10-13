@@ -3,11 +3,13 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
+## [1.5.6] — the final release
 
-### The three open follow-ups are closed
+**This is the final TrioForge release and the one to install.** It supersedes
+1.5.5: that tag was cut before the security, terminal-client and performance work
+below, so it carries the same version number on a build that is missing all of it.
 
-`CODE_REVIEW.md` listed three things as knowingly deferred. All three are done:
+### Security
 
 - **CSRF protection.** A per-session token is issued at `GET /api/csrf` and required
   on every state-changing request, compared with `secrets.compare_digest`. This
@@ -21,8 +23,48 @@ GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
   against and carries an upper bound (`flask>=3.1.3,<4.0.0`), so a fresh install
   cannot resolve to a major version nobody has run. `waitress`/`gunicorn` stay
   exactly pinned.
+- **Eleven vulnerability alerts cleared.** `uv.lock` still resolved `urllib3` 2.7.0,
+  `pypdf` 6.17.0 and `werkzeug` 3.1.8 — three packages carrying 11 Dependabot
+  advisories (9 high, 2 moderate) — while the venv already ran fixed versions, so
+  the lock was the only thing stale. It now resolves `urllib3` 2.8.0, `pypdf` 6.20.1
+  and `werkzeug` 3.1.9, and `requirements.txt` states explicit floors for the two
+  transitive ones so a fresh install cannot drift back below the patched releases.
 - **Dead code.** `save_notes_async` / `save_notes_sync` had no callers for several
   releases and are gone; the backup functions they forwarded to are still used.
+
+### The terminal client
+
+- **`/roles` — a working team instead of a crowd.** A senior/junior pair runs one
+  task as a pipeline: the **senior** plans and reviews (`planner`, `reviewer`), the
+  **junior** builds and fixes (`coder`, `fixer`), and each job is handed the
+  previous one's output as an artefact. The reviewer ships (`SHIP`) or lists
+  concrete `ISSUES:`, and the fixer only runs when there are issues to fix. The
+  senior takes the strongest model in the pool, the junior the fast local one.
+  `/team` remains the other shape: every model on the same task, first answer ships.
+- **Slash autocomplete.** Typing a bare `/` drops a filtered command list above the
+  prompt — command on the left, what it does on the right. `↑`/`↓` pick, `tab`
+  fills the name in, `enter` runs the highlighted command, `esc` closes it for that
+  text. A finished command keeps its row, selected: hiding it made the list vanish
+  at the moment you finished typing, and `/set` is a prefix of `/setup`, so the row
+  you typed is selected explicitly rather than trusting list order.
+- **Typing no longer stalls.** The sidebar's GPU reads were freezing the UI thread.
+  `gpu_live()` re-initialised NVML on every read (~0.7 s warm, 2.5 s cold on
+  Windows) and fell back to spawning `nvidia-smi` (~750 ms) whenever the driver
+  refused the utilisation query; `_probe_gpu()` (which spawns
+  `llama-server --list-devices`, 1.4–3.3 s) was called inline every 5 s by a panel
+  that redraws every 2 s. NVML now stays initialised for the process, a failed
+  utilisation read keeps the memory figures, and a stale GPU cache is returned
+  as-is while a worker thread re-probes. Worst-case keystroke latency over 14 s of
+  continuous typing went from **1655 ms to 159 ms**.
+- **`/help` and the palette read one table**, so `/team`, `/auto`, `/route` and
+  `/roles` cannot exist without being listed.
+
+### Install and packaging
+
+- **`trioforge-web` exists on Linux/macOS**, and `run.sh` resolves symlinks, so the
+  one-liner works when it is invoked through a link.
+- **The `models/` guidance files are untracked** rather than committed inside a
+  gitignored folder, so they stay on disk without showing up as changes.
 
 Still open, deliberately: **Content-Security-Policy** (needs frontend testing
 because the pages use inline scripts) and the **Ollama command-dispatch

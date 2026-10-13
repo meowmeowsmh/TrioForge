@@ -68,7 +68,7 @@
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
   "py/tui/README.md": "802bd4fe99cd53d09d62679b2931a7420780317eb96f1d0cceff3b60b414d064",
-  "py/tui/__init__.py": "b0d4c20e42d7d2d2b4cefc911418cbe08b9bac2ad0b5ec5f5a051d67947ad920",
+  "py/tui/__init__.py": "23841cca14b1ec9327a6e81d94749bc6f73f9d06d0559fa60cccd6c8b4a47a62",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
   "py/tui/app.py": "a230d43248b14071d7b11dbd6edd824789cff9a11fdf643f03b5b305f7f97760",
@@ -90,10 +90,10 @@
   "py/tui/tools.py": "a60903fead0fa795a2ea6c81274c7beadeb8b6a25d0268437ccac36b6beae402",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "0e05968ac066e8d3a85b8e142fb67ab219bee92494070b06269788080d663420",
-  "py/version.py": "525a201ed53d4ad927dac741de85348410e1101efb83146554ad13ca95219fb7",
+  "py/version.py": "5021fccb0994a6a061388671c769ce842113ac606c2d656f2053e4af90465de3",
   "py/video_to_text.py": "515ab66ca0c1138bf497855355bb67d565b2ba8509440e6851c007085068ece2",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "cf3a02035748800a6d2213f0c02ff73885b4ca8598975eff6962ff20afb554af",
+  "pyproject.toml": "ce0bb005e048b7410f385097bb52b4378afc4ffd71f8f045900bb0fd49cfdc6e",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
   "requirements.txt": "3c61728882b06452c6451e3b736b927c626f29d2f461e0e2fe2845fb9d280246",
   "run.sh": "44037fb1ecb5bd1610757d3dd7ab228fa41ed6b952c915e745472d804ffb0aa1",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T01:41:58",
- "note": "1.5.5 - typing latency: NVML session kept open, non-blocking GPU probe"
+ "generated": "2026-10-14T02:07:10",
+ "note": "1.5.6 - the final release"
 }

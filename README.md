@@ -28,10 +28,32 @@
 - **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
 - **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` code-block protocol covers models without native function calling, and no workspace folder is required.
 
-### 1.5.5 — the last release
+### 1.5.6 — the final release
 
-**This is the final TrioForge release.** No console windows, a window that opens, and
-one command that works from anywhere.
+**This is the final TrioForge release, and the one to install.** It supersedes 1.5.5,
+whose tag was cut before the security, terminal-client and performance work below.
+
+- **Security.** CSRF protection on every state-changing route, every dependency floor
+  pinned to a tested range, and the **11 Dependabot alerts cleared** — `uv.lock` was
+  still resolving `urllib3` 2.7.0, `pypdf` 6.17.0 and `werkzeug` 3.1.8 while the app
+  itself already ran fixed versions.
+- **`/roles` — a working team, not a crowd.** A senior/junior pair runs one task as a
+  pipeline: the senior (`planner`, `reviewer`) plans and reviews strictly, the junior
+  (`coder`, `fixer`) builds and fixes, and each job is handed the previous one's output.
+- **Slash autocomplete.** Type `/` and the command list drops down over the prompt,
+  filtered as you type; `↑`/`↓` pick, `tab` fills the name in, `enter` runs the
+  highlighted command.
+- **Typing no longer stalls.** The sidebar's GPU reads were freezing the UI thread —
+  NVML was re-initialised on every read, and a 1.4–3.3 s device probe ran inline every
+  5 s. Worst-case keystroke latency went from **1655 ms to 159 ms**.
+- **`trioforge-web` on Linux/macOS**, and `run.sh` resolves symlinks.
+
+### 1.5.5 — no console windows, and one command from anywhere
+
+> Superseded by **1.5.6** above — the `v1.5.5` tag was cut before the security and
+> performance fixes, so install the newer release.
+
+No console windows, a window that opens, and one command that works from anywhere.
 
 - **Windows stops popping cmd windows.** MCP servers now get one *hidden* console for
   the whole process tree — npm's inner `cmd /d /s /c` shim was allocating a visible one
@@ -348,12 +370,12 @@ forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
-forge --version                 # -> forge 1.5.5 (prints the name you typed)
+forge --version                 # -> forge 1.5.6 (prints the name you typed)
 trioforge-web                   # start the web app (same as double-clicking)
 trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
-Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.5**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.6**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 
