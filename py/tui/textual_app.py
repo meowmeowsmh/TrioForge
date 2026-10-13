@@ -480,6 +480,7 @@ class ForgeApp(App):
         self._auto_route = bool(getattr(self.cfg, "route_enabled", False))
         self._route_pool = list(getattr(self.cfg, "route_pool", []) or [])
         self._team_mode = bool(getattr(self.cfg, "team_enabled", False))
+        self._roles_mode = bool(getattr(self.cfg, "roles_enabled", False))
         # Set by ctrl+c; polled by the agent between streamed chunks so a long
         # local generation can be abandoned. threading.Event, not a bool: the
         # agent reads it from a worker thread.
@@ -1477,6 +1478,7 @@ class ForgeApp(App):
         prompt.disabled = True
         started = time.time()
         team = self._team_mode and self._is_local()
+        roles = self._roles_mode and self._is_local()
         # In team mode the answer card is created at the END: mounting it first
         # put the reply above the peer steps that produced it.
         card = None if team else self._add("", "bot")
@@ -1510,11 +1512,11 @@ class ForgeApp(App):
                 self._activity = ""
                 self._warn_if_slow_load()
 
-            # Team mode: every model in the pool does the same task, first
-            # finished answer ships. Only applies on a local turn; a cloud turn
-            # is already a single model.
-            if team:
-                answer = await self._team_turn(text, state)
+            # Team / roles modes: several models work together on one task. Only
+            # applies on a local turn; a cloud turn is already a single model.
+            if team or roles:
+                answer = await (self._roles_turn(text, state) if roles
+                                else self._team_turn(text, state))
                 # The team loop bails at its next await once ctrl+c is pressed,
                 # so its partial answer must not be dressed up as a finished one.
                 if self._stop.is_set():
@@ -1529,8 +1531,9 @@ class ForgeApp(App):
                 if answer:
                     self.session.add_assistant(answer)
                     self._replies.append(answer)
+                    mode = "roles" if roles else "team"
                     self._add(
-                        f"{answer}\n\n_team · {time.time() - started:.1f}s_",
+                        f"{answer}\n\n_{mode} · {time.time() - started:.1f}s_",
                         "bot", force_scroll=True)
                     self._set_mood("happy")
                     return
@@ -1783,6 +1786,79 @@ class ForgeApp(App):
 
         return answer
 
+    async def _roles_turn(self, text: str, state) -> str:
+        """Roles mode: the pool runs a planner -> coder -> reviewer -> fixer pipeline.
+
+        A strong model plans and reviews; a fast model builds and fixes. Each role
+        reads the previous role's output, so the work flows through the team in
+        order instead of every model doing the whole task at once.
+        """
+        from . import localmodels as lm
+        from . import team_roles
+
+        # Resolve the pool (the same list parallel team mode uses).
+        peers = []                       # [(label, backend)]
+        for key in self._route_pool:
+            if key.startswith("local:"):
+                name = key.split(":", 1)[1]
+                found = lm.find(name) if name else None
+                model = found.path if found else (name or self.cfg.model)
+                peers.append(("local", self._backend_for("local", model)))
+            elif ":" in key:
+                provider, _, model = key.partition(":")
+                if self.cfg.providers.get(provider, {}).get("base_url"):
+                    peers.append((provider, self._backend_for(provider, model)))
+        if not peers:
+            peers.append((self.cfg.provider, self.backend))
+
+        # Planner/reviewer take the strongest model (cloud first); coder/fixer
+        # take the fast local one. Fall back sensibly when the pool has only one.
+        cloud_peer = next((b for _l, b in peers if _l != "local"), None)
+        local_peer = next((b for _l, b in peers if _l == "local"), None)
+        senior = cloud_peer or local_peer or peers[0][1]
+        junior = local_peer or cloud_peer or peers[0][1]
+
+        def who(backend):
+            name = getattr(backend, "model", "") or ""
+            if name.endswith(".gguf"):
+                name = name.rsplit("/", 1)[-1][:-5]
+            return name or "model"
+
+        self._set_mood("thinking")
+        self._add_meta(
+            f"🧩 roles: planner/reviewer **{who(senior)}**, "
+            f"coder/fixer **{who(junior)}**")
+
+        artifacts = {}
+        final = ""
+        for role in team_roles.ROLE_ORDER:
+            if role == "fixer" and not artifacts.get("issues"):
+                continue                      # reviewer shipped it; nothing to fix
+            backend = senior if role in ("planner", "reviewer") else junior
+            read_only = role in ("planner", "reviewer")
+            prompt = team_roles.role_prompt(role, text, artifacts)
+            self._add_meta(f"  • {role}: {team_roles.ROLE_DESCRIPTIONS[role]}")
+            try:
+                out, _steps = await self._agent_text(
+                    backend, prompt, state, use_tools=not read_only)
+            except Exception as exc:
+                out = ""
+                self._add_meta(f"  ✗ {role} failed: {exc}")
+            out = (out or "").strip()
+            if role == "planner":
+                artifacts["plan"] = out
+            elif role == "coder":
+                artifacts["code"] = out
+                final = out
+            elif role == "reviewer":
+                artifacts["review"] = out
+                if out.upper().startswith("SHIP"):
+                    return final or out
+                artifacts["issues"] = out
+            elif role == "fixer":
+                final = out or final
+        return final
+
     async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
         """Apply one agent event on the app thread (see ``_ask``)."""
         if kind == "reasoning":
@@ -2015,12 +2091,26 @@ class ForgeApp(App):
             return
         if name == "/team":
             self._team_mode = not self._team_mode
+            self._roles_mode = False
             self.cfg.team_enabled = self._team_mode
+            self.cfg.roles_enabled = False
             providers.save(self.cfg)
             self._add_meta(
                 "team mode " + ("ON — every model in the pool does the task, "
                                 "first finished answer ships"
                                 if self._team_mode else "OFF — one model per message"))
+            self._refresh()
+            return
+        if name == "/roles":
+            self._roles_mode = not self._roles_mode
+            self._team_mode = False
+            self.cfg.roles_enabled = self._roles_mode
+            self.cfg.team_enabled = False
+            providers.save(self.cfg)
+            self._add_meta(
+                "roles mode " + ("ON — planner → coder → reviewer → fixer"
+                                 if self._roles_mode
+                                 else "OFF — one model per message"))
             self._refresh()
             return
         if name == "/auto":

@@ -363,6 +363,26 @@ async def _tui_checks() -> None:
         assert "READ ONCE, THEN WRITE" in seeded.messages[-1].content
         print("  team session carries history, wrapped task last -> OK")
 
+        # roles mode: the pipeline is pure and testable with no model. Each role's
+        # prompt must carry its directive, the task, and only the artefacts that
+        # came before it (planner sees nothing, coder sees the plan, reviewer sees
+        # plan + code, fixer sees plan + code + issues).
+        from tui import team_roles as _roles
+        assert _roles.ROLE_ORDER == ("planner", "coder", "reviewer", "fixer")
+        task = "add a /health route to the app"
+        plan = "1. view py/app.py\n2. add the route\n3. run the server"
+        code = "added /health returning ok"
+        issues = "ISSUES:\n1. /health returns 200 even when the db is down"
+        p_plan = _roles.role_prompt("planner", task, {})
+        assert "PLANNER" in p_plan and task in p_plan and plan not in p_plan
+        p_coder = _roles.role_prompt("coder", task, {"plan": plan})
+        assert plan in p_coder and "CODER" in p_coder
+        p_review = _roles.role_prompt("reviewer", task, {"plan": plan, "code": code})
+        assert "CODE" in p_review and code in p_review and "REVIEWER" in p_review
+        p_fix = _roles.role_prompt("fixer", task, {"plan": plan, "code": code, "issues": issues})
+        assert "ISSUES" in p_fix and issues in p_fix and "FIXER" in p_fix
+        print("  roles pipeline prompts carry directive + task + prior artefacts -> OK")
+
         # routing must NEVER erase the configured model. The bug: a pool with no
         # local entry returned model="" for a local route, which was saved to
         # disk - the gguf path was gone for good and every launch showed
