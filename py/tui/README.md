@@ -201,8 +201,11 @@ the command on the left and what it does on the right:
 
 Rules, because they are what keep it out of the way: it only opens for a **bare**
 name, so a space or a newline hands the keys back to the caret (`/model gemma`
-types normally); and it closes on an **exact** name, because there is nothing
-left to complete — `enter` just runs it.
+types normally). A finished command keeps its row, selected — hiding it on an
+exact match was the first attempt, and it read as broken: you type `/set`, the
+whole list disappears, and the thing you were reading vanishes at the exact
+moment you finish typing it. `enter` then runs the row that is selected, which is
+the command on screen.
 
 Focus never leaves the prompt. The list is deliberately never focused, so
 `PromptArea` forwards those five keys to it (`PromptArea.MenuKey`) instead; if

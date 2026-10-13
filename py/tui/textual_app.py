@@ -543,7 +543,11 @@ class SlashMenu(OptionList):
                 options.append(Option(label, id=name))
             self.clear_options()
             self.add_options(options)
-            self.highlighted = 0
+            # Select the row the user finished typing, when there is one. Relying
+            # on list order would run a DIFFERENT command than the text on screen
+            # the day a longer name sorts first (/key before /keys only by luck).
+            typed = text.strip().lower()
+            self.highlighted = names.index(typed) if typed in names else 0
             self._shown = names
         self.add_class("-on")
         return True

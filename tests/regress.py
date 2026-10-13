@@ -326,11 +326,20 @@ async def _tui_checks() -> None:
         # bare command is being typed. Matching is pure, so it is asserted here
         # with no UI; the widget wiring is asserted below.
         from tui.commands import slash_commands, slash_matches
-        assert len(slash_matches("/")) == len(slash_commands()) > 20
-        assert [n for n, _d in slash_matches("/ro")] == ["/route", "/roles"]
-        assert slash_matches("/roles") == [], "an exact name has nothing to complete"
+        assert len(slash_matches("/")) == len(slash_commands()) > 20, \
+            (len(slash_matches("/")), len(slash_commands()))
+        assert [n for n, _d in slash_matches("/ro")] == ["/route", "/roles"], \
+            slash_matches("/ro")
+        # An exact name KEEPS its row: hiding it made the list vanish the moment
+        # the command was finished, which reads as broken. Note "/set" is also a
+        # PREFIX of "/setup", so both match and the row the user actually typed
+        # has to be the selected one - otherwise enter runs "/setup".
+        assert [n for n, _d in slash_matches("/set")] == ["/setup", "/set"], \
+            slash_matches("/set")
+        assert [n for n, _d in slash_matches("/roles")] == ["/roles"], slash_matches("/roles")
         assert slash_matches("/roles now") == [], "a space means arguments"
-        assert slash_matches("hello") == [] and slash_matches("/zzz") == []
+        assert slash_matches("hello") == [], slash_matches("hello")
+        assert slash_matches("/zzz") == [], slash_matches("/zzz")
 
         menu = app.query_one("#slashmenu", ta.SlashMenu)
         prompt = app.query_one("#prompt", ta.PromptArea)
@@ -369,12 +378,15 @@ async def _tui_checks() -> None:
         assert menu.chosen == "/roles", menu.chosen
         app._menu_key(ta.PromptArea.MenuKey(prompt, "accept"))
         assert prompt.text == "/roles", repr(prompt.text)
-        assert not prompt.menu_open, "menu stayed open after an exact completion"
+        # The completed name is an exact command, so its own row stays selected
+        # rather than the list closing under the user.
+        assert prompt.menu_open and menu.chosen == "/roles", menu.chosen
 
         # escape closes the list for that text only - typing more brings it back
         prompt.text = "/mo"
         await pilot.pause(0.2)
-        assert prompt.menu_open and menu.has_class("-on")
+        assert prompt.menu_open and menu.has_class("-on"), \
+            (prompt.text, prompt.menu_open, menu.has_class("-on"))
         app._menu_key(ta.PromptArea.MenuKey(prompt, "dismiss"))
         assert not prompt.menu_open, "escape did not close the menu"
         # ...and it must be off SCREEN too, not just un-flagged: leaving the rows
@@ -409,12 +421,31 @@ async def _tui_checks() -> None:
         await pilot.press("tab")                  # tab fills the highlight in
         await pilot.pause(0.2)
         assert prompt.text == "/roles", repr(prompt.text)
-        assert not prompt.menu_open
+        # The finished command keeps its row - this was the reported bug: the
+        # list vanished the instant the name was complete.
+        assert prompt.menu_open and menu.chosen == "/roles", menu.chosen
+        assert menu.option_count == 1, menu.option_count
+
+        # The reported bug, typed for real: completing a command name must not
+        # empty the list. "/se" -> "t" used to make every row disappear. "/set"
+        # also matches "/setup", and the SELECTED row must still be "/set".
+        prompt.text = "/se"
+        await pilot.pause(0.2)
+        # /setup, /search and /set all start with "/se"
+        assert prompt.menu_open and menu.option_count == 3, menu.option_count
+        # setting .text leaves the caret at column 0; a typist's is at the end
+        prompt.move_cursor((0, len(prompt.text)))
+        await pilot.press("t")
+        await pilot.pause(0.2)
+        assert prompt.text == "/set", repr(prompt.text)
+        assert prompt.menu_open, "the list vanished on a complete command"
+        assert menu.chosen == "/set", menu.chosen
+        assert menu.option_count == 2, menu.option_count
 
         # escape closes the list and leaves the typed text alone
         prompt.text = "/mo"
         await pilot.pause(0.2)
-        assert prompt.menu_open
+        assert prompt.menu_open, (prompt.text, prompt.menu_open)
         await pilot.press("escape")
         await pilot.pause(0.2)
         assert not prompt.menu_open and not menu.has_class("-on")

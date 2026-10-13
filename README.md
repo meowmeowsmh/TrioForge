@@ -383,7 +383,7 @@ print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
 | `/roles` | **working team, senior/junior pair**: the senior plans + reviews, the junior codes + fixes (planner → coder → reviewer → fixer) |
 | `tab` / `ctrl+n` / `ctrl+q` | focus chat / new session / quit |
 
-Type **`/`** and the command list drops down over the prompt, filtered as you type — the command on the left, what it does on the right. `↑`/`↓` pick, `tab` fills the name in (adding a space when the command takes arguments), `enter` runs the highlighted one, `esc` closes the list (it comes back as soon as you type on). The same list drives `/help`, `/help <command>` and `ctrl+p`, so a command cannot be added without becoming discoverable.
+Type **`/`** and the command list drops down over the prompt, filtered as you type — the command on the left, what it does on the right. `↑`/`↓` pick, `tab` fills the name in (adding a space when the command takes arguments), `enter` runs the highlighted one, `esc` closes the list (it comes back as soon as you type on). A finished command keeps its row, selected and ready for `enter`. The same list drives `/help`, `/help <command>` and `ctrl+p`, so a command cannot be added without becoming discoverable.
 
 Shift+Enter can't work — a terminal sends the same byte as Enter — so `ctrl+j` is the newline key. Full details in [`py/tui/README.md`](py/tui/README.md).
 

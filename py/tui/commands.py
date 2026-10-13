@@ -172,16 +172,18 @@ def slash_matches(text: str) -> list[tuple[str, str]]:
 
     The menu belongs to a bare command being typed, so it hides as soon as the
     line stops being one: a space or newline means the user is on to arguments.
-    It also hides on an EXACT name: there is nothing left to complete, so Enter
-    should just run what was typed rather than re-complete it.
+
+    An EXACT name keeps its own row. Hiding it was the first attempt and it read
+    as broken: you type "/set", the whole list disappears, and the thing you were
+    reading vanishes at the exact moment you finish typing it. Keeping the row
+    leaves the command visible and selected, ready for Enter - which is what
+    Claude Code does.
     """
     if not text.startswith("/") or " " in text or "\n" in text:
         return []
     typed = text.lower()
-    rows = slash_commands()
-    if any(name == typed for name, _desc in rows):
-        return []
-    return [(name, desc) for name, desc in rows if name.startswith(typed)]
+    return [(name, desc) for name, desc in slash_commands()
+            if name.startswith(typed)]
 
 
 def _help(ctx, arg: str) -> None:
