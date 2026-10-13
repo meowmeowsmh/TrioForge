@@ -348,6 +348,22 @@ async def _tui_checks() -> None:
         assert menu.region.height >= 2, menu.region
         assert prompt.region.y + prompt.region.height <= 40, prompt.region
 
+        # ...and it must NOT resize as the filter narrows. With height: auto the
+        # box tracked the match count (29 -> 8 -> 3 rows), which dragged the
+        # transcript viewport with it and repainted the whole conversation on
+        # every keystroke: the line being typed looked written-then-wiped.
+        chat = app.query_one("#chat")
+        settled = (menu.region.y, menu.region.height, chat.region.height)
+        for narrowing in ("/s", "/se"):
+            prompt.text = narrowing
+            await pilot.pause(0.2)
+            moved = (menu.region.y, menu.region.height, chat.region.height)
+            assert moved == settled, f"{narrowing} reflowed the layout: {settled} -> {moved}"
+
+        prompt.text = "/ro"          # back to two matches for the tests below
+        await pilot.pause(0.2)
+        assert menu.chosen == "/route", menu.chosen
+
         # down moves the highlight; tab fills the name in WITHOUT running it
         app._menu_key(ta.PromptArea.MenuKey(prompt, "down"))
         assert menu.chosen == "/roles", menu.chosen

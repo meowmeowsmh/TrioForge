@@ -67,7 +67,7 @@
   "py/tools/shortcuts.py": "7b35ee35bc5226d023cd01e2c2d6ba6a26011baaec89680af6db62f9fe54ce0b",
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
-  "py/tui/README.md": "e04ce9c1dbbf790a12b787d62ab187ce2adefc7339f558595e41e6f8a6cbc8ed",
+  "py/tui/README.md": "c01ae4eed97e9c3224d5e351b1c413c1eb9e5b6e7188df9b584d50d19d2d9b05",
   "py/tui/__init__.py": "b0d4c20e42d7d2d2b4cefc911418cbe08b9bac2ad0b5ec5f5a051d67947ad920",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
@@ -85,7 +85,7 @@
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
-  "py/tui/textual_app.py": "107a60f7af67fc8a6a6e9ddc1e591d0c0927b9c4d01b8f841bce4007c61fc760",
+  "py/tui/textual_app.py": "91126835e9c89b4ddf0ef90f4395c694fb83d17897b4fb09931532952b62f366",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "a60903fead0fa795a2ea6c81274c7beadeb8b6a25d0268437ccac36b6beae402",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-13T22:57:14",
- "note": "1.5.5 - slash autocomplete menu in the TUI"
+ "generated": "2026-10-13T23:38:43",
+ "note": "1.5.5 - slash menu: fixed height, no reflow while typing"
 }

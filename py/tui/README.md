@@ -209,6 +209,12 @@ Focus never leaves the prompt. The list is deliberately never focused, so
 `TextArea` kept them, `↑`/`↓` would move the caret and `tab` would jump focus to
 the transcript.
 
+The box is a **fixed 8 rows**, not `height: auto`. The match count falls on every
+keystroke (29 → 8 → 3), and an auto height dragged the transcript viewport along
+with it, so the chat was re-wrapped and repainted on every letter and the line
+being typed looked written-then-wiped. Rows are also rebuilt only when the *set*
+of matches changes, so a keystroke that keeps the same matches does no work.
+
 ### Auto-route — local vs cloud, decided for you (`ctrl+a`)
 
 `ctrl+a` has two jobs:

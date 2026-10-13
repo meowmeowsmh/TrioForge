@@ -225,12 +225,21 @@ CollapsibleTitle {{
 #statusline {{ height: 1; color: {T.GREY}; padding: 0 2; }}
 
 /* Slash autocomplete, sitting directly above the prompt the way Claude Code's
-   does. Hidden until a bare "/..." is being typed; see SlashMenu. */
+   does. Hidden until a bare "/..." is being typed; see SlashMenu.
+
+   The height is FIXED, not auto. The match count drops on every keystroke
+   (29 -> 8 -> 3), and an auto height dragged the transcript viewport with it -
+   the chat resized by up to 12 rows per letter, so the whole conversation was
+   re-wrapped and repainted while you typed and the line you were writing looked
+   like it was being wiped. A constant box means the layout settles once, when
+   the list opens. */
 #slashmenu {{
     display: none;
     margin: 0 1;
-    height: auto;
-    max-height: 12;
+    /* Exactly 8 rows: 6 commands + the border. A number, not max-height: 50% -
+       a percentage clamped unpredictably (8 became 7) and the whole point here
+       is that the box is the SAME size every time it opens. */
+    height: 8;
     border: round #2f3549;
     background: #16161e;
     padding: 0 1;
@@ -504,25 +513,38 @@ class SlashMenu(OptionList):
     opening the list can never interrupt typing.
     """
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        #: The names currently rendered, so an unchanged filter is not rebuilt.
+        self._shown: tuple[str, ...] = ()
+
     def fill(self, text: str) -> bool:
         """Rebuild the list from what is typed. True when the menu is showing."""
         rows = slash_matches(text)
-        self.clear_options()
-        if not rows:
+        names = tuple(name for name, _desc in rows)
+        if not names:
+            if self._shown:
+                self.clear_options()
+                self._shown = ()
             self.remove_class("-on")
             return False
-        # ONE width for every row, so the descriptions line up down the list
-        # instead of stepping in and out with each command's length.
-        width = max(len(name) for name, _desc in slash_commands())
-        options = []
-        for name, desc in rows:
-            label = Text()
-            label.append(name.ljust(width), style=f"bold {T.CYAN}")
-            label.append("  ")
-            label.append(desc, style=T.GREY)
-            options.append(Option(label, id=name))
-        self.add_options(options)
-        self.highlighted = 0
+        # Only redraw when the ROWS change. This runs on every keystroke, and
+        # clearing + re-adding all 29 options each time was churn for nothing.
+        if names != self._shown:
+            # ONE width for every row, so the descriptions line up down the list
+            # instead of stepping in and out with each command's length.
+            width = max(len(name) for name, _desc in slash_commands())
+            options = []
+            for name, desc in rows:
+                label = Text()
+                label.append(name.ljust(width), style=f"bold {T.CYAN}")
+                label.append("  ")
+                label.append(desc, style=T.GREY)
+                options.append(Option(label, id=name))
+            self.clear_options()
+            self.add_options(options)
+            self.highlighted = 0
+            self._shown = names
         self.add_class("-on")
         return True
 
