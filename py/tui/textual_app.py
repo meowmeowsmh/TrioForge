@@ -37,6 +37,7 @@ import threading
 import time
 from pathlib import Path
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -354,11 +355,26 @@ SIDEBAR_TEXT = 34
 
 
 def _fit(text: str, width: int = SIDEBAR_TEXT) -> str:
-    """Shorten ``text`` to ``width`` columns, marking a cut with an ellipsis."""
+    """Shorten ``text`` to ``width`` terminal CELLS, marking a cut with an ellipsis.
+
+    Cells, not characters: 💻 and ☁ take two columns each, so a len()-based cut
+    could leave a line one column too wide and wrap it after all - and how wide an
+    emoji draws varies by terminal and platform, which is exactly the difference
+    that would make this look fixed on one OS and broken on another.
+    """
     text = str(text)
-    if len(text) <= width:
+    if cell_len(text) <= width:
         return text
-    return text[:max(1, width - 1)] + "…"
+    budget = max(1, width - 1)              # one column goes to the ellipsis
+    kept: list[str] = []
+    used = 0
+    for ch in text:
+        w = cell_len(ch)
+        if used + w > budget:
+            break
+        kept.append(ch)
+        used += w
+    return "".join(kept) + "…"
 
 
 def _short_gpu(name: str) -> str:
@@ -760,16 +776,16 @@ class ForgeApp(App):
             # say where the next message goes, so "is it the right way?" is
             # answerable at a glance rather than only after the fact
             local, cloud = self._pool_models()
-            # "  ☁ complex → " is 14 columns and the emoji takes two, so the name
-            # gets 34 - 14 - 2.
+            # Fit the WHOLE line, emoji included: the glyphs are two cells each
+            # and how wide they draw varies by terminal, so budgeting by hand
+            # ("34 - 16") could still overflow by one column on another machine.
             if cloud:
-                out.append(f"  ☁ complex → {_fit(cloud[2], SIDEBAR_TEXT - 16)}\n",
-                           style=T.GREY)
+                out.append(_fit(f"  ☁ complex → {cloud[2]}") + "\n", style=T.GREY)
             if local:
-                out.append(f"  💻 else → {_fit(local, SIDEBAR_TEXT - 14)}\n",
-                           style=T.GREY)
+                out.append(_fit(f"  💻 else → {local}") + "\n", style=T.GREY)
             elif self._is_local():
-                out.append(f"  💻 else → {self._short_model()}\n", style=T.GREY)
+                out.append(_fit(f"  💻 else → {self._short_model()}") + "\n",
+                           style=T.GREY)
         out.append("\n")
 
         # ---- the machine: the numbers /specs and the fit verdicts come from

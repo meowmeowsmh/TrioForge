@@ -523,6 +523,13 @@ async def _tui_checks() -> None:
         over = [str(line) for line in body.split("\n", allow_blank=True)
                 if line.cell_len > ta.SIDEBAR_TEXT]
         assert not over, f"sidebar lines wider than {ta.SIDEBAR_TEXT}: {over}"
+        # _fit counts CELLS, not characters. 💻 is two columns wide (len() says
+        # one), and how wide an emoji draws varies by terminal and platform - so
+        # a len()-based cut could still overflow by a column on Linux or macOS
+        # while looking fine on Windows. This runs in CI on both.
+        assert cell_len("💻") == 2, cell_len("💻")
+        assert cell_len(ta._fit("💻" * 20, 10)) <= 10, ta._fit("💻" * 20, 10)
+        assert cell_len(ta._fit("x" * 200)) <= ta.SIDEBAR_TEXT
         app._models, app.session.model = real_models, real_model
         print("  sidebar fits its 34 columns; Windows model paths shorten -> OK")
 
