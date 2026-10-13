@@ -496,6 +496,47 @@ async def _tui_checks() -> None:
         assert not prompt.menu_open
         print("  slash autocomplete answers real up/down/tab/escape/enter -> OK")
 
+        # The sidebar is a FIXED 36 columns, so any value longer than its text
+        # width used to WRAP: a long .gguf name rendered as
+        # "gemma-4-E4B-it-ultra-uncensored-h" / "eretic", and the wrapped row
+        # pushed its "5.4 GB" line out of line. Every value goes through _fit().
+        from rich.cells import cell_len
+
+        class _Long:
+            def __init__(self, name, size, caps):
+                self.name, self.size_gb, self.caps_label = name, size, caps
+
+        long_models = [
+            _Long("gemma-4-E4B-it-ultra-uncensored-heretic", 5.4,
+                  "text+image+video+audio"),
+            _Long("VideoGuard-Qwen3.5-9B-Safety-RL-Uncensored_Q4_K_M", 5.2, "Video"),
+            _Long("a-model-name-that-just-keeps-going-and-going-Q8_0", 9.9, "text"),
+        ]
+        real_models, real_model = app._models, app.session.model
+        app._models = lambda: long_models
+        # A Windows model path must reduce to the NAME: rsplit("/") alone left the
+        # whole "D:\...\Ornith-1.5-9B-Q4_K_M.gguf" here, which is what wrapped.
+        app.session.model = (r"D:\TrioForge\models\Ornith"
+                             r"\Ornith-1.5-9B-Q4_K_M.gguf")
+        assert app._short_model() == "Ornith-1.5-9B-Q4_K_M", app._short_model()
+        body = app._sidebar()
+        over = [str(line) for line in body.split("\n", allow_blank=True)
+                if line.cell_len > ta.SIDEBAR_TEXT]
+        assert not over, f"sidebar lines wider than {ta.SIDEBAR_TEXT}: {over}"
+        app._models, app.session.model = real_models, real_model
+        print("  sidebar fits its 34 columns; Windows model paths shorten -> OK")
+
+        # ...and the panel steps aside when the window cannot afford both panes.
+        # At 60 columns it kept its 36 and left the transcript 24.
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause(0.3)
+        assert not app.query_one("#side").display, "sidebar crushed the chat at 60 cols"
+        assert app.query_one("#chat").region.width > 40, "chat did not take the room"
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause(0.3)
+        assert app.query_one("#side").display, "sidebar did not come back on grow"
+        print("  sidebar hides below 80 cols and returns on resize -> OK")
+
         # meta lines are dim, not green bot bubbles
         assert "from-meta" in app._add_meta("x").classes
         assert "from-bot" in app._add_plain("x").classes

@@ -466,6 +466,15 @@ same, so nobody "simplifies" them back:
   are in memory. A `503` mid-session is also retried once rather than failing.
 - **Cards are `width: 1fr`, not `auto`.** With `auto` a long line grew wider
   than the pane and was clipped — text appeared to be eaten.
+- **Every sidebar value is truncated to 34 columns (`_fit`).** The panel is a fixed
+  36, so anything longer WRAPPED mid-word: `gemma-4-E4B-it-ultra-uncensored-heretic`
+  drew as `…ultra-uncensored-h` / `eretic` and pushed its own `5.4 GB` row out of
+  line. `_short_model()` also splits on `\` as well as `/` — on Windows the model is
+  `D:\…\name.gguf`, and splitting on `/` alone left the entire path on one row.
+- **The sidebar hides below 80 columns.** Keeping its fixed 36 at a 60-column window
+  left the transcript 24 and at 50 it left 14, while the panel stayed full width.
+  `on_resize` reads `event.size`, not `self.size` — during a resize `self.size` is
+  still the old one, which made the panel change one resize late and never return.
 - **`/help` is a Markdown list, not joined lines.** Consecutive lines are one
   paragraph in Markdown, so every command ran together on a single line.
 - **One table drives the help, the palette and the errors.** `/team`, `/auto` and

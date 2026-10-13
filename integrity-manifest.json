@@ -67,7 +67,7 @@
   "py/tools/shortcuts.py": "7b35ee35bc5226d023cd01e2c2d6ba6a26011baaec89680af6db62f9fe54ce0b",
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
-  "py/tui/README.md": "802bd4fe99cd53d09d62679b2931a7420780317eb96f1d0cceff3b60b414d064",
+  "py/tui/README.md": "6c65261eb80e66d0404e0927b803e13d03617dc52880de1fea1c9a3da28097f4",
   "py/tui/__init__.py": "23841cca14b1ec9327a6e81d94749bc6f73f9d06d0559fa60cccd6c8b4a47a62",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
@@ -85,7 +85,7 @@
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
-  "py/tui/textual_app.py": "93dc41e313fdf067ff576add155388b6cf7c535322d89a214cc129f78ccfb5e3",
+  "py/tui/textual_app.py": "a3dbade0f6a62dfde46379f2e658d76376509aed6817f1fedd99cad5d25720af",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "a60903fead0fa795a2ea6c81274c7beadeb8b6a25d0268437ccac36b6beae402",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T02:07:10",
- "note": "1.5.6 - the final release"
+ "generated": "2026-10-14T04:18:05",
+ "note": "1.5.6 - sidebar fits its width and hides on narrow windows"
 }

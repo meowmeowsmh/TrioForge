@@ -41,7 +41,7 @@ from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.events import Click
+from textual.events import Click, Resize
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import (Button, Collapsible, Input, Label, ListItem, ListView,
@@ -342,6 +342,23 @@ def _summarise(name: str, args: dict) -> str:
     if args:
         return f"{name} {str(args)[:80]}"
     return name
+
+
+#: Columns of text the sidebar actually has: its fixed width (36) minus the
+#: 1-column padding on each side. Anything longer than this WRAPS, and a wrapped
+#: value pushes the following line down so the panel stops lining up - a long
+#: .gguf name showed up as "…ultra-uncensored-h" / "eretic" with its "5.4 GB" row
+#: adrift underneath. Every free-text value printed in _sidebar() goes through
+#: _fit() so each item stays on exactly one row at any window size.
+SIDEBAR_TEXT = 34
+
+
+def _fit(text: str, width: int = SIDEBAR_TEXT) -> str:
+    """Shorten ``text`` to ``width`` columns, marking a cut with an ellipsis."""
+    text = str(text)
+    if len(text) <= width:
+        return text
+    return text[:max(1, width - 1)] + "…"
 
 
 def _short_gpu(name: str) -> str:
@@ -674,8 +691,31 @@ class ForgeApp(App):
     def on_mount(self) -> None:
         self.query_one("#prompt", PromptArea).focus()
         self._greet()
+        self._fit_sidebar_to_width()
         # Live spinner + elapsed timer while a turn runs. Cheap no-op when idle.
         self.set_interval(0.25, self._tick_clock)
+
+    #: Below this many columns the fixed 36-column sidebar leaves the transcript
+    #: unusable - measured: at 70 columns the chat got 34, at 60 it got 24 and at
+    #: 50 it got 14, while the panel kept its full width. So the panel steps aside
+    #: and the chat takes everything; it comes back as soon as there is room.
+    SIDEBAR_MIN_WIDTH = 80
+
+    def on_resize(self, event: Resize) -> None:
+        # Use the EVENT's size, not self.size: during a resize self.size is still
+        # the old one, so reading it made the panel change one resize late - it
+        # stayed shown when the window shrank and never came back when it grew.
+        self._fit_sidebar_to_width(event.size.width)
+
+    def _fit_sidebar_to_width(self, width: int | None = None) -> None:
+        """Show the sidebar only when the window can afford it."""
+        try:
+            side = self.query_one("#side")
+        except Exception:  # noqa: BLE001 - not composed yet
+            return
+        show = (width if width is not None else self.size.width) >= self.SIDEBAR_MIN_WIDTH
+        if side.display != show:      # only touch it when it actually changes
+            side.display = show
 
     # ----------------------------------------------------------------- sidebar
     def _sidebar(self) -> Text:
@@ -707,7 +747,7 @@ class ForgeApp(App):
 
         # ---- session
         out.append("New Session\n", style=f"bold {T.PURPLE}")
-        out.append(f"{cwd}\n", style=T.GREY)
+        out.append(f"{_fit(cwd)}\n", style=T.GREY)
         out.append("● ", style=T.GREEN)
         out.append(f"{self._short_model()}\n", style=f"bold {T.FG}")
         kind = "local" if self._is_local() else "cloud"
@@ -720,10 +760,14 @@ class ForgeApp(App):
             # say where the next message goes, so "is it the right way?" is
             # answerable at a glance rather than only after the fact
             local, cloud = self._pool_models()
+            # "  ☁ complex → " is 14 columns and the emoji takes two, so the name
+            # gets 34 - 14 - 2.
             if cloud:
-                out.append(f"  ☁ complex → {cloud[2]}\n", style=T.GREY)
+                out.append(f"  ☁ complex → {_fit(cloud[2], SIDEBAR_TEXT - 16)}\n",
+                           style=T.GREY)
             if local:
-                out.append(f"  💻 else → {local}\n", style=T.GREY)
+                out.append(f"  💻 else → {_fit(local, SIDEBAR_TEXT - 14)}\n",
+                           style=T.GREY)
             elif self._is_local():
                 out.append(f"  💻 else → {self._short_model()}\n", style=T.GREY)
         out.append("\n")
@@ -770,7 +814,8 @@ class ForgeApp(App):
                         # `--specs` keeps the full wording and the numbers.
                         note = "shares RAM"
                     out.append(f"{mark}{_short_gpu(d['name'])[:14]:<14} ", style=style)
-                    out.append(f"{note}\n", style=T.GREY)
+                    # marker(3) + name(14) + space(1) leaves 16 columns
+                    out.append(f"{_fit(note, SIDEBAR_TEXT - 18)}\n", style=T.GREY)
                 out.append("\n")
             else:
                 out.append("no GPU — CPU only\n", style=T.YELLOW)
@@ -784,8 +829,9 @@ class ForgeApp(App):
                 active = m.name in (self.session.model or "")
                 out.append("● " if active else "○ ",
                            style=T.GREEN if active else "#414868")
-                out.append(f"{m.name}\n", style=T.FG)
-                out.append(f"  {m.size_gb:.1f} GB · {m.caps_label}\n", style=T.GREY)
+                out.append(f"{_fit(m.name, SIDEBAR_TEXT - 2)}\n", style=T.FG)
+                detail = f"{m.size_gb:.1f} GB · {m.caps_label}"
+                out.append(f"  {_fit(detail, SIDEBAR_TEXT - 2)}\n", style=T.GREY)
             out.append("\n")
 
         # ---- providers and whether each has a key
@@ -798,7 +844,9 @@ class ForgeApp(App):
             current = name == self.cfg.provider
             out.append("● " if has else "○ ",
                        style=T.GREEN if has else (T.YELLOW if current else "#414868"))
-            out.append(f"{name}", style=f"bold {T.FG}" if current else T.GREY)
+            # marker(2) + name + 2 spaces + the longest label ("env unset", 9)
+            out.append(f"{_fit(name, SIDEBAR_TEXT - 13)}",
+                       style=f"bold {T.FG}" if current else T.GREY)
             label = "key" if has else ("env unset" if raw else "—")
             out.append(f"  {label}\n", style="#414868")
         out.append("\n")
@@ -808,7 +856,7 @@ class ForgeApp(App):
         if changed:
             section("Modified")
             for line in changed[:5]:
-                out.append(f"{line}\n", style=T.YELLOW)
+                out.append(f"{_fit(line)}\n", style=T.YELLOW)
         return out
 
     def _git_status(self) -> list[str]:
@@ -903,9 +951,14 @@ class ForgeApp(App):
     # ------------------------------------------------------------------ helpers
     def _short_model(self) -> str:
         m = self.session.model or getattr(self.backend, "name", "?")
+        # Split on BOTH separators. On Windows a local model is
+        # "D:\TrioForge\models\Ornith\Ornith-1.5-9B-Q4_K_M.gguf", and rsplit("/")
+        # alone left that whole path intact - which then wrapped over two rows in
+        # the sidebar and pushed the session block out of shape.
+        m = str(m).replace("\\", "/").rsplit("/", 1)[-1]
         if m.endswith(".gguf"):
-            m = m.rsplit("/", 1)[-1][:-5]
-        return m or "no model"
+            m = m[:-5]
+        return _fit(m or "no model")
 
     def _is_local(self) -> bool:
         url = self.cfg.base_url
