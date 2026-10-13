@@ -499,6 +499,29 @@ same, so nobody "simplifies" them back:
 
 ## Hardware and model fit
 
+### Reading the GPU must never block the UI
+
+Two reads back the sidebar, and both used to freeze the app while typing:
+
+- **`gpu_live()`** (live VRAM, every 2 s) called `nvmlInit()`/`nvmlShutdown()`
+  around every read. That init is ~0.7 s warm and 2.5 s cold on Windows, so the
+  UI thread stalled for most of a second on every redraw. NVML is now initialised
+  **once per process, never shut down**, and a live read costs ~0.05 ms.
+- **The utilisation query is optional.** Once the app is up, this driver answers
+  `nvmlDeviceGetUtilizationRates` with `NVMLError_Unknown` while memory reads keep
+  working. Because both were in one `try`, that one field discarded the good
+  memory figures and sent every read to the `nvidia-smi` fallback — a process
+  spawn, ~750 ms. Memory is the point, so a failed utilisation shows the GB
+  without the `%`.
+- **`_probe_gpu()` is 1.4–3.3 s** (it spawns `llama-server --list-devices`), and
+  `specs()` is asked for every 2 s to redraw the panel while the cache only lives
+  5 s. `gpu()` is now **stale-while-revalidate**: a stale entry is returned as-is
+  and the probe runs on a worker thread. `refresh=True` still blocks on purpose,
+  for `--specs` and the fit check.
+
+Measured over 14 s of continuous typing, worst-case keystroke latency went from
+**1655 ms to 159 ms**, and the same window processed 215 keys instead of 184.
+
 `/specs` (or `trioforge --specs` before you start) prints what the machine has
 and grades model sizes against it:
 

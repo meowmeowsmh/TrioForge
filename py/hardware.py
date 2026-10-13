@@ -34,6 +34,7 @@ import platform
 import re
 import subprocess
 import sys
+import threading
 import time
 
 GB = 1024 ** 3
@@ -43,6 +44,8 @@ _MIB = 1024 ** 2
 # worth a few seconds of staleness: free VRAM moves, the hardware does not.
 GPU_TTL = 5.0
 _gpu_cache = {"at": 0.0, "value": None}
+#: Guards the background re-probe so a stale cache starts at most one thread.
+_gpu_refreshing = {"on": False}
 
 # A GGUF needs its file size, plus room for the KV cache and the compute buffers.
 KV_OVERHEAD_GB = 1.5
@@ -282,6 +285,34 @@ def _llamacpp_devices():
     return devices, "llama.cpp --list-devices"
 
 
+#: NVML is initialised at most ONCE per process and deliberately never shut down.
+#:
+#: nvmlInit() is not cheap: ~0.7 s on Windows with a warm driver, ~2.5 s cold.
+#: This used to call nvmlInit()/nvmlShutdown() around every single read, and the
+#: terminal client refreshes the sidebar - which asks for live VRAM - every 2 s.
+#: So the UI thread froze for ~0.7 s on every refresh, twice in five seconds
+#: measured, and typed characters arrived in bursts. Keeping the session open
+#: makes a live read cost ~0.05 ms instead. Same choice py/app.py already makes
+#: with its own nvml_available() gate.
+_nvml_state = {"tried": False, "module": None}
+
+
+def _nvml():
+    """The ``pynvml`` module with NVML initialised once, or None if unavailable."""
+    if not _nvml_state["tried"]:
+        _nvml_state["tried"] = True
+        try:
+            import warnings
+            warnings.filterwarnings(
+                "ignore", message=".*pynvml package is deprecated.*")
+            import pynvml
+            pynvml.nvmlInit()
+            _nvml_state["module"] = pynvml
+        except Exception:  # noqa: BLE001 - no driver, or an old pynvml: not fatal
+            _nvml_state["module"] = None
+    return _nvml_state["module"]
+
+
 def _nvidia_devices():
     """Every NVIDIA GPU NVML can see, or [] when the driver does not answer.
 
@@ -290,35 +321,25 @@ def _nvidia_devices():
     skew after a driver update), nvmlInit raises DriverNotLoaded even though the
     card still works - so callers must not read [] as "no NVIDIA card".
     """
-    try:
-        import warnings
-        warnings.filterwarnings("ignore", message=".*pynvml package is deprecated.*")
-        import pynvml
-        pynvml.nvmlInit()
-        try:
-            out = []
-            for index in range(pynvml.nvmlDeviceGetCount()):
-                try:
-                    handle = pynvml.nvmlDeviceGetHandleByIndex(index)
-                    mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    try:
-                        name = pynvml.nvmlDeviceGetName(handle)
-                        if isinstance(name, bytes):
-                            name = name.decode("utf-8", "replace")
-                    except Exception:
-                        name = "NVIDIA GPU"
-                    out.append({"name": name, "total": int(mem.total),
-                                "free": int(mem.free)})
-                except Exception:
-                    continue
-            return out
-        finally:
-            try:
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
-    except Exception:
+    pynvml = _nvml()
+    if pynvml is None:
         return []
+    out = []
+    for index in range(pynvml.nvmlDeviceGetCount()):
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            try:
+                name = pynvml.nvmlDeviceGetName(handle)
+                if isinstance(name, bytes):
+                    name = name.decode("utf-8", "replace")
+            except Exception:
+                name = "NVIDIA GPU"
+            out.append({"name": name, "total": int(mem.total),
+                        "free": int(mem.free)})
+        except Exception:
+            continue
+    return out
 
 
 def _nvidia():
@@ -626,17 +647,52 @@ def _which(name):
         return None
 
 
+def _refresh_gpu_async() -> None:
+    """Re-probe the GPU on a worker thread, at most one probe at a time."""
+    if _gpu_refreshing["on"]:
+        return
+    _gpu_refreshing["on"] = True
+
+    def work() -> None:
+        try:
+            result = _probe_gpu()
+        except Exception:  # noqa: BLE001 - a failed probe keeps the old value
+            result = None
+        if result is not None:
+            _gpu_cache["value"] = result
+        # Stamp the attempt either way, so a probe that keeps failing does not
+        # start a new thread on every single sidebar redraw.
+        _gpu_cache["at"] = time.time()
+        _gpu_refreshing["on"] = False
+
+    try:
+        threading.Thread(target=work, name="gpu-probe", daemon=True).start()
+    except Exception:  # noqa: BLE001 - no threads left: fall back to inline next time
+        _gpu_refreshing["on"] = False
+
+
 def gpu(refresh=False):
     """The best description of the GPU memory this machine can offer.
 
     Returns a dict; ``source`` says where the number came from so a surprising
     recommendation can be explained, and ``notes`` records what was tried.
     Cached for GPU_TTL seconds - probing spawns a process.
+
+    A stale entry is handed back AS IS while the probe runs on a worker thread.
+    ``_probe_gpu()`` spawns ``llama-server --list-devices`` and measured 1.4-3.3 s
+    on a machine where that binary has to start, and the terminal client asks for
+    specs every 2 s to redraw its sidebar - so probing inline froze the UI for
+    over a second every 5 s, which is what made typing there feel slow. Callers
+    that need a guaranteed-fresh number (``--specs``, the fit check) pass
+    ``refresh=True`` and still block deliberately.
     """
     now = time.time()
-    if not refresh and _gpu_cache["value"] is not None \
-            and now - _gpu_cache["at"] < GPU_TTL:
-        return _gpu_cache["value"]
+    cached = _gpu_cache["value"]
+    if not refresh and cached is not None:
+        if now - _gpu_cache["at"] < GPU_TTL:
+            return cached
+        _refresh_gpu_async()
+        return cached
     result = _probe_gpu()
     _gpu_cache["at"] = time.time()
     _gpu_cache["value"] = result
@@ -673,33 +729,38 @@ def gpu_live():
     """Live NVIDIA memory + utilisation for the sidebar.
 
     ``gpu()`` spawns ``llama-server --list-devices``, so it is capped at a 5 s
-    TTL. This reads NVML in-process (fast) and falls back to ``nvidia-smi``, so
-    the sidebar can ask on every 2 s redraw and the figure actually moves while
-    the card works. Returns {"used","total","free","util"} (bytes, percent 0-100)
-    or None when no source answers - callers then fall back to ``gpu()``.
+    TTL. This reads NVML in-process and falls back to ``nvidia-smi``, so the
+    sidebar can ask on every 2 s redraw and the figure actually moves while the
+    card works. Returns {"used","total","free","util"} (bytes, percent 0-100; util
+    is None when the driver will not report it) or None when no source answers -
+    callers then fall back to ``gpu()``.
     """
     now = time.time()
     if _live_cache["value"] is not None and now - _live_cache["at"] < _LIVE_TTL:
         return _live_cache["value"]
     value = None
-    try:
-        import warnings
-        warnings.filterwarnings("ignore", message=".*pynvml package is deprecated.*")
-        import pynvml
-        pynvml.nvmlInit()
+    # _nvml() keeps the session open across calls (see its comment): the read
+    # itself is microseconds, the init is what cost most of a second.
+    pynvml = _nvml()
+    if pynvml is not None:
         try:
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
             value = {"used": int(mem.used), "total": int(mem.total),
-                     "free": int(mem.free), "util": int(util.gpu)}
-        finally:
+                     "free": int(mem.free), "util": None}
+        except Exception:  # noqa: BLE001 - fall through to nvidia-smi
+            value = None
+        if value is not None:
+            # Utilisation is a SEPARATE call and a fragile one: once the app is up
+            # this driver answers it with NVMLError_Unknown while memory reads keep
+            # working. Letting it raise discarded the good memory figures and sent
+            # every read down the nvidia-smi fallback, which spawns a process and
+            # cost ~750 ms on the UI thread every 2 s - the reason typing in the
+            # terminal client felt slow. Memory is the point; util is a nicety.
             try:
-                pynvml.nvmlShutdown()
-            except Exception:
+                value["util"] = int(pynvml.nvmlDeviceGetUtilizationRates(handle).gpu)
+            except Exception:  # noqa: BLE001
                 pass
-    except Exception:
-        value = None
     if value is None:
         value = _nvidia_smi_live()
     _live_cache["at"] = now

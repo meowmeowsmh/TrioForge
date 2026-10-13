@@ -368,7 +368,12 @@ def _gpu_inuse_note(d: dict) -> str:
     if live and live.get("total"):
         used = live["used"] / (1024 ** 3)
         total = live["total"] / (1024 ** 3)
-        return f"{used:.1f}/{total:.1f}GB {live['util']}%"
+        util = live.get("util")
+        # util is None when the driver refuses the utilisation query - show the
+        # memory rather than a "None%" or nothing at all.
+        if util is None:
+            return f"{used:.1f}/{total:.1f}GB"
+        return f"{used:.1f}/{total:.1f}GB {util}%"
     used = max(0.0, d.get("total_gb", 0) - d.get("free_gb", 0))
     return f"{used:.1f}/{d['total_gb']:.1f}GB"
 

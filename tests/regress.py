@@ -287,6 +287,34 @@ def test_plan_load() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_gpu_probe_never_blocks() -> None:
+    """A stale GPU cache must not block its caller.
+
+    _probe_gpu() spawns llama-server --list-devices and measured 1.4-3.3 s here.
+    The terminal client redraws its sidebar every 2 s, which asks for specs, so
+    probing inline froze the UI for over a second every 5 s - typing there queued
+    up and arrived in bursts (worst keystroke measured: 1655 ms). Stale entries
+    are now handed back as-is while a worker thread re-probes.
+    """
+    _title("GPU probe never blocks the caller")
+    import time
+
+    import hardware
+
+    hardware.gpu()                      # warm it: the FIRST call may block
+    first = hardware._gpu_cache["value"]
+    assert first is not None, "gpu() returned nothing on a machine with a GPU"
+
+    hardware._gpu_cache["at"] = 0.0     # force the entry stale
+    t0 = time.perf_counter()
+    value = hardware.gpu()
+    elapsed = time.perf_counter() - t0
+    assert value is not None, "a stale gpu() returned nothing"
+    assert elapsed < 0.05, f"a stale gpu() blocked the caller for {elapsed:.3f}s"
+    print(f"  stale entry returned in {elapsed * 1000:.1f} ms -> OK")
+
+
+# ---------------------------------------------------------------------------
 # the terminal UI
 # ---------------------------------------------------------------------------
 async def _tui_checks() -> None:
@@ -2148,7 +2176,8 @@ def main() -> int:
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_agent_read_only_stall,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
-             test_plan_load, test_team_directives, test_session_window,
+             test_plan_load, test_gpu_probe_never_blocks, test_team_directives,
+             test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
