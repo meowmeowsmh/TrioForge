@@ -13,8 +13,16 @@
 #
 # ── Core web app ────────────────────────────────────────────────
 flask>=3.1.3,<4.0.0
+# Security floor for a transitive dep: flask carries werkzeug, and an open
+# resolve could land on the pre-CVE-2026-102598 release. Held explicit so a
+# fresh install cannot drift below the patched version.
+werkzeug>=3.1.9,<4.0.0
 flask-compress>=1.25,<2.0.0
 requests>=2.34.2,<3.0.0
+# Security floor for a transitive dep: requests carries urllib3, and an open
+# resolve could land on a pre-CVE release. Held explicit so a fresh install
+# cannot drift below the patched version.
+urllib3>=2.8.0,<3.0.0
 
 # ── Servers ─────────────────────────────────────────────────────
 waitress==3.0.2          # Windows / macOS HTTPS server (exact: server behaviour)

@@ -6,39 +6,46 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     # ── Core web app ──
-    "flask>=3.0.0",
-    "flask-compress>=1.13",
-    "requests>=2.31.0",
+    "flask>=3.1.3",
+    "flask-compress>=1.25",
+    "requests>=2.34.2",
+    # Security floors for transitive deps (mirror requirements.txt so a re-lock
+    # cannot drift back below the patched releases): requests carries urllib3,
+    # flask carries werkzeug. Held explicit so uv.lock resolves fixed versions.
+    "urllib3>=2.8.0",
+    "werkzeug>=3.1.9",
 
     # ── Servers ──
     "waitress==3.0.2",                       # Windows / macOS HTTPS server
     "gunicorn==26.0.0; sys_platform != 'win32'",  # Linux / Docker server
 
     # ── LLM providers ──
-    "groq>=0.3.0",                           # Groq provider (SDK)
-    "huggingface_hub>=0.16.0",               # Hugging Face provider
-    "google-genai>=2.0.0",                   # Gemini provider (chat + image + video)
+    "groq>=1.7.0",                           # Groq provider (SDK)
+    # <2 is deliberate: sentence-transformers (the optional semantic stack) needs
+    # huggingface-hub <2, so an open floor here lets a re-lock pick 2.x and break it.
+    "huggingface_hub>=0.16.0,<2.0.0",        # Hugging Face provider
+    "google-genai>=2.29.0",                  # Gemini provider (chat + image + video)
 
     # ── File / PDF parsing ──
-    "pypdf>=3.0.0",                          # PDF text extraction (uploaded PDFs)
+    "pypdf>=6.20.0",                         # PDF text extraction (uploaded PDFs)
 
     # ── Notes (Obsidian-style frontmatter) ──
     # python-frontmatter (its import name is still `frontmatter`): the older
     # `frontmatter` package hard-pins PyYAML==5.1, which has no wheels for
     # Python 3.12+ and must be compiled, breaking every fresh install.
-    "python-frontmatter>=1.0.0",
+    "python-frontmatter>=1.3.0",
 
     # ── Performance / utilities ──
-    "orjson>=3.9.0",                         # faster JSON (falls back to std json)
-    "psutil>=5.9.0",                         # RAM / VRAM live monitor
-    "pynvml>=11.525.0",                      # NVIDIA GPU monitoring
-    "duckduckgo-search>=6.0.0",              # optional web search
+    "orjson>=3.13.0",                        # faster JSON (falls back to std json)
+    "psutil>=7.2.2",                         # RAM / VRAM live monitor
+    "pynvml>=13.0.1",                        # NVIDIA GPU monitoring
+    "duckduckgo-search>=8.1.1",              # optional web search
 
     # ── Memory vault ──
     # py/memory.py: durable facts in a DuckDB file behind a Bloom filter gate
     # held in RAM. Imported lazily, so a missing duckdb degrades to a clear
     # message instead of an ImportError.
-    "duckdb>=1.1.0",
+    "duckdb>=1.5.6",
 ]
 
 [dependency-groups]
