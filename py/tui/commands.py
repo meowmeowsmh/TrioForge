@@ -150,6 +150,40 @@ def lookup(query: str) -> Cmd | None:
     return None
 
 
+def slash_commands() -> list[tuple[str, str]]:
+    """Every command ONCE, as ``(name, desc)`` - the autocomplete's source.
+
+    Deduped by name: /keys, /memory and /plugins each document several forms and
+    are several rows, and repeating a name would push the rest of the list out of
+    the menu. Kept pure so the matching below is testable with no UI running.
+    """
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for cmd in _iter():
+        name = cmd.usage.split()[0]
+        if name not in seen:
+            seen.add(name)
+            out.append((name, cmd.desc))
+    return out
+
+
+def slash_matches(text: str) -> list[tuple[str, str]]:
+    """Autocomplete rows for what is typed - empty means "hide the menu".
+
+    The menu belongs to a bare command being typed, so it hides as soon as the
+    line stops being one: a space or newline means the user is on to arguments.
+    It also hides on an EXACT name: there is nothing left to complete, so Enter
+    should just run what was typed rather than re-complete it.
+    """
+    if not text.startswith("/") or " " in text or "\n" in text:
+        return []
+    typed = text.lower()
+    rows = slash_commands()
+    if any(name == typed for name, _desc in rows):
+        return []
+    return [(name, desc) for name, desc in rows if name.startswith(typed)]
+
+
 def _help(ctx, arg: str) -> None:
     """``/help`` lists everything; ``/help <command>`` explains one."""
     query = (arg or "").strip()

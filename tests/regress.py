@@ -322,6 +322,105 @@ async def _tui_checks() -> None:
         assert "/roles" in _last_card(app)
         print("  /help lists /team,/auto,/route,/roles + examples; /help <cmd> -> OK")
 
+        # Slash autocomplete: the Claude-Code-style list that appears while a
+        # bare command is being typed. Matching is pure, so it is asserted here
+        # with no UI; the widget wiring is asserted below.
+        from tui.commands import slash_commands, slash_matches
+        assert len(slash_matches("/")) == len(slash_commands()) > 20
+        assert [n for n, _d in slash_matches("/ro")] == ["/route", "/roles"]
+        assert slash_matches("/roles") == [], "an exact name has nothing to complete"
+        assert slash_matches("/roles now") == [], "a space means arguments"
+        assert slash_matches("hello") == [] and slash_matches("/zzz") == []
+
+        menu = app.query_one("#slashmenu", ta.SlashMenu)
+        prompt = app.query_one("#prompt", ta.PromptArea)
+        prompt.text = "/ro"
+        await pilot.pause(0.2)
+        assert prompt.menu_open and menu.has_class("-on"), "menu did not open on /ro"
+        assert menu.option_count == 2, menu.option_count
+        assert menu.chosen == "/route", menu.chosen
+
+        # Layout: the list sits ABOVE the prompt (so it never covers the line
+        # being typed) and is fully on screen - the old fixed footer height once
+        # pushed #keys below the viewport, so this is worth pinning.
+        assert menu.region.y + menu.region.height <= prompt.region.y, \
+            (menu.region, prompt.region)
+        assert menu.region.height >= 2, menu.region
+        assert prompt.region.y + prompt.region.height <= 40, prompt.region
+
+        # down moves the highlight; tab fills the name in WITHOUT running it
+        app._menu_key(ta.PromptArea.MenuKey(prompt, "down"))
+        assert menu.chosen == "/roles", menu.chosen
+        app._menu_key(ta.PromptArea.MenuKey(prompt, "accept"))
+        assert prompt.text == "/roles", repr(prompt.text)
+        assert not prompt.menu_open, "menu stayed open after an exact completion"
+
+        # escape closes the list for that text only - typing more brings it back
+        prompt.text = "/mo"
+        await pilot.pause(0.2)
+        assert prompt.menu_open and menu.has_class("-on")
+        app._menu_key(ta.PromptArea.MenuKey(prompt, "dismiss"))
+        assert not prompt.menu_open, "escape did not close the menu"
+        # ...and it must be off SCREEN too, not just un-flagged: leaving the rows
+        # painted meant a visible list that no longer answered any key.
+        assert not menu.has_class("-on"), "escape left the list painted"
+        assert menu.option_count == 0, menu.option_count
+        prompt.text = "/mod"
+        await pilot.pause(0.2)
+        assert prompt.menu_open, "typing after escape did not bring the menu back"
+
+        # enter runs the highlighted command. /help on purpose: a command that
+        # opens a modal would move focus and hide a real key-routing bug.
+        prompt.text = "/he"
+        await pilot.pause(0.2)
+        app._menu_key(ta.PromptArea.MenuKey(prompt, "run"))
+        await pilot.pause(0.4)
+        assert prompt.text == "", repr(prompt.text)
+        assert not prompt.menu_open, "menu stayed open after running"
+        assert app.focused is prompt, "running left focus off the prompt"
+        print("  slash autocomplete filters, completes, escapes, runs -> OK")
+
+        # The REAL keys must reach the list. The prompt keeps focus while typing,
+        # so if TextArea ate them the caret would move / focus would leave the box
+        # instead - this is the part that cannot be checked by calling handlers.
+        prompt.text = "/ro"
+        await pilot.pause(0.2)
+        assert prompt.menu_open, "menu did not reopen after the run"
+        await pilot.press("down")
+        await pilot.pause(0.2)
+        assert menu.chosen == "/roles", "down did not move the highlight"
+
+        await pilot.press("tab")                  # tab fills the highlight in
+        await pilot.pause(0.2)
+        assert prompt.text == "/roles", repr(prompt.text)
+        assert not prompt.menu_open
+
+        # escape closes the list and leaves the typed text alone
+        prompt.text = "/mo"
+        await pilot.pause(0.2)
+        assert prompt.menu_open
+        await pilot.press("escape")
+        await pilot.pause(0.2)
+        assert not prompt.menu_open and not menu.has_class("-on")
+        assert prompt.text == "/mo", "escape wiped the typed text"
+
+        # ...and it returns as soon as the text changes again
+        prompt.text = "/mod"
+        await pilot.pause(0.2)
+        assert prompt.menu_open, "typing after escape did not reopen the list"
+        await pilot.press("tab")                  # this one takes args -> a space
+        await pilot.pause(0.2)
+        assert prompt.text == "/model ", repr(prompt.text)
+
+        prompt.text = "/he"          # enter RUNS the highlighted command
+        await pilot.pause(0.2)
+        await pilot.press("enter")
+        await pilot.pause(0.4)
+        assert prompt.text == "", repr(prompt.text)
+        assert "/help" in _last_card(app) or "commands" in _last_card(app)
+        assert not prompt.menu_open
+        print("  slash autocomplete answers real up/down/tab/escape/enter -> OK")
+
         # meta lines are dim, not green bot bubbles
         assert "from-meta" in app._add_meta("x").classes
         assert "from-bot" in app._add_plain("x").classes

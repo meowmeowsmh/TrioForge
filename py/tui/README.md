@@ -177,6 +177,38 @@ recognise *which* key it is, never enough to use it.
 focus, and `TextArea` binds those keys to cursor-paging, so before this the
 transcript could not be scrolled at all while typing.
 
+### Slash autocomplete — type `/` and pick
+
+Typing a bare `/…` drops a filtered list of commands directly above the prompt,
+the command on the left and what it does on the right:
+
+```
+╭───────────────────────────────────────────────────────────────────╮
+│ /route       send one prompt and show the routing decision        │
+│ /roles       senior plans+reviews, junior codes+fixes (planner …) │
+╰───────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────╮
+│ /ro                                                               │
+╰───────────────────────────────────────────────────────────────────╯
+```
+
+| Key | With the list open |
+|---|---|
+| `↑` / `↓` | move the highlight |
+| `tab` | fill the name in (plus a space when the command takes arguments) |
+| `enter` | run the highlighted command |
+| `esc` | close it for that text; typing on brings it back |
+
+Rules, because they are what keep it out of the way: it only opens for a **bare**
+name, so a space or a newline hands the keys back to the caret (`/model gemma`
+types normally); and it closes on an **exact** name, because there is nothing
+left to complete — `enter` just runs it.
+
+Focus never leaves the prompt. The list is deliberately never focused, so
+`PromptArea` forwards those five keys to it (`PromptArea.MenuKey`) instead; if
+`TextArea` kept them, `↑`/`↓` would move the caret and `tab` would jump focus to
+the transcript.
+
 ### Auto-route — local vs cloud, decided for you (`ctrl+a`)
 
 `ctrl+a` has two jobs:

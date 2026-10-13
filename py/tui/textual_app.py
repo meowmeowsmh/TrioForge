@@ -45,13 +45,16 @@ from textual.events import Click
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import (Button, Collapsible, Input, Label, ListItem, ListView,
-                             Markdown, Static, TextArea)
+                             Markdown, OptionList, Static, TextArea)
+# Option lives in its own module - textual.widgets only re-exports OptionList.
+from textual.widgets.option_list import Option
 
 from . import agent as agent_mod
 from . import faces, localmodels, providers, team, theme as T
 from .backend import (EchoBackend, OpenAICompatBackend, auto_model,
                       fetch_models)
 from .commands import COMMANDS  # built once so the first ctrl+p is instant
+from .commands import slash_commands, slash_matches
 from .session import Message as SessionMessage, Session
 
 DEFAULT_SYSTEM = (
@@ -220,6 +223,25 @@ CollapsibleTitle {{
 
 #activity {{ height: 1; color: {T.YELLOW}; }}
 #statusline {{ height: 1; color: {T.GREY}; padding: 0 2; }}
+
+/* Slash autocomplete, sitting directly above the prompt the way Claude Code's
+   does. Hidden until a bare "/..." is being typed; see SlashMenu. */
+#slashmenu {{
+    display: none;
+    margin: 0 1;
+    height: auto;
+    max-height: 12;
+    border: round #2f3549;
+    background: #16161e;
+    padding: 0 1;
+    scrollbar-size-vertical: 1;
+}}
+#slashmenu.-on {{ display: block; }}
+/* Same highlight as the ctrl+p picker, so the two lists read as one feature. */
+#slashmenu > .option-list--option-highlighted {{
+    background: {T.PURPLE};
+    color: #16161e;
+}}
 
 /* width: 1fr is required for the centring to do anything: a Static defaults to
    its content width (~6 columns for the face), so text-align had nothing to
@@ -398,7 +420,43 @@ class PromptArea(TextArea):
         def control(self) -> "PromptArea":
             return self.area
 
+    class MenuKey(Message):
+        """Posted for a key the slash menu owns while the prompt keeps focus.
+
+        The prompt must stay focused (the user is typing), so TextArea would
+        otherwise eat these: up/down move the CARET, tab moves focus out of the
+        box. Forwarding them keeps the list navigable without stealing the
+        keyboard from the input.
+        """
+
+        def __init__(self, area: "PromptArea", key: str) -> None:
+            self.area = area
+            self.key = key            # "up" | "down" | "accept" | "dismiss"
+            super().__init__()
+
+        @property
+        def control(self) -> "PromptArea":
+            return self.area
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Set by the app while the slash menu is showing. It decides whether the
+        # navigation keys below belong to the list or to the caret.
+        self.menu_open = False
+
     async def _on_key(self, event) -> None:
+        # While the menu is up these keys drive the LIST: up/down move the
+        # highlight, tab fills the name in, enter runs the highlighted command,
+        # escape closes the list. Handled before the enter default below so an
+        # open menu completes/runs instead of submitting a half-typed name.
+        if self.menu_open:
+            owned = {"up": "up", "down": "down", "tab": "accept",
+                     "enter": "run", "escape": "dismiss"}.get(event.key)
+            if owned:
+                event.stop()
+                event.prevent_default()
+                self.post_message(self.MenuKey(self, owned))
+                return
         if event.key == "enter":
             event.stop()
             event.prevent_default()
@@ -435,6 +493,44 @@ class PromptArea(TextArea):
             self.insert("\n")
             return
         await super()._on_key(event)
+
+
+class SlashMenu(OptionList):
+    """The command list shown while a bare "/..." is typed in the prompt.
+
+    Modelled on Claude Code's: the command in one column, what it does in the
+    other, filtered as you type. It is deliberately NEVER focused - the prompt
+    keeps the keyboard and forwards up/down/tab/escape here (see MenuKey) - so
+    opening the list can never interrupt typing.
+    """
+
+    def fill(self, text: str) -> bool:
+        """Rebuild the list from what is typed. True when the menu is showing."""
+        rows = slash_matches(text)
+        self.clear_options()
+        if not rows:
+            self.remove_class("-on")
+            return False
+        # ONE width for every row, so the descriptions line up down the list
+        # instead of stepping in and out with each command's length.
+        width = max(len(name) for name, _desc in slash_commands())
+        options = []
+        for name, desc in rows:
+            label = Text()
+            label.append(name.ljust(width), style=f"bold {T.CYAN}")
+            label.append("  ")
+            label.append(desc, style=T.GREY)
+            options.append(Option(label, id=name))
+        self.add_options(options)
+        self.highlighted = 0
+        self.add_class("-on")
+        return True
+
+    @property
+    def chosen(self) -> str | None:
+        """The highlighted command name, or None when nothing is left."""
+        option = self.highlighted_option
+        return option.id if option is not None else None
 
 
 class ForgeApp(App):
@@ -515,6 +611,10 @@ class ForgeApp(App):
         # Once set, the tick plays the pleading "Don't!!!" face until we exit.
         self._goodbye = False
         self._goodbye_at = 0.0
+        # The prompt text whose slash menu the user dismissed with escape. Only
+        # THAT exact text stays closed - typing anything more brings it back, so
+        # one escape never switches the feature off for the session.
+        self._slash_muted = ""
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -534,6 +634,9 @@ class ForgeApp(App):
             # PERMANENT cards per message in the transcript, so a 20-message
             # session carried 40 lines of chrome you scrolled past forever.
             yield Static("", id="statusline")
+            # Above the prompt, so it pushes the input DOWN as it appears rather
+            # than covering the text being typed.
+            yield SlashMenu(id="slashmenu")
             yield PromptArea(placeholder=self._hint(), id="prompt")
             yield Static(KEYBINDS, id="keys")
 
@@ -1001,7 +1104,8 @@ class ForgeApp(App):
 
     def _greet(self) -> None:
         self.query_one("#chat", VerticalScroll).mount(Static(
-            f"[{T.GREY}]Welcome. Type below, or press [/]"
+            f"[{T.GREY}]Welcome. Type below, start with [/][bold {T.PURPLE}]/[/]"
+            f"[{T.GREY}] for the command list, or press [/]"
             f"[bold {T.PURPLE}]ctrl+p[/][{T.GREY}] for commands "
             f"and [/][bold {T.PURPLE}]ctrl+l[/][{T.GREY}] to switch model.[/]",
             classes="role"))
@@ -1371,6 +1475,64 @@ class ForgeApp(App):
         self._set_status(self._status_combined())
         self._warn_if_image_blind(text)
         self._ask(text)
+
+    # ---------------------------------------------------- slash autocomplete
+    def _slash_update(self, text: str) -> None:
+        """Refresh the slash menu for the current prompt text."""
+        menu = self.query_one("#slashmenu", SlashMenu)
+        if not text:
+            # An empty box is a fresh line - re-arm, so clearing the prompt after
+            # an escape does not leave the list dead for the rest of the session.
+            self._slash_muted = ""
+        if text == self._slash_muted:
+            # Dismissed for this exact text. CLEAR it rather than filter it:
+            # leaving the rows in place kept the list painted on screen while
+            # the keys had already stopped driving it.
+            menu.fill("")
+            showing = False
+        else:
+            # A dismissed text stays dismissed until it changes; anything else is
+            # filtered live. The prompt is told too, because it has to forward
+            # up/down/tab/enter/escape to the list while the list is up.
+            showing = menu.fill(text)
+        self.query_one("#prompt", PromptArea).menu_open = showing
+
+    def _slash_pick(self, name: str, run: bool) -> None:
+        """Put the chosen command in the prompt. ``run`` submits it immediately."""
+        from . import commands as C
+
+        area = self.query_one("#prompt", PromptArea)
+        cmd = C.lookup(name)
+        # A command that takes arguments stops at the name plus a space so the
+        # arguments can be typed; a bare command is ready to run as it stands.
+        takes_arg = bool(cmd and len(cmd.usage.split()) > 1)
+        area.text = name + (" " if takes_arg and not run else "")
+        area.move_cursor((0, len(area.text)))
+        self._slash_update(area.text)
+        if run:
+            area.post_message(PromptArea.Submitted(area, area.text))
+
+    @on(TextArea.Changed, "#prompt")
+    def _prompt_changed(self, event: TextArea.Changed) -> None:
+        self._slash_update(event.text_area.text)
+
+    @on(PromptArea.MenuKey, "#prompt")
+    def _menu_key(self, event: PromptArea.MenuKey) -> None:
+        area = self.query_one("#prompt", PromptArea)
+        menu = self.query_one("#slashmenu", SlashMenu)
+        if event.key == "up":
+            menu.action_cursor_up()
+        elif event.key == "down":
+            menu.action_cursor_down()
+        elif event.key == "accept":
+            if menu.chosen:
+                self._slash_pick(menu.chosen, run=False)
+        elif event.key == "run":
+            if menu.chosen:
+                self._slash_pick(menu.chosen, run=True)
+        elif event.key == "dismiss":
+            self._slash_muted = area.text
+            self._slash_update(area.text)
 
     @on(PromptArea.Submitted, "#prompt")
     def _submitted(self, event: PromptArea.Submitted) -> None:
