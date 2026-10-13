@@ -1826,16 +1826,16 @@ class ForgeApp(App):
 
         self._set_mood("thinking")
         self._add_meta(
-            f"🧩 roles: planner/reviewer **{who(senior)}**, "
-            f"coder/fixer **{who(junior)}**")
+            f"🧩 roles: senior (plan+review) **{who(senior)}**, "
+            f"junior (code+fix) **{who(junior)}**")
 
         artifacts = {}
         final = ""
         for role in team_roles.ROLE_ORDER:
             if role == "fixer" and not artifacts.get("issues"):
                 continue                      # reviewer shipped it; nothing to fix
-            backend = senior if role in ("planner", "reviewer") else junior
-            read_only = role in ("planner", "reviewer")
+            backend = senior if team_roles.ROLE_AGENT[role] == "senior" else junior
+            read_only = team_roles.ROLE_AGENT[role] == "senior"
             prompt = team_roles.role_prompt(role, text, artifacts)
             self._add_meta(f"  • {role}: {team_roles.ROLE_DESCRIPTIONS[role]}")
             try:

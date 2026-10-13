@@ -381,7 +381,13 @@ async def _tui_checks() -> None:
         assert "CODE" in p_review and code in p_review and "REVIEWER" in p_review
         p_fix = _roles.role_prompt("fixer", task, {"plan": plan, "code": code, "issues": issues})
         assert "ISSUES" in p_fix and issues in p_fix and "FIXER" in p_fix
+        # the senior/junior split is explicit: senior plans+reviews, junior codes+fixes
+        assert "SENIOR" in p_plan and "SENIOR" in p_review
+        assert "JUNIOR" in p_coder and "JUNIOR" in p_fix
+        assert _roles.ROLE_AGENT == {"planner": "senior", "coder": "junior",
+                                     "reviewer": "senior", "fixer": "junior"}
         print("  roles pipeline prompts carry directive + task + prior artefacts -> OK")
+        print("  roles are an explicit senior/junior pair -> OK")
 
         # routing must NEVER erase the configured model. The bug: a pool with no
         # local entry returned model="" for a local route, which was saved to

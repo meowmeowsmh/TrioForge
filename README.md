@@ -380,7 +380,7 @@ print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
 | `ctrl+y` | copy the last answer |
 | `ctrl+a` | **auto-route**: send to local (llama.cpp) or cloud, decided by offline/complexity |
 | `/team` | **parallel team**: every model in the pool does the task, first finished answer ships |
-| `/roles` | **working team**: planner → coder → reviewer → fixer — a strong model plans/reviews, a fast model builds/fixes |
+| `/roles` | **working team, senior/junior pair**: the senior plans + reviews, the junior codes + fixes (planner → coder → reviewer → fixer) |
 | `tab` / `ctrl+n` / `ctrl+q` | focus chat / new session / quit |
 
 Shift+Enter can't work — a terminal sends the same byte as Enter — so `ctrl+j` is the newline key. Full details in [`py/tui/README.md`](py/tui/README.md).
