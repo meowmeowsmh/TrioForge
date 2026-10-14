@@ -16,9 +16,9 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "2205720e87a99e81f979a7af5521997cad1f0b03e2c0a02b003a0c5f83be6ffb",
+  "py/app.py": "be04edeebb7cfb9de549cb60bccbc8fc2ac276eae5d0092bdfdd9df669c59bd5",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
-  "py/comfyui_service.py": "344adfee5fd1101fa3524bf9c9f0c5c0dbf7d34fbcc00b030f314f2d2bf2d685",
+  "py/comfyui_service.py": "258716beb378a1e9d080c7611b56977ce2b97da87becf91013535ae751f8e52a",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
@@ -117,9 +117,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
+  "templates/index.html": "108b8ce98327ea966f88e5c01f4c6e478c2ebf489e84dea20042ea8ff2f2a195",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T22:14:41",
- "note": "1.5.6 - ComfyUI auto-starts in the background"
+ "generated": "2026-10-14T22:21:47",
+ "note": "1.5.6 - ComfyUI service button (start/stop)"
 }

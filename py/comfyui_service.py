@@ -101,6 +101,9 @@ def detect_comfyui(timeout=3):
 
 #: One lock so two simultaneous generation requests do not each spawn a server.
 _start_lock = threading.Lock()
+#: The subprocess WE started, so :func:`stop_comfyui` can stop it. None when the
+#: server was started outside TrioForge (Comfy Desktop), which we never kill.
+_started_proc = None
 
 
 def _comfyui_entrypoint(install_root: str) -> str | None:
@@ -176,6 +179,9 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"Could not start ComfyUI ({python}): {e}")
 
+        global _started_proc
+        _started_proc = proc
+
         deadline = time.time() + timeout
         while time.time() < deadline:
             if is_comfyui_running(timeout=2):
@@ -188,6 +194,32 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
         raise RuntimeError(
             f"ComfyUI did not answer within {int(timeout)}s of starting. It may "
             "still be loading - try again in a moment.")
+
+
+def stop_comfyui() -> dict:
+    """Stop the ComfyUI server TrioForge started. Returns a status dict.
+
+    Only stops a server THIS process launched; a Comfy Desktop the user opened
+    themselves is left alone (stop it from there).
+    """
+    global _started_proc
+    proc = _started_proc
+    _started_proc = None
+    if proc is not None and proc.poll() is None:
+        try:
+            from proc_util import kill_tree
+            kill_tree(proc.pid)
+        except Exception:  # noqa: BLE001 - fall back to a plain terminate
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        return {"running": False, "message": "ComfyUI stopped."}
+    return {
+        "running": is_comfyui_running(),
+        "message": "ComfyUI is not running, or was started outside TrioForge "
+                   "- stop it from Comfy Desktop.",
+    }
 
 
 def get_object_info(force=False):

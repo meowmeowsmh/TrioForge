@@ -2202,7 +2202,20 @@ def services_status():
     return jsonify({
         "llamacpp": llamacpp_service.status(),
         "voice": voice_service.status(),
+        "comfyui": _comfyui_status(),
     })
+
+
+def _comfyui_status():
+    """ComfyUI status for the Services panel: running + install location."""
+    info = comfyui_service.detect_comfyui()
+    # The raw connection error is diagnostic noise in a status panel - "running:
+    # false" already says it. Drop it rather than leak a URL/stack into the UI.
+    info.pop("error", None)
+    install = comfyui_service.find_comfyui_install()
+    info["installed"] = bool(install)
+    info["install_path"] = install or ""
+    return info
 
 
 @app.route('/api/voice/install', methods=['POST'])
@@ -2452,6 +2465,21 @@ def voice_start():
 @app.route('/api/services/voice/stop', methods=['POST'])
 def voice_stop():
     return jsonify(voice_service.stop())
+
+
+@app.route('/api/services/comfyui/start', methods=['POST'])
+def comfyui_start():
+    """Start (or auto-start) the ComfyUI server in the background."""
+    try:
+        comfyui_service.ensure_comfyui_running()
+        return jsonify({"running": True, "message": "ComfyUI is running."})
+    except Exception as e:  # noqa: BLE001 - surface the actionable message
+        return jsonify({"running": False, "error": str(e)}), 400
+
+
+@app.route('/api/services/comfyui/stop', methods=['POST'])
+def comfyui_stop():
+    return jsonify(comfyui_service.stop_comfyui())
 
 
 @app.route('/api/shutdown', methods=['POST'])
