@@ -2859,6 +2859,81 @@ def test_inject_preserves_workflow_prompts() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_image_panel_choices() -> None:
+    """Every runnable text-to-image workflow is offered, and the seed is reported.
+
+    The dropdown used to hold exactly two entries (Z-Image-Turbo and FHDR) even
+    though the install it drives has Z-Image-Base, Qwen-Image, Flux.2, Krea and
+    more - so the app looked like it had fewer models than ComfyUI itself. The
+    seed matters for the same reason: without it being named, a picture you liked
+    could never be asked for again, and every run silently re-rolled.
+    """
+    _title("image panel: workflow list + seed")
+    import app as forge_app
+    import comfyui_service as cs
+
+    def wf(name, z=False, f=False):
+        return {"name": name, "id": name, "path": "x", "kind": "blueprint",
+                "is_z_image": z, "is_fhdr": f}
+
+    fake = [wf("Audio Generation (Stable Audio 3 Medium)"),
+            wf("Text to Image (Qwen-Image 2512)"),
+            wf("Text to Image (Z-Image-Base)", z=True),
+            wf("FHDR-Setup", f=True),
+            wf("Text to Image (Z-Image-Turbo)", z=True),
+            wf("Frame Interpolation")]
+    real_disc, real_ready = cs.discover_workflows, cs.workflow_ready
+    cs.discover_workflows = lambda *a, **k: fake
+    cs.workflow_ready = lambda *a, **k: True
+    try:
+        with forge_app.app.test_client() as c:
+            opts = c.get("/api/image_models").get_json()
+    finally:
+        cs.discover_workflows, cs.workflow_ready = real_disc, real_ready
+
+    labels = [o["label"] for o in opts]
+    assert labels[0] == "Text to Image (Z-Image-Turbo)", labels
+    assert labels[1] == "FHDR-Setup", labels
+    assert "Text to Image (Z-Image-Base)" in labels, labels
+    assert "Text to Image (Qwen-Image 2512)" in labels, labels
+    assert not any(l.startswith(("Audio", "Frame")) for l in labels), labels
+    assert all(o["value"].startswith("comfyui::") for o in opts), opts
+    print(f"  {len(labels)} runnable workflows offered, fast default first -> OK")
+
+    # A run reports the seed it used, and an explicit seed is honoured.
+    class FakeWf(dict):
+        pass
+
+    seen = {}
+
+    def spy(prompt, output_path, **kw):
+        seen.update(kw)
+        with open(output_path, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+        return FakeWf({"name": "Text to Image (Z-Image-Base)", "id": "x"})
+
+    real_gen = cs.generate_image
+    cs.generate_image = spy
+    try:
+        with forge_app.app.test_client() as client:
+            token = _csrf_ok(client)
+            body = client.post("/api/generate_image",
+                               json={"prompt": "p", "backend": "comfyui"},
+                               headers={"X-CSRF-Token": token}).get_json()
+            assert body["seed"] == seen["seed"], (body, seen)
+            assert f"seed {body['seed']}" in body["label"], body["label"]
+            assert "Z-Image-Base" in body["label"], body["label"]
+            seen.clear()
+            body2 = client.post("/api/generate_image",
+                                json={"prompt": "p", "backend": "comfyui", "seed": 4242},
+                                headers={"X-CSRF-Token": token}).get_json()
+            assert body2["seed"] == 4242 and seen["seed"] == 4242, (body2, seen)
+    finally:
+        cs.generate_image = real_gen
+    print("  the seed used is named under the image, and a fixed one is kept -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -2871,6 +2946,7 @@ def main() -> int:
              test_comfyui_model_paths, test_comfyui_manager_model_install,
              test_image_steps_default_to_the_workflow,
              test_inject_preserves_workflow_prompts,
+             test_image_panel_choices,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

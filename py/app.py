@@ -30,6 +30,7 @@ import subprocess
 import re
 import urllib.request
 import platform
+import random
 import time
 from functools import lru_cache, wraps
 from concurrent.futures import ThreadPoolExecutor
@@ -2636,6 +2637,11 @@ def generate_image():
     # wants 8. The workflow author's value is the sane default; the box overrides.
     steps = int(data.get('steps') or 0)
 
+    # The seed is chosen HERE, not buried in the graph builder, so the caption can
+    # report it: without it a picture you liked could never be asked for again.
+    # (Reproducing it needs TRIOFORGE_COMFYUI_CACHE=ram - see unload_models.)
+    seed = int(data.get('seed') or 0) or random.randint(0, 2**32 - 1)
+
     # Free VRAM first: unload the current Ollama model so the image model fits.
     try:
         requests.post(
@@ -2677,7 +2683,7 @@ def generate_image():
                     comfy_workflow = model
             used_wf = comfyui_service.generate_image(
                 prompt, tmp, workflow=comfy_workflow or None, width=width,
-                height=height, steps=steps, timeout=900,
+                height=height, steps=steps, seed=seed, timeout=900,
             )
             ext = ".png"
         final = base + ext
@@ -2701,6 +2707,7 @@ def generate_image():
         try:
             if used_wf and used_wf.get("name"):
                 bot_label += f" · {used_wf['name']}"
+            bot_label += f" · seed {seed}"
         except Exception:  # noqa: BLE001 - a label is never worth failing a run
             pass
 
@@ -2721,39 +2728,45 @@ def generate_image():
                 images=[{"name": out_name, "b64": img_b64, "mime": "image/png"}],
                 meta={"kind": meta_kind},
             )
-            return jsonify({'ok': True, 'url': url, 'label': bot_label,
+            return jsonify({'ok': True, 'url': url, 'label': bot_label, 'seed': seed,
                             'conversation_id': cid})
         except Exception as e:
-            return jsonify({'ok': True, 'url': url, 'label': bot_label,
+            return jsonify({'ok': True, 'url': url, 'label': bot_label, 'seed': seed,
                             'conversation_id': cid,
                             'warning': f'Image generated, but history was not saved: {e}'})
-    return jsonify({'ok': True, 'url': url, 'label': bot_label})
+    return jsonify({'ok': True, 'url': url, 'label': bot_label, 'seed': seed})
 
 @app.route('/api/image_models', methods=['GET'])
 def image_models():
-    """Image generation is handled entirely by ComfyUI; expose its workflows."""
+    """Text-to-image workflows ComfyUI can actually run.
+
+    This used to offer exactly two entries (Z-Image-Turbo and FHDR), which made
+    the app look like it had fewer models than the ComfyUI install it drives -
+    the same install has Z-Image-Base, Qwen-Image, Flux.2, Krea and more. Every
+    ready "Text to Image ..." workflow is listed now, with the fast default
+    first, and anything whose model files are missing is left out so picking one
+    cannot end in "missing model file: ...".
+    """
     options = []
     try:
-        interesting = []
-        for wf in comfyui_service.discover_workflows():
-            name = (wf.get("name") or "").lower()
-            if wf.get("is_fhdr") or (
-                wf.get("is_z_image") and "text to image" in name and "turbo" in name
-            ):
-                interesting.append(wf)
-        # Offer only workflows whose model files are actually installed, so picking
-        # one cannot end in "missing model file: ...". Nothing ready (or ComfyUI
-        # not up yet, so we cannot ask): fall back to the full list rather than an
-        # empty dropdown.
+        candidates = [wf for wf in comfyui_service.discover_workflows()
+                      if wf.get("is_fhdr") or "text to image" in (wf.get("name") or "").lower()]
         try:
-            ready = [wf for wf in interesting if comfyui_service.workflow_ready(wf)]
+            ready = [wf for wf in candidates if comfyui_service.workflow_ready(wf)]
         except Exception:
-            ready = []
-        for wf in (ready or interesting):
-            options.append({
-                "label": wf["name"],
-                "value": "comfyui::" + wf["id"],
-            })
+            ready = []          # ComfyUI not up: fall back rather than show nothing
+        pool = ready or candidates
+
+        def _rank(wf):
+            name = (wf.get("name") or "").lower()
+            if wf.get("is_z_image") and "turbo" in name:
+                return 0        # the fast default stays first
+            if wf.get("is_fhdr"):
+                return 1
+            return 2
+
+        for wf in sorted(pool, key=lambda w: (_rank(w), (w.get("name") or "").lower())):
+            options.append({"label": wf["name"], "value": "comfyui::" + wf["id"]})
     except Exception:
         pass
     return jsonify(options)

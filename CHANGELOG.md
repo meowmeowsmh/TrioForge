@@ -94,6 +94,19 @@ below, so it carries the same version number on a build that is missing all of i
   stays stuck after a prompt" report, so it stays the default;
   `TRIOFORGE_COMFYUI_CACHE=ram` keeps models loaded instead and gets
   reproducibility back, at the cost of that RAM.
+- **The image dropdown offers the whole install, not two entries.** It held only
+  Z-Image-Turbo and FHDR while the ComfyUI install it drives also has
+  Z-Image-Base, Qwen-Image, Flux.1/2 Dev, Krea, Anima, Ernie and more — so the app
+  looked like it had fewer models than ComfyUI itself. Every ready
+  `Text to Image …` workflow is listed now (19 here), fast default first, and one
+  whose model files are missing is still left out so picking it cannot fail.
+- **The seed is named under every image, and can be set.** The app re-rolled the
+  seed silently on every run, so a picture you liked could never be asked for
+  again and there was no way to hold one variable still while changing the prompt.
+  The caption now reads `… · Text to Image (Z-Image-Base) · seed 802384471`, and
+  the panel has a Seed box (blank = new random seed each time). Exact
+  reproduction additionally needs `TRIOFORGE_COMFYUI_CACHE=ram`, because a seed
+  only repeats while the models stay loaded.
 - **The Steps box no longer overrides the workflow's own step count.** The image
   panel sent its own default (4) for *every* workflow, and 4 steps is
   under-denoised for anything that is not a 4-step distilled model. Measured with
