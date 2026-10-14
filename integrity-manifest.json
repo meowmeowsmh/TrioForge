@@ -18,7 +18,7 @@
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "be04edeebb7cfb9de549cb60bccbc8fc2ac276eae5d0092bdfdd9df669c59bd5",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
-  "py/comfyui_service.py": "258716beb378a1e9d080c7611b56977ce2b97da87becf91013535ae751f8e52a",
+  "py/comfyui_service.py": "4439b62f9a4b3c38a3e910ccede8feb10c30a14aee93b15cc27e6ad557b6b5aa",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
@@ -120,6 +120,6 @@
   "templates/index.html": "108b8ce98327ea966f88e5c01f4c6e478c2ebf489e84dea20042ea8ff2f2a195",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T22:21:47",
- "note": "1.5.6 - ComfyUI service button (start/stop)"
+ "generated": "2026-10-14T22:36:24",
+ "note": "1.5.6 - ComfyUI auto-start cross-platform (macOS/Linux)"
 }

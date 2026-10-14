@@ -357,6 +357,38 @@ def test_comfyui_auto_start() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_comfyui_paths_cross_platform() -> None:
+    """The python/entrypoint finders resolve on every OS layout."""
+    _title("comfyui paths (cross-platform)")
+    import unittest.mock as mock
+
+    import comfyui_service as cs
+
+    j = os.path.join
+
+    # macOS / Linux manual install: venv/bin/python + main.py at the root.
+    with mock.patch.object(cs.os.path, "isfile",
+                           side_effect=lambda p: p in {j("/c", "main.py"),
+                                                       j("/c", "venv", "bin", "python")}):
+        assert cs._comfyui_entrypoint("/c") == j("/c", "main.py")
+        assert cs._comfyui_python("/c") == j("/c", "venv", "bin", "python")
+
+    # Windows manual install: venv/Scripts/python.exe (same function, other layout).
+    with mock.patch.object(cs.os.path, "isfile",
+                           side_effect=lambda p: p in {j("C:\\c", "venv", "Scripts", "python.exe")}):
+        assert cs._comfyui_python("C:\\c") == j("C:\\c", "venv", "Scripts", "python.exe")
+
+    # Comfy Desktop embedded python (macOS/Linux): python/bin/python3 in a subfolder.
+    with mock.patch.object(cs.os.path, "isfile",
+                           side_effect=lambda p: p in {j("/c", "ComfyUI", "main.py"),
+                                                       j("/c", "ComfyUI", "python", "bin", "python3")}):
+        assert cs._comfyui_entrypoint("/c") == j("/c", "ComfyUI", "main.py")
+        assert cs._comfyui_python("/c") == j("/c", "ComfyUI", "python", "bin", "python3")
+
+    print("  comfyui python/entrypoint resolve on win + mac/linux -> OK")
+
+
+# ---------------------------------------------------------------------------
 def test_gpu_probe_never_blocks() -> None:
     """A stale GPU cache must not block its caller.
 
@@ -2359,7 +2391,8 @@ def main() -> int:
              test_agent_read_only_stall,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
              test_plan_load, test_python_floor_calendar, test_comfyui_auto_start,
-             test_gpu_probe_never_blocks, test_team_directives, test_session_window,
+             test_comfyui_paths_cross_platform, test_gpu_probe_never_blocks,
+             test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,

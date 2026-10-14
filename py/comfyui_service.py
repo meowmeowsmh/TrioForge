@@ -116,20 +116,28 @@ def _comfyui_entrypoint(install_root: str) -> str | None:
 
 
 def _comfyui_python(install_root: str) -> str | None:
-    """A Python to run ComfyUI: its own venv first, then anything on PATH."""
-    if os.name == "nt":
-        venv_candidates = [
-            os.path.join(install_root, "venv", "Scripts", "python.exe"),
-            os.path.join(install_root, "ComfyUI", "venv", "Scripts", "python.exe"),
-        ]
-    else:
-        venv_candidates = [
-            os.path.join(install_root, "venv", "bin", "python"),
-            os.path.join(install_root, "ComfyUI", "venv", "bin", "python"),
-        ]
-    for cand in venv_candidates:
-        if os.path.isfile(cand):
-            return cand
+    """A Python to run ComfyUI: its own venv / embedded Python first, then PATH.
+
+    Cross-platform by construction: it checks EVERY layout (``venv/bin/python``,
+    ``venv/Scripts/python.exe``, Comfy Desktop's embedded ``python_embeded``) on
+    every OS. A path that does not exist for the current platform simply does not
+    match, so no ``os.name`` branch is needed - and no branch can be wrong on
+    Apple Silicon or Linux. Each candidate is built from PATH COMPONENTS (not a
+    string with embedded "/"), so ``os.path.join`` emits the native separator and
+    the check is valid on Windows, macOS and Linux alike.
+    """
+    rel_candidates = (
+        ("venv", "bin", "python"),        # manual install (macOS / Linux)
+        ("venv", "bin", "python3"),
+        ("venv", "Scripts", "python.exe"),  # manual install (Windows)
+        ("python", "bin", "python3"),       # embedded (Comfy Desktop, macOS/Linux)
+        ("python_embeded", "python.exe"),   # portable (Windows)
+    )
+    for base in (install_root, os.path.join(install_root, "ComfyUI")):
+        for parts in rel_candidates:
+            cand = os.path.join(base, *parts)
+            if os.path.isfile(cand):
+                return cand
     return shutil.which("python3") or shutil.which("python") or None
 
 
