@@ -2652,6 +2652,7 @@ def generate_image():
     tmp = base + ".bin"
     backend = (data.get('backend') or 'gemini').strip().lower()
     api_key = sanitize_api_key(data.get('api_key', None))
+    used_wf = None                      # the ComfyUI workflow that actually ran
 
     try:
         if backend == 'gemini':
@@ -2674,7 +2675,7 @@ def generate_image():
                     comfy_workflow = model[len("comfyui::"):]
                 elif model:
                     comfy_workflow = model
-            comfyui_service.generate_image(
+            used_wf = comfyui_service.generate_image(
                 prompt, tmp, workflow=comfy_workflow or None, width=width,
                 height=height, steps=steps, timeout=900,
             )
@@ -2692,7 +2693,16 @@ def generate_image():
     elif backend == 'openrouter':
         bot_label = "🖼️ Image generated via OpenRouter"
     else:
+        # Name the workflow that actually ran. Without it the caption said only
+        # "via ComfyUI", which hides WHICH model made the picture - so a censored
+        # default model looked like the app refusing, when the uncensored workflow
+        # was simply never selected.
         bot_label = "🖼️ Image generated via ComfyUI"
+        try:
+            if used_wf and used_wf.get("name"):
+                bot_label += f" · {used_wf['name']}"
+        except Exception:  # noqa: BLE001 - a label is never worth failing a run
+            pass
 
     cid = (data.get('conversation_id') or '').strip()
     if cid:
@@ -2711,11 +2721,13 @@ def generate_image():
                 images=[{"name": out_name, "b64": img_b64, "mime": "image/png"}],
                 meta={"kind": meta_kind},
             )
-            return jsonify({'ok': True, 'url': url, 'conversation_id': cid})
+            return jsonify({'ok': True, 'url': url, 'label': bot_label,
+                            'conversation_id': cid})
         except Exception as e:
-            return jsonify({'ok': True, 'url': url, 'conversation_id': cid,
+            return jsonify({'ok': True, 'url': url, 'label': bot_label,
+                            'conversation_id': cid,
                             'warning': f'Image generated, but history was not saved: {e}'})
-    return jsonify({'ok': True, 'url': url})
+    return jsonify({'ok': True, 'url': url, 'label': bot_label})
 
 @app.route('/api/image_models', methods=['GET'])
 def image_models():

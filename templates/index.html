@@ -568,9 +568,21 @@ html.view-embed #liveCodePanel {
    never undo this rule's max-height, so a 1024x1024 render was displayed 240x240
    and read as "blurry" beside the very same file shown full size in ComfyUI. */
 .msg img.tf-gen {
+    /* max-width too: `.msg img` caps it at 240px for attachment thumbnails, and
+       lifting only max-height left the width cap in force - a 1024x1024 render
+       was still drawn 240px wide, which is exactly what it looks like. */
+    max-width: 100%;
     max-height: min(78vh, 1600px);
     width: auto;
     cursor: zoom-in;
+}
+/* Which workflow actually made the picture - the one thing that explains "why
+   does it ignore my prompt": the censored default model was never switched to
+   the uncensored workflow. */
+.msg .tf-gen-cap {
+    font-size: 11px;
+    color: #8b949e;
+    margin: -4px 0 8px;
 }
 .msg .file-chip {
     display: inline-flex; align-items: center; gap: 6px;
@@ -4739,7 +4751,11 @@ function generateImageChat(text) {
                 return;
             }
             if (d.conversation_id) currentConv = d.conversation_id;
-            bodyEl.innerHTML = '<img class="tf-gen" src="' + d.url + '" style="border-radius:12px; border:1px solid #333; cursor:pointer;" onclick="window.open(this.src)" title="Click to open full size">';
+            // Name the workflow that ran, so a censored default model cannot look
+            // like the app refusing a prompt when the uncensored one was simply
+            // never selected.
+            var caption = d.label ? ('<div class="tf-gen-cap">' + d.label + '</div>') : '';
+            bodyEl.innerHTML = '<img class="tf-gen" src="' + d.url + '" style="border-radius:12px; border:1px solid #333; cursor:pointer;" onclick="window.open(this.src)" title="Click to open full size">' + caption;
             var ts = botDiv.querySelector('.ts');
             if (ts) ts.textContent = new Date().toLocaleTimeString();
             smoothScrollToBottom();
@@ -4759,6 +4775,13 @@ function generateImageChat(text) {
 }
 // Re-query the model list when the image backend switches.
 try { if (document.getElementById('imageBackendSelect')) document.getElementById('imageBackendSelect').addEventListener('change', loadImageModels); } catch(e) {}
+// Remember which image workflow the user chose (see loadImageModels).
+try {
+    var _imSel = document.getElementById('imageModelSelect');
+    if (_imSel) _imSel.addEventListener('change', function() {
+        try { if (this.value) localStorage.setItem('tf.imageWorkflow', this.value); } catch(e) {}
+    });
+} catch(e) {}
 try { if (document.getElementById('videoBackendSelect')) document.getElementById('videoBackendSelect').addEventListener('change', loadVideoModels); } catch(e) {}
 function loadImageModels() {
     var sel = document.getElementById('imageModelSelect');
@@ -4807,6 +4830,14 @@ function loadImageModels() {
                 opt.textContent = o.label;
                 sel.appendChild(opt);
             });
+            // Remember the user's pick: the default is the FAST model, which is
+            // also a censored one, so re-selecting the uncensored workflow after
+            // every reload is exactly the friction this removes.
+            try {
+                var want = localStorage.getItem('tf.imageWorkflow');
+                if (want && Array.prototype.some.call(sel.options, function(o) {
+                        return o.value === want; })) sel.value = want;
+            } catch (e) {}
         })
         .catch(function() {});
 }

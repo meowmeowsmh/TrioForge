@@ -16,7 +16,7 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "b3374556903f71f65a39a30451f523f31d9acd064f3164647e34b16e9527a1ce",
+  "py/app.py": "36a1db95eab81f66dfc0b35f5ef1a26621795b7e3911beeafe776a1909ef86e2",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "252766efc604821bf7c817fb4f284370444ff1fcbd12e851ff6d8e7e193727a6",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -117,9 +117,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "6a33403564e52a1e6829a956a340724ecc7fa1749f4907e6c570578f97272cd6",
+  "templates/index.html": "93e46977634d132d6aa0208b3d99b48868b4e9b7d8c1e8ec58945e1bcb6f3f37",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-15T04:26:52",
- "note": "1.5.6: workflow-native prompts/steps, reproducible-seed switch"
+ "generated": "2026-10-15T04:38:29",
+ "note": "1.5.6: full-size generated images, workflow named in the caption"
 }

@@ -2771,7 +2771,42 @@ def test_image_steps_default_to_the_workflow() -> None:
     assert "value=" not in steps_input.group(0), steps_input.group(0)
     assert ".msg img.tf-gen" in html, "generated images lost their own size rule"
     assert 'class="tf-gen"' in html, "the generated image is not tagged for sizing"
+    rule = re.search(r"\.msg img\.tf-gen \{(.*?)\}", html, re.S)
+    assert rule, "the generated-image rule vanished"
+    # BOTH caps have to be lifted: fixing only max-height left `.msg img`'s 240px
+    # max-width in force, so the image was still drawn 240px wide.
+    assert "max-width: 100%" in rule.group(1), rule.group(1)
+    assert "max-height" in rule.group(1), rule.group(1)
+    # Which workflow ran must be visible, and the choice must be remembered: the
+    # default is the fast (censored) model, so re-picking the uncensored workflow
+    # after every reload was the friction behind "it ignores what I type".
+    assert "tf-gen-cap" in html, "the caption naming the workflow is gone"
+    assert "d.label" in html, "the caption is never filled in"
+    assert "tf.imageWorkflow" in html, "the image workflow choice is not remembered"
     print("  no hard-coded step default; generated images get their own size -> OK")
+
+    # The endpoint must report WHICH workflow produced the image.
+    class _FakeWf(dict):
+        pass
+
+    def spy2(prompt, output_path, **kw):
+        with open(output_path, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+        return _FakeWf({"name": "FHDR-Setup", "id": "fhdr-setup"})
+
+    cs.generate_image = spy2
+    try:
+        with forge_app.app.test_client() as client:
+            token = _csrf_ok(client)
+            r = client.post("/api/generate_image",
+                            json={"prompt": "probe", "backend": "comfyui"},
+                            headers={"X-CSRF-Token": token})
+            body = r.get_json() or {}
+            assert r.status_code == 200, body
+            assert "FHDR-Setup" in (body.get("label") or ""), body
+    finally:
+        cs.generate_image = real_gen
+    print("  the response names the workflow that actually ran -> OK")
 
 
 # ---------------------------------------------------------------------------
