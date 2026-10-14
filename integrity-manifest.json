@@ -120,6 +120,6 @@
   "templates/index.html": "0f11e05167817ede57a857e3301f3e28e4bb0a4af073a0016be00db1973ca87d",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-15T03:00:43",
+ "generated": "2026-10-15T03:07:20",
  "note": "1.5.6: ComfyUI Desktop shared model paths + Manager on-demand fetch"
 }

@@ -622,10 +622,21 @@ def test_comfyui_model_paths() -> None:
     assert "desktop_model_paths_config()" in src, "the flag is never populated"
 
     # _models_dir prefers the shared store, so a download joins Desktop's models
-    # instead of becoming a second copy in the install.
-    asserted = cs._models_dir()
-    if cs.shared_models_dir():
-        assert asserted == cs.shared_models_dir(), asserted
+    # instead of becoming a second copy in the install. With no ComfyUI at all
+    # there is nowhere to put one, and it must say so rather than raise something
+    # else - CI has no ComfyUI, so this branch is the one that actually runs there.
+    shared = cs.shared_models_dir()
+    install = cs.find_comfyui_install()
+    if shared:
+        assert cs._models_dir() == shared, cs._models_dir()
+    elif install:
+        assert cs._models_dir() == os.path.join(install, "models"), cs._models_dir()
+    else:
+        try:
+            cs._models_dir()
+            raise AssertionError("_models_dir() must refuse when nothing is installed")
+        except RuntimeError as e:
+            assert "not found" in str(e), e
     print("  desktop shared store is located, and auto-start passes it on -> OK")
 
 
