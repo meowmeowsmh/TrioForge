@@ -20,6 +20,7 @@ import io
 import os
 import sys
 import threading
+import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -305,13 +306,31 @@ def test_gpu_probe_never_blocks() -> None:
     first = hardware._gpu_cache["value"]
     assert first is not None, "gpu() returned nothing on a machine with a GPU"
 
-    hardware._gpu_cache["at"] = 0.0     # force the entry stale
-    t0 = time.perf_counter()
-    value = hardware.gpu()
-    elapsed = time.perf_counter() - t0
+    # Make the probe take a SECOND on purpose. Asking "did the caller block?" as a
+    # 50 ms stopwatch question is really asking "was this runner idle?", which is
+    # what made this fail once on the 3.10 job: starting the worker thread alone can
+    # overrun a tight budget on a loaded runner. A one-second probe makes the
+    # question structural - the caller cannot have waited for it and still return
+    # in half the time.
+    real_probe = hardware._probe_gpu
+
+    def slow_probe():
+        time.sleep(1.0)
+        return real_probe()
+
+    hardware._probe_gpu = slow_probe
+    try:
+        hardware._gpu_cache["at"] = 0.0     # force the entry stale
+        t0 = time.perf_counter()
+        value = hardware.gpu()
+        elapsed = time.perf_counter() - t0
+    finally:
+        hardware._probe_gpu = real_probe
     assert value is not None, "a stale gpu() returned nothing"
-    assert elapsed < 0.05, f"a stale gpu() blocked the caller for {elapsed:.3f}s"
-    print(f"  stale entry returned in {elapsed * 1000:.1f} ms -> OK")
+    assert elapsed < 0.5, \
+        f"a stale gpu() blocked on the {1.0}s probe for {elapsed:.3f}s"
+    print(f"  stale entry returned in {elapsed * 1000:.1f} ms, "
+          f"not waiting for a 1000 ms probe -> OK")
 
 
 # ---------------------------------------------------------------------------
@@ -328,13 +347,23 @@ async def _tui_checks() -> None:
     app = ta.ForgeApp(args, cfg, b,
                       sess_mod.Session(model="gemma", where="local", system="s"))
     async with app.run_test(size=(120, 40)) as pilot:
-        await pilot.pause(0.4)
+        # WAIT for the app to finish composing rather than trusting one fixed pause.
+        # On a loaded CI runner 0.4 s was not always enough and the suite failed with
+        # "No nodes match '#face'" before it had asserted anything - a flake in the
+        # harness, not a bug in the app. Poll for the whole set instead.
+        wanted = ("#chat", "#side", "#sidebody", "#face", "#activity",
+                  "#statusline", "#prompt", "#keys")
+        missing = list(wanted)
+        for _ in range(80):
+            missing = [sel for sel in wanted if not app.query(sel)]
+            if not missing:
+                break
+            await pilot.pause(0.1)
 
-        # every wrapper is mounted, and the keybind bar sits ON SCREEN - a fixed
-        # footer height once pushed it one row below the viewport
-        for sel in ("#chat", "#side", "#sidebody", "#face", "#activity",
-                    "#statusline", "#prompt", "#keys"):
-            app.query_one(sel)
+        # Report WHICH are absent. "No nodes match '#face'" on its own could not say
+        # whether compose had not finished or had stopped EARLY; the missing set can -
+        # it names every widget from the failure onwards, in compose order.
+        assert not missing, f"widgets never mounted: {missing}"
         keys = app.query_one("#keys")
         assert keys.region.y + keys.region.height <= 40, keys.region
         print("  all widgets mount; #keys is on screen -> OK")
@@ -534,13 +563,20 @@ async def _tui_checks() -> None:
         print("  sidebar fits its 34 columns; Windows model paths shorten -> OK")
 
         # ...and the panel steps aside when the window cannot afford both panes.
-        # At 60 columns it kept its 36 and left the transcript 24.
+        # At 60 columns it kept its 36 and left the transcript 24. Poll for the
+        # relayout instead of trusting one pause - same reason as the compose wait.
         await pilot.resize_terminal(60, 20)
-        await pilot.pause(0.3)
+        for _ in range(30):
+            if not app.query_one("#side").display:
+                break
+            await pilot.pause(0.1)
         assert not app.query_one("#side").display, "sidebar crushed the chat at 60 cols"
         assert app.query_one("#chat").region.width > 40, "chat did not take the room"
         await pilot.resize_terminal(120, 40)
-        await pilot.pause(0.3)
+        for _ in range(30):
+            if app.query_one("#side").display:
+                break
+            await pilot.pause(0.1)
         assert app.query_one("#side").display, "sidebar did not come back on grow"
         print("  sidebar hides below 80 cols and returns on resize -> OK")
 
@@ -2247,11 +2283,15 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             failed.append((t.__name__, exc))
             print(f"  FAIL {t.__name__}: {exc}")
+            traceback.print_exc()
     try:
         asyncio.run(_tui_checks())
     except Exception as exc:  # noqa: BLE001
         failed.append(("_tui_checks", exc))
         print(f"  FAIL _tui_checks: {exc}")
+        # Print WHERE it failed. A bare message like "No nodes match '#face'" left
+        # no way to tell a flaky harness wait from a real regression.
+        traceback.print_exc()
 
     print()
     if failed:
