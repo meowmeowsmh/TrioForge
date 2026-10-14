@@ -85,6 +85,20 @@ def is_comfyui_running(timeout=3):
         return False
 
 
+def unload_models():
+    """Ask ComfyUI to drop loaded models so RAM/VRAM return to idle.
+
+    ComfyUI otherwise keeps every model resident between runs, which is why memory
+    "stuck" after a finished prompt. Called at the end of every generation, so the
+    GPU/RAM goes back to none once the media is saved. Best-effort: a server that
+    is mid-shutdown or already gone is simply ignored.
+    """
+    try:
+        requests.post(f"{COMFYUI_URL}/free", json={"unload_models": True}, timeout=15)
+    except Exception:  # noqa: BLE001 - freeing is best-effort
+        pass
+
+
 def detect_comfyui(timeout=3):
     """Return a small status dict describing the running ComfyUI server."""
     info = {"url": COMFYUI_URL, "running": False}
@@ -187,7 +201,14 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
             port = str(urlparse(COMFYUI_URL).port or 8188)
         except Exception:  # noqa: BLE001 - a malformed URL is not fatal
             port = "8188"
-        cmd = [python, entry, "--listen", "127.0.0.1", "--port", port]
+        # --cache-none: unload models after EVERY execution, so RAM/VRAM return to
+        # idle once a prompt is done instead of staying pinned to the last model.
+        # ComfyUI's default --cache-ram keeps models resident in system RAM (which
+        # is the "memory stuck after the prompt" report), and the /free endpoint
+        # only queues an unload for the NEXT run - the flag is the real fix. The
+        # tradeoff is a reload on the next generation, which is what "back to none"
+        # costs.
+        cmd = [python, entry, "--listen", "127.0.0.1", "--port", port, "--cache-none"]
 
         kwargs = hidden_tree_kwargs()
         kwargs["cwd"] = os.path.dirname(entry)
@@ -1021,47 +1042,51 @@ def run_prompt(prompt, output_path, timeout=900):
     resp.raise_for_status()
     prompt_id = resp.json()["prompt_id"]
 
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            history = requests.get(f"{COMFYUI_URL}/history/{prompt_id}", timeout=10).json()
-        except Exception:
+    try:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                history = requests.get(f"{COMFYUI_URL}/history/{prompt_id}", timeout=10).json()
+            except Exception:
+                time.sleep(1)
+                continue
+            if prompt_id in history:
+                entry = history[prompt_id]
+                err = _error_from_history(entry)
+                if err:
+                    raise RuntimeError(err)
+                outputs = entry.get("outputs") or {}
+                for node_out in outputs.values():
+                    for key in ("images", "videos", "gifs", "audio"):
+                        media = node_out.get(key) or []
+                        if not media:
+                            continue
+                        item = media[0]
+                        # Audio outputs may be plain strings (filename) or dicts.
+                        if isinstance(item, dict):
+                            filename = item["filename"]
+                            subfolder = item.get("subfolder", "")
+                            ftype = item.get("type", "output")
+                        else:
+                            filename = str(item)
+                            subfolder = ""
+                            ftype = "output"
+                        url = (f"{COMFYUI_URL}/view?filename={quote(filename)}"
+                               f"&subfolder={quote(subfolder)}&type={quote(ftype)}")
+                        media_resp = requests.get(url, timeout=120)
+                        media_resp.raise_for_status()
+                        out_dir = os.path.dirname(output_path)
+                        if out_dir:
+                            os.makedirs(out_dir, exist_ok=True)
+                        with open(output_path, "wb") as f:
+                            f.write(media_resp.content)
+                        return filename
             time.sleep(1)
-            continue
-        if prompt_id in history:
-            entry = history[prompt_id]
-            err = _error_from_history(entry)
-            if err:
-                raise RuntimeError(err)
-            outputs = entry.get("outputs") or {}
-            for node_out in outputs.values():
-                for key in ("images", "videos", "gifs", "audio"):
-                    media = node_out.get(key) or []
-                    if not media:
-                        continue
-                    item = media[0]
-                    # Audio outputs may be plain strings (filename) or dicts.
-                    if isinstance(item, dict):
-                        filename = item["filename"]
-                        subfolder = item.get("subfolder", "")
-                        ftype = item.get("type", "output")
-                    else:
-                        filename = str(item)
-                        subfolder = ""
-                        ftype = "output"
-                    url = (f"{COMFYUI_URL}/view?filename={quote(filename)}"
-                           f"&subfolder={quote(subfolder)}&type={quote(ftype)}")
-                    media_resp = requests.get(url, timeout=120)
-                    media_resp.raise_for_status()
-                    out_dir = os.path.dirname(output_path)
-                    if out_dir:
-                        os.makedirs(out_dir, exist_ok=True)
-                    with open(output_path, "wb") as f:
-                        f.write(media_resp.content)
-                    return filename
-        time.sleep(1)
-
-    raise TimeoutError("ComfyUI generation timed out")
+        raise TimeoutError("ComfyUI generation timed out")
+    finally:
+        # The prompt is done (or failed): hand the memory back so the GPU/RAM
+        # reads idle instead of staying pinned to the last model.
+        unload_models()
 
 
 # --------------------------------------------------------------------------- #

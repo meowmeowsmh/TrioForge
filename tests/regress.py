@@ -541,6 +541,15 @@ def test_comfyui_model_autoscan() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_comfyui_unload_is_safe() -> None:
+    """unload_models() frees memory without ever raising (server up or down)."""
+    _title("comfyui unload models")
+    import comfyui_service as cs
+    assert cs.unload_models() is None     # best-effort: never raises
+    print("  unload_models() is a safe best-effort no-op -> OK")
+
+
+# ---------------------------------------------------------------------------
 def test_gpu_probe_never_blocks() -> None:
     """A stale GPU cache must not block its caller.
 
@@ -2545,7 +2554,7 @@ def main() -> int:
              test_plan_load, test_python_floor_calendar, test_comfyui_auto_start,
              test_comfyui_paths_cross_platform, test_comfyui_widget_mapping_and_errors,
              test_comfyui_workflow_readiness, test_comfyui_model_autoscan,
-             test_gpu_probe_never_blocks,
+             test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
