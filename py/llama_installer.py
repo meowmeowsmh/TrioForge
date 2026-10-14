@@ -13,7 +13,6 @@
 import os
 import platform
 import shutil
-import sys
 import tarfile
 import urllib.request
 import zipfile
@@ -181,10 +180,10 @@ def install_llamacpp(backend=None):
                 zf.extractall(extract_dir)
         elif asset.endswith((".tar.gz", ".tgz")):
             with tarfile.open(archive) as tf:
-                if sys.version_info >= (3, 12):
-                    tf.extractall(extract_dir, filter="data")
-                else:
-                    tf.extractall(extract_dir)   # `filter=` is 3.12+
+                # filter="data" is unconditional: it is the safe extraction (no
+                # absolute paths, no "..", no device files) and the project's floor
+                # is 3.12, so the version branch that guarded it is gone.
+                tf.extractall(extract_dir, filter="data")
         else:
             return {"ok": False, "path": "", "error": "Unsupported archive type: {}".format(asset)}
 

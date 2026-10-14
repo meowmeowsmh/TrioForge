@@ -694,8 +694,10 @@ def _normalize_timestamp(value, fallback):
             return fallback
     if isinstance(value, str):
         try:
-            # Accept trailing 'Z' (Python's fromisoformat rejects it pre-3.11)
-            datetime.fromisoformat(value.replace('Z', '+00:00'))
+            # Python 3.11+ parses a trailing 'Z' (and the other ISO forms) itself,
+            # so the old value.replace('Z', '+00:00') shim is gone - it also
+            # mangled any string that merely CONTAINED a Z.
+            datetime.fromisoformat(value)
             return value
         except ValueError:
             return fallback

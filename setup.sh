@@ -28,7 +28,7 @@ echo
 
 # ---------------------------------------------------------------- python
 # Shared with ./forge, and it INSTALLS python when it is missing or older than
-# 3.10 rather than telling the user to go and do it themselves.
+# 3.12 rather than telling the user to go and do it themselves.
 # shellcheck source=deps.sh
 . "$ROOT/deps.sh"
 

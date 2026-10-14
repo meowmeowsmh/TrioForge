@@ -63,7 +63,8 @@ forge_mark_deps() {
     printf 'sha256:%s\n' "$(forge_deps_hash "$1")" > "$1/.deps_installed" 2>/dev/null || true
 }
 
-# A python 3.10+ anywhere on PATH, or nothing.
+# A python 3.12+ anywhere on PATH, or nothing. 3.12 is the floor because 3.10 is
+# end-of-life and 3.11 is security-only (see pyproject.toml's requires-python).
 #
 # Every PATH entry is tried, not just `command -v python3`: an old python3 that
 # shadows a good one earlier in PATH would otherwise look like "no python" and
@@ -76,7 +77,7 @@ forge_find_python() {
         for dir in ${PATH:-}; do
             [ -n "$dir" ] || continue
             [ -x "$dir/$name" ] || continue
-            if "$dir/$name" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+            if "$dir/$name" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
                 printf '%s' "$dir/$name"
                 return 0
             fi
@@ -85,7 +86,7 @@ forge_find_python() {
     return 1
 }
 
-# Python 3.10+, INSTALLING it when it is missing or too old, so "no python" is
+# Python 3.12+, INSTALLING it when it is missing or too old, so "no python" is
 # not the end of the story. Echoes the interpreter. Mirrors run.sh, which has
 # done this for the web app all along.
 forge_ensure_python() {
@@ -95,7 +96,7 @@ forge_ensure_python() {
         return 0
     fi
 
-    echo "forge: python 3.10+ not found — installing it (sudo may prompt)..." >&2
+    echo "forge: python 3.12+ not found — installing it (sudo may prompt)..." >&2
     if command -v apt-get >/dev/null 2>&1; then
         sudo apt-get update && sudo apt-get install -y python3 python3-pip python3-venv
     elif command -v dnf >/dev/null 2>&1; then
@@ -108,7 +109,7 @@ forge_ensure_python() {
         brew install python
     else
         echo "forge: no package manager found (apt/dnf/pacman/zypper/brew)." >&2
-        echo "       Install Python 3.10+ from https://www.python.org/downloads/" >&2
+        echo "       Install Python 3.12+ from https://www.python.org/downloads/" >&2
         return 1
     fi
 
@@ -158,7 +159,7 @@ forge_ensure_deps() {
     local root="$1" py
 
     py="$(forge_venv_python "$root")" || py="$(forge_make_venv "$root")" || {
-        echo "forge: no usable python3 (3.10+) found." >&2
+        echo "forge: no usable python3 (3.12+) found." >&2
         echo "       Install Python 3, then run ./setup.sh" >&2
         return 1
     }

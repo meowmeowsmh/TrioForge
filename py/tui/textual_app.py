@@ -923,7 +923,7 @@ class ForgeApp(App):
         ``#face`` / ``#activity`` / ``#sidebody`` exist. ``query_one`` then raised
         ``NoMatches`` out of the timer, which escaped ``run_test()`` and made the
         regression suite fail intermittently - it only ever hit the slowest runner
-        (Python 3.10), and it looked like a test flake for two commits.
+        and looked like a test flake for two commits.
 
         Returns True when the paint landed, so a caller that caches what it drew
         only caches it on success - otherwise the next tick would see "already

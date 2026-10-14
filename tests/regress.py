@@ -307,11 +307,10 @@ def test_gpu_probe_never_blocks() -> None:
     assert first is not None, "gpu() returned nothing on a machine with a GPU"
 
     # Make the probe take a SECOND on purpose. Asking "did the caller block?" as a
-    # 50 ms stopwatch question is really asking "was this runner idle?", which is
-    # what made this fail once on the 3.10 job: starting the worker thread alone can
-    # overrun a tight budget on a loaded runner. A one-second probe makes the
-    # question structural - the caller cannot have waited for it and still return
-    # in half the time.
+    # 50 ms stopwatch question is really asking "was this runner idle?": starting
+    # the worker thread alone can overrun a tight budget on a loaded runner. A
+    # one-second probe makes the question structural - the caller cannot have
+    # waited for it and still return in half the time.
     real_probe = hardware._probe_gpu
 
     def slow_probe():
@@ -351,8 +350,8 @@ async def _tui_checks() -> None:
     # after mount, while Textual is still mounting the screen's children, and
     # _paint_face's unguarded query_one("#face") then raised NoMatches OUT of the
     # timer - which escaped run_test() and failed this suite on the slowest CI
-    # runner only (3.10), so it read as a flake for two commits. An app that was
-    # never mounted reproduces it deterministically.
+    # runner only, so it read as a flake for two commits. An app that was never
+    # mounted reproduces it deterministically.
     unmounted = ta.ForgeApp(args, cfg, b,
                             sess_mod.Session(model="gemma", where="local", system="s"))
     unmounted._paint_face()          # used to raise NoMatches
@@ -387,9 +386,10 @@ async def _tui_checks() -> None:
             """Wait until ``pred()`` holds - never trust a single fixed pause.
 
             Every ``await pilot.pause(0.2)`` is a bet that one message round-trip
-            finished inside 200 ms. On the slowest CI job (3.10) that bet lost: the
-            suite failed there twice while 3.12 and 3.14 passed, and one of those
-            was a docs-only commit - so it was a timing race, not a regression.
+            finished inside 200 ms. On the slowest CI runner that bet lost: the
+            suite failed there twice while the faster ones passed, and one of
+            those was a docs-only commit - so it was a timing race, not a
+            regression in the code under test.
             """
             for _ in range(tries):
                 if pred():

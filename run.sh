@@ -50,8 +50,10 @@ PY="${TRIOFORGE_PYTHON:-}"
 pick_python() {
     # Newest first. 3.15/3.16 are listed ahead of time on purpose: they become
     # the default the day they appear on PATH, with no edit needed here.
+    # Nothing below 3.12 is listed: 3.10 reached end-of-life and 3.11 is in
+    # security-only maintenance, so neither is a supported interpreter.
     for cand in python3.16 python3.15 python3.14 python3.13 python3.12 \
-                python3.11 python3.10 python3 python; do
+                python3 python; do
         if command -v "$cand" >/dev/null 2>&1; then
             echo "$cand"
             return 0
@@ -96,11 +98,13 @@ if [ -z "$PY" ]; then
     [ -z "$PY" ] && { echo "[TrioForge] Installed but not on PATH; open a NEW terminal and re-run."; exit 1; }
 fi
 
-# Enforce the floor pyproject.toml declares (requires-python >=3.10). Without
-# this a 3.9 fails much later, inside a dependency, with a message that says
-# nothing about Python being the reason.
-if ! "$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
-    echo "[TrioForge] $PY is $("$PY" --version 2>&1 | awk '{print $2}'), but TrioForge needs Python 3.10 or newer." >&2
+# Enforce the floor pyproject.toml declares (requires-python >=3.12). Without
+# this an older interpreter fails much later, inside a dependency, with a message
+# that says nothing about Python being the reason. 3.12 is the floor because 3.10
+# is end-of-life and 3.11 is security-only, and because `tarfile.extractall(filter=)`
+# - which the llama.cpp and ffmpeg installers need for a safe extraction - is 3.12+.
+if ! "$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' >/dev/null 2>&1; then
+    echo "[TrioForge] $PY is $("$PY" --version 2>&1 | awk '{print $2}'), but TrioForge needs Python 3.12 or newer." >&2
     echo "[TrioForge] Install a newer Python, or point TRIOFORGE_PYTHON at one." >&2
     exit 1
 fi

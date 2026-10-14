@@ -11,7 +11,7 @@
 **How it opens** — double-click **`TrioForge-Web.bat`** (Windows) or run **`./run.sh`** (Linux/macOS/WSL): the server starts hidden and the app opens in your browser. Add **`--window`** for a real window of its own. There is **no `.exe` to download** — it's the repo (or Docker), so nothing to install and no SmartScreen dialog.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 
 **Jump to:** [Start](#-start) · [Quick start](#-quick-start) · [Model folders](#-model-folders) · [Terminal client](#-the-terminal-client--forge) · [Features](#-features) · [Configuration](#-configuration) · [Workspaces](#-workspaces--folder-access) · [Generation](#-image-video--audio-generation) · [Remote access](#-remote-access) · [Docker](#-docker) · [Your data](#-where-your-data-lives) · [Project structure](#-project-structure)
 
@@ -172,7 +172,7 @@ dependency (web app *and* terminal client), puts `forge` / `trioforge` on your
 PATH and pre-fetches llama.cpp.
 
 **Or skip it entirely — just run `./forge`.** It installs Python if you do not
-have 3.10+ (3.12+ recommended), creates the venv, installs every library for *both* interfaces, and
+have 3.12+, creates the venv, installs every library for *both* interfaces, and
 starts. Nothing else to remember:
 
 ```
@@ -379,7 +379,7 @@ trioforge-web                   # start the web app (same as double-clicking)
 trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
-Requires **Python 3.10+** — **3.12+ recommended** (3.10 is end-of-life) — see `pyproject.toml`. `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.10 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.6**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.6**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 

@@ -80,6 +80,19 @@ below, so it carries the same version number on a build that is missing all of i
 
 ### Install and packaging
 
+- **Python 3.12 is now the floor** (was 3.10). 3.10 reached end-of-life and 3.11 is
+  in security-only maintenance, so neither is supported any more: `pyproject.toml`
+  and `uv.lock` declare `requires-python >=3.12`, `run.sh` and `deps.sh` refuse
+  anything older up front with a message that says so, and the CI matrix tests
+  **3.12, 3.13 and 3.14** instead of 3.10/3.12/3.14. 3.12 was already what the
+  Docker image shipped.
+- **The dead version branches are gone.** Both archive extractors guarded
+  `tarfile.extractall(..., filter="data")` behind `sys.version_info >= (3, 12)` and
+  fell back to an unfiltered `extractall` below it — now that 3.12 is required, the
+  safe extraction is the only path, so the fallback (which allowed absolute paths
+  and `..` members) no longer exists. `cork_board.py` drops its
+  `value.replace('Z', '+00:00')` shim for pre-3.11 `fromisoformat`, which also
+  mangled any string that merely contained a `Z`.
 - **`trioforge-web` exists on Linux/macOS**, and `run.sh` resolves symlinks, so the
   one-liner works when it is invoked through a link.
 - **The `models/` guidance files are untracked** rather than committed inside a
