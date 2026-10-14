@@ -94,6 +94,15 @@ below, so it carries the same version number on a build that is missing all of i
   stays stuck after a prompt" report, so it stays the default;
   `TRIOFORGE_COMFYUI_CACHE=ram` keeps models loaded instead and gets
   reproducibility back, at the cost of that RAM.
+- **Auto-detect runs the workflow you saved, not the fastest shipped one.** The
+  default was Z-Image-Turbo purely because its name says "turbo", so a workflow
+  the user saved themselves — here FHDR-Setup, the uncensored fine-tune — was
+  never selected and its pictures never appeared, which reads as "the app ignores
+  my prompt". A saved workflow is an explicit choice; a blueprint is only what
+  ComfyUI happened to ship, so the user's own wins, with audio/video workflows
+  skipped so an image request cannot land on one. The same rule now picks the
+  user's Stable Audio workflow ahead of the bundled ACE-Step for audio. An
+  explicit pick in either panel still overrides everything.
 - **The image dropdown offers the whole install, not two entries.** It held only
   Z-Image-Turbo and FHDR while the ComfyUI install it drives also has
   Z-Image-Base, Qwen-Image, Flux.1/2 Dev, Krea, Anima, Ernie and more — so the app

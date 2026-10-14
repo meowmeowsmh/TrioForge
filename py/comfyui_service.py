@@ -563,6 +563,12 @@ def select_audio_workflow(workflows, requested=None):
             if needle in wf["name"].lower() or needle in wf["id"].lower():
                 return wf
         return None
+    # A workflow the user saved themselves wins, for the same reason as images:
+    # it is their choice, and here it is Stable Audio 3 Medium rather than the
+    # bundled ACE-Step pick - which is what they were comparing against ComfyUI.
+    for wf in workflows:
+        if wf.get("kind") == "user":
+            return wf
     # Auto-detect a good default: prefer explicit "text to audio"/"music", then
     # "audio generation", then the first discovered audio workflow.
     for wf in workflows:
@@ -1584,6 +1590,20 @@ def select_workflow(workflows, requested=None):
     except Exception:  # noqa: BLE001 - no object_info (server down): do not filter
         ready = []
     pool = ready or workflows
+
+    # A workflow the user SAVED themselves beats a bundled blueprint: it is their
+    # explicit choice, whereas a blueprint is whatever ComfyUI happened to ship.
+    # That is the whole difference between the app picking its own fast default
+    # (Z-Image-Turbo, chosen purely because its name says "turbo") and picking the
+    # workflow the user actually works with - here FHDR-Setup, the uncensored
+    # fine-tune, which the auto-detect never selected. Audio and video workflows
+    # are skipped so an image request can never land on one of them.
+    for wf in pool:
+        if wf.get("kind") != "user":
+            continue
+        if is_audio_workflow(wf) or is_video_workflow(wf):
+            continue
+        return wf
 
     for wf in pool:
         name = (wf.get("name") or "").lower()

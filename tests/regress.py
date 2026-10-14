@@ -2934,6 +2934,67 @@ def test_image_panel_choices() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_auto_detect_prefers_the_users_own_workflow() -> None:
+    """Auto-detect must run the workflow the user saved, not the shipped default.
+
+    The app always picked Z-Image-Turbo because its name says "turbo", so the
+    FHDR-Setup workflow the user actually works with was never selected and its
+    picture never appeared - which reads as "the app ignores my prompt". A saved
+    workflow is an explicit choice; a blueprint is just what ComfyUI shipped.
+    Audio/video workflows are skipped so an image request cannot land on one.
+    """
+    _title("auto-detected workflow: the user's own wins")
+    import comfyui_service as cs
+
+    def wf(name, kind, z=False, f=False):
+        return {"name": name, "id": name, "path": "x", "kind": kind,
+                "is_z_image": z, "is_fhdr": f}
+
+    pool = [wf("Audio Generation (Stable Audio 3 Medium)", "blueprint"),
+            wf("Text to Image (Z-Image-Turbo)", "blueprint", z=True),
+            wf("Text to Image (Z-Image-Base)", "blueprint", z=True),
+            wf("FHDR-Setup", "user", f=True),
+            wf("audiostable", "user"),
+            wf("txt_to_music", "user")]
+    real_ready = cs.workflow_ready
+    cs.workflow_ready = lambda *a, **k: True
+    try:
+        chosen = cs.select_workflow(pool)
+        assert chosen["name"] == "FHDR-Setup", chosen
+        # An explicit request still beats the preference, by name and by keyword.
+        assert cs.select_workflow(pool, "z-image")["name"].startswith("Text to Image"), \
+            cs.select_workflow(pool, "z-image")
+        assert cs.select_workflow(pool, "FHDR-Setup")["name"] == "FHDR-Setup"
+
+        # No user IMAGE workflow: the shipped default still applies, rather than
+        # falling through to one of the user's audio workflows.
+        no_user_image = [wf("Text to Image (Z-Image-Turbo)", "blueprint", z=True),
+                         wf("audiostable", "user"),
+                         wf("txt_to_music", "user")]
+        assert cs.select_workflow(no_user_image)["name"] == "Text to Image (Z-Image-Turbo)", \
+            cs.select_workflow(no_user_image)
+
+        # Everything is a blueprint: unchanged behaviour order (Z-Image first).
+        only_bp = [wf("FHDR-Setup", "blueprint", f=True),
+                   wf("Text to Image (Z-Image-Turbo)", "blueprint", z=True)]
+        assert cs.select_workflow(only_bp)["name"] == "Text to Image (Z-Image-Turbo)", \
+            cs.select_workflow(only_bp)
+
+        # Audio: the user's saved audio workflow beats the bundled pick too.
+        audio = [wf("Audio Generation (Stable Audio 3 Medium)", "blueprint"),
+                 wf("Text to Audio (ACE-Step 1.5)", "blueprint"),
+                 wf("audio_stable_audio_3_medium", "user")]
+        assert cs.select_audio_workflow(audio)["name"] == "audio_stable_audio_3_medium", \
+            cs.select_audio_workflow(audio)
+        assert cs.select_audio_workflow(
+            [w for w in audio if w["kind"] == "blueprint"])["name"] \
+            == "Text to Audio (ACE-Step 1.5)"
+    finally:
+        cs.workflow_ready = real_ready
+    print("  the user's own workflow wins; explicit picks and fallbacks intact -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -2947,6 +3008,7 @@ def main() -> int:
              test_image_steps_default_to_the_workflow,
              test_inject_preserves_workflow_prompts,
              test_image_panel_choices,
+             test_auto_detect_prefers_the_users_own_workflow,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

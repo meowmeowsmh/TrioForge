@@ -18,7 +18,7 @@
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "a130a7af4cf153f9188cc40b976a20ab91cd26f72e8deb51ced2d5d0cb94cb0f",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
-  "py/comfyui_service.py": "252766efc604821bf7c817fb4f284370444ff1fcbd12e851ff6d8e7e193727a6",
+  "py/comfyui_service.py": "5e9fa51557023a9c343cd245e48f8d65122374569037cb70a63ea28a1713712f",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
@@ -120,6 +120,6 @@
   "templates/index.html": "40cfc33d4ca77188b6c7c6c123891fb5ea8088785e6f401aaee950b68f08d769",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-15T04:48:38",
- "note": "1.5.6: full workflow list in the image panel + reported seed"
+ "generated": "2026-10-15T04:59:36",
+ "note": "1.5.6: auto-detect prefers the user-saved workflow"
 }
