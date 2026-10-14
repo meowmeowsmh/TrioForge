@@ -349,7 +349,7 @@ def test_comfyui_auto_start() -> None:
             mock.patch.object(cs, "find_comfyui_install", return_value="/fake/install"), \
             mock.patch.object(cs, "_comfyui_entrypoint", return_value="/fake/install/main.py"), \
             mock.patch.object(cs, "_comfyui_python", return_value="python"), \
-            mock.patch.object(cs, "hidden_popen_kwargs", return_value={}), \
+            mock.patch.object(cs, "hidden_tree_kwargs", return_value={}), \
             mock.patch.object(cs.subprocess, "Popen", return_value=fake_proc) as popen:
         assert cs.ensure_comfyui_running(timeout=5) is True
         assert popen.call_count == 1, popen.call_count

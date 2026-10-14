@@ -44,9 +44,9 @@ except Exception:                                    # pragma: no cover
         """Fallback used when providers.llm_providers cannot be imported."""
 
 try:
-    from proc_util import hidden_popen_kwargs
+    from proc_util import hidden_tree_kwargs
 except Exception:                                    # pragma: no cover
-    def hidden_popen_kwargs() -> dict:
+    def hidden_tree_kwargs(devnull: bool = True) -> dict:
         """Fallback when proc_util is unavailable: a plain, attached spawn."""
         return {}
 
@@ -183,7 +183,7 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
             port = "8188"
         cmd = [python, entry, "--listen", "127.0.0.1", "--port", port]
 
-        kwargs = hidden_popen_kwargs()
+        kwargs = hidden_tree_kwargs()
         kwargs["cwd"] = os.path.dirname(entry)
         try:
             proc = subprocess.Popen(cmd, **kwargs)

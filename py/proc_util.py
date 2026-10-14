@@ -62,6 +62,43 @@ def hidden_popen_kwargs() -> dict:
     }
 
 
+def hidden_tree_kwargs(devnull: bool = True) -> dict:
+    """Popen kwargs that hide a console program AND every console child it spawns.
+
+    Use this for a long-running SERVER (ComfyUI's ``main.py``, an MCP server), not
+    ``hidden_flags`` and not ``hidden_popen_kwargs``:
+
+    * ``CREATE_NO_WINDOW`` gives the child NO console, so a console grandchild has
+      nothing to inherit and Windows hands it a brand-new VISIBLE window.
+    * ``hidden_popen_kwargs`` uses ``no_window_flags``, which returns 0 whenever a
+      terminal is attached - so launching from a terminal popped a real window with
+      the server's own directory as its title. That is exactly what happened to the
+      ComfyUI auto-start.
+
+    ``CREATE_NEW_CONSOLE`` + ``STARTUPINFO(SW_HIDE)`` creates ONE console for the
+    whole tree, hidden, so every descendant inherits the hidden one. Same fix
+    ``mcp_client`` already uses for npx trees. On POSIX it is just the DEVNULL
+    handles.
+    """
+    kwargs: dict = {}
+    if devnull:
+        kwargs["stdin"] = subprocess.DEVNULL
+        kwargs["stdout"] = subprocess.DEVNULL
+        kwargs["stderr"] = subprocess.DEVNULL
+    if os.name != "nt":
+        return kwargs
+    kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+    try:
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = subprocess.SW_HIDE
+        kwargs["startupinfo"] = si
+    except Exception:  # pragma: no cover - STARTUPINFO always exists on Windows
+        # Never risk a VISIBLE console: fall back to NO console at all.
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return kwargs
+
+
 def install_hidden_consoles() -> None:
     """Make every subprocess.Popen in this process hidden unless it sets its own flags."""
     global _installed

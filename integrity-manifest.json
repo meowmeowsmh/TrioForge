@@ -18,7 +18,7 @@
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "be04edeebb7cfb9de549cb60bccbc8fc2ac276eae5d0092bdfdd9df669c59bd5",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
-  "py/comfyui_service.py": "d34e010b186e2d0e691a5dbc0deb7dfc8d7fad9573a9af4badb77a5784074ce0",
+  "py/comfyui_service.py": "e830d0db8881e9a4c52bd309920c75015f087529e4d16eba5ba12593c7f0e84c",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
@@ -48,7 +48,7 @@
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
   "py/port_util.py": "1b5ef482907dfd6a9af216da522bb71b74c2bee66c8344f5d120b74e9781a59c",
-  "py/proc_util.py": "65af30d802f37af4cc1adb8fac229d1f2ea7d16075c4091a47faaf4aa11fcc90",
+  "py/proc_util.py": "e579829d6c84b5af08a117b81bc5d69083554a6a589dc8b71ecf3412908dd09f",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "94b49dd6369857e1bbb04172a5f8da4e0c1c06723e21e686d6350e2536a8b9b5",
   "py/python_support.py": "c5350837040736b1e509a0ddbda84a8dc0c68678265abd953c1dfca0cc5b5bde",
@@ -120,6 +120,6 @@
   "templates/index.html": "108b8ce98327ea966f88e5c01f4c6e478c2ebf489e84dea20042ea8ff2f2a195",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T22:43:02",
- "note": "1.5.6 - ComfyUI .venv finder + verified headless start"
+ "generated": "2026-10-14T23:31:11",
+ "note": "1.5.6 - ComfyUI starts hidden (CREATE_NEW_CONSOLE+SW_HIDE)"
 }
