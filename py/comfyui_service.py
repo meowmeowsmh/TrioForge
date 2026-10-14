@@ -59,9 +59,15 @@ COMFYUI_INSTALL = os.environ.get("COMFYUI_INSTALL", "")
 _APP_DATA = os.environ.get("APPDATA", "")
 _LOCAL_APP_DATA = os.environ.get("LOCALAPPDATA", "")
 
-# Scalar widget types in ComfyUI's /object_info. Anything else (a list == COMBO)
-# is also a widget; connection types (MODEL, CLIP, ...) are not.
-_WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN"}
+# Scalar widget types in ComfyUI's /object_info. "COMBO" belongs here: modern
+# ComfyUI reports a dropdown as the STRING "COMBO" (with its options in the second
+# element), while older builds used a bare LIST of options. Recognising only the
+# list form silently DROPPED every combo widget, which shifted every positional
+# widgets_values by one - ImageScaleToTotalPixels then received
+# megapixels="nearest-exact" (a string into a FLOAT) and upscale_method missing,
+# and ComfyUI answered 400 "Prompt outputs failed validation". A list is still
+# accepted below, because /object_info may use either form.
+_WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
 
 _object_info_cache = None
 
@@ -785,6 +791,53 @@ def _error_from_history(history):
     return None
 
 
+def _validation_error(resp):
+    """Turn ComfyUI's rejected-prompt body into a message that names the problem.
+
+    ComfyUI answers a rejected prompt with ``{"error": ..., "node_errors": ...}``,
+    and each node error names the offending input. ``raise_for_status()`` threw all
+    of it away, so the user saw only "400 Client Error: Bad Request for url:
+    .../prompt" - no clue that it was a missing model file. This keeps ComfyUI's
+    own words, and translates the common "value not in an empty list" case into
+    "missing model file: <name>", which is the thing to act on.
+    """
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001 - not JSON: show the raw text instead
+        text = (getattr(resp, "text", "") or "").strip()
+        return f"ComfyUI rejected the prompt (HTTP {resp.status_code}): {text[:300]}"
+
+    parts = []
+    error = body.get("error") or {}
+    if error.get("message"):
+        parts.append(str(error["message"]))
+    if error.get("details"):
+        parts.append(str(error["details"]))
+
+    for node_id, info in (body.get("node_errors") or {}).items():
+        class_type = info.get("class_type") or "?"
+        for e in (info.get("errors") or []):
+            extra = e.get("extra_info") or {}
+            options = (extra.get("input_config") or [None])[0]
+            value = extra.get("received_value")
+            input_name = str(extra.get("input_name") or "")
+            if e.get("type") == "value_not_in_list" and value and \
+                    isinstance(options, list) and \
+                    (not options or input_name.endswith("_name")):
+                # A *_name input whose value ComfyUI cannot offer is a model file
+                # the user does not have (an empty list, or one holding only a
+                # built-in such as vae's "pixel_space"). Name the file to fetch.
+                parts.append(f"missing model file: {value}")
+                continue
+            detail = e.get("details") or e.get("message") or ""
+            if detail:
+                parts.append(f"node {node_id} ({class_type}): {detail}")
+
+    if not parts:
+        parts.append(f"ComfyUI rejected the prompt (HTTP {resp.status_code})")
+    return " · ".join(dict.fromkeys(str(p) for p in parts))[:800]
+
+
 def run_prompt(prompt, output_path, timeout=900):
     """POST the prompt to ComfyUI, poll for completion, download the media file.
 
@@ -796,6 +849,8 @@ def run_prompt(prompt, output_path, timeout=900):
         json={"prompt": prompt, "client_id": client_id},
         timeout=30,
     )
+    if resp.status_code >= 400:
+        raise RuntimeError(_validation_error(resp))
     resp.raise_for_status()
     prompt_id = resp.json()["prompt_id"]
 
@@ -870,6 +925,19 @@ def select_workflow(workflows, requested=None):
                 if wf["is_z_image"]:
                     return wf
         return None
+    # Default: prefer a PLAIN text-to-image workflow. Returning the first Z-Image
+    # entry picked "Canny to Image (Z-Image-Turbo)" here - a ControlNet workflow
+    # that expects a control image and extra model patches, so a plain "make me a
+    # picture" request used the wrong graph and failed validation. Prefer Turbo
+    # (what /api/image_models offers), then any text-to-image, then Z-Image/FHDR.
+    for wf in workflows:
+        name = (wf.get("name") or "").lower()
+        if wf.get("is_z_image") and "text to image" in name and "turbo" in name:
+            return wf
+    for wf in workflows:
+        name = (wf.get("name") or "").lower()
+        if wf.get("is_z_image") and "text to image" in name:
+            return wf
     for wf in workflows:
         if wf["is_z_image"]:
             return wf

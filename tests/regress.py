@@ -395,6 +395,52 @@ def test_comfyui_paths_cross_platform() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_comfyui_widget_mapping_and_errors() -> None:
+    """A COMBO input is a widget, and a rejected prompt says WHAT is wrong."""
+    _title("comfyui widget mapping + error text")
+    import comfyui_service as cs
+
+    # Modern ComfyUI reports a dropdown as the STRING "COMBO" (options nested in
+    # the second element). Counting only the legacy LIST form dropped the combo
+    # and shifted every positional widgets_values by one, so a live run sent
+    # megapixels="nearest-exact" (a string into a FLOAT) and left upscale_method
+    # missing - ComfyUI answered 400 "Prompt outputs failed validation".
+    modern = {"N": {"input": {"required": {
+        "image": ["IMAGE"],
+        "upscale_method": ["COMBO", {"options": ["nearest-exact", "bilinear"]}],
+        "megapixels": ["FLOAT", {"default": 1.0}],
+    }}}}
+    assert cs._widget_names_for_type(modern, "N") == ["upscale_method", "megapixels"]
+    assert cs._widget_value_map(modern, "N", ["nearest-exact", 1.0]) == \
+        {"upscale_method": "nearest-exact", "megapixels": 1.0}
+
+    # The legacy list-of-options form must still count.
+    legacy = {"N": {"input": {"required": {
+        "mode": [["a", "b"], {}], "strength": ["FLOAT", {}]}}}}
+    assert cs._widget_names_for_type(legacy, "N") == ["mode", "strength"]
+
+    # A 400 body becomes something actionable instead of "400 Client Error".
+    class _Resp:
+        status_code = 400
+
+        def json(self):
+            return {
+                "error": {"message": "Prompt outputs failed validation"},
+                "node_errors": {"1": {"class_type": "CLIPLoader", "errors": [{
+                    "type": "value_not_in_list",
+                    "details": "clip_name: 'qwen_3_4b.safetensors' not in []",
+                    "extra_info": {"input_name": "clip_name", "input_config": [[], {}],
+                                   "received_value": "qwen_3_4b.safetensors"},
+                }]}},
+            }
+
+    msg = cs._validation_error(_Resp())
+    assert "missing model file: qwen_3_4b.safetensors" in msg, msg
+    assert "Prompt outputs failed validation" in msg, msg
+    print("  COMBO counts as a widget; a 400 names the missing file -> OK")
+
+
+# ---------------------------------------------------------------------------
 def test_gpu_probe_never_blocks() -> None:
     """A stale GPU cache must not block its caller.
 
@@ -2397,7 +2443,8 @@ def main() -> int:
              test_agent_read_only_stall,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
              test_plan_load, test_python_floor_calendar, test_comfyui_auto_start,
-             test_comfyui_paths_cross_platform, test_gpu_probe_never_blocks,
+             test_comfyui_paths_cross_platform, test_comfyui_widget_mapping_and_errors,
+             test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
