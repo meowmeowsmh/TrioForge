@@ -18,7 +18,7 @@
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "2205720e87a99e81f979a7af5521997cad1f0b03e2c0a02b003a0c5f83be6ffb",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
-  "py/comfyui_service.py": "5c343f774c463a61e04927d68f754d70ef2b2f3dfdfcc6b60f08961366518f6a",
+  "py/comfyui_service.py": "344adfee5fd1101fa3524bf9c9f0c5c0dbf7d34fbcc00b030f314f2d2bf2d685",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T22:09:33",
- "note": "1.5.6 - fixed emoji mojibake in app.py"
+ "generated": "2026-10-14T22:14:41",
+ "note": "1.5.6 - ComfyUI auto-starts in the background"
 }

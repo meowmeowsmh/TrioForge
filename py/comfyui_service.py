@@ -22,9 +22,12 @@ model files are found live on the machine.
 import json
 import os
 import random
+import shutil
+import subprocess
+import threading
 import time
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 # PEP 810: lazy on 3.15+, an ignored module name on 3.12-3.14 (see app.py).
 __lazy_modules__ = ["requests"]
@@ -39,6 +42,13 @@ try:
 except Exception:                                    # pragma: no cover
     class ProviderError(Exception):
         """Fallback used when providers.llm_providers cannot be imported."""
+
+try:
+    from proc_util import hidden_popen_kwargs
+except Exception:                                    # pragma: no cover
+    def hidden_popen_kwargs() -> dict:
+        """Fallback when proc_util is unavailable: a plain, attached spawn."""
+        return {}
 
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")
 
@@ -83,6 +93,101 @@ def detect_comfyui(timeout=3):
     except Exception as e:  # pragma: no cover - diagnostic only
         info["error"] = str(e)
     return info
+
+
+# --------------------------------------------------------------------------- #
+# Starting the server (auto-start so the user never launches Comfy Desktop)
+# --------------------------------------------------------------------------- #
+
+#: One lock so two simultaneous generation requests do not each spawn a server.
+_start_lock = threading.Lock()
+
+
+def _comfyui_entrypoint(install_root: str) -> str | None:
+    """The ``main.py`` to run, or None when the install has no launchable server."""
+    for cand in (os.path.join(install_root, "main.py"),
+                 os.path.join(install_root, "ComfyUI", "main.py")):
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+def _comfyui_python(install_root: str) -> str | None:
+    """A Python to run ComfyUI: its own venv first, then anything on PATH."""
+    if os.name == "nt":
+        venv_candidates = [
+            os.path.join(install_root, "venv", "Scripts", "python.exe"),
+            os.path.join(install_root, "ComfyUI", "venv", "Scripts", "python.exe"),
+        ]
+    else:
+        venv_candidates = [
+            os.path.join(install_root, "venv", "bin", "python"),
+            os.path.join(install_root, "ComfyUI", "venv", "bin", "python"),
+        ]
+    for cand in venv_candidates:
+        if os.path.isfile(cand):
+            return cand
+    return shutil.which("python3") or shutil.which("python") or None
+
+
+def ensure_comfyui_running(timeout: float = 90) -> bool:
+    """Make sure a ComfyUI server answers on COMFYUI_URL, starting one if needed.
+
+    When nothing is answering, the FIRST caller locates the install, launches
+    ``main.py`` in the background (hidden console on Windows) and polls until
+    ``/system_stats`` responds or the timeout expires. Concurrent callers wait on
+    a lock, so only one server is ever spawned. Every failure path raises with a
+    message that says how to fix it, instead of the old "start Comfy Desktop".
+    """
+    if is_comfyui_running():
+        return True
+
+    with _start_lock:
+        # A concurrent request may have won the race while we waited for the lock.
+        if is_comfyui_running():
+            return True
+
+        install_root = find_comfyui_install()
+        if not install_root:
+            raise RuntimeError(
+                "ComfyUI is not installed. Install Comfy Desktop, or set "
+                "COMFYUI_INSTALL to the folder that contains blueprints/.")
+        entry = _comfyui_entrypoint(install_root)
+        if not entry:
+            raise RuntimeError(
+                f"Found {install_root!r} but no main.py to run. "
+                "Point COMFYUI_INSTALL at the folder that contains main.py.")
+        python = _comfyui_python(install_root)
+        if not python:
+            raise RuntimeError(
+                "No Python found to start ComfyUI. Install Python, or set "
+                "COMFYUI_INSTALL to a venv-based ComfyUI install.")
+
+        try:
+            port = str(urlparse(COMFYUI_URL).port or 8188)
+        except Exception:  # noqa: BLE001 - a malformed URL is not fatal
+            port = "8188"
+        cmd = [python, entry, "--listen", "127.0.0.1", "--port", port]
+
+        kwargs = hidden_popen_kwargs()
+        kwargs["cwd"] = os.path.dirname(entry)
+        try:
+            proc = subprocess.Popen(cmd, **kwargs)
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"Could not start ComfyUI ({python}): {e}")
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if is_comfyui_running(timeout=2):
+                return True
+            if proc.poll() is not None:
+                raise RuntimeError(
+                    f"ComfyUI exited during startup (code {proc.returncode}). "
+                    "Run it once manually to see the error, and check its venv.")
+            time.sleep(1.5)
+        raise RuntimeError(
+            f"ComfyUI did not answer within {int(timeout)}s of starting. It may "
+            "still be loading - try again in a moment.")
 
 
 def get_object_info(force=False):
@@ -737,9 +842,7 @@ def generate_image(prompt, output_path, workflow=None, width=None, height=None,
 
     Returns the workflow entry that was used.
     """
-    if not is_comfyui_running():
-        raise RuntimeError("ComfyUI is not running. Start Comfy Desktop first.")
-
+    ensure_comfyui_running()
     workflows = discover_workflows()
     if not workflows:
         raise RuntimeError("No ComfyUI workflows found. "
@@ -779,8 +882,7 @@ def generate_video(prompt, output_path, workflow=None, width=None, height=None,
 
     Returns the workflow entry that was used.
     """
-    if not is_comfyui_running():
-        raise RuntimeError("ComfyUI is not running. Start Comfy Desktop first.")
+    ensure_comfyui_running()
 
     workflows = discover_video_workflows()
     if not workflows:
@@ -809,8 +911,7 @@ def generate_audio(prompt, output_path, workflow=None, seed=None, duration=None,
     `duration` is the requested length in seconds and is set on the workflow's
     audio-latent node (the one field every audio workflow expresses length with).
     """
-    if not is_comfyui_running():
-        raise RuntimeError("ComfyUI is not running. Start Comfy Desktop first.")
+    ensure_comfyui_running()
 
     workflows = discover_audio_workflows()
     if not workflows:

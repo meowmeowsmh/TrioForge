@@ -314,6 +314,49 @@ def test_python_floor_calendar() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_comfyui_auto_start() -> None:
+    """ComfyUI is auto-started instead of erroring, and failures stay clear."""
+    _title("comfyui auto-start")
+    import unittest.mock as mock
+
+    import comfyui_service as cs
+
+    # Already running -> return immediately, never touch the install.
+    with mock.patch.object(cs, "is_comfyui_running", return_value=True), \
+            mock.patch.object(cs, "find_comfyui_install") as find:
+        assert cs.ensure_comfyui_running() is True
+        find.assert_not_called()
+
+    # Not running + no install -> a message that says how to fix it.
+    with mock.patch.object(cs, "is_comfyui_running", return_value=False), \
+            mock.patch.object(cs, "find_comfyui_install", return_value=None):
+        try:
+            cs.ensure_comfyui_running(timeout=1)
+            raise AssertionError("expected RuntimeError")
+        except RuntimeError as e:
+            assert "not installed" in str(e), e
+
+    # Not running + a real install -> starts main.py, polls until it answers.
+    n = {"i": 0}
+
+    def fake_running(*_a, **_k):
+        n["i"] += 1
+        return n["i"] > 2              # False, False, then True after "start"
+
+    fake_proc = mock.MagicMock()
+    fake_proc.poll.return_value = None
+    with mock.patch.object(cs, "is_comfyui_running", side_effect=fake_running), \
+            mock.patch.object(cs, "find_comfyui_install", return_value="/fake/install"), \
+            mock.patch.object(cs, "_comfyui_entrypoint", return_value="/fake/install/main.py"), \
+            mock.patch.object(cs, "_comfyui_python", return_value="python"), \
+            mock.patch.object(cs, "hidden_popen_kwargs", return_value={}), \
+            mock.patch.object(cs.subprocess, "Popen", return_value=fake_proc) as popen:
+        assert cs.ensure_comfyui_running(timeout=5) is True
+        assert popen.call_count == 1, popen.call_count
+    print("  comfyui auto-starts in the background instead of erroring -> OK")
+
+
+# ---------------------------------------------------------------------------
 def test_gpu_probe_never_blocks() -> None:
     """A stale GPU cache must not block its caller.
 
@@ -2315,8 +2358,8 @@ def main() -> int:
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_agent_read_only_stall,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
-             test_plan_load, test_python_floor_calendar, test_gpu_probe_never_blocks,
-             test_team_directives, test_session_window,
+             test_plan_load, test_python_floor_calendar, test_comfyui_auto_start,
+             test_gpu_probe_never_blocks, test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,
