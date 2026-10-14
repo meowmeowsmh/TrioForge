@@ -98,6 +98,8 @@ These are enforced by review, not by a linter. They are all drawn from the exist
 - **Type hints** where they already exist (`py/common.py`, the storage layer).
 - **Bumping the version:** keep `py/version.py` and `pyproject.toml` in sync — one is read
   at runtime, the other by packaging tools, and `--status` reports the first.
+- **Raising the Python floor** (roughly every two years, before the current floor's
+  end-of-life): follow the checklist in [docs/UPGRADING_PYTHON.md](docs/UPGRADING_PYTHON.md).
 
 ---
 
