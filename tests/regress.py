@@ -346,6 +346,21 @@ async def _tui_checks() -> None:
     b = OpenAICompatBackend("http://127.0.0.1:8080/v1", "gemma", api_key="")
     app = ta.ForgeApp(args, cfg, b,
                       sess_mod.Session(model="gemma", where="local", system="s"))
+
+    # The 250 ms timer must survive running BEFORE the widgets exist. It fires soon
+    # after mount, while Textual is still mounting the screen's children, and
+    # _paint_face's unguarded query_one("#face") then raised NoMatches OUT of the
+    # timer - which escaped run_test() and failed this suite on the slowest CI
+    # runner only (3.10), so it read as a flake for two commits. An app that was
+    # never mounted reproduces it deterministically.
+    unmounted = ta.ForgeApp(args, cfg, b,
+                            sess_mod.Session(model="gemma", where="local", system="s"))
+    unmounted._paint_face()          # used to raise NoMatches
+    unmounted._refresh()
+    unmounted._tick_clock()
+    assert unmounted._paint_widget("#nothing-here", "x") is False, \
+        "painting a missing widget must report False, not raise"
+    print("  the timer survives a tick before the widgets are mounted -> OK")
     async with app.run_test(size=(120, 40)) as pilot:
         # WAIT for the app to finish composing rather than trusting one fixed pause.
         # On a loaded CI runner 0.4 s was not always enough and the suite failed with
@@ -368,15 +383,28 @@ async def _tui_checks() -> None:
         assert keys.region.y + keys.region.height <= 40, keys.region
         print("  all widgets mount; #keys is on screen -> OK")
 
+        async def settle(pred, tries=60, step=0.1):
+            """Wait until ``pred()`` holds - never trust a single fixed pause.
+
+            Every ``await pilot.pause(0.2)`` is a bet that one message round-trip
+            finished inside 200 ms. On the slowest CI job (3.10) that bet lost: the
+            suite failed there twice while 3.12 and 3.14 passed, and one of those
+            was a docs-only commit - so it was a timing race, not a regression.
+            """
+            for _ in range(tries):
+                if pred():
+                    return True
+                await pilot.pause(step)
+            return bool(pred())
+
         # /help lists the terminal-only commands with an example
         app._command("/help")
-        await pilot.pause(0.5)
+        assert await settle(lambda: "/team" in _last_card(app)), _last_card(app)[:160]
         body = _last_card(app)
         for want in ("/team", "/auto", "/route", "/roles", "e.g. /team"):
             assert want in body, want
         app._command("/help /roles")
-        await pilot.pause(0.4)
-        assert "/roles" in _last_card(app)
+        assert await settle(lambda: "/roles" in _last_card(app)), _last_card(app)[:160]
         print("  /help lists /team,/auto,/route,/roles + examples; /help <cmd> -> OK")
 
         # Slash autocomplete: the Claude-Code-style list that appears while a
@@ -401,9 +429,9 @@ async def _tui_checks() -> None:
         menu = app.query_one("#slashmenu", ta.SlashMenu)
         prompt = app.query_one("#prompt", ta.PromptArea)
         prompt.text = "/ro"
-        await pilot.pause(0.2)
-        assert prompt.menu_open and menu.has_class("-on"), "menu did not open on /ro"
-        assert menu.option_count == 2, menu.option_count
+        assert await settle(lambda: prompt.menu_open and menu.option_count == 2), \
+            f"menu did not open on /ro: open={prompt.menu_open} rows={menu.option_count}"
+        assert menu.has_class("-on"), "menu reports open but is not painted"
         assert menu.chosen == "/route", menu.chosen
 
         # Layout: the list sits ABOVE the prompt (so it never covers the line
@@ -421,14 +449,16 @@ async def _tui_checks() -> None:
         chat = app.query_one("#chat")
         settled = (menu.region.y, menu.region.height, chat.region.height)
         for narrowing in ("/s", "/se"):
+            want_rows = len(slash_matches(narrowing))
             prompt.text = narrowing
-            await pilot.pause(0.2)
+            assert await settle(lambda: menu.option_count == want_rows), \
+                f"{narrowing}: menu shows {menu.option_count}, expected {want_rows}"
             moved = (menu.region.y, menu.region.height, chat.region.height)
             assert moved == settled, f"{narrowing} reflowed the layout: {settled} -> {moved}"
 
         prompt.text = "/ro"          # back to two matches for the tests below
-        await pilot.pause(0.2)
-        assert menu.chosen == "/route", menu.chosen
+        assert await settle(lambda: menu.option_count == 2 and menu.chosen == "/route"), \
+            f"menu did not come back to /ro: {menu.option_count} rows, {menu.chosen}"
 
         # down moves the highlight; tab fills the name in WITHOUT running it
         app._menu_key(ta.PromptArea.MenuKey(prompt, "down"))
@@ -441,8 +471,7 @@ async def _tui_checks() -> None:
 
         # escape closes the list for that text only - typing more brings it back
         prompt.text = "/mo"
-        await pilot.pause(0.2)
-        assert prompt.menu_open and menu.has_class("-on"), \
+        assert await settle(lambda: prompt.menu_open and menu.has_class("-on")), \
             (prompt.text, prompt.menu_open, menu.has_class("-on"))
         app._menu_key(ta.PromptArea.MenuKey(prompt, "dismiss"))
         assert not prompt.menu_open, "escape did not close the menu"
@@ -451,17 +480,16 @@ async def _tui_checks() -> None:
         assert not menu.has_class("-on"), "escape left the list painted"
         assert menu.option_count == 0, menu.option_count
         prompt.text = "/mod"
-        await pilot.pause(0.2)
-        assert prompt.menu_open, "typing after escape did not bring the menu back"
+        assert await settle(lambda: prompt.menu_open), \
+            "typing after escape did not bring the menu back"
 
         # enter runs the highlighted command. /help on purpose: a command that
         # opens a modal would move focus and hide a real key-routing bug.
         prompt.text = "/he"
-        await pilot.pause(0.2)
+        assert await settle(lambda: menu.chosen == "/help"), menu.chosen
         app._menu_key(ta.PromptArea.MenuKey(prompt, "run"))
-        await pilot.pause(0.4)
-        assert prompt.text == "", repr(prompt.text)
-        assert not prompt.menu_open, "menu stayed open after running"
+        assert await settle(lambda: prompt.text == "" and not prompt.menu_open), \
+            (prompt.text, prompt.menu_open)
         assert app.focused is prompt, "running left focus off the prompt"
         print("  slash autocomplete filters, completes, escapes, runs -> OK")
 
@@ -469,15 +497,14 @@ async def _tui_checks() -> None:
         # so if TextArea ate them the caret would move / focus would leave the box
         # instead - this is the part that cannot be checked by calling handlers.
         prompt.text = "/ro"
-        await pilot.pause(0.2)
-        assert prompt.menu_open, "menu did not reopen after the run"
+        assert await settle(lambda: prompt.menu_open and menu.chosen == "/route"), \
+            "menu did not reopen after the run"
         await pilot.press("down")
-        await pilot.pause(0.2)
-        assert menu.chosen == "/roles", "down did not move the highlight"
+        assert await settle(lambda: menu.chosen == "/roles"), \
+            "down did not move the highlight"
 
         await pilot.press("tab")                  # tab fills the highlight in
-        await pilot.pause(0.2)
-        assert prompt.text == "/roles", repr(prompt.text)
+        assert await settle(lambda: prompt.text == "/roles"), repr(prompt.text)
         # The finished command keeps its row - this was the reported bug: the
         # list vanished the instant the name was complete.
         assert prompt.menu_open and menu.chosen == "/roles", menu.chosen
@@ -487,42 +514,38 @@ async def _tui_checks() -> None:
         # empty the list. "/se" -> "t" used to make every row disappear. "/set"
         # also matches "/setup", and the SELECTED row must still be "/set".
         prompt.text = "/se"
-        await pilot.pause(0.2)
         # /setup, /search and /set all start with "/se"
-        assert prompt.menu_open and menu.option_count == 3, menu.option_count
+        assert await settle(lambda: prompt.menu_open and menu.option_count == 3), \
+            (prompt.menu_open, menu.option_count)
         # setting .text leaves the caret at column 0; a typist's is at the end
         prompt.move_cursor((0, len(prompt.text)))
         await pilot.press("t")
-        await pilot.pause(0.2)
-        assert prompt.text == "/set", repr(prompt.text)
+        assert await settle(lambda: prompt.text == "/set"), repr(prompt.text)
         assert prompt.menu_open, "the list vanished on a complete command"
         assert menu.chosen == "/set", menu.chosen
         assert menu.option_count == 2, menu.option_count
 
         # escape closes the list and leaves the typed text alone
         prompt.text = "/mo"
-        await pilot.pause(0.2)
-        assert prompt.menu_open, (prompt.text, prompt.menu_open)
+        assert await settle(lambda: prompt.menu_open), (prompt.text, prompt.menu_open)
         await pilot.press("escape")
-        await pilot.pause(0.2)
-        assert not prompt.menu_open and not menu.has_class("-on")
+        assert await settle(lambda: not prompt.menu_open and not menu.has_class("-on")), \
+            (prompt.menu_open, menu.has_class("-on"))
         assert prompt.text == "/mo", "escape wiped the typed text"
 
         # ...and it returns as soon as the text changes again
         prompt.text = "/mod"
-        await pilot.pause(0.2)
-        assert prompt.menu_open, "typing after escape did not reopen the list"
+        assert await settle(lambda: prompt.menu_open), \
+            "typing after escape did not reopen the list"
         await pilot.press("tab")                  # this one takes args -> a space
-        await pilot.pause(0.2)
-        assert prompt.text == "/model ", repr(prompt.text)
+        assert await settle(lambda: prompt.text == "/model "), repr(prompt.text)
 
         prompt.text = "/he"          # enter RUNS the highlighted command
-        await pilot.pause(0.2)
+        assert await settle(lambda: menu.chosen == "/help"), menu.chosen
         await pilot.press("enter")
-        await pilot.pause(0.4)
-        assert prompt.text == "", repr(prompt.text)
+        assert await settle(lambda: prompt.text == "" and not prompt.menu_open), \
+            (prompt.text, prompt.menu_open)
         assert "/help" in _last_card(app) or "commands" in _last_card(app)
-        assert not prompt.menu_open
         print("  slash autocomplete answers real up/down/tab/escape/enter -> OK")
 
         # The sidebar is a FIXED 36 columns, so any value longer than its text
@@ -678,14 +701,16 @@ async def _tui_checks() -> None:
         app._load_plan = svc._plan_load(int(8.17 * GB), int(7.51 * GB),
                                         int(11.96 * GB), int(1.57 * GB), ngl_auto=True)
         app._warn_if_slow_load()
-        await pilot.pause(0.3)
-        assert "has to run on the CPU" in _last_card(app)
+        assert await settle(lambda: "has to run on the CPU" in _last_card(app)), \
+            _last_card(app)[:160]
         app._warned_load = None
         app._load_plan = svc._plan_load(int(6.8 * GB), int(7.51 * GB),
                                         int(11.96 * GB), 0, ngl_auto=True)
         n = len(_cards(app))
         app._warn_if_slow_load()
-        await pilot.pause(0.3)
+        # A NEGATIVE assertion, so there is nothing to poll for - waiting longer is
+        # the only way to mean "and nothing turned up".
+        await pilot.pause(0.6)
         assert len(_cards(app)) == n, "warned about a model that fits"
         print("  split load warns once; a fitting model is left alone -> OK")
 
@@ -693,9 +718,13 @@ async def _tui_checks() -> None:
         chat = app.query_one("#chat", ta.VerticalScroll)
         card = app.query_one("#chat Markdown")
         fits = (chat.virtual_size.width, card.size.width, card.region.x)
+        before_cards = len(_cards(app))
         for n2 in range(30):
             app._add_plain(f"filler {n2}")
-        await pilot.pause(0.7)
+        # Wait for the MOUNTS (which are what trigger the re-layout) instead of
+        # guessing a duration for them.
+        assert await settle(lambda: len(_cards(app)) == before_cards + 30), \
+            f"cards did not mount: {len(_cards(app))} vs {before_cards + 30}"
         over = (chat.virtual_size.width, card.size.width, card.region.x)
         assert fits == over, ("the layout shifts when the scrollbar appears", fits, over)
         sb = chat._vertical_scrollbar

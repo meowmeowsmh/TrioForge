@@ -85,7 +85,7 @@
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
-  "py/tui/textual_app.py": "b5db9675a85ab1c96538ad0e1427a67ecee98fa40da2bdf4b58a754d5b89c4b7",
+  "py/tui/textual_app.py": "1179379d74b77cbc0d5447809183a2a1d1aaacaca7879220ab5bb2922c08aab7",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "a60903fead0fa795a2ea6c81274c7beadeb8b6a25d0268437ccac36b6beae402",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T04:26:48",
+ "generated": "2026-10-14T13:18:07",
  "note": "1.5.6 - final release, all fixes included"
 }

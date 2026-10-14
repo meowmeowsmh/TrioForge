@@ -915,6 +915,26 @@ class ForgeApp(App):
             return f"{s // 60}m {s % 60}s"
         return f"{s // 3600}h {(s % 3600) // 60}m"
 
+    def _paint_widget(self, selector: str, text: str) -> bool:
+        """Update a Static from a TIMER, tolerating one that is not mounted yet.
+
+        ``_tick_clock`` first runs 250 ms after mount and Textual mounts a
+        screen's children asynchronously, so the first tick can land before
+        ``#face`` / ``#activity`` / ``#sidebody`` exist. ``query_one`` then raised
+        ``NoMatches`` out of the timer, which escaped ``run_test()`` and made the
+        regression suite fail intermittently - it only ever hit the slowest runner
+        (Python 3.10), and it looked like a test flake for two commits.
+
+        Returns True when the paint landed, so a caller that caches what it drew
+        only caches it on success - otherwise the next tick would see "already
+        painted", skip, and leave the widget stale for good.
+        """
+        try:
+            self.query_one(selector, Static).update(text)
+        except Exception:  # noqa: BLE001 - cosmetic; the next tick retries
+            return False
+        return True
+
     def _refresh_activity(self) -> None:
         """Redraw the sidebar working line: spinner + label + live timer."""
         state = self._active
@@ -930,7 +950,7 @@ class ForgeApp(App):
         # Only the activity line changes on this tick. Rebuilding the whole
         # sidebar here re-enumerated models at 4 Hz while a turn ran - visible as
         # a stutter on Windows. Update just the tiny activity widget instead.
-        self.query_one("#activity", Static).update(self._activity)
+        self._paint_widget("#activity", self._activity)
 
     def _tick_clock(self) -> None:
         """Interval callback: keep the working timer moving between tokens."""
@@ -962,7 +982,7 @@ class ForgeApp(App):
         # refresh is cheap - unlike the 4 Hz full rebuild this replaced.
         if now - self._sidebar_ts >= 2.0:
             self._sidebar_ts = now
-            self.query_one("#sidebody", Static).update(self._sidebar_fitted())
+            self._paint_widget("#sidebody", self._sidebar_fitted())
 
     # ------------------------------------------------------------------ helpers
     def _short_model(self) -> str:
@@ -1088,8 +1108,8 @@ class ForgeApp(App):
         ])
 
     def _refresh(self) -> None:
-        self.query_one("#sidebody", Static).update(self._sidebar_fitted())
-        self.query_one("#activity", Static).update(self._activity)
+        self._paint_widget("#sidebody", self._sidebar_fitted())
+        self._paint_widget("#activity", self._activity)
 
     def _set_mood(self, mood: str) -> None:
         """Switch the face emotion. Terminal moods (happy/sad) are time-stamped
@@ -1119,11 +1139,14 @@ class ForgeApp(App):
 
     def _paint_face(self) -> None:
         """Redraw the face now rather than on the next tick - the face must not
-        lag 250 ms behind the keypress that changed it."""
+        lag 250 ms behind the keypress that changed it.
+
+        This runs from the timer, so it must tolerate a not-yet-mounted ``#face``;
+        see _paint_widget for why that mattered.
+        """
         text = self._face_now()
-        if text != self._last_face:
+        if text != self._last_face and self._paint_widget("#face", text):
             self._last_face = text
-            self.query_one("#face", Static).update(text)
 
     def _tick_face(self) -> None:
         """Advance the face and redraw it when it changed.

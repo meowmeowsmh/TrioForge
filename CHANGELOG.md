@@ -70,6 +70,13 @@ below, so it carries the same version number on a build that is missing all of i
   60 it used to keep its 36 and leave the chat 24, at 50 it left 14. The resize
   handler reads the event's size rather than the widget's, which was still the old
   one, so the panel used to change one resize late and never come back.
+- **The start-up timer no longer races the first paint.** `_tick_clock` runs 250 ms
+  after mount and Textual mounts a screen's children asynchronously, so on a slow
+  machine the first tick could land before `#face` / `#activity` / `#sidebody`
+  existed — and `_paint_face`'s unguarded `query_one` raised `NoMatches` out of the
+  timer, which surfaces as an app error at start-up. All three timer-driven paints
+  now go through one guarded helper that simply retries on the next tick, and only
+  records what it drew once the paint actually landed.
 
 ### Install and packaging
 
