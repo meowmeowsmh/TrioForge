@@ -708,7 +708,7 @@ TrioForge/
 │   ├── llama_cpp.py                 # stdlib-only llama_cpp driver (terminal)
 │   ├── memory.py · rag.py           # agent memory + document search
 │   ├── comfyui_service.py           # image/video generation via ComfyUI
-│   ├── video_to_text.py · voice_service.py · generate_image.py · ffmpeg_installer.py
+│   ├── video_to_text.py · voice_service.py · ffmpeg_installer.py
 │   ├── personas.py · plugin_loader.py · backup_store.py · edits_store.py
 │   ├── providers/                   # LLM provider definitions
 │   ├── features/                    # notes, corkboard, viewer, model browser, OpenAI API

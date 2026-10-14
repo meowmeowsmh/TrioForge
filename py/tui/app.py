@@ -25,7 +25,7 @@ from . import commands, providers, render, wizard
 from . import theme as T
 from . import __version__
 from .backend import (BackendError, EchoBackend, OpenAICompatBackend,
-                      auto_model, fetch_models, make_backend)
+                      auto_model, fetch_models)
 from .cli import DEFAULT_BASE_URL
 from .session import Session
 

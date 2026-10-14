@@ -2584,7 +2584,7 @@ def stats_endpoint():
 
 @app.route('/api/generate_image', methods=['POST'])
 def generate_image():
-    """Generate an image: local .gguf models go through ComfyUI, HF IDs through Diffusers."""
+    """Generate an image via the Gemini/OpenRouter provider APIs, or ComfyUI for local models."""
     data = request.get_json(silent=True) or {}
     prompt = (data.get('prompt') or '').strip()
     if not prompt:

@@ -22,7 +22,6 @@ import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
-from tkinter import font as tkfont
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
