@@ -2482,6 +2482,15 @@ def comfyui_stop():
     return jsonify(comfyui_service.stop_comfyui())
 
 
+@app.route('/api/comfyui/open_desktop', methods=['POST'])
+def comfyui_open_desktop():
+    """Launch Comfy Desktop directly - no server, no install, just the app."""
+    try:
+        return jsonify(comfyui_service.open_comfyui_desktop())
+    except Exception as e:  # noqa: BLE001 - surface the "not installed" message
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown_all():
     """Stop every TrioForge service and exit the server.

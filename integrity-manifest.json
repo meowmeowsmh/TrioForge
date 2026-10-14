@@ -16,9 +16,9 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "251e69a3a0fa4327d30deeda05d462ad0b7de6732df66b6a5e2489f75b3a7c48",
+  "py/app.py": "f4fd6a7b488a86921f7d1185e17fd2049cc5ad17339ce8195155bb20f741ae59",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
-  "py/comfyui_service.py": "2e3cbd66137abe8093e28858db72bffeafe357ecd4bf46086d41af4ba49e10d9",
+  "py/comfyui_service.py": "a8210737b8dfd54439367f6644680eddd03cd97851ff5da77b65ef67ac0afbc9",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
@@ -117,9 +117,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "108b8ce98327ea966f88e5c01f4c6e478c2ebf489e84dea20042ea8ff2f2a195",
+  "templates/index.html": "0f11e05167817ede57a857e3301f3e28e4bb0a4af073a0016be00db1973ca87d",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-15T02:17:05",
- "note": "1.5.6 - ComfyUI unloads models after each generation"
+ "generated": "2026-10-15T02:27:02",
+ "note": "1.5.6 - Open ComfyUI Desktop button"
 }

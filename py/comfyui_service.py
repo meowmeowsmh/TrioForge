@@ -24,6 +24,7 @@ import os
 import random
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -232,6 +233,50 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
         raise RuntimeError(
             f"ComfyUI did not answer within {int(timeout)}s of starting. It may "
             "still be loading - try again in a moment.")
+
+
+def find_comfyui_desktop():
+    """Path to the Comfy Desktop app executable, or None when not installed.
+
+    Cross-platform: Windows %LOCALAPPDATA%\\Programs\\Comfy Desktop, macOS
+    ~/Applications/ComfyUI.app and /Applications/ComfyUI.app, Linux
+    ~/Applications/ComfyUI. Deliberately separate from find_comfyui_install(),
+    which locates the ENGINE (main.py) - this locates the DESKTOP APP.
+    """
+    if os.name == "nt":
+        exe = "Comfy Desktop.exe"
+        local = os.environ.get("LOCALAPPDATA", "")
+        candidates = [os.path.join(local, "Programs", "Comfy Desktop", exe),
+                      os.path.join(local, "Comfy Desktop", exe)]
+    else:
+        home = os.path.expanduser("~")
+        candidates = [os.path.join(home, "Applications", "ComfyUI.app"),
+                      "/Applications/ComfyUI.app",
+                      os.path.join(home, "Applications", "ComfyUI")]
+    for cand in candidates:
+        if cand and os.path.exists(cand):
+            return cand
+    return None
+
+
+def open_comfyui_desktop():
+    """Launch Comfy Desktop directly, as if double-clicking its icon.
+
+    Returns a status dict. When the desktop app is not installed this raises, so
+    the caller can say so instead of doing nothing.
+    """
+    exe = find_comfyui_desktop()
+    if not exe:
+        raise RuntimeError(
+            "Comfy Desktop app not found. Install it from comfy.org, or set "
+            "COMFYUI_INSTALL to a manual ComfyUI checkout.")
+    if os.name == "nt":
+        os.startfile(exe)  # noqa: B606 - launching the app the user asked for
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", exe])
+    else:
+        subprocess.Popen([exe])
+    return {"ok": True, "path": exe}
 
 
 def stop_comfyui() -> dict:
