@@ -50,6 +50,19 @@ whose tag was cut before the security, terminal-client and performance work belo
   inside the fixed-width panel; they are truncated now (measured in terminal cells,
   so emoji count correctly). Below 80 columns the panel hides and the chat takes the
   full width — at 60 columns it used to leave the transcript just 24.
+- **Local images stopped coming out blurry.** The image panel was sending its own
+  `Steps` value (4) over every workflow's tuned one, and FHDR-Setup is tuned for 20:
+  the same prompt, seed and size gave a soft, featureless mush at 4 and a crisp
+  portrait at 20. Blank now means "use the workflow's own". Generated images are also
+  *shown* full size — a 240px thumbnail rule was capping them and reading as blur.
+- **Your own ComfyUI workflow is the one that runs.** The default used to be
+  Z-Image-Turbo because its name says "turbo", so a workflow you saved yourself was
+  never selected. A saved workflow now wins the auto-detect (audio too), the image
+  panel lists **every** text-to-image workflow the install can run (19 here), the seed
+  used is printed under each image, and the choice is remembered.
+- **ComfyUI Desktop's models are found without opening ComfyUI** — the shared model
+  store Desktop actually uses is now passed to the engine the app starts itself, and a
+  missing model is fetched on demand by ComfyUI's own downloader, named if it cannot be.
 - **`trioforge-web` on Linux/macOS**, and `run.sh` resolves symlinks.
 
 ### 1.5.5 — no console windows, and one command from anywhere
@@ -542,11 +555,15 @@ A workspace scopes a model to one folder (read or read/write) with a thinking-ef
 
 | Panel | Backends |
 |---|---|
-| 🖼️ Images | OpenRouter (52 models), Gemini (Nano Banana / Imagen), ComfyUI (free & offline) |
+| 🖼️ Images | OpenRouter (52 models), Gemini (Nano Banana / Imagen), ComfyUI (free & offline — every text-to-image workflow on disk) |
 | 🎬 Videos | OpenRouter (Kling, Veo 3…), ComfyUI (Wan/LTX, VRAM-hungry) |
-| 🎵 Audio | ComfyUI workflows |
+| 🎵 Audio | ComfyUI workflows (your own saved one runs first) |
 
 **ComfyUI is optional** — cloud backends need nothing installed. Install ComfyUI Desktop ([comfy.org](https://www.comfy.org)) and the app finds it automatically, including the models Desktop keeps in its own shared store, so **you never have to open ComfyUI** — the app starts the engine itself, hidden, when a generation needs it (the 🖥️ button in the Services panel opens Desktop if you want its UI). A workflow whose models are not installed yet fetches them on demand with ComfyUI's own downloader (ComfyUI Manager ships inside Desktop), taking the URL from the workflow's model metadata first; a file it cannot resolve is reported by name instead of failing later. `COMFYUI_URL` points it at a remote install, `COMFYUI_INSTALL` at an explicit one, and `COMFYUI_EXTRA_MODEL_PATHS` at a Desktop `instance-model-paths` YAML if it is somewhere unusual.
+
+**Which model actually runs.** The image panel lists every text-to-image workflow ComfyUI can really run — 19 of them on ComfyUI Desktop, more once you save your own — fastest first, and the default is **a workflow you saved yourself**: a saved workflow is a deliberate choice, a bundled blueprint is only what ComfyUI happened to ship. Keep an uncensored fine-tune on disk and that is what runs, with nothing to select. Choosing one in the dropdown overrides it, and the choice is remembered across reloads. Audio works the same way, preferring your saved audio workflow over the bundled one.
+
+**The panel's controls are overrides, not defaults.** Leave `Steps` and `Seed` blank and each workflow's own tuned values are used — Z-Image-Turbo is tuned for 8 steps and FHDR-Setup for 20, which is why a generic 4 made local images look blurry and soft in a way the same workflow never did in ComfyUI. The seed the app used is printed under every image (`… · FHDR-Setup · seed 802384471`) so a picture you liked can be asked for again; that reproduces exactly only with `TRIOFORGE_COMFYUI_CACHE=ram`, because a seed only repeats while the models stay loaded — the default unloads them after each run to give the RAM back. Generated images are shown at full size and click to open.
 
 ---
 
