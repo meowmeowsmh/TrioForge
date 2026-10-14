@@ -22,6 +22,7 @@ model files are found live on the machine.
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -165,6 +166,66 @@ def _comfyui_python(install_root: str) -> str | None:
     return shutil.which("python3") or shutil.which("python") or None
 
 
+def desktop_model_paths_config():
+    """Comfy Desktop's ``--extra-model-paths-config`` YAML, or ``None``.
+
+    Comfy Desktop does NOT keep models in the install: it keeps them in one
+    SHARED store (``.../Comfy-Desktop/ComfyUI-Shared/models``) and points every
+    ComfyUI instance at it with this file. A ComfyUI started WITHOUT it sees only
+    its own install ``models/`` folder - which for a Desktop install holds
+    nothing but ``put_*_here`` placeholders.
+
+    That is exactly what went wrong here: TrioForge's own headless start up
+    omitted the flag, so the server it spawned reported every model as missing
+    and fetched ~30 GB that already existed one directory away, while the
+    Desktop-started server on the same port found all 151 GB of them. Passing
+    the file through is what makes "it just works without opening ComfyUI" true.
+    """
+    override = os.environ.get("COMFYUI_EXTRA_MODEL_PATHS", "")
+    if override:
+        return override if os.path.exists(override) else None
+
+    roots = []
+    # Windows keeps the config in Roaming; macOS and Linux use the paths below.
+    for base in (_APP_DATA, _LOCAL_APP_DATA):
+        if base:
+            roots.append(os.path.join(base, "Comfy Desktop"))
+    home = os.path.expanduser("~")
+    roots.append(os.path.join(home, "Library", "Application Support", "Comfy Desktop"))
+    roots.append(os.path.join(home, ".config", "Comfy Desktop"))
+
+    newest = None
+    for root in roots:
+        folder = os.path.join(root, "instance-model-paths")
+        if not os.path.isdir(folder):
+            continue
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        for name in names:
+            if not name.lower().endswith((".yaml", ".yml")):
+                continue
+            path = os.path.join(folder, name)
+            try:
+                if newest is None or os.path.getmtime(path) > os.path.getmtime(newest):
+                    newest = path
+            except OSError:
+                continue
+    return newest
+
+
+def shared_models_dir():
+    """Comfy Desktop's shared model store, or ``None`` when it is not in use."""
+    install = find_comfyui_install()
+    if not install:
+        return None
+    # <...>/Comfy-Desktop/ComfyUI-Installs/<instance>/ComfyUI -> <...>/Comfy-Desktop
+    desktop = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(install))))
+    shared = os.path.join(desktop, "ComfyUI-Shared", "models")
+    return shared if os.path.isdir(shared) else None
+
+
 def ensure_comfyui_running(timeout: float = 90) -> bool:
     """Make sure a ComfyUI server answers on COMFYUI_URL, starting one if needed.
 
@@ -210,6 +271,14 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
         # tradeoff is a reload on the next generation, which is what "back to none"
         # costs.
         cmd = [python, entry, "--listen", "127.0.0.1", "--port", port, "--cache-none"]
+
+        # Comfy Desktop keeps its models in a SHARED store and hands each
+        # ComfyUI instance the path to them in this file. Without it the server
+        # we start sees only the install's own models/ folder, which is empty -
+        # so it would report (and refetch) every model that is already installed.
+        extra_paths = desktop_model_paths_config()
+        if extra_paths:
+            cmd += ["--extra-model-paths-config", extra_paths]
 
         kwargs = hidden_tree_kwargs()
         kwargs["cwd"] = os.path.dirname(entry)
@@ -635,6 +704,50 @@ def missing_models(wf, object_info=None):
     return missing
 
 
+def workflow_model_sources(wf):
+    """``{filename: (url, directory)}`` from the workflow's OWN model metadata.
+
+    A node may carry ``properties.models = [{"name", "url", "directory"}, ...]``.
+    That list is the source ComfyUI's frontend uses for its "missing models"
+    download prompt - so a workflow that has it can install itself, and one that
+    does not is invisible to every downloader, ComfyUI Desktop included.
+
+    This matters here: the shipped blueprints declare their models, while the
+    user's ``FHDR-Setup.json`` declares NONE of its four (no ``models`` key at
+    all), which is exactly why nothing ever offered to fetch them. Reading the
+    metadata first means the URL comes from the workflow, not from a list in this
+    file, so a workflow the user adds later heals itself too.
+    """
+    try:
+        with open(wf["path"], encoding="utf-8") as f:
+            doc = json.load(f)
+    except Exception:  # noqa: BLE001 - unreadable workflow declares nothing
+        return {}
+
+    found = {}
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            for key, val in obj.items():
+                if key == "models" and isinstance(val, list):
+                    for entry in val:
+                        if not isinstance(entry, dict):
+                            continue
+                        name, url = entry.get("name"), entry.get("url")
+                        if isinstance(name, str) and name and isinstance(url, str) and url:
+                            directory = entry.get("directory")
+                            found.setdefault(
+                                name, (url, directory if isinstance(directory, str) else ""))
+                else:
+                    walk(val)
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(doc)
+    return found
+
+
 def workflow_ready(wf, object_info=None):
     """True when every model file this workflow names is actually installed.
 
@@ -662,9 +775,11 @@ def workflow_ready(wf, object_info=None):
 #: refers to; the value is (repo_or_bucket_id, path_in_repo_or_None, local
 #: models/ subfolder, kind), where kind is "model" (a model repo) or "bucket" (a
 #: Hugging Face bucket, which hf_hub_download cannot reach). Only files listed
-#: here are ever fetched - an unknown name is reported, never guessed at. Fetching
-#: is opt-in (TRIOFORGE_AUTO_MODELS=1); it is OFF by default so ComfyUI Desktop
-#: owns model management and TrioForge never eats disk space unasked.
+#: here are ever fetched - an unknown name is reported, never guessed at. These
+#: entries are a FALLBACK: a workflow that declares its own ``properties.models``
+#: URL is preferred (see workflow_model_sources), and the URL built here is
+#: handed to ComfyUI's own downloader. Nothing is downloaded ahead of time, so no
+#: models have to sit on disk before a workflow is actually used.
 MODEL_SOURCES = {
     # Z-Image-Turbo
     "z_image_turbo_bf16.safetensors":
@@ -684,10 +799,189 @@ MODEL_SOURCES = {
 
 
 def _models_dir() -> str:
+    """Where a downloaded model belongs.
+
+    Comfy Desktop's SHARED store wins when it exists: that is where Desktop keeps
+    its models, so a file fetched here joins them instead of becoming a second
+    copy in the install's own folder.
+    """
+    shared = shared_models_dir()
+    if shared:
+        return shared
     root = find_comfyui_install()
     if not root:
         raise RuntimeError("ComfyUI install not found, so models cannot be placed.")
     return os.path.join(root, "models")
+
+
+def _model_url(repo, repo_path, filename, kind):
+    """The plain HTTPS URL for one MODEL_SOURCES entry.
+
+    It has to be plain https://huggingface.co/...: ComfyUI-Manager downloads only
+    those itself, and hands anything else to its "download by agent" setting,
+    which is off by default. A bucket URL has no ``/main/`` segment -
+    ``/resolve/main/<file>`` answers 404 for a bucket, ``/resolve/<file>`` works.
+    """
+    if kind == "bucket":
+        return f"https://huggingface.co/buckets/{repo}/resolve/{quote(filename)}"
+    sub = f"/{repo_path}" if repo_path else ""
+    return f"https://huggingface.co/{repo}/resolve/main{sub}/{quote(filename)}"
+
+
+#: ComfyUI's model folders, used only to derive a destination from a download
+#: URL. A workflow's model metadata normally carries "directory"; when it does
+#: not, ComfyUI's own frontend falls back to the URL's parent folder and so do
+#: we - but only for a name in this list. Manager's own fallback for an unknown
+#: type is ``models/etc``, which is not somewhere a model can be used from.
+_MODEL_FOLDERS = (
+    "audio_encoders", "checkpoints", "clip", "clip_vision", "configs",
+    "controlnet", "diffusers", "diffusion_models", "embeddings", "gligen",
+    "hypernetworks", "loras", "model_patches", "photomaker", "style_models",
+    "text_encoders", "unet", "upscale_models", "vae", "vae_approx",
+)
+
+
+def _directory_from_url(url):
+    """The ComfyUI model folder a download URL points into, or ``""``."""
+    try:
+        parts = [p for p in urlparse(url).path.split("/") if p]
+    except Exception:  # noqa: BLE001 - an odd URL implies no folder
+        return ""
+    for part in reversed(parts[:-1]):
+        if part in _MODEL_FOLDERS:
+            return part
+    return ""
+
+
+def _model_roots():
+    """Every folder a model file could live in, most-preferred first.
+
+    ComfyUI reads the install's own ``models/`` AND every Desktop instance's
+    shared base path, so one file can legitimately arrive in either place.
+    Checking only one of them reports a finished download as a failure, which is
+    worse than the download itself - it invites a second copy.
+    """
+    roots = []
+
+    def add(path):
+        if path and path not in roots:
+            roots.append(path)
+
+    add(shared_models_dir())
+
+    config = desktop_model_paths_config()
+    if config:
+        try:
+            with open(config, encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            text = ""
+        # A Desktop base_path already points AT that instance's models folder.
+        for raw in re.findall(r"^\s*base_path:\s*(.+)$", text, re.M):
+            add(raw.strip().strip("'\""))
+
+    install = find_comfyui_install()
+    if install:
+        add(os.path.join(install, "models"))
+    return roots
+
+
+def manager_version(timeout=3):
+    """The version of the ComfyUI-Manager answering on COMFYUI_URL, else ``None``.
+
+    ComfyUI Desktop bundles Manager inside every install, so a version here also
+    answers "is Desktop's own downloader available to us". Manager v4 is what
+    this speaks to: ``/v2/manager/...`` (older v3 builds answer 404 and are
+    treated as absent, and the caller then reports the file instead of guessing).
+    """
+    try:
+        r = requests.get(f"{COMFYUI_URL}/v2/manager/version", timeout=timeout)
+        if r.status_code == 200 and r.text.strip():
+            return r.text.strip()
+    except Exception:  # noqa: BLE001 - no Manager: the caller degrades gracefully
+        pass
+    return None
+
+
+def manager_install_model(filename, url, directory, timeout=1800, log=None):
+    """Have ComfyUI-Manager download ONE model, exactly as its own UI would.
+
+    This is what makes "let ComfyUI Desktop fetch it" real rather than a promise:
+    Manager runs INSIDE ComfyUI, so the download, its progress in ComfyUI's
+    window and the final file placement are all ComfyUI's own - TrioForge only
+    queues the task and waits. Verified against Manager 4.2.2: the task lands in
+    ``/v2/manager/queue/history`` with ``result: success``.
+
+    Returns the destination path; raises when Manager refuses or the file never
+    arrives, always naming the file, so the caller can say which one failed.
+    """
+    def say(msg):
+        if log:
+            try:
+                log(msg)
+            except Exception:  # noqa: BLE001 - logging must not break a download
+                pass
+
+    client_id = "trioforge-" + uuid.uuid4().hex[:8]
+    ui_id = str(uuid.uuid4())
+    task = {
+        "client_id": client_id,
+        "ui_id": ui_id,
+        "name": filename,
+        "type": directory or "default",   # used only when save_path is "default"
+        "save_path": directory or "default",
+        "url": url,
+        "filename": filename,
+    }
+    r = requests.post(f"{COMFYUI_URL}/v2/manager/queue/install_model", json=task, timeout=30)
+    if r.status_code != 200:
+        raise RuntimeError(
+            f"ComfyUI-Manager rejected {filename!r}: HTTP {r.status_code} {r.text[:200]}")
+
+    requests.post(f"{COMFYUI_URL}/v2/manager/queue/start", timeout=30)
+    say(f"ComfyUI-Manager is fetching {filename}")
+
+    def landed():
+        """The file, wherever Manager decided to put it (None while absent)."""
+        for root in _model_roots():
+            candidate = os.path.join(root, directory or "", filename)
+            try:
+                if os.path.getsize(candidate) > 4096:
+                    return candidate
+            except OSError:
+                continue
+        return None
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        found = landed()
+        if found:
+            return found
+        try:
+            status = requests.get(f"{COMFYUI_URL}/v2/manager/queue/status",
+                                  params={"client_id": client_id}, timeout=20).json()
+        except Exception:  # noqa: BLE001 - a dropped poll must not abort the download
+            time.sleep(3)
+            continue
+        if not status.get("total_count") and not status.get("in_progress_count"):
+            break                     # the queue drained: check the file, then report
+        time.sleep(3)
+
+    found = landed()
+    if found:
+        return found
+
+    # The queue is empty and the file is not there: ask Manager what it said.
+    reason = "ComfyUI-Manager did not produce the file"
+    try:
+        history = requests.get(f"{COMFYUI_URL}/v2/manager/queue/history",
+                               params={"client_id": client_id}, timeout=20).json()
+        entry = (history.get("history") or {}).get(ui_id) or {}
+        if entry.get("result"):
+            reason = str(entry["result"])
+    except Exception:  # noqa: BLE001 - the reason is best-effort, the failure is not
+        pass
+    raise RuntimeError(f"ComfyUI-Manager could not fetch {filename}: {reason}")
 
 
 def install_model(filename, log=None):
@@ -727,27 +1021,111 @@ def install_model(filename, log=None):
     return dest
 
 
-def ensure_models(wf, object_info=None, log=None):
+def fetch_needed_models(wf, log=None, timeout=1800):
+    """Fetch a workflow's missing models, and refuse to run without them.
+
+    Reporting the failure HERE is what turns ComfyUI's opaque ``400 Prompt
+    outputs failed validation`` into a sentence that names the file, says who
+    tried to fetch it and what ComfyUI answered. Returns the list of files
+    fetched now (possibly empty), so a caller can mention a long first run.
+    """
+    def say(msg):
+        if log:
+            try:
+                log(msg)
+                return
+            except Exception:  # noqa: BLE001 - logging must never break a run
+                pass
+        print(f"[comfyui] {msg}", file=sys.stderr)
+
+    installed, failed, unknown = ensure_models(wf, log=say, timeout=timeout)
+    problems = [f"{name} ({reason})" for name, reason in failed]
+    problems += [f"{name} (no known download source)" for name in unknown]
+    if problems:
+        raise RuntimeError("ComfyUI cannot run this workflow - missing model "
+                           "file(s): " + "; ".join(problems))
+    for name in installed:
+        say(f"installed {name}")
+    return installed
+
+
+def ensure_models(wf, object_info=None, log=None, timeout=1800):
     """Fetch every model a workflow needs that is not installed yet.
 
-    Returns ``(installed, failed, unknown)`` and never raises for one bad file -
-    the caller decides what to say. OFF by default: fetching is the user's job
-    (ComfyUI Desktop's own "download missing models" does it), so TrioForge never
-    silently eats tens of GB. Set ``TRIOFORGE_AUTO_MODELS=1`` to let the app fetch
-    from MODEL_SOURCES itself.
+    On-demand, never pre-emptive: only the files the SELECTED workflow names are
+    fetched, and only at the moment it is used. Each missing file is resolved to
+    a URL in this order:
+
+      1. the workflow's own ``properties.models`` metadata - the same source
+         ComfyUI's frontend uses for "download missing models";
+      2. MODEL_SOURCES, for the files a workflow does not declare (the user's
+         FHDR-Setup.json declares none of its four).
+
+    and then downloaded by, in this order:
+
+      1. ComfyUI-Manager, which ComfyUI Desktop bundles - so the fetch and the
+         progress are ComfyUI's own, and no models need sit on disk in advance;
+      2. TrioForge's direct Hugging Face downloader, only when no Manager is
+         running AND ``TRIOFORGE_AUTO_MODELS=1`` was set explicitly. Without that
+         the file is reported instead of pulled, so a bare install can never
+         silently eat tens of GB.
+
+    Returns ``(installed, failed, unknown)``: names fetched now, ``(name,
+    reason)`` pairs that were wanted but did not arrive, and names with no known
+    download source at all. Never raises for one bad file - the caller decides
+    what to say.
     """
-    if os.environ.get("TRIOFORGE_AUTO_MODELS", "0") not in ("1", "true", "yes"):
+    missing = missing_models(wf, object_info)
+    if not missing:
         return [], [], []
+
+    declared = workflow_model_sources(wf)
+    manager = manager_version()
+    direct = os.environ.get("TRIOFORGE_AUTO_MODELS", "0") in ("1", "true", "yes")
+
     installed, failed, unknown = [], [], []
-    for name in missing_models(wf, object_info):
-        if name not in MODEL_SOURCES:
-            unknown.append(name)
+    for name in missing:
+        url, directory = declared.get(name, (None, ""))
+        if not url:
+            source = MODEL_SOURCES.get(name)
+            if source:
+                repo, repo_path, directory, kind = source
+                url = _model_url(repo, repo_path, name, kind)
+            else:
+                # No URL from the workflow and no source of our own. ComfyUI
+                # cannot place a file it has no folder for, so report it rather
+                # than let Manager drop it in models/etc where nothing finds it.
+                unknown.append(name)
+                continue
+        if not directory:
+            directory = _directory_from_url(url)
+        if not directory:
+            # Manager's fallback for a folder it cannot work out is models/etc,
+            # where ComfyUI will never look for it - a download that "succeeds"
+            # and changes nothing. Say so instead.
+            failed.append((name, f"cannot tell which ComfyUI model folder {url!r} "
+                                 "belongs in, so it would be installed where "
+                                 "ComfyUI cannot find it"))
             continue
         try:
-            install_model(name, log=log)
+            if manager:
+                manager_install_model(name, url, directory, log=log, timeout=timeout)
+            elif direct:
+                install_model(name, log=log)
+            else:
+                failed.append((name, "no ComfyUI-Manager is running to fetch it "
+                                     "(set TRIOFORGE_AUTO_MODELS=1 to download it "
+                                     "directly from Hugging Face)"))
+                continue
             installed.append(name)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 - one bad file must not stop the rest
             failed.append((name, str(e)))
+
+    if installed:
+        # ComfyUI re-scans its model folders per request, but this module caches
+        # /object_info - without this the very next workflow_ready() call would
+        # still report the file we just installed as missing.
+        get_object_info(force=True)
     return installed, failed, unknown
 
 
@@ -1212,9 +1590,10 @@ def generate_image(prompt, output_path, workflow=None, width=None, height=None,
         raise RuntimeError(f"ComfyUI workflow not found: {workflow!r}")
 
     # Auto-scan: fetch any model this workflow names that is not installed yet, so
-    # the user never has to visit Hugging Face. Unknown names are reported by
-    # ComfyUI's own validation error instead (see _validation_error).
-    ensure_models(wf)
+    # the user never has to visit Hugging Face. ComfyUI's own downloader does the
+    # fetching (ComfyUI-Manager ships inside ComfyUI Desktop); a file it cannot
+    # produce is reported by name instead of becoming a 400 further down.
+    fetch_needed_models(wf)
 
     with open(wf["path"], encoding="utf-8") as f:
         graph = json.load(f)
@@ -1257,7 +1636,7 @@ def generate_video(prompt, output_path, workflow=None, width=None, height=None,
     if wf is None:
         raise RuntimeError(f"ComfyUI video workflow not found: {workflow!r}")
 
-    ensure_models(wf)
+    fetch_needed_models(wf)
 
     with open(wf["path"], encoding="utf-8") as f:
         graph = json.load(f)
@@ -1288,7 +1667,7 @@ def generate_audio(prompt, output_path, workflow=None, seed=None, duration=None,
     if wf is None:
         raise RuntimeError(f"ComfyUI audio workflow not found: {workflow!r}")
 
-    ensure_models(wf)
+    fetch_needed_models(wf)
 
     with open(wf["path"], encoding="utf-8") as f:
         graph = json.load(f)

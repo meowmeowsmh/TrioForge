@@ -499,6 +499,7 @@ All optional environment variables; the app works out of the box.
 | `OLLAMA_BASE_URL` | Ollama server | `http://127.0.0.1:11434` |
 | `GROQ_API_KEY` `DEEPSEEK_API_KEY` `ANTHROPIC_API_KEY` `OPENROUTER_API_KEY` `GEMINI_API_KEY` | Provider keys (also settable in the UI) | *(unset)* |
 | `COMFYUI_URL` / `COMFYUI_INSTALL` | ComfyUI URL / explicit install path | `:8188` / *(auto)* |
+| `COMFYUI_EXTRA_MODEL_PATHS` / `TRIOFORGE_AUTO_MODELS` | ComfyUI Desktop model-paths YAML (auto-found) / download missing models without ComfyUI Manager | *(auto)* / `0` |
 
 Keys are never written to disk.
 
@@ -544,7 +545,7 @@ A workspace scopes a model to one folder (read or read/write) with a thinking-ef
 | 🎬 Videos | OpenRouter (Kling, Veo 3…), ComfyUI (Wan/LTX, VRAM-hungry) |
 | 🎵 Audio | ComfyUI workflows |
 
-**ComfyUI is optional** — cloud backends need nothing installed. Install ComfyUI Desktop ([comfy.org](https://www.comfy.org)) and the app finds it automatically; the one gotcha is missing custom nodes (install ComfyUI Manager → "Install Missing Custom Nodes"). `COMFYUI_URL` points it at a remote install.
+**ComfyUI is optional** — cloud backends need nothing installed. Install ComfyUI Desktop ([comfy.org](https://www.comfy.org)) and the app finds it automatically, including the models Desktop keeps in its own shared store, so **you never have to open ComfyUI** — the app starts the engine itself, hidden, when a generation needs it (the 🖥️ button in the Services panel opens Desktop if you want its UI). A workflow whose models are not installed yet fetches them on demand with ComfyUI's own downloader (ComfyUI Manager ships inside Desktop), taking the URL from the workflow's model metadata first; a file it cannot resolve is reported by name instead of failing later. `COMFYUI_URL` points it at a remote install, `COMFYUI_INSTALL` at an explicit one, and `COMFYUI_EXTRA_MODEL_PATHS` at a Desktop `instance-model-paths` YAML if it is somewhere unusual.
 
 ---
 

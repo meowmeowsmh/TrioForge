@@ -78,6 +78,43 @@ below, so it carries the same version number on a build that is missing all of i
   now go through one guarded helper that simply retries on the next tick, and only
   records what it drew once the paint actually landed.
 
+### ComfyUI
+
+- **ComfyUI Desktop's models are found without opening ComfyUI.** Desktop does not
+  keep models in the install: it keeps them in one shared store
+  (`ComfyUI-Shared/models`, 151 GB here) and points every ComfyUI instance at it
+  with `--extra-model-paths-config`. TrioForge's own headless start did not pass
+  that file, so the server it spawned saw only the install's `models/` folder —
+  which holds nothing but `put_*_here` placeholders — and reported **every**
+  installed model as missing. It now passes the config through, verified by
+  starting a server exactly as the app does and finding all six models, with both
+  shipped workflows `ready=True`. This was the real reason the app "needed ComfyUI
+  open to work", and why ~30 GB was re-downloaded into a second location beside
+  copies that had been installed since June.
+- **Missing models are fetched on demand, by ComfyUI's own downloader.** ComfyUI
+  Desktop bundles ComfyUI-Manager, and its v4 API is now driven directly: the task
+  is queued (`/v2/manager/queue/install_model`), started, and polled to completion,
+  so the download, its progress in ComfyUI and the final placement are all
+  ComfyUI's. Only the files the **selected** workflow names are fetched, and only
+  when it is used — nothing is downloaded ahead of time. Verified live: 234.7 MB
+  `clip_l.safetensors` fetched in 10.1 s, `result: success`.
+- **The URL comes from the workflow when it has one.** A node may carry
+  `properties.models = [{name, url, directory}]`; that is the source ComfyUI's
+  frontend uses for its own "download missing models", and it is now read first
+  (nested subgraphs included), with `MODEL_SOURCES` as the fallback for workflows
+  that declare nothing — `FHDR-Setup.json` declares none of its four, which is
+  exactly why nothing ever offered to fetch them. A file with no source at all is
+  reported, never guessed at.
+- **A missing model says so, by name.** `fetch_needed_models()` reports which file
+  is missing, who tried to fetch it and what they answered, instead of letting the
+  run fail later with ComfyUI's opaque `400 Prompt outputs failed validation`.
+- **A download is not duplicated.** Model destinations prefer Desktop's shared
+  store, and the completion check looks in every folder ComfyUI reads
+  (install `models/`, the shared store, each Desktop base path) — checking one of
+  them reported a finished download as a failure, which invited a second copy.
+  Without a running Manager, direct fetching still needs an explicit
+  `TRIOFORGE_AUTO_MODELS=1`, so a bare install can never silently eat tens of GB.
+
 ### Install and packaging
 
 - **Python 3.12 is now the floor** (was 3.10). 3.10 reached end-of-life and 3.11 is

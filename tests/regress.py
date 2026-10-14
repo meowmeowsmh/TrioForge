@@ -496,7 +496,7 @@ def test_comfyui_workflow_readiness() -> None:
 
 # ---------------------------------------------------------------------------
 def test_comfyui_model_autoscan() -> None:
-    """Missing models are detected, mapped to a source, and never guessed at."""
+    """Missing models are detected, resolved to a URL, and never guessed at."""
     _title("comfyui auto-scan (missing models)")
     import json
     import os
@@ -511,6 +511,15 @@ def test_comfyui_model_autoscan() -> None:
                           "widgets_values": ["absent.safetensors"]}]}, fh)
     fh.close()
     wf = {"path": fh.name, "name": "probe"}
+
+    # Hermetic: this must not care whether a ComfyUI happens to be running on the
+    # machine that runs the suite, and it must never reach the network.
+    real_manager, real_install, real_mgr_install = (
+        cs.manager_version, cs.install_model, cs.manager_install_model)
+    fetched = []
+    cs.manager_version = lambda *a, **k: None
+    cs.manager_install_model = lambda *a, **k: fetched.append(a[:3])
+    cs.install_model = lambda *a, **k: fetched.append(a[:1])
     try:
         assert cs.missing_models(wf, oi) == ["absent.safetensors"]
 
@@ -521,24 +530,146 @@ def test_comfyui_model_autoscan() -> None:
                      "t5xxl_fp8_e4m3fn.safetensors", "FHDR_ComfyUI-Q4_K_M.gguf"):
             assert name in cs.MODEL_SOURCES, name
 
-        # OFF by default: it must NOT fetch (the user's storage is sacred) - the
-        # model files are ComfyUI Desktop's job to download.
-        assert cs.ensure_models(wf, oi) == ([], [], [])
+        # A name with NO known source is REPORTED, never guessed at or fetched.
+        assert cs.ensure_models(wf, oi) == ([], [], ["absent.safetensors"])
+        assert fetched == [], fetched
 
-        # Opt-in ON: an UNKNOWN file is reported, never guessed at (no network).
-        os.environ["TRIOFORGE_AUTO_MODELS"] = "1"
+        # A name WITH a source, but no ComfyUI-Manager running, is reported as
+        # "not fetched" (with the reason) unless direct fetching was opted into:
+        # a bare install must never silently download tens of GB.
+        cs.MODEL_SOURCES["absent.safetensors"] = (
+            "Comfy-Org/z_image_turbo", "split_files/vae", "vae", "model")
         try:
             installed, failed, unknown = cs.ensure_models(wf, oi)
-            assert unknown == ["absent.safetensors"], unknown
-            assert not installed and not failed, (installed, failed)
+            assert not installed and not unknown, (installed, unknown)
+            assert len(failed) == 1 and failed[0][0] == "absent.safetensors", failed
+            assert "TRIOFORGE_AUTO_MODELS" in failed[0][1], failed
+            assert fetched == [], "it must not fetch without opt-in or a Manager"
+
+            # Opt-in direct fetching calls the direct downloader, and the URL is
+            # built from the source (never invented).
+            os.environ["TRIOFORGE_AUTO_MODELS"] = "1"
+            try:
+                assert cs.ensure_models(wf, oi)[0] == ["absent.safetensors"]
+                assert fetched and fetched[0][0] == "absent.safetensors", fetched
+            finally:
+                os.environ.pop("TRIOFORGE_AUTO_MODELS", None)
+            fetched.clear()
+
+            # With ComfyUI-Manager answering, ComfyUI does the download - and it
+            # is handed the URL the WORKFLOW declares, not one we chose.
+            declared = "https://example.invalid/declared.safetensors"
+            with open(fh.name, "w", encoding="utf-8") as f:
+                json.dump({"nodes": [{"type": "UNETLoader",
+                                      "widgets_values": ["absent.safetensors"]}],
+                           "definitions": {"subgraphs": [{"nodes": [
+                               {"properties": {"models": [{
+                                   "name": "absent.safetensors",
+                                   "directory": "unet",
+                                   "url": declared}]}}]}]}}, f)
+            assert cs.workflow_model_sources(wf) == {
+                "absent.safetensors": (declared, "unet")}
+            cs.manager_version = lambda *a, **k: "V4.2.2"
+            assert cs.ensure_models(wf, oi)[0] == ["absent.safetensors"]
+            assert fetched == [("absent.safetensors", declared, "unet")], fetched
         finally:
-            os.environ.pop("TRIOFORGE_AUTO_MODELS", None)
+            cs.MODEL_SOURCES.pop("absent.safetensors", None)
     finally:
+        cs.manager_version, cs.install_model, cs.manager_install_model = (
+            real_manager, real_install, real_mgr_install)
         try:
             os.unlink(fh.name)
         except OSError:
             pass
     print("  missing models map to a source; unknown ones are reported -> OK")
+
+
+# ---------------------------------------------------------------------------
+def test_comfyui_model_paths() -> None:
+    """TrioForge must see the models ComfyUI Desktop actually installed.
+
+    Comfy Desktop keeps models in a SHARED store and points each ComfyUI
+    instance at it with --extra-model-paths-config. Starting ComfyUI without
+    that flag made TrioForge's own headless server report every model missing
+    even though 151 GB of them were installed one directory away - so it
+    re-downloaded ~30 GB into a second location. These are the paths that keep
+    the two in sync, and the flag is what makes "works without opening ComfyUI".
+    """
+    _title("comfyui desktop model paths")
+    import inspect
+    import os
+
+    import comfyui_service as cs
+
+    # Never raises when Desktop is not installed at all (CI, plain ComfyUI).
+    assert cs.desktop_model_paths_config() in (None,) or os.path.exists(
+        cs.desktop_model_paths_config())
+    assert cs.shared_models_dir() in (None,) or os.path.isdir(cs.shared_models_dir())
+    roots = cs._model_roots()
+    assert isinstance(roots, list)
+    assert all(isinstance(r, str) and r for r in roots), roots
+    assert len(set(roots)) == len(roots), f"roots must be de-duplicated: {roots}"
+
+    # The install's own models/ folder is always a candidate, shared store or not.
+    install = cs.find_comfyui_install()
+    if install:
+        assert os.path.join(install, "models") in roots, roots
+
+    # The auto-start command MUST pass the config through, or the server it spawns
+    # cannot see a single installed model.
+    src = inspect.getsource(cs.ensure_comfyui_running)
+    assert "--extra-model-paths-config" in src, "auto-start drops Desktop's model paths"
+    assert "desktop_model_paths_config()" in src, "the flag is never populated"
+
+    # _models_dir prefers the shared store, so a download joins Desktop's models
+    # instead of becoming a second copy in the install.
+    asserted = cs._models_dir()
+    if cs.shared_models_dir():
+        assert asserted == cs.shared_models_dir(), asserted
+    print("  desktop shared store is located, and auto-start passes it on -> OK")
+
+
+# ---------------------------------------------------------------------------
+def test_comfyui_manager_model_install() -> None:
+    """The Manager v2 API is spoken to correctly, and its failures are reported."""
+    _title("comfyui manager model install")
+    import comfyui_service as cs
+
+    # URLs must be plain https://huggingface.co/... - Manager downloads only
+    # those itself, and sends anything else to its "download by agent" setting.
+    url = cs._model_url("Comfy-Org/z_image_turbo", "split_files/vae",
+                        "ae.safetensors", "model")
+    assert url == ("https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main"
+                   "/split_files/vae/ae.safetensors"), url
+    # A bucket has no /main/ segment: /resolve/main/<file> answers 404 there.
+    bucket = cs._model_url("shawen666/FHDR_Uncensored-bucket", None,
+                           "FHDR_ComfyUI-Q4_K_M.gguf", "bucket")
+    assert bucket == ("https://huggingface.co/buckets/shawen666/"
+                      "FHDR_Uncensored-bucket/resolve/FHDR_ComfyUI-Q4_K_M.gguf"), bucket
+    for name in cs.MODEL_SOURCES:
+        if name == "clip_l.safetensors":
+            continue
+        assert " " not in name
+
+    # A missing Manager is "no", not an exception - callers degrade to reporting.
+    assert cs.manager_version(timeout=0.01) in (None, "") or isinstance(
+        cs.manager_version(timeout=0.01), str)
+
+    # The folder a URL implies is only ever taken from real ComfyUI folders:
+    # Manager drops an unknown type into models/etc, where nothing can use it.
+    assert cs._directory_from_url(
+        "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+    ) == "vae"
+    assert cs._directory_from_url("https://example.invalid/a/b/thing.bin") == ""
+    assert cs._directory_from_url("not a url") == ""
+
+    # Every source resolves to a real URL with the filename at the end.
+    for name, (repo, repo_path, folder, kind) in cs.MODEL_SOURCES.items():
+        built = cs._model_url(repo, repo_path, name, kind)
+        assert built.startswith("https://huggingface.co/"), built
+        assert built.endswith(name), built
+        assert folder and "/" not in folder and "\\" not in folder, folder
+    print("  manager URLs, folders and absence handling are all correct -> OK")
 
 
 # ---------------------------------------------------------------------------
@@ -2555,6 +2686,7 @@ def main() -> int:
              test_plan_load, test_python_floor_calendar, test_comfyui_auto_start,
              test_comfyui_paths_cross_platform, test_comfyui_widget_mapping_and_errors,
              test_comfyui_workflow_readiness, test_comfyui_model_autoscan,
+             test_comfyui_model_paths, test_comfyui_manager_model_install,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
