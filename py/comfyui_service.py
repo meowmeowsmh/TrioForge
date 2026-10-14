@@ -1124,8 +1124,13 @@ def ensure_models(wf, object_info=None, log=None, timeout=1800):
     if installed:
         # ComfyUI re-scans its model folders per request, but this module caches
         # /object_info - without this the very next workflow_ready() call would
-        # still report the file we just installed as missing.
-        get_object_info(force=True)
+        # still report the file we just installed as missing. Best-effort: a
+        # caller may install while no server is up, and a stale cache is not
+        # worth an exception after a download that worked.
+        try:
+            get_object_info(force=True)
+        except Exception:  # noqa: BLE001 - no server to refresh from
+            pass
     return installed, failed, unknown
 
 
