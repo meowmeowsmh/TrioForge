@@ -1424,7 +1424,7 @@ def execute_ollama_command_sync(text):
             r = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
             r.raise_for_status()
             models = r.json().get('models', [])
-            return "ðŸ“¦ Installed models:\n" + "\n".join(m['name'] for m in models)
+            return "📦 Installed models:\n" + "\n".join(m['name'] for m in models)
         elif cmd == 'ps':
             result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5,
                                     creationflags=_no_window())
@@ -2646,11 +2646,11 @@ def generate_image():
     url = f'/static/uploads/generated/{out_name}'
     meta_kind = "api" if backend in ('gemini', 'openrouter') else "local"
     if backend == 'gemini':
-        bot_label = "ðŸ–¼ï¸ Image generated via Gemini"
+        bot_label = "🖼️ Image generated via Gemini"
     elif backend == 'openrouter':
-        bot_label = "ðŸ–¼ï¸ Image generated via OpenRouter"
+        bot_label = "🖼️ Image generated via OpenRouter"
     else:
-        bot_label = "ðŸ–¼ï¸ Image generated via ComfyUI"
+        bot_label = "🖼️ Image generated via ComfyUI"
 
     cid = (data.get('conversation_id') or '').strip()
     if cid:
@@ -2783,8 +2783,8 @@ def generate_video():
             try:
                 add_message(cid, "user", prompt)
                 meta_kind = "api" if backend == 'openrouter' else "local"
-                bot_label = ("ðŸŽ¬ Video generated via OpenRouter" if backend == 'openrouter'
-                             else "ðŸŽ¬ Video generated via ComfyUI")
+                bot_label = ("🎬 Video generated via OpenRouter" if backend == 'openrouter'
+                             else "🎬 Video generated via ComfyUI")
                 add_message(cid, "bot", bot_label, meta={"kind": meta_kind, "video": url})
                 return jsonify({'ok': True, 'url': url, 'conversation_id': cid})
             except Exception as e:
@@ -2855,7 +2855,7 @@ def generate_audio():
         if cid:
             try:
                 add_message(cid, "user", prompt)
-                add_message(cid, "bot", "ðŸŽµ Audio generated via ComfyUI",
+                add_message(cid, "bot", "🎵 Audio generated via ComfyUI",
                             meta={"kind": "local", "audio": url})
                 return jsonify({'ok': True, 'url': url, 'conversation_id': cid})
             except Exception as e:
@@ -3216,7 +3216,7 @@ def _conversation_markdown(cid: str) -> str:
     out.append("")
     for m in p["messages"]:
         role = (m.get("role") or "").lower()
-        who = "ðŸ§‘ **You**" if role == "user" else "ðŸ¤– **Assistant**"
+        who = "🧑 **You**" if role == "user" else "🤖 **Assistant**"
         out.append("## " + who + (("  Â·  " + m["ts"]) if m.get("ts") else ""))
         out.append("")
         out.append(m.get("text") or "")
@@ -4669,14 +4669,14 @@ def voice_command():
         try:
             with open(control, "w", encoding="utf-8") as f:
                 f.write("bye\n")
-            return jsonify({"ok": True, "message": "ðŸ›‘ Stop signal sent. The voice agent will shut down within a moment."})
+            return jsonify({"ok": True, "message": "🛑 Stop signal sent. The voice agent will shut down within a moment."})
         except Exception as e:
             return jsonify({"ok": False, "message": "Could not send stop signal: {}".format(e)}), 500
 
     if cmd in ('clear', 'reset'):
         try:
             open(conv, "w", encoding="utf-8").close()
-            return jsonify({"ok": True, "message": "ðŸ§¹ Voice conversation cleared."})
+            return jsonify({"ok": True, "message": "🧹 Voice conversation cleared."})
         except Exception as e:
             return jsonify({"ok": False, "message": "Could not clear: {}".format(e)}), 500
 

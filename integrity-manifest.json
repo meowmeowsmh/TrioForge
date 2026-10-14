@@ -16,7 +16,7 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "37579dad10b331da4cc838e0bec13b46b205e0f41b41f7dac42c20aaf6cb1100",
+  "py/app.py": "2205720e87a99e81f979a7af5521997cad1f0b03e2c0a02b003a0c5f83be6ffb",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "5c343f774c463a61e04927d68f754d70ef2b2f3dfdfcc6b60f08961366518f6a",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T21:37:50",
- "note": "1.5.6 - removed dead Diffusers CLI + unused imports"
+ "generated": "2026-10-14T22:09:33",
+ "note": "1.5.6 - fixed emoji mojibake in app.py"
 }
