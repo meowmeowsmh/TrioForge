@@ -127,6 +127,9 @@ def _comfyui_python(install_root: str) -> str | None:
     the check is valid on Windows, macOS and Linux alike.
     """
     rel_candidates = (
+        (".venv", "bin", "python"),        # .venv - Comfy Desktop's actual name
+        (".venv", "bin", "python3"),
+        (".venv", "Scripts", "python.exe"),
         ("venv", "bin", "python"),        # manual install (macOS / Linux)
         ("venv", "bin", "python3"),
         ("venv", "Scripts", "python.exe"),  # manual install (Windows)

@@ -378,6 +378,12 @@ def test_comfyui_paths_cross_platform() -> None:
                            side_effect=lambda p: p in {j("C:\\c", "venv", "Scripts", "python.exe")}):
         assert cs._comfyui_python("C:\\c") == j("C:\\c", "venv", "Scripts", "python.exe")
 
+    # Comfy Desktop's REAL layout: the venv is named ".venv" (with a dot). This is
+    # what the shipped installer actually uses, and the finder used to miss it.
+    with mock.patch.object(cs.os.path, "isfile",
+                           side_effect=lambda p: p in {j("C:\\c", ".venv", "Scripts", "python.exe")}):
+        assert cs._comfyui_python("C:\\c") == j("C:\\c", ".venv", "Scripts", "python.exe")
+
     # Comfy Desktop embedded python (macOS/Linux): python/bin/python3 in a subfolder.
     with mock.patch.object(cs.os.path, "isfile",
                            side_effect=lambda p: p in {j("/c", "ComfyUI", "main.py"),
