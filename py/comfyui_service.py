@@ -280,6 +280,13 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
         if extra_paths:
             cmd += ["--extra-model-paths-config", extra_paths]
 
+        # --enable-manager turns on the ComfyUI-Manager endpoints that fetching a
+        # missing model needs. Desktop passes it too. Safe to pass either way:
+        # without the manager package ComfyUI logs a warning and disables it
+        # again (handle_comfyui_manager_unavailable), so an install that has no
+        # Manager still starts normally - it just cannot fetch by itself.
+        cmd += ["--enable-manager"]
+
         kwargs = hidden_tree_kwargs()
         kwargs["cwd"] = os.path.dirname(entry)
         try:

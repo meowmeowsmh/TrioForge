@@ -97,7 +97,11 @@ below, so it carries the same version number on a build that is missing all of i
   so the download, its progress in ComfyUI and the final placement are all
   ComfyUI's. Only the files the **selected** workflow names are fetched, and only
   when it is used — nothing is downloaded ahead of time. Verified live: 234.7 MB
-  `clip_l.safetensors` fetched in 10.1 s, `result: success`.
+  `clip_l.safetensors` fetched in 10.1 s, `result: success`. The server TrioForge
+  starts itself now passes `--enable-manager` too, so those endpoints exist even
+  when the app is the one that started the engine — without the manager package
+  ComfyUI logs a warning and starts anyway, so nothing breaks for an install that
+  has none.
 - **The URL comes from the workflow when it has one.** A node may carry
   `properties.models = [{name, url, directory}]`; that is the source ComfyUI's
   frontend uses for its own "download missing models", and it is now read first
