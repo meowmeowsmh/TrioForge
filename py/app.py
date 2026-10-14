@@ -2708,15 +2708,26 @@ def image_models():
     """Image generation is handled entirely by ComfyUI; expose its workflows."""
     options = []
     try:
+        interesting = []
         for wf in comfyui_service.discover_workflows():
-            name = wf["name"].lower()
+            name = (wf.get("name") or "").lower()
             if wf.get("is_fhdr") or (
                 wf.get("is_z_image") and "text to image" in name and "turbo" in name
             ):
-                options.append({
-                    "label": wf["name"],
-                    "value": "comfyui::" + wf["id"],
-                })
+                interesting.append(wf)
+        # Offer only workflows whose model files are actually installed, so picking
+        # one cannot end in "missing model file: ...". Nothing ready (or ComfyUI
+        # not up yet, so we cannot ask): fall back to the full list rather than an
+        # empty dropdown.
+        try:
+            ready = [wf for wf in interesting if comfyui_service.workflow_ready(wf)]
+        except Exception:
+            ready = []
+        for wf in (ready or interesting):
+            options.append({
+                "label": wf["name"],
+                "value": "comfyui::" + wf["id"],
+            })
     except Exception:
         pass
     return jsonify(options)

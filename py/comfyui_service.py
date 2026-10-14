@@ -515,6 +515,58 @@ def _default_for_type(comfy_type):
     return {"STRING": "", "INT": 0, "FLOAT": 0.0, "BOOLEAN": False}.get(comfy_type, "")
 
 
+def _available_choices(object_info, class_type, input_name):
+    """The options ComfyUI offers for a choice input, or None if it is not one.
+
+    A dropdown arrives either as a bare list of options (older builds) or as
+    ``["COMBO", {"options": [...]}]`` (modern). None means "not a choice list" -
+    a FLOAT, a connection type - so callers can tell "unavailable" from "n/a".
+    """
+    spec = (object_info.get(class_type) or {}).get("input", {})
+    for section in ("required", "optional"):
+        val = (spec.get(section) or {}).get(input_name)
+        if not isinstance(val, list) or not val:
+            continue
+        if isinstance(val[0], list):
+            return [str(x) for x in val[0]]
+        if val[0] == "COMBO":
+            opts = (val[1] if len(val) > 1 and isinstance(val[1], dict) else {})
+            opts = opts.get("options")
+            return [str(x) for x in opts] if isinstance(opts, list) else []
+    return None
+
+
+def workflow_ready(wf, object_info=None):
+    """True when every model file this workflow names is actually installed.
+
+    ComfyUI rejects a prompt that references a missing model with ``400`` and a
+    ``node_errors`` list, which the user only sees AFTER clicking generate. That
+    is how picking "FHDR-Setup" (T5 + CLIP-L + a GGUF) failed on an install that
+    only had the Z-Image models. Checking up front means the UI offers the
+    workflows that will really run, and the default never picks one that cannot.
+    """
+    try:
+        with open(wf["path"], encoding="utf-8") as f:
+            graph = json.load(f)
+    except Exception:  # noqa: BLE001 - unreadable workflow counts as not ready
+        return False
+    oi = object_info if object_info is not None else get_object_info()
+    for node in graph.get("nodes", []):
+        class_type = node.get("type")
+        if class_type not in oi:
+            continue                      # frontend-only node (Note, Reroute, ...)
+        named = node.get("widgets_values_named") or {}
+        positional = _widget_value_map(oi, class_type, node.get("widgets_values") or [])
+        for name, value in list(named.items()) + list(positional.items()):
+            name = str(name)
+            if not name.endswith("_name") or not isinstance(value, str) or not value:
+                continue
+            options = _available_choices(oi, class_type, name)
+            if options is not None and value not in options:
+                return False          # the model file is not installed
+    return True
+
+
 def _build_node(node, object_info, links_by_id, exposed_defaults=None):
     """Build one ``prompt``-format node from a workflow node."""
     class_type = node.get("type")
@@ -925,26 +977,34 @@ def select_workflow(workflows, requested=None):
                 if wf["is_z_image"]:
                     return wf
         return None
-    # Default: prefer a PLAIN text-to-image workflow. Returning the first Z-Image
-    # entry picked "Canny to Image (Z-Image-Turbo)" here - a ControlNet workflow
-    # that expects a control image and extra model patches, so a plain "make me a
-    # picture" request used the wrong graph and failed validation. Prefer Turbo
-    # (what /api/image_models offers), then any text-to-image, then Z-Image/FHDR.
-    for wf in workflows:
+    # Default: prefer a workflow that can actually RUN. With only the Z-Image
+    # models installed the FHDR graph (T5 + CLIP-L + a GGUF) fails validation the
+    # instant it is used, so it must never be the default - and returning the
+    # first Z-Image entry picked "Canny to Image" (a ControlNet graph) before
+    # this. Order: a ready text-to-image Turbo, then any ready text-to-image,
+    # then any ready workflow; only if NOTHING is ready fall back to the old
+    # preference order so the error still names what to download.
+    try:
+        ready = [wf for wf in workflows if workflow_ready(wf)]
+    except Exception:  # noqa: BLE001 - no object_info (server down): do not filter
+        ready = []
+    pool = ready or workflows
+
+    for wf in pool:
         name = (wf.get("name") or "").lower()
         if wf.get("is_z_image") and "text to image" in name and "turbo" in name:
             return wf
-    for wf in workflows:
+    for wf in pool:
         name = (wf.get("name") or "").lower()
         if wf.get("is_z_image") and "text to image" in name:
             return wf
-    for wf in workflows:
+    for wf in pool:
         if wf["is_z_image"]:
             return wf
-    for wf in workflows:
+    for wf in pool:
         if wf["is_fhdr"]:
             return wf
-    return workflows[0]
+    return pool[0]
 
 
 def generate_image(prompt, output_path, workflow=None, width=None, height=None,

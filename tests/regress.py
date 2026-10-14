@@ -441,6 +441,60 @@ def test_comfyui_widget_mapping_and_errors() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_comfyui_workflow_readiness() -> None:
+    """A workflow whose models are not installed is never ready."""
+    _title("comfyui workflow readiness")
+    import json
+    import os
+    import tempfile
+
+    import comfyui_service as cs
+
+    # UNETLoader uses the modern "COMBO" form; VAELoader the legacy list form.
+    oi = {
+        "UNETLoader": {"input": {"required": {
+            "unet_name": ["COMBO", {"options": ["have.safetensors"]}]}}},
+        "VAELoader": {"input": {"required": {
+            "vae_name": [["have_vae.safetensors"], {}]}}},
+    }
+    made = []
+
+    def wf(nodes):
+        fh = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                         encoding="utf-8")
+        json.dump({"nodes": nodes}, fh)
+        fh.close()
+        made.append(fh.name)
+        return {"path": fh.name, "name": "probe"}
+
+    try:
+        ok = wf([{"type": "UNETLoader", "widgets_values": ["have.safetensors"]},
+                 {"type": "VAELoader", "widgets_values": ["have_vae.safetensors"]}])
+        assert cs.workflow_ready(ok, oi) is True
+
+        # One missing model file is enough to make the whole workflow unusable -
+        # this is why "FHDR-Setup" (T5 + CLIP-L + a GGUF) must not be offered on an
+        # install that only has the Z-Image models.
+        missing = wf([{"type": "UNETLoader", "widgets_values": ["have.safetensors"]},
+                      {"type": "VAELoader", "widgets_values": ["absent_vae.safetensors"]}])
+        assert cs.workflow_ready(missing, oi) is False
+
+        # Non-model widgets (a float, a combo of modes) must not be judged.
+        oi2 = dict(oi)
+        oi2["ImageScale"] = {"input": {"required": {"megapixels": ["FLOAT", {}],
+                                                     "method": ["COMBO", {"options": ["a"]}]}}}
+        plain = wf([{"type": "ImageScale", "widgets_values": [1.0, "a"]}])
+        assert cs.workflow_ready(plain, oi2) is True
+    finally:
+        for p in made:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+    print("  a workflow with a missing model is not ready -> OK")
+
+
+# ---------------------------------------------------------------------------
 def test_gpu_probe_never_blocks() -> None:
     """A stale GPU cache must not block its caller.
 
@@ -2444,7 +2498,7 @@ def main() -> int:
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
              test_plan_load, test_python_floor_calendar, test_comfyui_auto_start,
              test_comfyui_paths_cross_platform, test_comfyui_widget_mapping_and_errors,
-             test_gpu_probe_never_blocks,
+             test_comfyui_workflow_readiness, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
