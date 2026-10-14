@@ -288,6 +288,32 @@ def test_plan_load() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_python_floor_calendar() -> None:
+    """The support calendar warns, fails and advances the floor on schedule."""
+    _title("python support calendar")
+    import datetime as dt
+
+    from python_support import recommended_floor, support
+
+    # 3.10 is end-of-life: the month after its October 2026 EOL it is gone.
+    assert support(3, 10, dt.date(2026, 11, 1))["eol_passed"] is True
+    # The floor (3.12) has 24 months left today: Oct 2026 -> Oct 2028.
+    info = support(3, 12, dt.date(2026, 10, 14))
+    assert info["months"] == 24 and info["near_eol"] is False, info
+    # A year out it starts nagging; past EOL it is a hard failure.
+    assert support(3, 12, dt.date(2027, 10, 1))["near_eol"] is True
+    assert support(3, 12, dt.date(2028, 11, 1))["eol_passed"] is True
+    # A version nobody recorded reports "unknown", not a made-up date.
+    assert support(3, 16, dt.date(2026, 10, 14))["eol"] is None
+    # The auto-advance: 3.12 today, 3.13 once 3.12 is inside its final year,
+    # 3.14 once 3.12 is gone - the shift the maintainer used to have to remember.
+    assert recommended_floor(dt.date(2026, 10, 14)) == (3, 12)
+    assert recommended_floor(dt.date(2027, 11, 1)) == (3, 13)
+    assert recommended_floor(dt.date(2028, 11, 1)) == (3, 14)
+    print("  floor calendar warns, fails and advances on schedule -> OK")
+
+
+# ---------------------------------------------------------------------------
 def test_gpu_probe_never_blocks() -> None:
     """A stale GPU cache must not block its caller.
 
@@ -2289,8 +2315,8 @@ def main() -> int:
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_agent_read_only_stall,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
-             test_plan_load, test_gpu_probe_never_blocks, test_team_directives,
-             test_session_window,
+             test_plan_load, test_python_floor_calendar, test_gpu_probe_never_blocks,
+             test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,
              test_history_persists, test_router_repair_is_complex,
              test_window_slot_is_exclusive, test_window_ready_means_visible,

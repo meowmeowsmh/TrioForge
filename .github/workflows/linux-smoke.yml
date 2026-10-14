@@ -76,6 +76,10 @@ jobs:
         run: |
           .venv-linux/bin/python tools/undefined-names-check.py py
 
+      - name: Python floor end-of-life check (warns a year out, fails once EOL)
+        run: |
+          .venv-linux/bin/python tools/check_python_floor.py
+
       - name: Integrity check must be clean on a fresh clone
         run: |
           set -e

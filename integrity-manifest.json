@@ -52,6 +52,7 @@
   "py/proc_util.py": "65af30d802f37af4cc1adb8fac229d1f2ea7d16075c4091a47faaf4aa11fcc90",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/providers/llm_providers.py": "94b49dd6369857e1bbb04172a5f8da4e0c1c06723e21e686d6350e2536a8b9b5",
+  "py/python_support.py": "c5350837040736b1e509a0ddbda84a8dc0c68678265abd953c1dfca0cc5b5bde",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "2ca5cd922f6566d28ac12009c2e817ebaec05ccfc59162c5a7d655b996a9522f",
   "py/skills_loader.py": "b23ae52b2daab7c5294a51ef3abf1ede22c7bb3a262c2a808169a2a28567db99",
@@ -120,6 +121,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T13:30:46",
- "note": "1.5.6 - Python 3.12 floor, EOL 3.10 dropped"
+ "generated": "2026-10-14T21:15:24",
+ "note": "1.5.6 - Python EOL calendar check"
 }
