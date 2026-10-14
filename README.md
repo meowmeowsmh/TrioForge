@@ -500,6 +500,7 @@ All optional environment variables; the app works out of the box.
 | `GROQ_API_KEY` `DEEPSEEK_API_KEY` `ANTHROPIC_API_KEY` `OPENROUTER_API_KEY` `GEMINI_API_KEY` | Provider keys (also settable in the UI) | *(unset)* |
 | `COMFYUI_URL` / `COMFYUI_INSTALL` | ComfyUI URL / explicit install path | `:8188` / *(auto)* |
 | `COMFYUI_EXTRA_MODEL_PATHS` / `TRIOFORGE_AUTO_MODELS` | ComfyUI Desktop model-paths YAML (auto-found) / download missing models without ComfyUI Manager | *(auto)* / `0` |
+| `TRIOFORGE_COMFYUI_CACHE` | `ram` keeps models loaded between runs — reproducible seeds, but the RAM stays used | *(unset: unload each run)* |
 
 Keys are never written to disk.
 

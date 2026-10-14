@@ -18,7 +18,7 @@
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "b3374556903f71f65a39a30451f523f31d9acd064f3164647e34b16e9527a1ce",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
-  "py/comfyui_service.py": "2da525cf7f1ab18b4864b57f133dbb6e740ae3a43f0ae1f796bb2aa3ea1dfe8d",
+  "py/comfyui_service.py": "252766efc604821bf7c817fb4f284370444ff1fcbd12e851ff6d8e7e193727a6",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
   "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
@@ -120,6 +120,6 @@
   "templates/index.html": "6a33403564e52a1e6829a956a340724ecc7fa1749f4907e6c570578f97272cd6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-15T03:48:19",
- "note": "1.5.6: workflow-native steps + full-size generated images"
+ "generated": "2026-10-15T04:26:52",
+ "note": "1.5.6: workflow-native prompts/steps, reproducible-seed switch"
 }

@@ -263,14 +263,24 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
             port = str(urlparse(COMFYUI_URL).port or 8188)
         except Exception:  # noqa: BLE001 - a malformed URL is not fatal
             port = "8188"
+        cmd = [python, entry, "--listen", "127.0.0.1", "--port", port]
+
         # --cache-none: unload models after EVERY execution, so RAM/VRAM return to
         # idle once a prompt is done instead of staying pinned to the last model.
         # ComfyUI's default --cache-ram keeps models resident in system RAM (which
         # is the "memory stuck after the prompt" report), and the /free endpoint
-        # only queues an unload for the NEXT run - the flag is the real fix. The
-        # tradeoff is a reload on the next generation, which is what "back to none"
-        # costs.
-        cmd = [python, entry, "--listen", "127.0.0.1", "--port", port, "--cache-none"]
+        # only queues an unload for the NEXT run - the flag is the real fix.
+        #
+        # The measured cost: unloading between runs makes the SAME prompt + seed
+        # produce a DIFFERENT image each time. Two identical requests to a server
+        # WITH this flag gave two different images; the same two requests to a
+        # server without it gave byte-identical files. So a seed only reproduces a
+        # picture when the models stay loaded. TRIOFORGE_COMFYUI_CACHE=ram keeps
+        # them loaded and gets reproducible seeds back, at the cost of the RAM
+        # this flag was added to reclaim.
+        if os.environ.get("TRIOFORGE_COMFYUI_CACHE", "").strip().lower() not in (
+                "ram", "keep", "model"):
+            cmd += ["--cache-none"]
 
         # Comfy Desktop keeps its models in a SHARED store and hands each
         # ComfyUI instance the path to them in this file. Without it the server
@@ -1360,8 +1370,14 @@ def workflow_to_prompt(graph, object_info=None):
 # --------------------------------------------------------------------------- #
 
 def _inject(prompt, prompt_text=None, width=None, height=None, steps=None,
-            seed=None, negative="", model_name=None, length=None):
-    """Fill the user-controllable fields into a converted prompt graph."""
+            seed=None, negative=None, model_name=None, length=None):
+    """Fill the user-controllable fields into a converted prompt graph.
+
+    ``negative=None`` (the default) leaves the workflow's own negative prompt
+    alone, which is what ComfyUI does when it runs that workflow - erasing it made
+    TrioForge produce a different picture from the same workflow run by hand in
+    ComfyUI. Pass a string to override it, or "" to clear it on purpose.
+    """
     if model_name:
         for n, d in prompt.items():
             if d.get("class_type") == "UnetLoaderGGUF" and "unet_name" in d["inputs"]:
@@ -1383,9 +1399,10 @@ def _inject(prompt, prompt_text=None, width=None, height=None, steps=None,
 
     if prompt_text is not None and positive_node:
         prompt[positive_node]["inputs"]["text"] = prompt_text
-    for n in text_nodes:
-        if n != positive_node and "text" in prompt[n]["inputs"]:
-            prompt[n]["inputs"]["text"] = negative
+    if negative is not None:
+        for n in text_nodes:
+            if n != positive_node and "text" in prompt[n]["inputs"]:
+                prompt[n]["inputs"]["text"] = negative
 
     for n, d in prompt.items():
         ct = d.get("class_type")

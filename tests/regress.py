@@ -621,6 +621,12 @@ def test_comfyui_model_paths() -> None:
     assert "--extra-model-paths-config" in src, "auto-start drops Desktop's model paths"
     assert "desktop_model_paths_config()" in src, "the flag is never populated"
 
+    # --cache-none costs reproducibility (measured: with it two identical
+    # requests differ, without it they are byte-identical), so the trade-off has
+    # to stay switchable rather than be decided silently for the user.
+    assert "--cache-none" in src, "the memory fix disappeared"
+    assert "TRIOFORGE_COMFYUI_CACHE" in src, "the cache trade-off is not switchable"
+
     # _models_dir prefers the shared store, so a download joins Desktop's models
     # instead of becoming a second copy in the install. With no ComfyUI at all
     # there is nowhere to put one, and it must say so rather than raise something
@@ -2769,6 +2775,55 @@ def test_image_steps_default_to_the_workflow() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_inject_preserves_workflow_prompts() -> None:
+    """The app must not erase a workflow's own negative prompt.
+
+    FHDR-Setup ships a positive ('nude women ') and a negative ('sex in bed').
+    _inject() replaced the positive - correct - but also blanked the negative to
+    "", so the same workflow produced a different picture here than in ComfyUI,
+    where the authored negative still applies. For a cfg=1 Flux workflow that is
+    nearly invisible; for any workflow with a real negative (LTX, Wan, SDXL) it
+    changes the output. An explicit negative= still overrides, and "" still clears.
+    """
+    _title("the workflow's own prompts survive injection")
+    import comfyui_service as cs
+
+    def two_prompt_graph():
+        return {
+            "3": {"class_type": "KSampler", "inputs": {
+                "seed": 0, "steps": 20, "cfg": 3.5, "sampler_name": "euler",
+                "scheduler": "simple", "denoise": 1, "model": ["1", 0],
+                "positive": ["7", 0], "negative": ["8", 0], "latent_image": ["5", 0]}},
+            "7": {"class_type": "CLIPTextEncode",
+                  "inputs": {"clip": ["9", 0], "text": "the author's sample prompt"}},
+            "8": {"class_type": "CLIPTextEncode",
+                  "inputs": {"clip": ["9", 0], "text": "the author's negative"}},
+        }
+
+    pg = two_prompt_graph()
+    cs._inject(pg, prompt_text="my prompt")
+    assert pg["7"]["inputs"]["text"] == "my prompt", pg["7"]["inputs"]
+    assert pg["8"]["inputs"]["text"] == "the author's negative", pg["8"]["inputs"]
+    print("  the positive is replaced, the workflow's negative is kept -> OK")
+
+    pg = two_prompt_graph()
+    cs._inject(pg, prompt_text="my prompt", negative="my negative")
+    assert pg["8"]["inputs"]["text"] == "my negative", pg["8"]["inputs"]
+    pg = two_prompt_graph()
+    cs._inject(pg, prompt_text="my prompt", negative="")
+    assert pg["8"]["inputs"]["text"] == "", pg["8"]["inputs"]
+    print("  an explicit negative overrides, and \"\" still clears -> OK")
+
+    # Nothing else about the sampler may be touched when not asked for.
+    pg = two_prompt_graph()
+    cs._inject(pg, prompt_text="my prompt")
+    assert pg["3"]["inputs"]["steps"] == 20, pg["3"]["inputs"]
+    assert pg["3"]["inputs"]["cfg"] == 3.5, pg["3"]["inputs"]
+    assert pg["3"]["inputs"]["sampler_name"] == "euler", pg["3"]["inputs"]
+    print("  steps, cfg and sampler are left as the workflow authored them -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -2780,6 +2835,7 @@ def main() -> int:
              test_comfyui_workflow_readiness, test_comfyui_model_autoscan,
              test_comfyui_model_paths, test_comfyui_manager_model_install,
              test_image_steps_default_to_the_workflow,
+             test_inject_preserves_workflow_prompts,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

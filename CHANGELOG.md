@@ -80,6 +80,20 @@ below, so it carries the same version number on a build that is missing all of i
 
 ### Image quality: why local images looked blurry
 
+- **The workflow's own negative prompt survives.** FHDR-Setup ships a positive
+  (`nude women`) and a negative (`sex in bed`); the app replaced the positive and
+  also blanked the negative, so the same workflow produced a different picture
+  here than in ComfyUI, where the authored negative still applies. Nearly
+  invisible on a cfg=1 Flux workflow, but it changes the output of anything with
+  a real negative. An explicit `negative=` still overrides, and `""` still clears.
+- **Reproducible seeds are now a choice, because the memory fix costs them.**
+  Measured: two byte-identical requests (same prompt, seed, steps, size) to a
+  server running with `--cache-none` gave two *different* images, while the same
+  two requests to a server without it gave byte-identical files — unloading the
+  models between runs is what breaks it. `--cache-none` is what fixed the "RAM
+  stays stuck after a prompt" report, so it stays the default;
+  `TRIOFORGE_COMFYUI_CACHE=ram` keeps models loaded instead and gets
+  reproducibility back, at the cost of that RAM.
 - **The Steps box no longer overrides the workflow's own step count.** The image
   panel sent its own default (4) for *every* workflow, and 4 steps is
   under-denoised for anything that is not a 4-step distilled model. Measured with
