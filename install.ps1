@@ -31,6 +31,20 @@ if (-not (Test-Path $py)) {
     $py = "python"
     Write-Host "  deps: no .venv yet - using '$py' from PATH"
 }
+
+# Enforce the floor pyproject.toml declares (requires-python >=3.12). 3.10 is
+# end-of-life and 3.11 is security-only, and the llama.cpp / ffmpeg installers now
+# call tarfile.extractall(filter="data"), which only exists on 3.12+. Without this
+# check the deps install fine and `forge` fails later with a message that says
+# nothing about Python being the reason.
+& $py -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    $found = (& $py -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null)
+    Write-Host "  python: $py is $found, but TrioForge needs Python 3.12 or newer." -ForegroundColor Red
+    Write-Host "          (3.10 reached end-of-life; 3.11 is security-only.)"
+    Write-Host "          Install a newer Python, then re-run this script."
+    exit 1
+}
 # A venv made by uv - which uv.lock implies, and which this repo's own .venv is -
 # contains NO pip: `python -m pip` dies with "No module named pip". That is a
 # native command's non-zero exit, so $ErrorActionPreference = "Stop" does not stop

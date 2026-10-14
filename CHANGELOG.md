@@ -82,10 +82,10 @@ below, so it carries the same version number on a build that is missing all of i
 
 - **Python 3.12 is now the floor** (was 3.10). 3.10 reached end-of-life and 3.11 is
   in security-only maintenance, so neither is supported any more: `pyproject.toml`
-  and `uv.lock` declare `requires-python >=3.12`, `run.sh` and `deps.sh` refuse
-  anything older up front with a message that says so, and the CI matrix tests
-  **3.12, 3.13 and 3.14** instead of 3.10/3.12/3.14. 3.12 was already what the
-  Docker image shipped.
+  and `uv.lock` declare `requires-python >=3.12`, `run.sh`, `deps.sh` and
+  `install.ps1` refuse anything older up front with a message that says so, and the
+  CI matrix tests **3.12, 3.13 and 3.14** instead of 3.10/3.12/3.14. 3.12 was
+  already what the Docker image shipped.
 - **The dead version branches are gone.** Both archive extractors guarded
   `tarfile.extractall(..., filter="data")` behind `sys.version_info >= (3, 12)` and
   fell back to an unfiltered `extractall` below it — now that 3.12 is required, the

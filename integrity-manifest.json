@@ -13,7 +13,7 @@
   "docker/docker-entrypoint.sh": "7c969f55b0b410e12f9369d5081364021f5ee92ecc11893d371c0dd833818f7b",
   "forge": "0bb4110b1816684f4ced58de2a5967a7e67410f1bcb944e249718261bd4f1d46",
   "forge.cmd": "39870b66c4b64f9a4ec5b43d0d6b907d6956faea4751e67a19d9748c5dd0084d",
-  "install.ps1": "4099d7b5d7627187626feeed351d426673bc364d406749de9d23cbf68973e085",
+  "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
   "py/app.py": "dbdf8d0e1f0ddeeaeff3c3c9b98d2e29e2d9ccacd70c6299e61e3df68d1c69bd",
@@ -120,6 +120,6 @@
   "templates/index.html": "77e94da2a50719f81abcb798b0343121c3d8ff3b8724397493aa3450d35a2c8f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-14T13:29:28",
+ "generated": "2026-10-14T13:30:46",
  "note": "1.5.6 - Python 3.12 floor, EOL 3.10 dropped"
 }
