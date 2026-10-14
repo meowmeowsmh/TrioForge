@@ -662,8 +662,9 @@ def workflow_ready(wf, object_info=None):
 #: refers to; the value is (repo_or_bucket_id, path_in_repo_or_None, local
 #: models/ subfolder, kind), where kind is "model" (a model repo) or "bucket" (a
 #: Hugging Face bucket, which hf_hub_download cannot reach). Only files listed
-#: here are ever fetched - an unknown name is reported, never guessed at. Set
-#: TRIOFORGE_AUTO_MODELS=0 to turn the fetching off.
+#: here are ever fetched - an unknown name is reported, never guessed at. Fetching
+#: is opt-in (TRIOFORGE_AUTO_MODELS=1); it is OFF by default so ComfyUI Desktop
+#: owns model management and TrioForge never eats disk space unasked.
 MODEL_SOURCES = {
     # Z-Image-Turbo
     "z_image_turbo_bf16.safetensors":
@@ -730,10 +731,12 @@ def ensure_models(wf, object_info=None, log=None):
     """Fetch every model a workflow needs that is not installed yet.
 
     Returns ``(installed, failed, unknown)`` and never raises for one bad file -
-    the caller decides what to say. This is what makes ComfyUI self-scanning: a
-    workflow becomes usable without the user visiting Hugging Face by hand.
+    the caller decides what to say. OFF by default: fetching is the user's job
+    (ComfyUI Desktop's own "download missing models" does it), so TrioForge never
+    silently eats tens of GB. Set ``TRIOFORGE_AUTO_MODELS=1`` to let the app fetch
+    from MODEL_SOURCES itself.
     """
-    if os.environ.get("TRIOFORGE_AUTO_MODELS", "1") in ("0", "false", "no"):
+    if os.environ.get("TRIOFORGE_AUTO_MODELS", "0") not in ("1", "true", "yes"):
         return [], [], []
     installed, failed, unknown = [], [], []
     for name in missing_models(wf, object_info):

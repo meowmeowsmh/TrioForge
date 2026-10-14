@@ -521,15 +521,16 @@ def test_comfyui_model_autoscan() -> None:
                      "t5xxl_fp8_e4m3fn.safetensors", "FHDR_ComfyUI-Q4_K_M.gguf"):
             assert name in cs.MODEL_SOURCES, name
 
-        # An UNKNOWN file is reported, never guessed at (so this touches no network).
-        installed, failed, unknown = cs.ensure_models(wf, oi)
-        assert unknown == ["absent.safetensors"], unknown
-        assert not installed and not failed, (installed, failed)
+        # OFF by default: it must NOT fetch (the user's storage is sacred) - the
+        # model files are ComfyUI Desktop's job to download.
+        assert cs.ensure_models(wf, oi) == ([], [], [])
 
-        # The opt-out must stop fetching entirely.
-        os.environ["TRIOFORGE_AUTO_MODELS"] = "0"
+        # Opt-in ON: an UNKNOWN file is reported, never guessed at (no network).
+        os.environ["TRIOFORGE_AUTO_MODELS"] = "1"
         try:
-            assert cs.ensure_models(wf, oi) == ([], [], [])
+            installed, failed, unknown = cs.ensure_models(wf, oi)
+            assert unknown == ["absent.safetensors"], unknown
+            assert not installed and not failed, (installed, failed)
         finally:
             os.environ.pop("TRIOFORGE_AUTO_MODELS", None)
     finally:
