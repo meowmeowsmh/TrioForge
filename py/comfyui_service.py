@@ -536,6 +536,39 @@ def _available_choices(object_info, class_type, input_name):
     return None
 
 
+def _referenced_models(graph, object_info):
+    """Every model file a workflow names: ``(class_type, input_name, value)``."""
+    out = []
+    for node in graph.get("nodes", []):
+        class_type = node.get("type")
+        if class_type not in object_info:
+            continue                      # frontend-only node (Note, Reroute, ...)
+        named = node.get("widgets_values_named") or {}
+        positional = _widget_value_map(object_info, class_type,
+                                       node.get("widgets_values") or [])
+        for name, value in list(named.items()) + list(positional.items()):
+            name = str(name)
+            if name.endswith("_name") and isinstance(value, str) and value:
+                out.append((class_type, name, value))
+    return out
+
+
+def missing_models(wf, object_info=None):
+    """The model files this workflow names that ComfyUI does not have installed."""
+    try:
+        with open(wf["path"], encoding="utf-8") as f:
+            graph = json.load(f)
+    except Exception:  # noqa: BLE001 - unreadable workflow: nothing to report
+        return []
+    oi = object_info if object_info is not None else get_object_info()
+    missing = []
+    for class_type, name, value in _referenced_models(graph, oi):
+        options = _available_choices(oi, class_type, name)
+        if options is not None and value not in options and value not in missing:
+            missing.append(value)
+    return missing
+
+
 def workflow_ready(wf, object_info=None):
     """True when every model file this workflow names is actually installed.
 
@@ -551,20 +584,102 @@ def workflow_ready(wf, object_info=None):
     except Exception:  # noqa: BLE001 - unreadable workflow counts as not ready
         return False
     oi = object_info if object_info is not None else get_object_info()
-    for node in graph.get("nodes", []):
-        class_type = node.get("type")
-        if class_type not in oi:
-            continue                      # frontend-only node (Note, Reroute, ...)
-        named = node.get("widgets_values_named") or {}
-        positional = _widget_value_map(oi, class_type, node.get("widgets_values") or [])
-        for name, value in list(named.items()) + list(positional.items()):
-            name = str(name)
-            if not name.endswith("_name") or not isinstance(value, str) or not value:
-                continue
-            options = _available_choices(oi, class_type, name)
-            if options is not None and value not in options:
-                return False          # the model file is not installed
+    for class_type, name, value in _referenced_models(graph, oi):
+        options = _available_choices(oi, class_type, name)
+        if options is not None and value not in options:
+            return False          # the model file is not installed
     return True
+
+
+#: Where a missing model file comes from, so a workflow can HEAL ITSELF rather
+#: than failing with "missing model file: X". Keyed by the file name a workflow
+#: refers to; the value is (repo_or_bucket_id, path_in_repo_or_None, local
+#: models/ subfolder, kind), where kind is "model" (a model repo) or "bucket" (a
+#: Hugging Face bucket, which hf_hub_download cannot reach). Only files listed
+#: here are ever fetched - an unknown name is reported, never guessed at. Set
+#: TRIOFORGE_AUTO_MODELS=0 to turn the fetching off.
+MODEL_SOURCES = {
+    # Z-Image-Turbo
+    "z_image_turbo_bf16.safetensors":
+        ("Comfy-Org/z_image_turbo", "split_files/diffusion_models", "diffusion_models", "model"),
+    "qwen_3_4b.safetensors":
+        ("Comfy-Org/z_image_turbo", "split_files/text_encoders", "text_encoders", "model"),
+    "ae.safetensors":
+        ("Comfy-Org/z_image_turbo", "split_files/vae", "vae", "model"),
+    # FLUX family (what the FHDR workflow needs)
+    "clip_l.safetensors":
+        ("comfyanonymous/flux_text_encoders", None, "text_encoders", "model"),
+    "t5xxl_fp8_e4m3fn.safetensors":
+        ("comfyanonymous/flux_text_encoders", None, "text_encoders", "model"),
+    "FHDR_ComfyUI-Q4_K_M.gguf":
+        ("shawen666/FHDR_Uncensored-bucket", None, "unet", "bucket"),
+}
+
+
+def _models_dir() -> str:
+    root = find_comfyui_install()
+    if not root:
+        raise RuntimeError("ComfyUI install not found, so models cannot be placed.")
+    return os.path.join(root, "models")
+
+
+def install_model(filename, log=None):
+    """Fetch ONE model file from MODEL_SOURCES into its ComfyUI folder.
+
+    Returns the destination path. Raises when the file has no known source or the
+    download fails, so the caller can name exactly which one did not arrive.
+    """
+    source = MODEL_SOURCES.get(filename)
+    if not source:
+        raise RuntimeError(f"no known download source for {filename!r}")
+    repo, repo_path, dest_sub, kind = source
+    dest = os.path.join(_models_dir(), dest_sub, filename)
+    if os.path.exists(dest) and os.path.getsize(dest) > 1024 * 1024:
+        return dest
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+    def say(msg):
+        if log:
+            try:
+                log(msg)
+            except Exception:  # noqa: BLE001 - logging must not break a download
+                pass
+
+    if kind == "bucket":
+        from huggingface_hub import download_bucket_files
+        say(f"downloading {filename} from bucket {repo}")
+        download_bucket_files(repo, [(repo_path or filename, dest)])
+    else:
+        from huggingface_hub import hf_hub_download
+        say(f"downloading {filename} from {repo}")
+        staging = os.path.join(_models_dir(), "_staging")
+        got = hf_hub_download(repo_id=repo, filename=filename,
+                              subfolder=repo_path, local_dir=staging)
+        os.replace(got, dest)
+    say(f"{filename} -> models/{dest_sub}/")
+    return dest
+
+
+def ensure_models(wf, object_info=None, log=None):
+    """Fetch every model a workflow needs that is not installed yet.
+
+    Returns ``(installed, failed, unknown)`` and never raises for one bad file -
+    the caller decides what to say. This is what makes ComfyUI self-scanning: a
+    workflow becomes usable without the user visiting Hugging Face by hand.
+    """
+    if os.environ.get("TRIOFORGE_AUTO_MODELS", "1") in ("0", "false", "no"):
+        return [], [], []
+    installed, failed, unknown = [], [], []
+    for name in missing_models(wf, object_info):
+        if name not in MODEL_SOURCES:
+            unknown.append(name)
+            continue
+        try:
+            install_model(name, log=log)
+            installed.append(name)
+        except Exception as e:  # noqa: BLE001
+            failed.append((name, str(e)))
+    return installed, failed, unknown
 
 
 def _build_node(node, object_info, links_by_id, exposed_defaults=None):
@@ -1023,6 +1138,11 @@ def generate_image(prompt, output_path, workflow=None, width=None, height=None,
     if wf is None:
         raise RuntimeError(f"ComfyUI workflow not found: {workflow!r}")
 
+    # Auto-scan: fetch any model this workflow names that is not installed yet, so
+    # the user never has to visit Hugging Face. Unknown names are reported by
+    # ComfyUI's own validation error instead (see _validation_error).
+    ensure_models(wf)
+
     with open(wf["path"], encoding="utf-8") as f:
         graph = json.load(f)
 
@@ -1064,6 +1184,8 @@ def generate_video(prompt, output_path, workflow=None, width=None, height=None,
     if wf is None:
         raise RuntimeError(f"ComfyUI video workflow not found: {workflow!r}")
 
+    ensure_models(wf)
+
     with open(wf["path"], encoding="utf-8") as f:
         graph = json.load(f)
 
@@ -1092,6 +1214,8 @@ def generate_audio(prompt, output_path, workflow=None, seed=None, duration=None,
     wf = select_audio_workflow(workflows, workflow)
     if wf is None:
         raise RuntimeError(f"ComfyUI audio workflow not found: {workflow!r}")
+
+    ensure_models(wf)
 
     with open(wf["path"], encoding="utf-8") as f:
         graph = json.load(f)
