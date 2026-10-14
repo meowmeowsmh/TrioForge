@@ -2688,6 +2688,87 @@ def test_csrf_protection() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_image_steps_default_to_the_workflow() -> None:
+    """A blank Steps box must leave the workflow's own step count alone.
+
+    FHDR-Setup is tuned for 20 steps, Z-Image-Turbo for 8. The UI used to send its
+    own default (4) for EVERY workflow, and 4 steps on a Flux-family GGUF is
+    under-denoised: measured with the same prompt and seed at 1024x1024, 4 steps
+    produced a soft, featureless mush and 20 steps a crisp, detailed portrait -
+    reproduced on two seeds. That is the "why is my picture blurry?" report: the
+    same workflow run in ComfyUI uses its own 20 and looks right.
+    """
+    _title("image steps fall back to the workflow's own")
+    import re
+    from pathlib import Path
+
+    import app as forge_app
+    import comfyui_service as cs
+
+    # The graph-level contract: steps 0/None changes nothing, an explicit value does.
+    # Built as a ComfyUI prompt graph (what _inject() is handed), so this needs no
+    # workflow file and no ComfyUI install - it runs the same way on CI.
+    def sampler_graph():
+        return {"3": {"class_type": "KSampler", "inputs": {
+            "seed": 0, "steps": 20, "cfg": 1.0, "sampler_name": "euler",
+            "scheduler": "simple", "denoise": 1, "model": ["1", 0],
+            "positive": ["2", 0], "negative": ["4", 0], "latent_image": ["5", 0]}}}
+
+    for absent in (0, None):
+        pg = sampler_graph()
+        cs._inject(pg, prompt_text="x", steps=absent, seed=1)
+        got = [d["inputs"]["steps"] for d in pg.values()
+               if d.get("class_type") == "KSampler"]
+        assert got == [20], f"steps={absent!r} must not override the workflow: {got}"
+        assert pg["3"]["inputs"]["seed"] == 1, pg["3"]["inputs"]["seed"]
+    pg = sampler_graph()
+    cs._inject(pg, prompt_text="x", steps=7, seed=1)
+    got = [d["inputs"]["steps"] for d in pg.values()
+           if d.get("class_type") == "KSampler"]
+    assert got == [7], f"an explicit step count must still win: {got}"
+    print("  blank leaves the workflow's steps; an explicit value wins -> OK")
+
+    # The endpoint's own default must be "unspecified", not a number of its own.
+    seen = {}
+    real_gen = cs.generate_image
+
+    def spy(prompt, output_path, **kw):
+        seen.update(kw)
+        raise RuntimeError("stop before doing any real work")
+
+    cs.generate_image = spy
+    try:
+        with forge_app.app.test_client() as client:
+            token = _csrf_ok(client)
+            r = client.post("/api/generate_image",
+                            json={"prompt": "probe", "backend": "comfyui"},
+                            headers={"X-CSRF-Token": token})
+            assert r.status_code != 200, r.status_code
+            assert seen.get("steps") == 0, f"no steps field must mean 'own steps': {seen}"
+            seen.clear()
+            client.post("/api/generate_image",
+                        json={"prompt": "probe", "backend": "comfyui", "steps": 25},
+                        headers={"X-CSRF-Token": token})
+            assert seen.get("steps") == 25, seen
+    finally:
+        cs.generate_image = real_gen
+    print("  the API treats an absent steps field as 'use the workflow's' -> OK")
+
+    # The markup must not hard-code a step count again, and a generated image must
+    # not be displayed at the 240px attachment-thumbnail size: that rule's
+    # max-height survived the inline max-width, so a 1024px render appeared 240px
+    # wide and read as blurry next to the same file shown full size in ComfyUI.
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    steps_input = re.search(r'id="imageSteps"[^>]*>', html)
+    assert steps_input, "the Steps box is gone"
+    assert "value=" not in steps_input.group(0), steps_input.group(0)
+    assert ".msg img.tf-gen" in html, "generated images lost their own size rule"
+    assert 'class="tf-gen"' in html, "the generated image is not tagged for sizing"
+    print("  no hard-coded step default; generated images get their own size -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -2698,6 +2779,7 @@ def main() -> int:
              test_comfyui_paths_cross_platform, test_comfyui_widget_mapping_and_errors,
              test_comfyui_workflow_readiness, test_comfyui_model_autoscan,
              test_comfyui_model_paths, test_comfyui_manager_model_install,
+             test_image_steps_default_to_the_workflow,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

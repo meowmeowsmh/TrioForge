@@ -2629,7 +2629,12 @@ def generate_image():
     model = (data.get('model') or 'Tongyi-MAI/Z-Image-Turbo').strip()
     width = int(data.get('width') or 1024)
     height = int(data.get('height') or 1024)
-    steps = int(data.get('steps') or 4)
+    # 0 means "not specified": the workflow's OWN step count is used. Forcing a
+    # generic value here is what made images blurry - FHDR-Setup is tuned for 20
+    # steps and the UI's 4 turned a sharp portrait into an undefined mush (same
+    # prompt, same seed, same size: 4 steps soft, 20 steps crisp). Z-Image-Turbo
+    # wants 8. The workflow author's value is the sane default; the box overrides.
+    steps = int(data.get('steps') or 0)
 
     # Free VRAM first: unload the current Ollama model so the image model fits.
     try:
@@ -2817,7 +2822,7 @@ def generate_video():
             _, media_name = comfyui_service.generate_video(
                 prompt, tmp, workflow=workflow or None,
                 width=int(data.get('width') or 1280), height=int(data.get('height') or 720),
-                length=int(data.get('length') or 81), steps=int(data.get('steps') or 20),
+                length=int(data.get('length') or 81), steps=int(data.get('steps') or 0),
                 timeout=1800,
             )
             ext = _safe_media_ext(os.path.splitext(media_name)[1], ".mp4")

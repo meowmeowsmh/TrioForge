@@ -563,6 +563,15 @@ html.view-embed #liveCodePanel {
     border-radius: 12px; display: block; margin-bottom: 10px;
     border: 1px solid rgba(255,255,255,0.1);
 }
+/* A generated image is the whole point of the message, so show it - 240px is the
+   attachment-thumbnail size. The inline max-width:100% on a generated <img> could
+   never undo this rule's max-height, so a 1024x1024 render was displayed 240x240
+   and read as "blurry" beside the very same file shown full size in ComfyUI. */
+.msg img.tf-gen {
+    max-height: min(78vh, 1600px);
+    width: auto;
+    cursor: zoom-in;
+}
 .msg .file-chip {
     display: inline-flex; align-items: center; gap: 6px;
     background: rgba(13,17,23,0.6);
@@ -1770,7 +1779,7 @@ video.tf-video {
         <option value="4K">4K</option>
       </select>
       <label style="font-size:12px; color:#8b949e;">Steps</label>
-      <input id="imageSteps" type="number" value="4" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+      <input id="imageSteps" type="number" min="1" placeholder="auto" title="Leave blank to use the workflow's own step count (recommended). Z-Image-Turbo is tuned for 8, FHDR-Setup for 20 - forcing 4 here is what made images blurry." style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <label style="font-size:12px; color:#8b949e;">Guidance</label>
       <input id="imageGuidance" type="number" step="0.5" value="2.5" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <span style="font-size:11px; color:#8b949e;">Type your prompt below and press Enter.</span>
@@ -1793,7 +1802,7 @@ video.tf-video {
       <label style="font-size:12px; color:#8b949e;">Sec</label>
       <input id="videoDuration" type="number" value="8" min="2" max="30" style="width:56px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <label style="font-size:12px; color:#8b949e;">Steps</label>
-      <input id="videoSteps" type="number" value="20" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
+      <input id="videoSteps" type="number" min="1" placeholder="auto" title="Leave blank to use the workflow's own step count" style="width:64px; padding:6px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px;">
       <span style="font-size:11px; color:#8b949e;">Type your prompt below and press Enter.</span>
     </div>
 
@@ -3893,7 +3902,7 @@ function generateVideoChat(text) {
             width: parseInt(document.getElementById('videoWidth').value) || 1280,
             height: parseInt(document.getElementById('videoHeight').value) || 720,
             length: parseInt(document.getElementById('videoLength').value) || 81,
-            steps: parseInt(document.getElementById('videoSteps').value) || 20,
+            steps: parseInt(document.getElementById('videoSteps').value) || 0,
             conversation_id: currentConv || ''
         };
         fetch('/api/generate_video', {
@@ -4713,7 +4722,7 @@ function generateImageChat(text) {
             height: parseInt(document.getElementById('imageHeight').value) || 1024,
             aspect_ratio: document.getElementById('imageAspect') ? document.getElementById('imageAspect').value : '1:1',
             image_size: document.getElementById('imageSize') ? document.getElementById('imageSize').value : '1K',
-            steps: parseInt(document.getElementById('imageSteps').value) || 4,
+            steps: parseInt(document.getElementById('imageSteps').value) || 0,
             conversation_id: currentConv || ''
         };
         fetch('/api/generate_image', {
@@ -4730,7 +4739,7 @@ function generateImageChat(text) {
                 return;
             }
             if (d.conversation_id) currentConv = d.conversation_id;
-            bodyEl.innerHTML = '<img src="' + d.url + '" style="max-width:100%; border-radius:12px; border:1px solid #333; cursor:pointer;" onclick="window.open(this.src)" title="Click to open full size">';
+            bodyEl.innerHTML = '<img class="tf-gen" src="' + d.url + '" style="border-radius:12px; border:1px solid #333; cursor:pointer;" onclick="window.open(this.src)" title="Click to open full size">';
             var ts = botDiv.querySelector('.ts');
             if (ts) ts.textContent = new Date().toLocaleTimeString();
             smoothScrollToBottom();

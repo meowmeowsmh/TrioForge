@@ -78,6 +78,24 @@ below, so it carries the same version number on a build that is missing all of i
   now go through one guarded helper that simply retries on the next tick, and only
   records what it drew once the paint actually landed.
 
+### Image quality: why local images looked blurry
+
+- **The Steps box no longer overrides the workflow's own step count.** The image
+  panel sent its own default (4) for *every* workflow, and 4 steps is
+  under-denoised for anything that is not a 4-step distilled model. Measured with
+  the same prompt, seed and 1024×1024 size, FHDR-Setup — which is tuned for 20
+  steps — produced a soft, featureless mush at 4 and a crisp, detailed portrait at
+  20, reproduced on two seeds; Z-Image-Turbo is tuned for 8. Nothing about this was
+  visible in ComfyUI, which uses each workflow's own value, so the same workflow
+  looked right there and wrong here. An empty Steps box now means "use the
+  workflow's", and only a number you type overrides it (video steps likewise).
+- **Generated images are shown at their real size.** `.msg img` caps
+  `max-height` at 240px for attachment thumbnails, and the inline
+  `max-width:100%` on a generated image could not undo it — so a 1024×1024 render
+  was *displayed* 240×240 and read as blurry beside the identical file shown full
+  size in ComfyUI. Generated images now get their own rule (up to 78vh) and stay
+  click-to-open-full-size.
+
 ### ComfyUI
 
 - **ComfyUI Desktop's models are found without opening ComfyUI.** Desktop does not
