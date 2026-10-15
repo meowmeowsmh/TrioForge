@@ -120,6 +120,6 @@
   "templates/index.html": "40cfc33d4ca77188b6c7c6c123891fb5ea8088785e6f401aaee950b68f08d769",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-15T04:59:36",
- "note": "1.5.6: auto-detect prefers the user-saved workflow"
+ "generated": "2026-10-16T04:41:38",
+ "note": "1.5.6: Discord connector plugin (isolated bridge)"
 }

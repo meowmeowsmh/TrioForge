@@ -2369,10 +2369,12 @@ def test_shipped_plugins_load() -> None:
 
     ids = sorted(r["id"] for r in results)
     assert "gmail" in ids and "obsidian" in ids, ids
+    assert "discord" in ids, ids
 
     # Both connectors reach the agent as callable tools.
     names = {t["function"]["name"] for t in plugin_loader.collect_tools()}
-    for expected in ("gmail_status", "obsidian_status", "obsidian_read"):
+    for expected in ("gmail_status", "obsidian_status", "obsidian_read",
+                     "discord_send", "discord_status"):
         assert expected in names, "{} missing from {}".format(expected, sorted(names))
 
     # The connector card fetches these for EVERY connector, so a missing one is a
@@ -2995,6 +2997,73 @@ def test_auto_detect_prefers_the_users_own_workflow() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_discord_plugin_stays_isolated() -> None:
+    """The Discord plugin must never do Discord's work inside the app.
+
+    Plugins run in-process with full permissions, so a bot that hangs, loops or
+    crashes there takes TrioForge with it. The plugin is therefore a shim: the bot
+    lives in its own process and this file only spawns it with a timeout. Each
+    assertion below is one of the properties that keeps that true, because losing
+    any single one silently removes the isolation:
+
+      * no network client is imported here at all
+      * the child call is bounded by a timeout
+      * the bot token is never asked for, stored, or read by the app
+      * a broken/missing bridge comes back as an error string, not an exception
+    """
+    _title("discord plugin is an isolated shim")
+    import os
+    import tempfile
+
+    import plugin_loader
+    from flask import Flask
+
+    plugin_loader.load_all(Flask("regress-discord"))
+    mod = plugin_loader._mods["discord"]
+    src = open(mod.__file__, encoding="utf-8").read()
+
+    for banned in ("import requests", "import socket", "import discord",
+                   "urllib.request", "http.client"):
+        assert banned not in src, f"the plugin must not {banned} - that is the bridge's job"
+    assert "subprocess.run" in src and "timeout=timeout" in src, \
+        "the child call must be a bounded subprocess.run"
+    print("  no network client in-process; the child call is timeout-bounded -> OK")
+
+    # The token belongs to the bridge's own .env. If the app ever starts collecting
+    # it, it would land in TrioForge's config (and therefore in its backups).
+    keys = {f["key"] for f in mod.MANIFEST.get("credentials", [])}
+    assert keys == {"bridge_dir"}, f"unexpected credential fields: {keys}"
+    # It may NAME the variable in the setup guide - that is how the user is told
+    # what to call it in .env - but it must never read or store it.
+    token_lines = [ln.strip() for ln in src.splitlines() if "DISCORD_TOKEN" in ln]
+    assert token_lines, "the guide should tell the user the variable name"
+    for line in token_lines:
+        assert "environ" not in line and "get(" not in line, \
+            f"the plugin must not read the bot token: {line}"
+    print("  the app stores a folder path, never the bot token -> OK")
+
+    # A missing or broken bridge is a REPORTED string, not a raised exception.
+    real_path = mod._SETTINGS_PATH
+    tmp = tempfile.mkdtemp(prefix="discord-plugin-test-")
+    mod._SETTINGS_PATH = os.path.join(tmp, "discord_bridge.json")
+    try:
+        mod._save_settings({"bridge_dir": os.path.join(tmp, "nowhere")})
+        st = mod._status()
+        assert st["connected"] is False and st.get("error"), st
+        assert mod.dispatch("discord_send", {"text": "hi"}).get("error")
+        assert mod.dispatch("discord_status", {}).get("connected") is False
+        assert mod.connect_info().get("error")
+        # An unset folder must not raise either.
+        mod._save_settings({"bridge_dir": ""})
+        assert mod._status()["connected"] is False
+    finally:
+        mod._SETTINGS_PATH = real_path
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("  a missing bridge is reported, never raised -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3009,6 +3078,7 @@ def main() -> int:
              test_inject_preserves_workflow_prompts,
              test_image_panel_choices,
              test_auto_detect_prefers_the_users_own_workflow,
+             test_discord_plugin_stays_isolated,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

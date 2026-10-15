@@ -132,6 +132,25 @@ below, so it carries the same version number on a build that is missing all of i
   size in ComfyUI. Generated images now get their own rule (up to 78vh) and stay
   click-to-open-full-size.
 
+### Discord connector — a card in the app, the bot in its own process
+
+- **The bot does not run inside TrioForge.** Plugins are trusted code in the app
+  process, and the app's own docs say a crashing plugin "crashes the app" — so the
+  one component you should expect to break (a chat bot: rate limits, dead tokens,
+  stuck sockets) is not implemented as one. `plugins/discord.py` is a shim: it
+  spawns `bridge.py` as a separate process with a hard timeout and turns every
+  failure into a message. A crash or a hang out there cannot take the app down, and
+  a test pins that (no network client in-process, the child call is bounded, the
+  token is never read, a missing bridge is reported rather than raised).
+- **No Discord secret enters the app.** The card asks for the bridge folder only; the
+  bot token stays in the bridge's own `.env`, so there is nothing to leak, nothing to
+  include in a backup, and nothing for TrioForge to revoke — "Disconnect" says so
+  plainly instead of pretending it signed something out.
+- The bridge posts only to allow-listed channels, is rate-capped, marks existing
+  messages as seen so it never answers your history back at you, and keeps inbound
+  **off** unless `ALLOW_INBOUND=1` *and* a user id is whitelisted — the combination
+  that otherwise lets anyone who can message the bot drive your model.
+
 ### ComfyUI
 
 - **ComfyUI Desktop's models are found without opening ComfyUI.** Desktop does not

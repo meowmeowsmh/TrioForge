@@ -168,3 +168,6 @@ tests/.tmp/
 # Local WebKitGTK Docker build (unrelated to TrioForge — personal experiment)
 webkit-build/
 
+
+# Discord bridge plugin settings (a folder path only - the bot token lives in the bridge's own .env).
+json_configuration/discord_bridge.json

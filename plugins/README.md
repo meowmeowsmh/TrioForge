@@ -146,6 +146,40 @@ Credentials and tokens written by a connector are stored in
 
 ---
 
+## The Discord connector — and why its bot lives elsewhere
+
+`plugins/discord.py` adds a **Discord** card to 🔌 Connectors and two tools
+(`discord_send`, `discord_status`). It does **not** talk to Discord itself.
+
+That is deliberate. Plugins run in-process with full permissions, and the line above
+says what that means: a plugin that crashes takes the app with it. A chat bot is the
+one component you should expect to break — a rate limit, a dead token, a stuck
+socket — so the work happens in a **separate process**:
+
+```
+plugins/discord.py            in the app: a card, two tools, no network code
+        |  spawns, with a hard timeout
+        v
+<bridge folder>\bridge.py     out of process: Discord, rate limits, the token
+```
+
+Consequences worth knowing:
+
+- A crash, a hang or a Discord outage in the bridge comes back as an **error string**.
+  The app keeps running; the card says what went wrong.
+- The card asks only for the **bridge folder**. The bot token stays in the bridge's
+  own `.env`, so no Discord secret is stored in TrioForge's config — or in a backup
+  of it. "Disconnect" clears the folder and says the token is yours to revoke.
+- The bridge refuses to post to any channel not listed in
+  `DISCORD_ALLOWED_CHANNEL_IDS`, and inbound is off unless `ALLOW_INBOUND=1` **and**
+  `DISCORD_ALLOWED_USER_IDS` lists you. Without both, anyone who could message the
+  bot could drive the model.
+
+Setup: the card's **guide** (7 steps), or the longer walkthrough in the bridge
+folder's `README.md`.
+
+---
+
 # Setting up the Gmail connector (the full walkthrough)
 
 `plugins/gmail.py` lets the agent read your Gmail. The sign-in itself is one
@@ -158,7 +192,7 @@ about 5 minutes, once, ever.
 2. Top-left **project selector → New project** → name it anything (e.g. `TrioForge`) → **Create**
 3. **Note the project ID / number** — you will need to stay in this same project
    for every step below. (The number also appears at the start of your Client ID,
-   e.g. `976694364481-cvq6…`.)
+   e.g. `123456789012-abc123…`.)
 
 > ⚠️ **The #1 mistake:** doing a later step in a *different* project. If the
 > Gmail API is enabled in project A but the OAuth client lives in project B, the
