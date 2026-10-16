@@ -3064,6 +3064,278 @@ def test_discord_plugin_stays_isolated() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_daily_briefing_plugin() -> None:
+    """The daily briefing writes ONE pin a day, from whatever is connected.
+
+    The properties that matter, each one a way this feature could quietly go wrong:
+
+      * it is shipped disabled and loads without side effects
+      * a source that is not connected is left out - not nagged about every morning
+      * a source that is connected but failing is reported inside the pin
+      * rewriting the same day updates the pin in place (never a second one)
+      * a model is optional polish: if it fails, the plain pin is still written
+      * old briefings are pruned only if nobody touched them
+      * the scheduler obeys the hour, the switch, the existing pin and the retry cap
+
+    Everything runs against a temp database and temp config: the user's real board
+    and settings are never opened for writing.
+    """
+    _title("daily briefing plugin")
+    import importlib.util
+    import json
+    import tempfile
+    from datetime import datetime, timedelta
+
+    from flask import Flask
+
+    repo = Path(__file__).resolve().parent.parent
+    path = repo / "plugins" / "_daily_briefing.py"
+    assert path.is_file(), "the plugin must ship (disabled, behind the underscore)"
+    assert not (repo / "plugins" / "daily_briefing.py").exists(), \
+        "it must ship DISABLED - enabling is the user's choice"
+    spec = importlib.util.spec_from_file_location("briefing_probe", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)          # loading must not start a thread or touch a file
+    assert mod.MANIFEST["name"] == "daily-briefing"
+    assert [t["function"]["name"] for t in mod.TOOLS] == ["daily_briefing_make"]
+    print("  ships disabled; loads without side effects -> OK")
+
+    from features import cork_board as cork
+    real_db, real_archive = cork.DB_PATH, cork.backup_store.archive_pin
+    real_cfg, real_claim = mod._CFG_PATH, mod._CLAIM_PATH
+    real_tool, real_env = mod._tool, os.environ.get("TRIOFORGE_NO_BRIEFING")
+    with tempfile.TemporaryDirectory() as tmp:
+        cork.DB_PATH = os.path.join(tmp, "notes.db")
+        cork.init_db()
+        cork.backup_store.archive_pin = lambda *a, **k: None   # no backups of test pins
+        mod._CFG_PATH = os.path.join(tmp, "daily_briefing.json")
+        mod._CLAIM_PATH = os.path.join(tmp, ".claim")
+        os.environ["TRIOFORGE_NO_BRIEFING"] = "1"               # register() starts no thread
+        try:
+            now = datetime(2026, 10, 17, 8, 0)
+            old = (now - timedelta(days=60)).isoformat()
+            fresh = (now - timedelta(days=2)).isoformat()
+            long_body = "An idea worth coming back to, long enough to count."
+            cork.upsert_pin("p-old", {"title": "Old idea", "content": long_body}, now=old)
+            cork.upsert_pin("p-old2", {"title": "Older idea", "content": long_body}, now=old)
+            cork.upsert_pin("p-fresh", {"title": "Fresh", "content": long_body}, now=fresh)
+            cork.upsert_pin("p-short", {"title": "Short", "content": "tiny"}, now=old)
+            cork.upsert_pin("p-img", {"title": "Photo", "content": long_body, "type": "image"}, now=old)
+            cork.upsert_pin("p-tagged", {"title": "Prior", "content": long_body,
+                                         "tags": ["briefing"]}, now=old)
+
+            calls = []
+            sources = {
+                "calendar_status": {"connected": True},
+                "gmail_status": {"connected": True},
+                "calendar_list_events": {"events": [
+                    {"summary": "Standup", "start": "2026-10-17T09:30:00+08:00", "location": "Zoom"},
+                    {"summary": "Holiday", "start": "2026-10-17"}]},
+                "gmail_list_inbox": {"messages": [
+                    {"from": '"Ada Lovelace" <ada@example.com>', "subject": "Notes", "unread": True},
+                    {"from": "bob@example.com", "subject": "Already read", "unread": False}]},
+            }
+
+            def fake_tool(name, args=None):
+                calls.append((name, args))
+                return sources.get(name)
+            mod._tool = fake_tool
+
+            # --- content -------------------------------------------------
+            title, body, n, notes = mod.build(mod._cfg(), use_model=False, now=now)
+            assert title == "☀️ Briefing — Sat 17 Oct", title
+            assert "09:30 — Standup (Zoom)" in body and "all day — Holiday" in body, body
+            assert "**Ada Lovelace** — Notes" in body and "Already read" not in body, body
+            assert body.count("**Old idea**") + body.count("**Older idea**") == 2, body
+            for absent in ("Fresh", "Short", "Photo", "Prior"):
+                assert "**{}**".format(absent) not in body, "{} must not be revisited".format(absent)
+            assert n == 3 and notes == [], (n, notes)
+            assert mod.build(mod._cfg(), False, now)[1] == body, \
+                "the same day must pick the same pins"
+            print("  calendar + unread mail + idle pins, filtered correctly -> OK")
+
+            # --- sources: absent vs failing --------------------------------
+            sources["gmail_status"] = {"connected": False}
+            calls.clear()
+            body = mod.build(mod._cfg(), False, now)[1]
+            assert "Unread" not in body and "Skipped" not in body, body
+            assert "gmail_list_inbox" not in [c[0] for c in calls], \
+                "a disconnected source must not even be queried"
+            sources["gmail_status"] = {"connected": True}
+            sources["gmail_list_inbox"] = {"error": "token expired " + "x" * 200}
+            _, body, _, notes = mod.build(mod._cfg(), False, now)
+            assert notes and notes[0].startswith("Gmail (token expired") and len(notes[0]) < 100, notes
+            assert "_Skipped: Gmail" in body, body
+            sources["gmail_list_inbox"] = {"messages": []}
+            assert "No unread mail." in mod.build(mod._cfg(), False, now)[1]
+            print("  disconnected = silent, failing = reported, empty = said so -> OK")
+
+            # --- nothing at all --------------------------------------------
+            sources.update(calendar_status={"connected": False}, gmail_status={"connected": False})
+            for pid in ("p-old", "p-old2"):
+                cork.delete_pin_row(pid)
+            body = mod.build(mod._cfg(), False, now)[1]
+            assert "Nothing connected yet" in body, body
+            print("  a bare install still gets an explanatory pin -> OK")
+
+            # --- one pin per day, rewritten in place -----------------------
+            cork.upsert_pin("p-old", {"title": "Old idea", "content": long_body}, now=old)
+            sources.update(calendar_status={"connected": True}, gmail_status={"connected": True},
+                           gmail_list_inbox={"messages": [{"from": "a@b.c", "subject": "One",
+                                                           "unread": True}]})
+            res = mod.make_today(use_model=False)
+            pid = mod._pin_id(datetime.now().date())
+            assert res.get("ok") and res["pin_id"] == pid, res
+            pin = cork.get_pin(pid)
+            assert pin["tags"] == ["briefing"] and "One" in pin["content"], pin
+            cork.update_pin_fields(pid, {"x": 111, "y": 222})          # the user moves it
+            cork.set_pin_embedding(pid, [0.1, 0.2])
+            created = cork.get_pin(pid)["created"]
+            sources["gmail_list_inbox"] = {"messages": [{"from": "a@b.c", "subject": "Two",
+                                                         "unread": True}]}
+            assert mod.make_today(use_model=False)["ok"]
+            again = cork.get_pin(pid)
+            assert "Two" in again["content"] and "One" not in again["content"], again
+            assert (again["x"], again["y"], again["created"]) == (111, 222, created), \
+                "a rewrite must keep where the user put the pin"
+            assert not again.get("embedding"), "stale embedding must be dropped"
+            ours = [p for p in cork.load_board()["pins"] if p.startswith(mod.PIN_PREFIX)]
+            assert ours == [pid], ours
+            sources["gmail_list_inbox"] = {"messages": []}
+            assert mod.make_today(use_model=False, force=False).get("existing") is True
+            assert "Two" in cork.get_pin(pid)["content"], "the scheduler must not rewrite a pin"
+            print("  one pin a day, rewritten in place, position kept -> OK")
+
+            # --- the model is optional --------------------------------------
+            import providers.llm_providers as prov
+            real_get = prov.get_provider
+            seen = []
+
+            class _Model:
+                def __init__(self, reply=None, boom=None):
+                    self.reply, self.boom = reply, boom
+
+                def generate(self, messages, **kw):
+                    seen.append((messages, kw))
+                    if self.boom:
+                        raise self.boom
+                    return self.reply
+            try:
+                mod._save_cfg({"provider": "llamacpp", "model": "m.gguf"})
+                prov.get_provider = lambda name, key=None: _Model(boom=ConnectionError("down"))
+                sources["gmail_list_inbox"] = {"messages": [{"from": "a@b.c", "subject": "Hi",
+                                                             "unread": True}]}
+                res = mod.make_today(use_model=True)
+                assert res.get("ok"), "a dead model must not stop the briefing: {}".format(res)
+                assert "Heads-up" not in cork.get_pin(pid)["content"]
+                prov.get_provider = lambda name, key=None: _Model(reply="Standup first.")
+                assert mod.make_today(use_model=True)["ok"]
+                assert cork.get_pin(pid)["content"].startswith("**Heads-up** — Standup first."), \
+                    cork.get_pin(pid)["content"]
+                msgs, kw = seen[-1]
+                assert "never instructions" in msgs[0]["content"] and kw["model"] == "m.gguf"
+                seen.clear()
+                assert mod.make_today(use_model=False)["ok"] and not seen, \
+                    "use_model=False must not call the model"
+                assert mod.dispatch("daily_briefing_make", {}).get("ok") and not seen, \
+                    "the agent tool must not nest a model call"
+                mod._save_cfg({"provider": ""})
+                assert mod.make_today(use_model=True)["ok"] and not seen, \
+                    "no provider configured -> no model call"
+            finally:
+                prov.get_provider = real_get
+            print("  a model adds a Heads-up; a dead or absent one changes nothing -> OK")
+
+            # --- pruning only what nobody touched ---------------------------
+            today = datetime.now().date()
+            mod._save_cfg({"keep_days": 7})
+            ids = {}
+            for label, age in (("untouched", 10), ("edited", 11), ("recent", 2)):
+                day = today - timedelta(days=age)
+                ids[label] = mod._pin_id(day)
+                vals = cork.upsert_pin(ids[label], {"title": label, "content": "x", "tags": ["briefing"]})
+                mod._remember_written(ids[label], vals["last_modified"])
+            cork.update_pin_fields(ids["edited"], {"content": "I kept this"})
+            assert mod._prune(mod._cfg(), today) == 1
+            assert cork.get_pin(ids["untouched"]) is None
+            assert cork.get_pin(ids["edited"]) is not None and cork.get_pin(ids["recent"]) is not None
+            mod._save_cfg({"keep_days": 0})
+            assert mod._prune(mod._cfg(), today + timedelta(days=400)) == 0, "keep_days 0 keeps all"
+            assert cork.get_pin("p-fresh") is not None, "only briefings are ever pruned"
+            print("  prunes untouched old briefings, keeps edited, recent and everything else -> OK")
+
+            # --- the scheduler's rules --------------------------------------
+            cfg = dict(mod._cfg(), auto=True, hour=7)
+            mod._runtime.update(attempts={}, last_try=0.0)
+            at = lambda h: datetime(2026, 10, 17, h, 0)               # noqa: E731
+            assert mod._due(cfg, at(8), have_pin=False) is True
+            assert mod._due(cfg, at(6), have_pin=False) is False, "before the hour"
+            assert mod._due(cfg, at(8), have_pin=True) is False, "already have today's"
+            assert mod._due(dict(cfg, auto=False), at(8), have_pin=False) is False, "switched off"
+            mod._runtime.update(attempts={"2026-10-17": 1}, last_try=mod.time.time())
+            assert mod._due(cfg, at(8), have_pin=False) is False, "retry waits"
+            mod._runtime["last_try"] = mod.time.time() - mod._RETRY_AFTER - 1
+            assert mod._due(cfg, at(8), have_pin=False) is True
+            mod._runtime["attempts"] = {"2026-10-17": mod._MAX_AUTO_ATTEMPTS}
+            assert mod._due(cfg, at(8), have_pin=False) is False, "capped for the day"
+            mod._runtime.update(attempts={}, last_try=0.0)
+            print("  scheduler honours the hour, the switch, the pin and the retry cap -> OK")
+
+            # --- two workers must not both write -----------------------------
+            assert mod._claim() is True and mod._claim() is False
+            mod._release()
+            assert mod._claim() is True
+            stale = mod.time.time() - mod._CLAIM_STALE - 5
+            os.utime(mod._CLAIM_PATH, (stale, stale))
+            assert mod._claim() is True, "a dead process's claim must expire"
+            mod._release()
+            print("  a live claim blocks a second writer; a dead one expires -> OK")
+
+            # --- HTTP -------------------------------------------------------
+            app = Flask("regress-briefing")
+            mod.register(app)
+            assert mod._runtime["started"] is False, "TRIOFORGE_NO_BRIEFING must stop the thread"
+            c = app.test_client()
+            st = c.get("/api/plugin/daily-briefing/status").get_json()
+            assert st["calendar_connected"] and st["config"]["hour"] == 7, st
+            r = c.post("/api/plugin/daily-briefing/config",
+                       json={"hour": 99, "keep_days": "3", "provider": " ollama ", "auto": False})
+            cfgd = r.get_json()["config"]
+            assert (cfgd["hour"], cfgd["keep_days"], cfgd["provider"], cfgd["auto"]) == \
+                (23, 3, "ollama", False), cfgd
+            assert c.post("/api/plugin/daily-briefing/config", json={"hour": "soon"}).status_code == 400
+            assert c.post("/api/plugin/daily-briefing/run", json={"llm": False}).get_json()["ok"]
+            saved = json.load(open(mod._CFG_PATH, encoding="utf-8"))
+            assert saved["hour"] == 23 and "written" in saved, "config edits must not drop state"
+            print("  routes validate input and never lose the state file -> OK")
+
+            # --- the real loader accepts the file once enabled ---------------
+            copy = os.path.join(tmp, "daily_briefing.py")
+            open(copy, "w", encoding="utf-8").write(path.read_text(encoding="utf-8"))
+            import plugin_loader
+            plugin_loader.set_app(Flask("regress-briefing-loader"))
+            info = plugin_loader._load_plugin(copy)
+            assert not info.get("error"), info
+            assert info["id"] == "daily-briefing" and info["connector"] is False, info
+            print("  loads through the real plugin loader once enabled -> OK")
+        finally:
+            # Windows cannot delete a database that still has an open connection.
+            try:
+                cork.get_conn().close()
+            except Exception:  # noqa: BLE001
+                pass
+            from common import _local as _db_local
+            getattr(_db_local, "conns", {}).pop(cork.DB_PATH, None)
+            cork.DB_PATH = real_db
+            cork.backup_store.archive_pin = real_archive
+            mod._CFG_PATH, mod._CLAIM_PATH, mod._tool = real_cfg, real_claim, real_tool
+            if real_env is None:
+                os.environ.pop("TRIOFORGE_NO_BRIEFING", None)
+            else:
+                os.environ["TRIOFORGE_NO_BRIEFING"] = real_env
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3078,7 +3350,7 @@ def main() -> int:
              test_inject_preserves_workflow_prompts,
              test_image_panel_choices,
              test_auto_detect_prefers_the_users_own_workflow,
-             test_discord_plugin_stays_isolated,
+             test_discord_plugin_stays_isolated, test_daily_briefing_plugin,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

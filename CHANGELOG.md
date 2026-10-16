@@ -3,6 +3,17 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [Unreleased]
+
+### Added
+
+- **Daily briefing plugin** (`plugins/_daily_briefing.py`, ships disabled). One corkboard
+  pin a day with the next 24 hours of Google Calendar, unread Gmail and a few of your
+  own idle pins worth a second look. Sources appear only when connected, so it works
+  on a fresh install; a model is optional and a dead one never blocks the pin. One pin
+  per day, rewritten in place; untouched old briefings are pruned, edited ones never.
+  Opt-in: nothing changes until the plugin is enabled.
+
 ## [1.5.6] — the final release
 
 **This is the final TrioForge release and the one to install.** It supersedes

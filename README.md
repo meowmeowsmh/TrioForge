@@ -486,6 +486,31 @@ vault folder. Nothing leaves your machine and no account is needed — just poin
 at the folder that contains `.obsidian`. So with a local model (Ollama or
 llama.cpp), Obsidian is **end-to-end offline**.
 
+#### ☀️ Daily briefing (opt-in plugin)
+
+A reason to open the app before you have a question: once a morning, one pin lands
+on the corkboard with **the next 24 hours of Google Calendar**, **your unread Gmail**,
+and **a few of your own old pins worth a second look** (a different handful each day).
+
+- **Turn it on:** it ships disabled. Enable *Daily Briefing* in the 🧩 Plugins panel
+  (or rename `plugins/_daily_briefing.py` to `daily_briefing.py`) and restart. It then
+  writes the pin by itself from 07:00 on, whenever the server is running.
+- **Works with nothing connected.** Calendar and Gmail appear only if they are signed
+  in; the "second look" section needs neither. Ask the agent *"make my briefing"*, or
+  `POST /api/plugin/daily-briefing/run`, to write it on demand.
+- **One pin per day**, rewritten in place if you run it again — move it where you like
+  and it stays there. Old briefings you never touched are removed after 7 days;
+  one you edited or kept is never deleted.
+- **A model is optional.** Set `provider` (and `model`) in
+  `json_configuration/daily_briefing.json` and the pin gains a short *Heads-up* on
+  top. If the model is down the plain pin is written anyway. With a **cloud**
+  provider, your unread mail's senders and subjects and your event titles are sent to
+  it; use a local one (or none) to keep everything on your machine.
+
+```json
+{"auto": true, "hour": 7, "provider": "", "model": "", "keep_days": 7, "revisit_days": 14}
+```
+
 ---
 
 ## ⚙️ Configuration
