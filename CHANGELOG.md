@@ -132,6 +132,23 @@ below, so it carries the same version number on a build that is missing all of i
   size in ComfyUI. Generated images now get their own rule (up to 78vh) and stay
   click-to-open-full-size.
 
+### The 🗄️ restore list can be cleared in one go
+
+- **Every delete archives a copy**, so trying one prompt repeatedly leaves a wall of
+  near-identical rows — 129 of them on the machine this was written on, 107 titled
+  the same, 56 deleted in a single day. One row at a time is not a usable clean-up.
+  Each row now has a checkbox, each section (Conversations / Notes / Pins) has its
+  own select-all, and there is a live "N selected" count with **Restore selected** /
+  **Delete selected** buttons that stay disabled until something is picked. The bulk
+  action asks first and names how many items it will affect, and it runs the writes
+  **sequentially** — firing dozens at once is how SQLite starts refusing them. The
+  per-row Restore/✕ still work exactly as before.
+- Verified in real headless Chrome against a live app, not just in source: 129 rows,
+  select-all ticked every one, the count read "129 selected", both buttons armed, one
+  row read "1 selected", a destructive click asked first, and refusing the confirm
+  deleted nothing. `tools/restore-bulk-check.js` repeats that check and cancels every
+  confirm, so it can be run any time without touching real archives.
+
 ### Discord connector — a card in the app, the bot in its own process
 
 - **The bot does not run inside TrioForge.** Plugins are trusted code in the app

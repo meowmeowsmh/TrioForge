@@ -3064,6 +3064,41 @@ def test_discord_plugin_stays_isolated() -> None:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+def test_restore_list_supports_bulk_cleanup() -> None:
+    """The restore-list trash must be cleanable in one go, and only after a confirm.
+
+    Every delete archives another copy, so trying one prompt repeatedly leaves
+    dozens of near-identical rows - 129 on the machine this was written on, 107 of
+    them titled the same, 56 deleted in a single day. One row at a time is not a
+    usable clean-up. Asserted on the markup because the browser check
+    (tools/restore-bulk-check.js) needs a running app and cannot run in CI.
+    """
+    _title("trash list: bulk select")
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    for needle in ("bulkRestoreAction", "data-restore-row", "toggleRestoreAll",
+                   "restoreSelection", "Delete selected", "Restore selected"):
+        assert needle in html, "{} missing from the restore list".format(needle)
+
+    body = html.split("async function bulkRestoreAction", 1)[1].split("\n}", 1)[0]
+    # Judge the CODE, not the comments: this function's comment explains why it is
+    # not Promise.all, and a naive substring check read that as a violation.
+    code = "\n".join(ln for ln in body.splitlines()
+                     if not ln.strip().startswith("//"))
+    assert "await fetch" in code, "the bulk action must await each write"
+    assert "Promise.all(" not in code, \
+        "dozens of parallel writes is how SQLite starts refusing them"
+    assert "confirm(" in code, "a destructive bulk action must ask first"
+    assert "ids.length" in code, "the confirm must say how many items are affected"
+    # The selection is per list, so Notes' select-all can never touch the chats.
+    assert "restoreSelection[containerId]" in html, "the selection must be per list"
+    print("  per-row checkboxes, select-all and one confirmed bulk action -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3079,6 +3114,7 @@ def main() -> int:
              test_image_panel_choices,
              test_auto_detect_prefers_the_users_own_workflow,
              test_discord_plugin_stays_isolated,
+             test_restore_list_supports_bulk_cleanup,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

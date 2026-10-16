@@ -8374,15 +8374,19 @@ function closeRestoreModal() {
 }
 
 function loadRestoreLists() {
-    fetch('/api/backup/conversations').then(r => r.json())
-        .then(data => renderRestoreList('restoreConvs', data, 'conversation'))
-        .catch(() => renderRestoreList('restoreConvs', [], 'conversation'));
-    fetch('/api/backup/notes').then(r => r.json())
-        .then(data => renderRestoreList('restoreNotes', data, 'note'))
-        .catch(() => renderRestoreList('restoreNotes', [], 'note'));
-    fetch('/api/backup/pins').then(r => r.json())
-        .then(data => renderRestoreList('restorePins', data, 'pin'))
-        .catch(() => renderRestoreList('restorePins', [], 'pin'));
+    // Returns a promise so a bulk action can repaint and THEN put its result line
+    // back on screen (the re-render replaces the toolbar it lives in).
+    return Promise.all([
+        fetch('/api/backup/conversations').then(r => r.json())
+            .then(data => renderRestoreList('restoreConvs', data, 'conversation'))
+            .catch(() => renderRestoreList('restoreConvs', [], 'conversation')),
+        fetch('/api/backup/notes').then(r => r.json())
+            .then(data => renderRestoreList('restoreNotes', data, 'note'))
+            .catch(() => renderRestoreList('restoreNotes', [], 'note')),
+        fetch('/api/backup/pins').then(r => r.json())
+            .then(data => renderRestoreList('restorePins', data, 'pin'))
+            .catch(() => renderRestoreList('restorePins', [], 'pin'))
+    ]);
 }
 
 function restoreItem(type, id) {
@@ -8407,34 +8411,189 @@ function purgeBackupItem(type, id) {
         .catch(() => {});
 }
 
+// ── multi-select, so a long list is cleared in one go ─────────────────────────
+// Every delete of the same chat archives another copy, so this list is often
+// dozens of near-identical rows: one row at a time is not a usable clean-up. The
+// selection is kept PER LIST so "select all" in Notes can never touch the chats.
+var restoreSelection = {};
+
+function _selectionSet(containerId) {
+    if (!restoreSelection[containerId]) restoreSelection[containerId] = new Set();
+    return restoreSelection[containerId];
+}
+
+function toggleRestoreRow(containerId, id, checked) {
+    var set = _selectionSet(containerId);
+    if (checked) set.add(id); else set.delete(id);
+    _paintRestoreCount(containerId);
+}
+
+function toggleRestoreAll(containerId, checked, ids) {
+    var set = _selectionSet(containerId);
+    set.clear();
+    if (checked) ids.forEach(function(id) { set.add(id); });
+    var el = document.getElementById(containerId);
+    if (el) {
+        el.querySelectorAll('input[data-restore-row]').forEach(function(box) {
+            box.checked = checked;
+        });
+    }
+    _paintRestoreCount(containerId);
+}
+
+function _paintRestoreCount(containerId) {
+    var set = _selectionSet(containerId);
+    var label = document.getElementById(containerId + 'Count');
+    if (label) {
+        label.textContent = set.size ? set.size + ' selected' : '';
+        label.style.color = '#58a6ff';
+    }
+    ['Restore', 'Delete'].forEach(function(kind) {
+        var btn = document.getElementById(containerId + 'Bulk' + kind);
+        if (btn) {
+            btn.disabled = set.size === 0;
+            btn.style.opacity = set.size ? '1' : '0.45';
+            btn.style.cursor = set.size ? 'pointer' : 'not-allowed';
+        }
+    });
+    var all = document.getElementById(containerId + 'All');
+    if (all) {
+        var total = all.dataset.total ? parseInt(all.dataset.total, 10) : 0;
+        all.checked = total > 0 && set.size === total;
+        all.indeterminate = set.size > 0 && set.size < total;
+    }
+}
+
+async function bulkRestoreAction(containerId, type, action) {
+    var ids = Array.from(_selectionSet(containerId));
+    if (!ids.length) return;
+    var restoring = action === 'restore';
+    var verb = restoring ? 'Restore' : 'Permanently discard';
+    var past = restoring ? 'Restored' : 'Discarded';
+    if (!confirm(verb + ' ' + ids.length +
+                 (ids.length === 1 ? ' item?' : ' items?'))) return;
+
+    var status = document.getElementById(containerId + 'Status');
+    var ok = 0;
+    // Sequential, not Promise.all: each one writes to the store, and firing dozens
+    // of writes at once is how SQLite starts refusing them.
+    for (var i = 0; i < ids.length; i++) {
+        if (status) status.textContent = (restoring ? 'Restoring ' : 'Discarding ') +
+                                          (i + 1) + '/' + ids.length + '…';
+        try {
+            var url = '/api/backup/' + type + 's/' + encodeURIComponent(ids[i]) +
+                      (restoring ? '/restore' : '');
+            var r = await fetch(url, { method: restoring ? 'POST' : 'DELETE' });
+            if (r.ok) ok++;
+        } catch (e) { /* one failure must not abandon the rest */ }
+    }
+    await loadRestoreLists();          // rebuilds the rows AND this toolbar
+    if (type === 'conversation') loadConversations();
+    var out = document.getElementById(containerId + 'Status');
+    if (out) {
+        out.textContent = past + ' ' + ok + ' of ' + ids.length + '.' +
+                          (ok < ids.length ? ' The rest failed — try those again.' : '');
+        out.style.color = ok === ids.length ? '#7ee787' : '#f0883e';
+    }
+}
+
 function renderRestoreList(containerId, items, type) {
     var el = document.getElementById(containerId);
     el.innerHTML = '';
+    el.style.cssText = 'border:1px solid #262631; border-radius:8px; padding:6px 8px;';
+
+    var toolbar = document.createElement('div');
+    toolbar.style.cssText = 'display:flex; align-items:center; gap:8px; padding:2px 0 6px; ' +
+                            'border-bottom:1px solid #262631; margin-bottom:2px; flex-wrap:wrap;';
+    var all = document.createElement('input');
+    all.type = 'checkbox';
+    all.id = containerId + 'All';
+    all.title = 'Select every row in this list';
+    all.style.cssText = 'cursor:pointer; accent-color:#1f6feb;';
+    toolbar.appendChild(all);
+    var allLabel = document.createElement('span');
+    allLabel.textContent = 'All';
+    allLabel.style.cssText = 'font-size:11px; color:#8b949e; cursor:pointer;';
+    allLabel.onclick = function() { all.click(); };
+    toolbar.appendChild(allLabel);
+
+    var count = document.createElement('span');
+    count.id = containerId + 'Count';
+    count.style.cssText = 'font-size:11px;';
+    toolbar.appendChild(count);
+
+    var spacer = document.createElement('span');
+    spacer.style.cssText = 'flex:1;';
+    toolbar.appendChild(spacer);
+
+    [['Restore', 'restore'], ['Delete', 'purge']].forEach(function(pair) {
+        var btn = document.createElement('button');
+        btn.id = containerId + 'Bulk' + pair[0];
+        btn.textContent = pair[0] === 'Delete' ? '🗑 Delete selected' : '↺ Restore selected';
+        btn.disabled = true;
+        btn.style.cssText = 'padding:3px 9px; font-size:11px; border-radius:5px; cursor:not-allowed; ' +
+            (pair[0] === 'Delete'
+                ? 'background:transparent; color:#f85149; border:1px solid #5a2a2a;'
+                : 'background:#1f6feb; color:#fff; border:1px solid #1f6feb;');
+        btn.onclick = function() { bulkRestoreAction(containerId, type, pair[1]); };
+        toolbar.appendChild(btn);
+    });
+    el.appendChild(toolbar);
+
+    var status = document.createElement('div');
+    status.id = containerId + 'Status';
+    status.style.cssText = 'font-size:11px; color:#8b949e; min-height:14px; padding-top:4px;';
+    el.appendChild(status);
+
     if (!items || !items.length) {
-        el.innerHTML = '<div style="color:#8b949e; font-size:13px; padding:6px 0;">Nothing here.</div>';
+        var empty = document.createElement('div');
+        empty.style.cssText = 'color:#8b949e; font-size:13px; padding:6px 0;';
+        empty.textContent = 'Nothing here.';
+        el.appendChild(empty);
+        all.dataset.total = '0';
+        all.disabled = true;
         return;
     }
+
+    all.dataset.total = String(items.length);
+    all.onchange = function() {
+        toggleRestoreAll(containerId, all.checked, items.map(function(it) { return it.id; }));
+    };
+
     items.forEach(function(it) {
         var row = document.createElement('div');
         row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #222;';
+
+        var box = document.createElement('input');
+        box.type = 'checkbox';
+        box.setAttribute('data-restore-row', '1');
+        box.style.cssText = 'cursor:pointer; accent-color:#1f6feb; flex:0 0 auto;';
+        box.onchange = function() { toggleRestoreRow(containerId, it.id, box.checked); };
+        row.appendChild(box);
+
         var label = document.createElement('span');
-        label.style.cssText = 'flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        label.style.cssText = 'flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;';
         var extra = (type === 'conversation') ? ' · ' + (it.message_count || 0) + ' msgs' : '';
         label.textContent = (it.title || it.id || 'untitled') + extra;
+        label.onclick = function() { box.checked = !box.checked; box.onchange(); };
         row.appendChild(label);
+
         var restoreBtn = document.createElement('button');
         restoreBtn.textContent = 'Restore';
         restoreBtn.style.cssText = 'padding:4px 10px; background:#1f6feb; color:#fff; border:none; border-radius:5px; cursor:pointer;';
         restoreBtn.onclick = function() { restoreItem(type, it.id); };
         row.appendChild(restoreBtn);
+
         var delBtn = document.createElement('button');
         delBtn.textContent = '✕';
         delBtn.title = 'Discard permanently';
         delBtn.style.cssText = 'padding:4px 8px; background:transparent; color:#f85149; border:1px solid #333; border-radius:5px; cursor:pointer;';
         delBtn.onclick = function() { purgeBackupItem(type, it.id); };
         row.appendChild(delBtn);
+
         el.appendChild(row);
     });
+    _paintRestoreCount(containerId);
 }
 
 // ── Logs viewer (server / chat / voice) ──
