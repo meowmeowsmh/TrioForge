@@ -149,6 +149,22 @@ below, so it carries the same version number on a build that is missing all of i
   deleted nothing. `tools/restore-bulk-check.js` repeats that check and cancels every
   confirm, so it can be run any time without touching real archives.
 
+### Daily briefing (opt-in plugin)
+
+- **One corkboard pin a day** with the next 24 hours of Google Calendar, your unread
+  Gmail, and a few of your own idle pins worth a second look. Sources appear only when
+  they are connected, so a fresh install still gets a useful pin, and a model is
+  optional — if it is down the plain pin is written anyway. One pin per day, rewritten
+  in place (where you moved it stays put), and only briefings you never touched are
+  pruned. It ships **disabled**: a leading underscore keeps it from loading, so nothing
+  changes until you switch it on.
+- **It has a panel now, not just an API.** The plugin shipped with three routes and
+  nothing in the UI calling them, so the feature was unreachable without `curl`. The
+  ☀️ top-bar button opens a panel that says whether today's pin exists, which sources
+  are connected and what the last error was, sets **Auto** and the **hour**, and has
+  **Write it now**. Because it ships off, "not enabled" is a normal state there — the
+  panel says so and offers a one-click **Enable it** instead of looking broken.
+
 ### Discord connector — a card in the app, the bot in its own process
 
 - **The bot does not run inside TrioForge.** Plugins are trusted code in the app

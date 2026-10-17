@@ -117,9 +117,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "a9a4ea7315760d377d0c3b9f9b70f339afd83642def3e72bb36afb2e8d3d68c5",
+  "templates/index.html": "74da9e068ad92869ca5d92c677742657e0c09cc75103ae78b652c0f438ae7f4e",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-17T03:26:49",
- "note": "1.5.6: bulk select/delete in the restore list"
+ "generated": "2026-10-18T02:59:53",
+ "note": "1.5.6: Daily Briefing plugin + panel"
 }
