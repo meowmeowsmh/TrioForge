@@ -1721,7 +1721,7 @@ video.tf-video {
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
-        <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
+        <textarea id="msgInput" spellcheck="true" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
         <input id="modelSearchInput" type="text" placeholder="🔍 filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
         <select id="modelSelect" class="model-select" title="Select model"></select>
         <select id="reasoningEffortSelect" class="model-select" title="Reasoning effort (DeepSeek reasoning models)" style="display:none;">

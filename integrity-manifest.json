@@ -24,11 +24,11 @@
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
-  "py/features/cork_board.py": "9b70114161320b27ffcec6d12b5871b63ded517c9468638b6bf6061295e1f0de",
+  "py/features/cork_board.py": "edecf99fa9ee708b97e3ffb5735c2c88cc85de6d17073898c0c6633f57e55be2",
   "py/features/design.py": "52e372d38e96244341551c1dcfdf5452ce62476cd68afe99f6f58cc589a3a29f",
   "py/features/extensions_api.py": "b6f51aa4d9b59ba885c4c170f4fb8b9fe4a87b0af99f785f085da44858934d0e",
   "py/features/model_browser.py": "24b9d5e79c74721a4ca6a140c9d1bb88dc59e5659cff11b8e2131471a2eee2d0",
-  "py/features/notes.py": "98c44edd23900f67c5c0823ea529b6a89ca59637aa679ffc1f5bf267c5e120ea",
+  "py/features/notes.py": "c0e8900534bb6a3d1615928d1adc56e995b9bdae84fa1264978157bde6acc49a",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
   "py/features/openai_api.py": "8bdbce9d3c8414c1c18cf413dab8ce787e267c2d830dabf48d24c6b4cc2c299a",
   "py/features/screen_ask.py": "0d9ac7eb8f25ba71b8dc7c94d50f2755ee6b6d963229a5f219c68a3158c2684f",
@@ -117,9 +117,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "74da9e068ad92869ca5d92c677742657e0c09cc75103ae78b652c0f438ae7f4e",
+  "templates/index.html": "74f10204c4af04c4645fe2816659cd3c2ae87276ae6c8bab7467df95989920e1",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-18T02:59:53",
- "note": "1.5.6: Daily Briefing plugin + panel"
+ "generated": "2026-10-18T03:20:56",
+ "note": "1.5.6: spellcheck on chat/note/pin text"
 }

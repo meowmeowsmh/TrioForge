@@ -3404,6 +3404,40 @@ def test_briefing_panel_is_wired() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_human_text_fields_are_spellcheckable() -> None:
+    """Chat, note and pin text must be spellcheckable, code fields must not.
+
+    The app also runs in a WebView2 window (--window), where spellcheck is not
+    enabled unless the field says so - which is why "there is no autocorrecting".
+    The attribute is therefore explicit in BOTH directions: on for human text,
+    off for code/command fields where a squiggle under every identifier would be
+    noise.
+    """
+    _title("spellcheck on human text")
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    for label, path, needles in (
+        ("chat", "templates/index.html",
+         ['id="msgInput" spellcheck="true"']),
+        ("notes", "py/features/notes.py",
+         ['id="noteTitleInput" spellcheck="true"',
+          'id="noteContentInput" spellcheck="true"']),
+        ("corkboard", "py/features/cork_board.py",
+         ['id="pinTitle" spellcheck="true"',
+          'id="pinContent" spellcheck="true"']),
+    ):
+        src = (root / path).read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle in src, "{}: {} missing".format(label, needle)
+
+    idx = (root / "templates" / "index.html").read_text(encoding="utf-8")
+    after = idx.split('id="designRunInput"', 1)[1][:200]
+    assert 'spellcheck="false"' in after, "code/command fields must keep spellcheck off"
+    print("  chat, note and pin text spellcheck; code fields stay off -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3430,7 +3464,7 @@ def main() -> int:
              test_auto_detect_prefers_the_users_own_workflow,
              test_discord_plugin_stays_isolated,
              test_restore_list_supports_bulk_cleanup,
-             test_daily_briefing_plugin, test_briefing_panel_is_wired,
+             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable,
 
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,

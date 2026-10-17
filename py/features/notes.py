@@ -2155,7 +2155,7 @@ html.embedded #fsBtn { display: none !important; }</style>
         <div class="notes-panel" id="notesPanel">
             <div class="note-editor" id="noteEditor" style="display:none;">
                 <div class="editor-header">
-                    <input type="text" id="noteTitleInput" placeholder="Note title...">
+                    <input type="text" id="noteTitleInput" spellcheck="true" placeholder="Note title...">
                     <div class="toolbar" id="toolbar">
                         <button data-cmd="bold" title="Bold">B</button>
                         <button data-cmd="italic" title="Italic">I</button>
@@ -2197,7 +2197,7 @@ html.embedded #fsBtn { display: none !important; }</style>
                     </div>
                 </div>
                 <div class="editor-body">
-                    <textarea id="noteContentInput" placeholder="Write your note in Markdown... (use [[Wiki Links]])"></textarea>
+                    <textarea id="noteContentInput" spellcheck="true" placeholder="Write your note in Markdown... (use [[Wiki Links]])"></textarea>
                     <div class="preview" id="notePreview"></div>
                 </div>
                 <div class="editor-footer">
