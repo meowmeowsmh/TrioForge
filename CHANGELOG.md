@@ -149,6 +149,24 @@ below, so it carries the same version number on a build that is missing all of i
   deleted nothing. `tools/restore-bulk-check.js` repeats that check and cancels every
   confirm, so it can be run any time without touching real archives.
 
+### Small quality-of-life
+
+- **🧊 Free memory, and the numbers to watch.** The top bar shows live RAM and VRAM
+  use, and one button unloads the model and stops ComfyUI — the thing a 15 GB
+  machine needs after a heavy session, and everything it frees returns on the next
+  request. It reports only what *actually* stopped, never "freed ComfyUI" when
+  nothing was running.
+- **ComfyUI now unloads itself after idling.** `--cache-none` freed the models but
+  the server process stayed resident (~2 GB). It now stops after 5 minutes without a
+  generation (`TRIOFORGE_COMFYUI_IDLE_UNLOAD` to retime or disable), and only a
+  server TrioForge started — one Comfy Desktop opened itself is never touched.
+- **Every message is copyable.** Yours and the bot's both get a copy button; a bot
+  message copies its *rendered* text, not the `**markdown**` syntax, and the button
+  appears on hover like edit/delete.
+- **A half-typed message survives a reload.** The chat draft is saved as you type,
+  restored when you return, and cleared the moment you send — so a refresh cannot
+  resurrect something you already sent.
+
 ### Daily briefing (opt-in plugin)
 
 - **One corkboard pin a day** with the next 24 hours of Google Calendar, your unread

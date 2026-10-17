@@ -748,7 +748,7 @@ html.view-embed #liveCodePanel {
 .msg:hover .msg-actions {
     display: flex;
 }
-.msg .edit-btn, .msg .delete-btn {
+.msg .edit-btn, .msg .delete-btn, .msg .copy-btn {
     background: rgba(255,255,255,0.1);
     border: none;
     color: #8b949e;
@@ -760,6 +760,7 @@ html.view-embed #liveCodePanel {
 }
 .msg .edit-btn:hover { color: #58a6ff; background: rgba(88,166,255,0.15); }
 .msg .delete-btn:hover { color: #f85149; background: rgba(248,81,73,0.15); }
+.msg .copy-btn:hover { color: #7ee787; background: rgba(126,231,135,0.15); }
 .edit-textarea {
     width: 100%;
     background: rgba(13,17,23,0.9);
@@ -773,9 +774,8 @@ html.view-embed #liveCodePanel {
 .msg.user .msg-actions {
     display: flex !important;
 }
-.msg.bot .msg-actions {
-    display: none !important;
-}
+/* Bot messages now carry a copy button too; it shows on hover like the user's
+   edit/delete do. The old rule forced bot actions to never show at all. */
 .attachments {
     display:flex; flex-wrap:wrap; gap: 8px;
     padding: 0 40px 10px;
@@ -1657,6 +1657,8 @@ video.tf-video {
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">⚙️</button>
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">⚡</button>
+        <span id="memoryBadge" title="RAM and VRAM in use" style="font-size:11px; color:#8b949e; white-space:nowrap; align-self:center;"></span>
+        <button class="clear-btn" id="freeMemBtn" onclick="freeMemoryNow()" title="Free memory — unload the model and stop ComfyUI (everything reloads on next use)" style="border-color:rgba(210,168,255,0.4); color:#d2a8ff;">🧊</button>
         <button class="clear-btn" id="connectorsBtn" onclick="openConnectorsModal()" title="Connectors — services you sign into, so the AI can use them" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🔌</button>
         <button class="clear-btn" id="briefingBtn" onclick="toggleBriefingPanel()" title="Daily Briefing — one corkboard pin each morning: your calendar, unread mail and old pins worth a second look" style="border-color:rgba(240,136,62,0.45); color:#f0883e;">☀️</button>
         <button class="clear-btn" id="pluginsBtn" onclick="openPluginsModal()" title="Plugins — everything you've installed: skills, plugins and MCP servers" style="border-color:rgba(63,185,80,0.45); color:#3fb950;">🧩</button>
@@ -2102,6 +2104,56 @@ video.tf-video {
 /* ─── CHAT JAVASCRIPT (existing) ────────────────────────────── */
 var chatArea    = document.getElementById('chatArea');
 var msgInput    = document.getElementById('msgInput');
+// A half-typed message survives a reload: whatever is in the box is the draft.
+(function initChatDraft() {
+    if (!msgInput) return;
+    function saveDraft() { try { localStorage.setItem('tf.chatDraft', msgInput.value); } catch (e) {} }
+    function restoreDraft() {
+        try {
+            var d = localStorage.getItem('tf.chatDraft');
+            if (d && d.trim()) msgInput.value = d;
+        } catch (e) {}
+    }
+    msgInput.addEventListener('input', saveDraft);
+    restoreDraft();
+})();
+function clearChatDraft() { try { localStorage.removeItem('tf.chatDraft'); } catch (e) {} }
+
+// ── live RAM/VRAM badge + one-click free ─────────────────────────────────────
+function refreshMemoryBadge() {
+    var el = document.getElementById('memoryBadge');
+    if (!el) return;
+    fetch('/api/memory').then(function(r) { return r.json(); }).then(function(d) {
+        var parts = [];
+        if (d.ram_total_gb) parts.push('RAM ' + d.ram_used_gb + '/' + d.ram_total_gb + ' GB');
+        if (d.vram_total_gb) parts.push('VRAM ' + d.vram_used_gb + '/' + d.vram_total_gb + ' GB');
+        el.textContent = parts.join(' · ') || 'RAM n/a';
+        el.style.color = d.ram_percent >= 85 ? '#f0883e' : (d.comfyui_running ? '#d2a8ff' : '#8b949e');
+        var hint = parts.join(' · ');
+        if (d.comfyui_running) hint += ' — ComfyUI is running';
+        if (d.llama_running) hint += ' — llama.cpp is running';
+        el.title = hint;
+    }).catch(function() {});
+}
+
+async function freeMemoryNow() {
+    var btn = document.getElementById('freeMemBtn');
+    var el = document.getElementById('memoryBadge');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+    try {
+        var r = await fetch('/api/memory/free', { method: 'POST' });
+        var d = await r.json();
+        if (el) {
+            el.textContent = (d.freed && d.freed.length) ? ('freed: ' + d.freed.join(', ')) : 'nothing to free';
+            el.style.color = '#7ee787';
+        }
+    } catch (e) {
+        if (el) { el.textContent = 'free failed'; el.style.color = '#f85149'; }
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '🧊'; }
+    setTimeout(refreshMemoryBadge, 1500);
+}
+try { refreshMemoryBadge(); setInterval(refreshMemoryBadge, 5000); } catch (e) {}
 var sendBtn     = document.getElementById('sendBtn');
 var status      = document.getElementById('status');
 var fileInput   = document.getElementById('fileInput');
@@ -5090,6 +5142,45 @@ function formatTs(ts) {
     return ts;
 }
 
+function copyToClipboard(text) {
+    text = (text || '').trim();
+    if (!text) return;
+    var done = function() {};
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(function() { fallbackCopy(text); });
+        return;
+    }
+    fallbackCopy(text);
+}
+
+function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed; opacity:0; top:0; left:0;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+}
+
+function makeCopyButton(role, entry, body) {
+    var b = document.createElement('button');
+    b.className = 'copy-btn';
+    b.textContent = '📋';
+    b.title = 'Copy message';
+    b.onclick = function(e) {
+        e.stopPropagation();
+        // A bot message is rendered Markdown; copy its text, not the **syntax**.
+        var text = role === 'bot' ? (body ? body.innerText : (entry.text || ''))
+                                  : (entry.text || '');
+        copyToClipboard(text);
+        b.textContent = '✅';
+        setTimeout(function() { b.textContent = '📋'; }, 900);
+    };
+    return b;
+}
+
 function renderMsg(role, entry, msgIndex) {
     var div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
@@ -5240,9 +5331,16 @@ function renderMsg(role, entry, msgIndex) {
             e.stopPropagation();
             deleteMessage(div, msgIndex);
         };
+        actions.appendChild(makeCopyButton(role, entry, body));
         actions.appendChild(editBtn);
         actions.appendChild(delBtn);
         div.appendChild(actions);
+    } else {
+        // A bot message gets a copy action too (the button appears on hover).
+        var botActions = document.createElement('div');
+        botActions.className = 'msg-actions';
+        botActions.appendChild(makeCopyButton(role, entry, body));
+        div.appendChild(botActions);
     }
     div.appendChild(renderAvatar(role));
     chatArea.appendChild(div);
@@ -6066,6 +6164,7 @@ function closeRestore() {
 function doSend() {
     var text = msgInput.value.trim();
     if ((!text && pending.length === 0) || busy) return;
+    clearChatDraft();       // the message is leaving the box, so the draft is spent
     // 🎨 Design generator: brief → live HTML prototype (any chat provider/model).
     if (design_mode) {
         generateDesignChat(text);

@@ -236,11 +236,15 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
     message that says how to fix it, instead of the old "start Comfy Desktop".
     """
     if is_comfyui_running():
+        touch()
+        ensure_comfyui_idle_watchdog()
         return True
 
     with _start_lock:
         # A concurrent request may have won the race while we waited for the lock.
         if is_comfyui_running():
+            touch()
+            ensure_comfyui_idle_watchdog()
             return True
 
         install_root = find_comfyui_install()
@@ -306,6 +310,8 @@ def ensure_comfyui_running(timeout: float = 90) -> bool:
 
         global _started_proc
         _started_proc = proc
+        touch()                       # it was just used; the idle clock starts now
+        ensure_comfyui_idle_watchdog()
 
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -389,6 +395,48 @@ def stop_comfyui() -> dict:
         "message": "ComfyUI is not running, or was started outside TrioForge "
                    "- stop it from Comfy Desktop.",
     }
+
+
+# ── idle unload ───────────────────────────────────────────────────────────────
+# `--cache-none` frees the MODELS after each run, but the server process itself
+# keeps a couple of GB of resident memory while it waits - and on a 15 GB machine
+# that matters. The same idle-unload idea llama.cpp already has: if nothing has
+# generated for a while, stop the server TrioForge started. (A ComfyUI Desktop
+# started itself is never touched - `_started_proc` is only ever ours.)
+_comfyui_last_used = 0.0
+_idle_watchdog_started = False
+
+
+def touch():
+    """Mark ComfyUI as in use right now (for the idle-unload watchdog)."""
+    global _comfyui_last_used
+    _comfyui_last_used = time.time()
+
+
+def _idle_watchdog():
+    while True:
+        time.sleep(30)
+        try:
+            limit = int(os.environ.get("TRIOFORGE_COMFYUI_IDLE_UNLOAD", "300") or 0)
+        except Exception:  # noqa: BLE001 - a bad value falls back to the default
+            limit = 300
+        if limit <= 0:
+            continue
+        with _start_lock:
+            running = _started_proc is not None and _started_proc.poll() is None
+        if running and time.time() - _comfyui_last_used > limit:
+            stop_comfyui()
+            print(f"[comfyui] stopped after {limit}s idle - memory freed",
+                  file=sys.stderr)
+
+
+def ensure_comfyui_idle_watchdog():
+    """Start the idle-unload thread once (no-op after the first call)."""
+    global _idle_watchdog_started
+    if _idle_watchdog_started:
+        return
+    _idle_watchdog_started = True
+    threading.Thread(target=_idle_watchdog, name="comfyui-idle", daemon=True).start()
 
 
 def get_object_info(force=False):
@@ -1492,6 +1540,7 @@ def run_prompt(prompt, output_path, timeout=900):
 
     Handles image (``images``) and video (``videos`` / ``gifs``) outputs.
     """
+    touch()                      # every generation refreshes the idle-unload clock
     client_id = str(uuid.uuid4())
     resp = requests.post(
         f"{COMFYUI_URL}/prompt",

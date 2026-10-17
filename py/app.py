@@ -2783,6 +2783,62 @@ def comfyui_status():
     except Exception as e:
         return jsonify({"running": False, "error": str(e)})
 
+@app.route('/api/memory', methods=['GET'])
+def memory_status():
+    """Live RAM/VRAM and what is holding it, for the top-bar indicator."""
+    vm = psutil.virtual_memory()
+    out = {
+        "ram_used_gb": round(vm.used / 1024 ** 3, 1),
+        "ram_total_gb": round(vm.total / 1024 ** 3, 1),
+        "ram_percent": int(vm.percent),
+    }
+    try:
+        from hardware import gpu_live
+        g = gpu_live() or {}
+        if g.get("total"):
+            out["vram_used_gb"] = round((g.get("used") or 0) / 1024 ** 3, 1)
+            out["vram_total_gb"] = round(g.get("total") / 1024 ** 3, 1)
+    except Exception:  # noqa: BLE001 - no GPU probe must break the indicator
+        pass
+    out["comfyui_running"] = bool(comfyui_service.is_comfyui_running())
+    try:
+        out["llama_running"] = bool(llamacpp_service._process is not None
+                                    and llamacpp_service._process.poll() is None)
+    except Exception:  # noqa: BLE001
+        out["llama_running"] = False
+    return jsonify(out)
+
+
+@app.route('/api/memory/free', methods=['POST'])
+def memory_free():
+    """Unload everything that is merely resident, and say what was freed.
+
+    Everything here is recoverable: the next request simply reloads the model or
+    restarts ComfyUI. That is the whole point - nothing is lost, only memory.
+    """
+    freed = []
+    try:
+        requests.post(f"{OLLAMA_BASE_URL}/api/generate",
+                      json={"model": current_model, "prompt": "", "keep_alive": 0},
+                      timeout=3)
+        freed.append("Ollama model")
+    except Exception:  # noqa: BLE001 - ollama may simply not be running
+        pass
+    try:
+        res = llamacpp_service.stop()
+        if res.get("killed"):          # only say so when something really died
+            freed.append("llama.cpp")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        res = comfyui_service.stop_comfyui()
+        if res.get("message") == "ComfyUI stopped.":
+            freed.append("ComfyUI")
+    except Exception:  # noqa: BLE001
+        pass
+    return jsonify({"ok": True, "freed": freed})
+
+
 @app.route('/api/video_models', methods=['GET'])
 def video_models():
     """ComfyUI video workflows for the video dropdown (live discovery)."""

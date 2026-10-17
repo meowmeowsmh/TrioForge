@@ -3438,6 +3438,99 @@ def test_human_text_fields_are_spellcheckable() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_memory_panel_and_free_are_honest() -> None:
+    """The top-bar memory badge and free button report only what really happened.
+
+    "freed: ComfyUI" when ComfyUI was never running is a lie the user notices, so
+    the route checks each stop's result instead of assuming. And the badge must
+    show RAM even when there is no GPU at all.
+    """
+    _title("memory badge + free button")
+    import app as forge_app
+
+    with forge_app.app.test_client() as client:
+        m = client.get("/api/memory").get_json()
+        assert "ram_used_gb" in m and "ram_total_gb" in m and "ram_percent" in m, m
+        assert m["ram_total_gb"] > 0, m
+
+        real_llama = forge_app.llamacpp_service.stop
+        real_comfy = forge_app.comfyui_service.stop_comfyui
+        forge_app.llamacpp_service.stop = lambda: {"running": False, "message": "stopped",
+                                                   "killed": []}
+        forge_app.comfyui_service.stop_comfyui = lambda: {
+            "running": False, "message": "ComfyUI is not running, or was started outside TrioForge"}
+        try:
+            token = _csrf_ok(client)
+            body = client.post("/api/memory/free", headers={"X-CSRF-Token": token}).get_json()
+            assert body["ok"] and body["freed"] == [], body
+            forge_app.llamacpp_service.stop = lambda: {"running": False, "message": "stopped",
+                                                       "killed": [123]}
+            forge_app.comfyui_service.stop_comfyui = lambda: {"running": False,
+                                                             "message": "ComfyUI stopped."}
+            body = client.post("/api/memory/free", headers={"X-CSRF-Token": token}).get_json()
+            assert "llama.cpp" in body["freed"] and "ComfyUI" in body["freed"], body
+        finally:
+            forge_app.llamacpp_service.stop = real_llama
+            forge_app.comfyui_service.stop_comfyui = real_comfy
+    print("  badge reads RAM/VRAM; free reports only what actually stopped -> OK")
+
+
+# ---------------------------------------------------------------------------
+def test_comfyui_idle_unload_wiring() -> None:
+    """ComfyUI must unload itself after idling, the way llama.cpp already does.
+
+    --cache-none frees the MODELS but the server process keeps ~2 GB resident. The
+    watchdog stops only the server TrioForge started (a Desktop-started one has no
+    _started_proc, so it is never touched) and can be turned off or retimed.
+    """
+    _title("comfyui idle unload")
+    import time
+
+    import comfyui_service as cs
+
+    t0 = time.time()
+    assert cs.touch() is None
+    assert cs._comfyui_last_used >= t0 - 1, "touch() must stamp the last-use clock"
+    assert cs.ensure_comfyui_idle_watchdog() is None
+    assert cs.ensure_comfyui_idle_watchdog() is None, "starting it twice is a no-op"
+    assert cs._idle_watchdog_started is True
+
+    import inspect
+    src = inspect.getsource(cs._idle_watchdog)
+    assert "TRIOFORGE_COMFYUI_IDLE_UNLOAD" in src, "the idle time must be tunable"
+    assert "stop_comfyui()" in src, "the watchdog must stop the server"
+    assert "_started_proc" in src, "it must only touch a server TrioForge started"
+    print("  watchdog armed once, tunable, and limited to TrioForge-started servers -> OK")
+
+
+# ---------------------------------------------------------------------------
+def test_chat_draft_and_copy_wiring() -> None:
+    """A half-typed chat survives a reload, and every message can be copied.
+
+    Asserted on the markup: these are browser behaviours with no server half, and a
+    real browser run cannot execute in CI. The rule that matters beyond "it exists"
+    is that the draft is cleared when a message is sent - otherwise a reload would
+    resurrect the text you just sent.
+    """
+    _title("chat draft + copy")
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    for needle in ("tf.chatDraft", "clearChatDraft", "makeCopyButton",
+                   "copyToClipboard", "navigator.clipboard", "fallbackCopy",
+                   "copy-btn"):
+        assert needle in html, "{} missing".format(needle)
+    send = html.split("function doSend()", 1)[1].split("\n}", 1)[0]
+    assert "clearChatDraft()" in send, "sending must clear the saved draft"
+    assert ".msg.bot .msg-actions" not in html, \
+        "the old rule that hid bot actions must be gone"
+    copy = html.split("function makeCopyButton", 1)[1].split("\n}", 1)[0]
+    assert "innerText" in copy, "bot copy must be the rendered text"
+    print("  draft persists and clears on send; every message is copyable -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3464,7 +3557,7 @@ def main() -> int:
              test_auto_detect_prefers_the_users_own_workflow,
              test_discord_plugin_stays_isolated,
              test_restore_list_supports_bulk_cleanup,
-             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable,
+             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring,
 
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
