@@ -3472,6 +3472,20 @@ def test_memory_panel_and_free_are_honest() -> None:
         finally:
             forge_app.llamacpp_service.stop = real_llama
             forge_app.comfyui_service.stop_comfyui = real_comfy
+    # The RESULT must not be printed into the toolbar: a red "free failed" where the
+    # RAM numbers live was the ugliest thing in the top bar. Outcomes go to a toast.
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    assert "tfToast" in html, "outcomes belong in a toast"
+    # Asserted on BEHAVIOUR, not on the words: the old "free failed" text still
+    # appears in the comments explaining why it was removed, so matching the string
+    # only ever tests the documentation. What matters is that free() reports through
+    # a toast, never writes into the badge, and turns a stale process into advice.
+    free_fn = html.split("async function freeMemoryNow", 1)[1].split("\n}", 1)[0]
+    assert "tfToast(" in free_fn, "free must report through a toast"
+    assert "el.textContent" not in free_fn, "free must not write its result into the badge"
+    assert "404" in free_fn, "a stale process must say 'restart', not 'failed'"
     print("  badge reads RAM/VRAM; free reports only what actually stopped -> OK")
 
 

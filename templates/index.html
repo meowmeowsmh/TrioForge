@@ -1017,6 +1017,39 @@ html.view-embed #scrollBottomBtn { display: none !important; }
 }
 /* ===== LIGHT MODE OVERRIDES ===== */
 /* Fullscreen uses the <html> surface — make it light too, otherwise it stays black. */
+
+/* Small transient messages (free memory, copy, etc). Deliberately NOT the weather
+   card above: that one is a scene + clock, and using it for "freed: ComfyUI" was
+   what put a red "free failed" in the toolbar where the RAM numbers belong. */
+.tf-toast-host {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 12000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+    pointer-events: none;
+}
+.tf-toast {
+    background: rgba(20, 20, 28, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e1e4e8;
+    border-radius: 10px;
+    padding: 8px 13px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    max-width: min(420px, 80vw);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.tf-toast.show { opacity: 1; transform: translateY(0); }
+.tf-toast.ok { border-color: rgba(126, 231, 135, 0.5); }
+.tf-toast.err { border-color: rgba(248, 81, 73, 0.5); }
+
 /* ===== WEATHER WIDGET STYLES – COMPACT (same as Notes/Cork Board) ===== */
 .toast-container {
     position: fixed;
@@ -1657,7 +1690,7 @@ video.tf-video {
         <button class="clear-btn" id="workspaceBtn" onclick="toggleWorkspaceSettings()" title="Workspaces & API keys">⚙️</button>
         <button class="clear-btn" id="logsBtn" onclick="openLogsModal()" title="Logs (server, chat, voice)">🗒️</button>
         <button class="clear-btn" id="servicesBtn" onclick="openServicesModal()" title="Services on/off">⚡</button>
-        <span id="memoryBadge" title="RAM and VRAM in use" style="font-size:11px; color:#8b949e; white-space:nowrap; align-self:center;"></span>
+        <span id="memoryBadge" title="RAM and VRAM in use" style="display:none; font-size:11px; color:#7d8590; white-space:nowrap; align-self:center; padding:2px 7px; border-radius:6px; background:rgba(255,255,255,0.05); letter-spacing:0.2px;"></span>
         <button class="clear-btn" id="freeMemBtn" onclick="freeMemoryNow()" title="Free memory — unload the model and stop ComfyUI (everything reloads on next use)" style="border-color:rgba(210,168,255,0.4); color:#d2a8ff;">🧊</button>
         <button class="clear-btn" id="connectorsBtn" onclick="openConnectorsModal()" title="Connectors — services you sign into, so the AI can use them" style="border-color:rgba(88,166,255,0.45); color:#58a6ff;">🔌</button>
         <button class="clear-btn" id="briefingBtn" onclick="toggleBriefingPanel()" title="Daily Briefing — one corkboard pin each morning: your calendar, unread mail and old pins worth a second look" style="border-color:rgba(240,136,62,0.45); color:#f0883e;">☀️</button>
@@ -2120,38 +2153,68 @@ var msgInput    = document.getElementById('msgInput');
 function clearChatDraft() { try { localStorage.removeItem('tf.chatDraft'); } catch (e) {} }
 
 // ── live RAM/VRAM badge + one-click free ─────────────────────────────────────
+function tfToast(message, kind) {
+    // A quiet pill bottom-right, gone in ~3s. The top bar is for NUMBERS; putting a
+    // red "free failed" there (where the RAM figure belongs) is what made it ugly.
+    var host = document.getElementById('tfToastHost');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'tfToastHost';
+        host.className = 'tf-toast-host';
+        document.body.appendChild(host);
+    }
+    var el = document.createElement('div');
+    el.className = 'tf-toast' + (kind ? ' ' + kind : '');
+    el.textContent = message;
+    host.appendChild(el);
+    requestAnimationFrame(function() { el.classList.add('show'); });
+    setTimeout(function() {
+        el.classList.remove('show');
+        setTimeout(function() { el.remove(); }, 220);
+    }, 2800);
+}
+
 function refreshMemoryBadge() {
     var el = document.getElementById('memoryBadge');
     if (!el) return;
-    fetch('/api/memory').then(function(r) { return r.json(); }).then(function(d) {
-        var parts = [];
-        if (d.ram_total_gb) parts.push('RAM ' + d.ram_used_gb + '/' + d.ram_total_gb + ' GB');
-        if (d.vram_total_gb) parts.push('VRAM ' + d.vram_used_gb + '/' + d.vram_total_gb + ' GB');
-        el.textContent = parts.join(' · ') || 'RAM n/a';
-        el.style.color = d.ram_percent >= 85 ? '#f0883e' : (d.comfyui_running ? '#d2a8ff' : '#8b949e');
-        var hint = parts.join(' · ');
-        if (d.comfyui_running) hint += ' — ComfyUI is running';
-        if (d.llama_running) hint += ' — llama.cpp is running';
+    fetch('/api/memory').then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+        if (!d) { el.style.display = 'none'; return; }  // old process: stay quiet, not ugly
+        el.style.display = '';
+        var bits = ['RAM ' + d.ram_used_gb + '/' + d.ram_total_gb];
+        if (d.vram_total_gb) bits.push('VRAM ' + d.vram_used_gb + '/' + d.vram_total_gb);
+        el.textContent = bits.join(' · ');
+        el.style.color = d.ram_percent >= 85 ? '#f0883e'
+                       : (d.comfyui_running ? '#d2a8ff' : '#7d8590');
+        var hint = 'RAM ' + d.ram_used_gb + '/' + d.ram_total_gb + ' GB (' + d.ram_percent + '%)';
+        if (d.vram_total_gb) hint += '\nVRAM ' + d.vram_used_gb + '/' + d.vram_total_gb + ' GB';
+        if (d.comfyui_running) hint += '\nComfyUI is running';
+        if (d.llama_running) hint += '\nllama.cpp is running';
         el.title = hint;
     }).catch(function() {});
 }
 
 async function freeMemoryNow() {
     var btn = document.getElementById('freeMemBtn');
-    var el = document.getElementById('memoryBadge');
     if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
     try {
         var r = await fetch('/api/memory/free', { method: 'POST' });
-        var d = await r.json();
-        if (el) {
-            el.textContent = (d.freed && d.freed.length) ? ('freed: ' + d.freed.join(', ')) : 'nothing to free';
-            el.style.color = '#7ee787';
+        if (r.status === 404) {
+            tfToast('Restart TrioForge to finish this update — the page has the button, ' +
+                    'the running process predates it.', 'err');
+        } else if (!r.ok) {
+            tfToast('Could not free memory (HTTP ' + r.status + ').', 'err');
+        } else {
+            var d = await r.json();
+            var freed = d.freed || [];
+            tfToast(freed.length ? ('Freed: ' + freed.join(', '))
+                                 : 'Nothing was holding memory.',
+                    freed.length ? 'ok' : '');
         }
     } catch (e) {
-        if (el) { el.textContent = 'free failed'; el.style.color = '#f85149'; }
+        tfToast('Could not free memory: ' + (e.message || e), 'err');
     }
     if (btn) { btn.disabled = false; btn.textContent = '🧊'; }
-    setTimeout(refreshMemoryBadge, 1500);
+    setTimeout(refreshMemoryBadge, 1200);
 }
 try { refreshMemoryBadge(); setInterval(refreshMemoryBadge, 5000); } catch (e) {}
 var sendBtn     = document.getElementById('sendBtn');

@@ -117,9 +117,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "61aa66c6b567f6a088b64f9f727ea7d50fc48595fdfb01554720818042e1c83c",
+  "templates/index.html": "478068ab0e313740e9d8b72c03cfb887bddcfe809006b05bba8b441d6ef4b39f",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-18T04:02:26",
- "note": "1.5.6: memory badge/free, ComfyUI idle-stop, copy buttons, chat draft"
+ "generated": "2026-10-18T04:19:18",
+ "note": "1.5.6: memory free reports via a toast, not in the toolbar"
 }
