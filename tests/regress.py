@@ -3407,6 +3407,16 @@ def test_briefing_panel_is_wired() -> None:
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
+    # A Windows console defaults to cp1252, so a test that prints an emoji passes on
+    # the machine it was written on and dies with UnicodeEncodeError only on the
+    # runner - the hardest kind of CI-only failure. Force UTF-8 on both streams.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:      # noqa: BLE001 - a redirected stream may refuse
+                pass
     tests = [test_parse_text_calls, test_agent_cancel, test_agent_wire_ids,
              test_agent_read_only_stall,
              test_known_facts, test_memory_is_optin, test_agent_verify_and_preamble,
