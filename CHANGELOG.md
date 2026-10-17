@@ -3,17 +3,6 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [Unreleased]
-
-### Added
-
-- **Daily briefing plugin** (`plugins/_daily_briefing.py`, ships disabled). One corkboard
-  pin a day with the next 24 hours of Google Calendar, unread Gmail and a few of your
-  own idle pins worth a second look. Sources appear only when connected, so it works
-  on a fresh install; a model is optional and a dead one never blocks the pin. One pin
-  per day, rewritten in place; untouched old briefings are pruned, edited ones never.
-  Opt-in: nothing changes until the plugin is enabled.
-
 ## [1.5.6] — the final release
 
 **This is the final TrioForge release and the one to install.** It supersedes
@@ -142,6 +131,22 @@ below, so it carries the same version number on a build that is missing all of i
   was *displayed* 240×240 and read as blurry beside the identical file shown full
   size in ComfyUI. Generated images now get their own rule (up to 78vh) and stay
   click-to-open-full-size.
+
+### Daily briefing (opt-in plugin)
+
+- **One corkboard pin a day** with the next 24 hours of Google Calendar, your unread
+  Gmail, and a few of your own idle pins worth a second look. Sources appear only when
+  they are connected, so a fresh install still gets a useful pin, and a model is
+  optional — if it is down the plain pin is written anyway. One pin per day, rewritten
+  in place (where you moved it stays put), and only briefings you never touched are
+  pruned. It ships **disabled**: a leading underscore keeps it from loading, so nothing
+  changes until you switch it on.
+- **It has a panel now, not just an API.** The plugin shipped with three routes and
+  nothing in the UI calling them, so the feature was unreachable without `curl`. The
+  ☀️ top-bar button opens a panel that says whether today's pin exists, which sources
+  are connected and what the last error was, sets **Auto** and the **hour**, and has
+  **Write it now**. Because it ships off, "not enabled" is a normal state there — the
+  panel says so and offers a one-click **Enable it** instead of looking broken.
 
 ### Discord connector — a card in the app, the bot in its own process
 

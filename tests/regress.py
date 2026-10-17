@@ -3336,6 +3336,41 @@ def test_daily_briefing_plugin() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_briefing_panel_is_wired() -> None:
+    """The briefing plugin's routes must be reachable from the UI.
+
+    The plugin arrived with three routes and nothing calling them, so the feature
+    could only be used with curl. It also ships switched OFF on purpose (the leading
+    underscore keeps every loader away from it), which makes a 404 from its status
+    route a NORMAL state - the panel has to say so and offer the switch, instead of
+    looking broken.
+    """
+    _title("daily briefing panel")
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    html = (root / "templates" / "index.html").read_text(encoding="utf-8")
+    for needle in ("briefingPanel", "toggleBriefingPanel", "runBriefingNow",
+                   "saveBriefingConfig", "enableBriefingPlugin",
+                   "/api/plugin/daily-briefing/status",
+                   "/api/plugin/daily-briefing/run",
+                   "/api/plugin/daily-briefing/config",
+                   "/api/extensions/toggle"):
+        assert needle in html, "{} missing - the panel is not fully wired".format(needle)
+
+    body = html.split("async function loadBriefing", 1)[1].split("\n}", 1)[0]
+    assert "404" in body, "the ships-disabled state must be handled"
+    assert "Not enabled" in body, "and it must say so in words"
+
+    # Enabling stays the user's choice: the plugin must still ship behind the underscore.
+    plugins = root / "plugins"
+    assert (plugins / "_daily_briefing.py").is_file(), "the plugin must ship"
+    assert not (plugins / "daily_briefing.py").exists(), \
+        "it must ship DISABLED - enabling is the user's choice"
+    print("  the ☀️ panel reaches all three routes and explains 'not enabled' -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3350,7 +3385,7 @@ def main() -> int:
              test_inject_preserves_workflow_prompts,
              test_image_panel_choices,
              test_auto_detect_prefers_the_users_own_workflow,
-             test_discord_plugin_stays_isolated, test_daily_briefing_plugin,
+             test_discord_plugin_stays_isolated, test_daily_briefing_plugin, test_briefing_panel_is_wired,
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
              test_write_empty_args, test_bash_clean_before_truncate,

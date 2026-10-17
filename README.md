@@ -492,12 +492,14 @@ A reason to open the app before you have a question: once a morning, one pin lan
 on the corkboard with **the next 24 hours of Google Calendar**, **your unread Gmail**,
 and **a few of your own old pins worth a second look** (a different handful each day).
 
-- **Turn it on:** it ships disabled. Enable *Daily Briefing* in the 🧩 Plugins panel
-  (or rename `plugins/_daily_briefing.py` to `daily_briefing.py`) and restart. It then
-  writes the pin by itself from 07:00 on, whenever the server is running.
+- **Turn it on:** it ships disabled. Click **☀️** in the top bar and then **Enable it**
+  (or enable *Daily Briefing* in the 🧩 Plugins panel), and restart. It then writes the
+  pin by itself from 07:00 on, whenever the server is running.
 - **Works with nothing connected.** Calendar and Gmail appear only if they are signed
-  in; the "second look" section needs neither. Ask the agent *"make my briefing"*, or
-  `POST /api/plugin/daily-briefing/run`, to write it on demand.
+  in; the "second look" section needs neither. The ☀️ panel shows whether today's pin
+  exists and which sources are connected, sets **Auto** and the **hour**, and has
+  **Write it now** for an on-demand pin. Asking the agent *"make my briefing"* does the
+  same thing.
 - **One pin per day**, rewritten in place if you run it again — move it where you like
   and it stays there. Old briefings you never touched are removed after 7 days;
   one you edited or kept is never deleted.
