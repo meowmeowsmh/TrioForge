@@ -702,6 +702,36 @@ def _gpu_oom_hint(error_text: str) -> str:
             "Try a smaller model, or lower the context with TRIOFORGE_CTX_SIZE=8192.")
 
 
+def _local_output_cap(max_tokens: int) -> int:
+    """Never let a local reply outrun the request timeout.
+
+    The provider allows DEFAULT_MAX_TOKENS (4096) tokens, but this machine's card
+    does roughly 5 tokens a second on a 12B split across GPU and CPU - so ~1500
+    tokens fit in the 300 s wait and anything longer dies as "llama.cpp server
+    timed out", which reads like a bug when it is only a long answer. Capping the
+    output (TRIOFORGE_MAX_TOKENS) is what makes the reply FINISH; raising
+    TRIOFORGE_LLAMA_TIMEOUT is the other way out.
+    """
+    try:
+        cap = int(os.environ.get("TRIOFORGE_MAX_TOKENS", "0") or 0)
+    except (TypeError, ValueError):
+        cap = 0
+    return min(max_tokens, cap) if cap > 0 else max_tokens
+
+
+def _local_timeout(default: int = 300) -> int:
+    """The local request timeout, tunable with TRIOFORGE_LLAMA_TIMEOUT.
+
+    A junk or non-positive value falls back to the default: a negative timeout makes
+    every request fail instantly, which would look exactly like a dead server.
+    """
+    try:
+        value = int(os.environ.get("TRIOFORGE_LLAMA_TIMEOUT", str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
 class LlamaCppProvider(LLMProvider):
     # Keep llama.cpp max_tokens conservative: sending a huge value (e.g. the
     # 65536 base default) makes some small/GGUF models return 400 Bad Request.
@@ -930,6 +960,7 @@ class LlamaCppProvider(LLMProvider):
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
                          max(256, n_ctx - 256))
+        max_tokens = _local_output_cap(max_tokens)   # TRIOFORGE_MAX_TOKENS, if set
 
         payload = {
             "model": model_path,
@@ -942,7 +973,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
+                timeout=_local_timeout()   # TRIOFORGE_LLAMA_TIMEOUT, default 300
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
@@ -955,7 +986,11 @@ class LlamaCppProvider(LLMProvider):
             # the reasoning so the response isn't blank / "rejected".
             return content or reasoning
         except requests.exceptions.Timeout:
-            raise ProviderError("llama.cpp server timed out. Try reducing context size or use a smaller model.")
+            raise ProviderError(
+                "llama.cpp timed out after {}s. The answer was probably longer than "
+                "this model can write in that time: lower Context (32K -> 8K is "
+                "several times faster), set TRIOFORGE_MAX_TOKENS=1024 to cap the "
+                "reply, or raise TRIOFORGE_LLAMA_TIMEOUT.".format(_local_timeout()))
         except requests.exceptions.ConnectionError:
             raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
         except requests.exceptions.HTTPError as e:
@@ -980,6 +1015,7 @@ class LlamaCppProvider(LLMProvider):
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
                          max(256, n_ctx - 256))
+        max_tokens = _local_output_cap(max_tokens)   # TRIOFORGE_MAX_TOKENS, if set
 
         content_parts = []
         for img in images:
@@ -1008,7 +1044,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
+                timeout=_local_timeout()   # TRIOFORGE_LLAMA_TIMEOUT, default 300
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
@@ -1045,6 +1081,7 @@ class LlamaCppProvider(LLMProvider):
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
                          max(256, n_ctx - 256))
+        max_tokens = _local_output_cap(max_tokens)   # TRIOFORGE_MAX_TOKENS, if set
 
         last_text = messages[-1].get("content", "") if messages else ""
 
@@ -1185,7 +1222,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
+                timeout=_local_timeout()   # TRIOFORGE_LLAMA_TIMEOUT, default 300
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
@@ -1222,6 +1259,7 @@ class LlamaCppProvider(LLMProvider):
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS),
                          max(256, n_ctx - 256))
+        max_tokens = _local_output_cap(max_tokens)   # TRIOFORGE_MAX_TOKENS, if set
         tools = kwargs.get("tools")
 
         payload = {
@@ -1239,7 +1277,7 @@ class LlamaCppProvider(LLMProvider):
             resp = requests.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
-                timeout=300  # 12B on split GPU/CPU can take minutes; 180s timed out
+                timeout=_local_timeout()   # TRIOFORGE_LLAMA_TIMEOUT, default 300
             )
             resp.raise_for_status()
             msg = resp.json()["choices"][0]["message"]
@@ -1264,7 +1302,11 @@ class LlamaCppProvider(LLMProvider):
             return {"role": "assistant", "content": content or reasoning,
                     "tool_calls": tool_calls}
         except requests.exceptions.Timeout:
-            raise ProviderError("llama.cpp server timed out. Try reducing context size or use a smaller model.")
+            raise ProviderError(
+                "llama.cpp timed out after {}s. The answer was probably longer than "
+                "this model can write in that time: lower Context (32K -> 8K is "
+                "several times faster), set TRIOFORGE_MAX_TOKENS=1024 to cap the "
+                "reply, or raise TRIOFORGE_LLAMA_TIMEOUT.".format(_local_timeout()))
         except requests.exceptions.ConnectionError:
             raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
         except requests.exceptions.HTTPError as e:

@@ -149,6 +149,18 @@ below, so it carries the same version number on a build that is missing all of i
   deleted nothing. `tools/restore-bulk-check.js` repeats that check and cancels every
   confirm, so it can be run any time without touching real archives.
 
+### Local model: "timed out" was a long answer, not a broken server
+
+- **The reply is now capped so it can finish, and the wait is tunable.** The local
+  provider allows 4096 output tokens, but a 12B model split across an 8 GB card and
+  the CPU writes roughly 5 tokens a second — only ~1500 tokens fit in the 300 s
+  request timeout, so anything longer died as *"llama.cpp server timed out. Try
+  reducing context size or use a smaller model."* That blamed the context and said
+  nothing about the actual cause. `TRIOFORGE_MAX_TOKENS` caps the reply (unset =
+  unchanged) and `TRIOFORGE_LLAMA_TIMEOUT` sets the wait; the error now names both,
+  plus the context lever. A junk or non-positive timeout falls back to 300 s —
+  a negative one fails every request instantly and looks exactly like a dead server.
+
 ### Small quality-of-life
 
 - **🧊 Free memory, and the numbers to watch.** The top bar shows live RAM and VRAM

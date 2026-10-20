@@ -3545,6 +3545,49 @@ def test_chat_draft_and_copy_wiring() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_local_timeout_and_output_cap_knobs() -> None:
+    """A slow local model must not be able to write past its own timeout.
+
+    The provider allows 4096 output tokens, but this project's test card does ~5
+    tok/s on a 12B split across GPU and CPU - so ~1500 tokens fit in the 300 s wait
+    and anything longer died as "llama.cpp server timed out", which reads like a bug
+    when it is only a long answer. The knobs are TRIOFORGE_MAX_TOKENS (cap the reply
+    so it FINISHES) and TRIOFORGE_LLAMA_TIMEOUT (wait longer), and junk must never
+    become a broken setting - a negative timeout fails every request instantly,
+    which looks exactly like a dead server.
+    """
+    _title("local model timeout knobs")
+    import os
+
+    from providers import llm_providers as L
+
+    keys = ("TRIOFORGE_MAX_TOKENS", "TRIOFORGE_LLAMA_TIMEOUT")
+    saved = {k: os.environ.get(k) for k in keys}
+    try:
+        for k in keys:
+            os.environ.pop(k, None)
+        assert L._local_output_cap(4096) == 4096, "unset means no extra cap"
+        assert L._local_timeout() == 300
+        os.environ["TRIOFORGE_MAX_TOKENS"] = "1024"
+        assert L._local_output_cap(4096) == 1024
+        assert L._local_output_cap(512) == 512, "a cap must never raise a smaller one"
+        os.environ["TRIOFORGE_MAX_TOKENS"] = "junk"
+        assert L._local_output_cap(4096) == 4096
+        os.environ["TRIOFORGE_LLAMA_TIMEOUT"] = "600"
+        assert L._local_timeout() == 600
+        for bad in ("", "soon", "-5", "0"):
+            os.environ["TRIOFORGE_LLAMA_TIMEOUT"] = bad
+            assert L._local_timeout() == 300, bad
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    print("  output can be capped, the wait is tunable, junk falls back -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3571,7 +3614,7 @@ def main() -> int:
              test_auto_detect_prefers_the_users_own_workflow,
              test_discord_plugin_stays_isolated,
              test_restore_list_supports_bulk_cleanup,
-             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring,
+             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring, test_local_timeout_and_output_cap_knobs,
 
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
