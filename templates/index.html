@@ -1674,6 +1674,10 @@ video.tf-video {
                style="display:none; max-width:240px; padding:5px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.1); background:rgba(13,17,23,0.7); color:#e6edf3;"
                autocomplete="off" autocorrect="off" spellcheck="false">
         <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter API Key">
+        <!-- The voice the AI speaks with. The browser already ships several (male and
+             female, per language); this only picks between them. -->
+        <select id="voiceSelect" class="weather-country-select" aria-label="AI voice"
+                title="Voice for AI speech output (male / female)"></select>
         <select id="weatherCountrySelect" class="weather-country-select" aria-label="Select country"></select>
       </div>
 
@@ -2766,6 +2770,90 @@ const stopSpeakBtn = document.getElementById('stopSpeakBtn');
 if (!('speechSynthesis' in window)) {
     speakToggleBtn.style.display = 'none';
 }
+// ── AI voice choice (male / female) ──────────────────────────────────────────
+// The browser's own speech engine ships several voices per language and the app
+// always used the default one. A voice's name is the only hint at gender, so the
+// well-known ones are labelled ♂/♀; an unfamiliar voice just keeps its name.
+var VOICE_MALE_HINTS = ['david', 'mark', 'george', 'ryan', 'guy', 'james', 'daniel',
+                        'alex', 'fred', 'oliver', 'thomas', 'male'];
+var VOICE_FEMALE_HINTS = ['zira', 'susan', 'hazel', 'samantha', 'jenny', 'aria',
+                          'michelle', 'victoria', 'karen', 'moira', 'tessa', 'fiona',
+                          'female', 'siri', 'google uk english female'];
+
+function _voiceGender(name) {
+    var n = (name || '').toLowerCase();
+    for (var i = 0; i < VOICE_MALE_HINTS.length; i++) {
+        if (n.indexOf(VOICE_MALE_HINTS[i]) >= 0) return '♂';
+    }
+    for (var j = 0; j < VOICE_FEMALE_HINTS.length; j++) {
+        if (n.indexOf(VOICE_FEMALE_HINTS[j]) >= 0) return '♀';
+    }
+    return '';
+}
+
+function _sortedVoices() {
+    var all = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+    return all.slice().sort(function(a, b) {
+        // English first: that is what the replies are in, so the useful ones lead.
+        var ae = (a.lang || '').toLowerCase().indexOf('en') === 0 ? 0 : 1;
+        var be = (b.lang || '').toLowerCase().indexOf('en') === 0 ? 0 : 1;
+        if (ae !== be) return ae - be;
+        return (a.name || '').localeCompare(b.name || '');
+    });
+}
+
+function _pickVoice() {
+    var sel = document.getElementById('voiceSelect');
+    if (!sel || !sel.value || !window.speechSynthesis) return null;
+    var voices = window.speechSynthesis.getVoices();
+    for (var i = 0; i < voices.length; i++) {
+        if ((voices[i].voiceURI || voices[i].name) === sel.value) return voices[i];
+    }
+    return null;
+}
+
+function populateVoiceSelect() {
+    var sel = document.getElementById('voiceSelect');
+    if (!sel) return;
+    var voices = _sortedVoices();
+    var saved = '';
+    try { saved = localStorage.getItem('tf.ttsVoice') || ''; } catch (e) {}
+    sel.innerHTML = '';
+    if (!voices.length) {
+        // WebView2 can expose none at all - say so instead of showing an empty box.
+        sel.innerHTML = '<option value="">🔈 Default voice</option>';
+        sel.disabled = true;
+        return;
+    }
+    sel.disabled = false;
+    voices.forEach(function(v) {
+        var opt = document.createElement('option');
+        opt.value = v.voiceURI || v.name;
+        var g = _voiceGender(v.name);
+        opt.textContent = (g ? g + ' ' : '') + v.name + ' · ' + v.lang;
+        sel.appendChild(opt);
+    });
+    if (saved) sel.value = saved;
+    if (!sel.value) sel.selectedIndex = 0;
+    sel.onchange = function() {
+        try { localStorage.setItem('tf.ttsVoice', sel.value); } catch (e) {}
+        // Say a short sample: picking a voice should be audible immediately.
+        var voice = _pickVoice();
+        if (!voice || !window.speechSynthesis) return;
+        var u = new SpeechSynthesisUtterance('This is my voice.');
+        u.voice = voice;
+        u.lang = voice.lang;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+    };
+}
+
+if (window.speechSynthesis) {
+    populateVoiceSelect();
+    // Chrome and WebView2 fill the list asynchronously, once.
+    window.speechSynthesis.onvoiceschanged = populateVoiceSelect;
+}
+
 function toggleVoice() {
     voiceEnabled = !voiceEnabled;
     if (voiceEnabled) {
@@ -2807,7 +2895,12 @@ function speakText(text) {
     if (!cleaned.trim()) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleaned);
-    utterance.lang = 'en-US';
+    utterance.lang = 'en-US';                 // fallback when no voice is chosen
+    const chosenVoice = _pickVoice();
+    if (chosenVoice) {
+        utterance.voice = chosenVoice;
+        utterance.lang = chosenVoice.lang || utterance.lang;
+    }
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.onstart = function() {

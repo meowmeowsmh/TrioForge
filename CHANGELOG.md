@@ -149,6 +149,16 @@ below, so it carries the same version number on a build that is missing all of i
   deleted nothing. `tools/restore-bulk-check.js` repeats that check and cancels every
   confirm, so it can be run any time without touching real archives.
 
+### Pick the AI's voice (male / female)
+
+- **A voice picker, left of the country dropdown.** Speech output is the browser's
+  own engine, and the app always used its default voice with the language hardcoded
+  to `en-US` — so a machine with David and Mark (male) and Zira (female) installed
+  could only ever sound the same. The list is filled from whatever that machine
+  actually has, English first, with the well-known names labelled ♂/♀ (a voice name
+  is the only gender hint there is), the choice remembered across reloads, and a
+  short sample spoken the moment you pick one. An engine with no voices at all shows
+  a single honest "Default voice" entry instead of an empty box.
 ### Local model: a hard deadline, so it can never hang for half an hour
 
 - **Requests to the local model now have a real wall-clock budget.** `requests`'

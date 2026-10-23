@@ -3701,6 +3701,36 @@ def test_local_request_has_a_hard_deadline() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_ai_voice_dropdown_is_wired() -> None:
+    """The AI voice must be pickable (male / female), left of the country picker.
+
+    Speech output is the BROWSER's engine: the app always spoke with whatever the
+    default voice was and hardcoded `en-US`, so a machine with David (male), Mark
+    (male) and Zira (female) installed could only ever get one of them. The dropdown
+    lists what the machine really has, labels the well-known names with ♂/♀ because a
+    voice name is the only gender hint available, remembers the choice, and speaks a
+    sample so the pick is audible. Asserted on the markup - there is no server half.
+    """
+    _title("AI voice dropdown")
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    for needle in ('id="voiceSelect"', "function populateVoiceSelect", "VOICE_MALE_HINTS",
+                   "VOICE_FEMALE_HINTS", "tf.ttsVoice", "utterance.voice = chosenVoice",
+                   "utterance.lang = chosenVoice.lang"):
+        assert needle in html, "{} missing".format(needle)
+
+    assert html.index('id="voiceSelect"') < html.index('id="weatherCountrySelect"'), \
+        "the voice picker belongs to the LEFT of the country picker"
+    # A machine (or WebView2) with no voices must degrade to one honest option.
+    assert "Default voice" in html, "no-voice engines need a fallback entry"
+    # Picking a voice has to be audible, or the choice cannot be judged.
+    assert "This is my voice." in html, "choosing a voice should speak a sample"
+    print("  male/female voices listed, remembered, sampled; left of the country -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3727,7 +3757,7 @@ def main() -> int:
              test_auto_detect_prefers_the_users_own_workflow,
              test_discord_plugin_stays_isolated,
              test_restore_list_supports_bulk_cleanup,
-             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring, test_local_timeout_and_output_cap_knobs, test_local_request_has_a_hard_deadline,
+             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring, test_local_timeout_and_output_cap_knobs, test_local_request_has_a_hard_deadline, test_ai_voice_dropdown_is_wired,
 
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
