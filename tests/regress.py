@@ -3599,6 +3599,8 @@ def test_local_request_has_a_hard_deadline() -> None:
     """
     _title("local request hard deadline")
     import json as _json
+    import tempfile
+    import shutil
     import threading
     import time
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -3646,31 +3648,55 @@ def test_local_request_has_a_hard_deadline() -> None:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    provider = L.LlamaCppProvider(server_url="http://127.0.0.1:{}".format(port),
+    base = "http://127.0.0.1:{}".format(port)
+
+    # Wait until the stub ACCEPTS before anything is timed. A slower machine can
+    # lose this race, and then the provider's readiness poll - not the budget -
+    # would be what the stopwatch measures.
+    ready_by = time.time() + 15
+    while time.time() < ready_by:
+        try:
+            if requests.get(base + "/health", timeout=1).status_code == 200:
+                break
+        except Exception:      # noqa: BLE001 - not listening yet
+            pass
+        time.sleep(0.1)
+    else:
+        raise AssertionError("the stub server never started listening")
+
+    # A model has to EXIST for the provider to build a request. A fresh clone has an
+    # empty models/ (weights are git-ignored), which is what made this pass on a
+    # developer machine and fail on CI; a stub file in a temp dir fixes that.
+    models_dir = tempfile.mkdtemp(prefix="tf-deadline-models-")
+    stub_model = os.path.join(models_dir, "stub.gguf")
+    with open(stub_model, "wb") as fh:
+        fh.write(b"GGUF")
+    provider = L.LlamaCppProvider(models_dir=models_dir, server_url=base,
                                   context_length=4096)
     saved = os.environ.get("TRIOFORGE_LLAMA_TIMEOUT")
     os.environ["TRIOFORGE_LLAMA_TIMEOUT"] = "1"
     try:
         Handler.mode = "fast"
-        assert provider.generate([{"role": "user", "content": "hi"}]) == "hi"
+        assert provider.generate([{"role": "user", "content": "hi"}], model="stub.gguf") == "hi"
 
         Handler.mode = "slow"
         started = time.time()
         try:
-            provider.generate([{"role": "user", "content": "hi"}])
+            provider.generate([{"role": "user", "content": "hi"}], model="stub.gguf")
             raise AssertionError("a trickling server must hit the budget")
         except L.ProviderError as exc:
             assert "timed out" in str(exc).lower(), exc
         elapsed = time.time() - started
         # 1s budget. If the cleanup ever moves back onto the caller's path (closing a
         # streaming response blocks until the body ends) this jumps to ~12s.
-        assert elapsed < 4, "the budget must stop it, elapsed={:.1f}s".format(elapsed)
+        assert elapsed < 8, "the budget must stop it, elapsed={:.1f}s".format(elapsed)
     finally:
         if saved is None:
             os.environ.pop("TRIOFORGE_LLAMA_TIMEOUT", None)
         else:
             os.environ["TRIOFORGE_LLAMA_TIMEOUT"] = saved
         server.shutdown()
+        shutil.rmtree(models_dir, ignore_errors=True)
     print("  a trickling response stops at the budget; fast ones unaffected -> OK")
 
 

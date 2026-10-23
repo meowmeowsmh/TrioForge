@@ -120,6 +120,6 @@
   "templates/index.html": "a9afcba961e26b89d1efa746fa50b1a87cecfa5caf516a091450fe26232669ae",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-24T03:10:42",
- "note": "1.5.6: hard wall-clock deadline for local model requests"
+ "generated": "2026-10-24T03:22:59",
+ "note": "1.5.6: hard deadline test works without model weights"
 }
