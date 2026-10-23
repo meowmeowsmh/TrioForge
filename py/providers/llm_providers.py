@@ -732,6 +732,51 @@ def _local_timeout(default: int = 300) -> int:
     return value if value > 0 else default
 
 
+def _local_post_json(url: str, payload: dict, budget: int):
+    """POST to the local server, and never wait longer than `budget` seconds.
+
+    `requests`' timeout is per socket read, not a total, so a server that trickles
+    the body — or a machine that starts swapping mid-answer with a 32K context —
+    keeps resetting it and the request stays alive for half an hour while every
+    single gap looks fine. Checking the clock between chunks does not help either,
+    because the read blocks, and closing the response from another thread does not
+    unblock a Windows socket. So the request runs in a worker and the CALLER waits
+    at most `budget`: the user gets an answer (or an error) on time, always.
+    """
+    box: dict = {}
+
+    def _work():
+        try:
+            resp = requests.post(url, json=payload, stream=True, timeout=(10, 60))
+            box["resp"] = resp
+            resp.raise_for_status()
+            box["data"] = resp.json()
+        except BaseException as exc:      # noqa: BLE001 - handed straight to the caller
+            box["error"] = exc
+
+    worker = threading.Thread(target=_work, name="llama-request", daemon=True)
+    worker.start()
+    worker.join(max(1, budget))
+    if worker.is_alive():
+        # Out of time. Hang up so the server stops generating - but do it in its own
+        # thread: closing a streaming response BLOCKS until the body finishes, and
+        # blocking here would put the wait straight back on the caller.
+        resp = box.get("resp")
+        if resp is not None:
+            threading.Thread(target=_close_quietly, args=(resp,), daemon=True).start()
+        raise requests.exceptions.Timeout()
+    if "error" in box:
+        raise box["error"]
+    return box.get("data") or {}
+
+
+def _close_quietly(resp) -> None:
+    try:
+        resp.close()
+    except Exception:                     # noqa: BLE001 - a dying socket can throw
+        pass
+
+
 class LlamaCppProvider(LLMProvider):
     # Keep llama.cpp max_tokens conservative: sending a huge value (e.g. the
     # 65536 base default) makes some small/GGUF models return 400 Bad Request.
@@ -970,13 +1015,10 @@ class LlamaCppProvider(LLMProvider):
             "max_tokens": max_tokens,
         }
         try:
-            resp = requests.post(
-                f"{self.server_url}/chat/completions",
-                json=payload,
-                timeout=_local_timeout()   # TRIOFORGE_LLAMA_TIMEOUT, default 300
-            )
-            resp.raise_for_status()
-            msg = resp.json()["choices"][0]["message"]
+            # A HARD budget, not a per-read timeout: see _local_post_json.
+            data = _local_post_json(f"{self.server_url}/chat/completions", payload,
+                                    _local_timeout())
+            msg = data["choices"][0]["message"]
             content = msg.get("content") or ""
             reasoning = msg.get("reasoning_content") or ""
             if reasoning:
@@ -992,7 +1034,9 @@ class LlamaCppProvider(LLMProvider):
                 "several times faster), set TRIOFORGE_MAX_TOKENS=1024 to cap the "
                 "reply, or raise TRIOFORGE_LLAMA_TIMEOUT.".format(_local_timeout()))
         except requests.exceptions.ConnectionError:
-            raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
+            raise ProviderError(
+                "Lost the connection to llama.cpp mid-answer - the server stopped or "
+                "ran out of memory. A smaller context (8K) makes that far less likely.")
         except requests.exceptions.HTTPError as e:
             detail = ""
             try:
@@ -1041,13 +1085,9 @@ class LlamaCppProvider(LLMProvider):
             "max_tokens": max_tokens,
         }
         try:
-            resp = requests.post(
-                f"{self.server_url}/chat/completions",
-                json=payload,
-                timeout=_local_timeout()   # TRIOFORGE_LLAMA_TIMEOUT, default 300
-            )
-            resp.raise_for_status()
-            msg = resp.json()["choices"][0]["message"]
+            data = _local_post_json(f"{self.server_url}/chat/completions", payload,
+                                    _local_timeout())
+            msg = data["choices"][0]["message"]
             content = msg.get("content") or ""
             reasoning = msg.get("reasoning_content") or ""
             return content or reasoning
@@ -1234,7 +1274,9 @@ class LlamaCppProvider(LLMProvider):
         except requests.exceptions.Timeout:
             raise ProviderError("llama.cpp server timed out during audio transcription.")
         except requests.exceptions.ConnectionError:
-            raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
+            raise ProviderError(
+                "Lost the connection to llama.cpp mid-answer - the server stopped or "
+                "ran out of memory. A smaller context (8K) makes that far less likely.")
         except requests.exceptions.HTTPError as e:
             detail = ""
             try:
@@ -1308,7 +1350,9 @@ class LlamaCppProvider(LLMProvider):
                 "several times faster), set TRIOFORGE_MAX_TOKENS=1024 to cap the "
                 "reply, or raise TRIOFORGE_LLAMA_TIMEOUT.".format(_local_timeout()))
         except requests.exceptions.ConnectionError:
-            raise ProviderError("Cannot connect to llama.cpp server. Is it running?")
+            raise ProviderError(
+                "Lost the connection to llama.cpp mid-answer - the server stopped or "
+                "ran out of memory. A smaller context (8K) makes that far less likely.")
         except requests.exceptions.HTTPError as e:
             detail = ""
             try:

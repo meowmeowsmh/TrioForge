@@ -3588,6 +3588,93 @@ def test_local_timeout_and_output_cap_knobs() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_local_request_has_a_hard_deadline() -> None:
+    """A trickling server must not hold a request open for half an hour.
+
+    requests' timeout is per socket read, so a server that sends a byte every so
+    often - or a machine that starts swapping mid-answer with a 32K context -
+    resets it forever. That is the reported "llama.cpp generating half way for
+    30 min". The budget is now checked against the clock, so it holds however the
+    bytes arrive, and a normal fast response still works unchanged.
+    """
+    _title("local request hard deadline")
+    import json as _json
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import requests
+
+    from providers import llm_providers as L
+
+    class Handler(BaseHTTPRequestHandler):
+        mode = "fast"
+
+        def log_message(self, *args):      # keep the test output clean
+            return
+
+        def do_GET(self):
+            # /health: the provider waits for this before it sends a prompt.
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            if Handler.mode == "fast":
+                body = _json.dumps({"choices": [{"message": {"content": "hi"}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            # Trickle: every gap is well under any read timeout, the total is not.
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "4096")
+            self.end_headers()
+            for _ in range(60):
+                try:
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                except Exception:  # noqa: BLE001 - the client hung up, fine
+                    return
+                time.sleep(0.2)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    provider = L.LlamaCppProvider(server_url="http://127.0.0.1:{}".format(port),
+                                  context_length=4096)
+    saved = os.environ.get("TRIOFORGE_LLAMA_TIMEOUT")
+    os.environ["TRIOFORGE_LLAMA_TIMEOUT"] = "1"
+    try:
+        Handler.mode = "fast"
+        assert provider.generate([{"role": "user", "content": "hi"}]) == "hi"
+
+        Handler.mode = "slow"
+        started = time.time()
+        try:
+            provider.generate([{"role": "user", "content": "hi"}])
+            raise AssertionError("a trickling server must hit the budget")
+        except L.ProviderError as exc:
+            assert "timed out" in str(exc).lower(), exc
+        elapsed = time.time() - started
+        # 1s budget. If the cleanup ever moves back onto the caller's path (closing a
+        # streaming response blocks until the body ends) this jumps to ~12s.
+        assert elapsed < 4, "the budget must stop it, elapsed={:.1f}s".format(elapsed)
+    finally:
+        if saved is None:
+            os.environ.pop("TRIOFORGE_LLAMA_TIMEOUT", None)
+        else:
+            os.environ["TRIOFORGE_LLAMA_TIMEOUT"] = saved
+        server.shutdown()
+    print("  a trickling response stops at the budget; fast ones unaffected -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3614,7 +3701,7 @@ def main() -> int:
              test_auto_detect_prefers_the_users_own_workflow,
              test_discord_plugin_stays_isolated,
              test_restore_list_supports_bulk_cleanup,
-             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring, test_local_timeout_and_output_cap_knobs,
+             test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring, test_local_timeout_and_output_cap_knobs, test_local_request_has_a_hard_deadline,
 
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,

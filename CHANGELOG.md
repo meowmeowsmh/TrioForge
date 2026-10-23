@@ -149,6 +149,23 @@ below, so it carries the same version number on a build that is missing all of i
   deleted nothing. `tools/restore-bulk-check.js` repeats that check and cancels every
   confirm, so it can be run any time without touching real archives.
 
+### Local model: a hard deadline, so it can never hang for half an hour
+
+- **Requests to the local model now have a real wall-clock budget.** `requests`'
+  timeout is *per socket read*, not a total: a server that trickles the body — or a
+  machine that starts swapping mid-answer with a 32K context — resets it forever, so
+  a generation could sit "half way" for half an hour while every individual gap
+  looked healthy. The call now runs in a worker and the caller waits at most
+  `TRIOFORGE_LLAMA_TIMEOUT` (default 300 s), then reports a plain sentence. Two
+  things had to be right: checking the clock between chunks is useless because the
+  read blocks, and closing the response from another thread does not unblock a
+  Windows socket — while closing it on the caller's path *blocks until the body
+  finishes*, which put the wait straight back. The hang-up therefore happens on its
+  own thread.
+- **"Lost the connection" says what it means.** A stream that dies mid-answer used
+  to surface as a raw `ChunkedEncodingError` traceback; it now reads as a lost
+  connection with the likely cause (the server stopped, or ran out of memory).
+
 ### Local model: "timed out" was a long answer, not a broken server
 
 - **The reply is now capped so it can finish, and the wait is tunable.** The local
