@@ -174,6 +174,7 @@ import extensions
 import setup_check
 import edits_store
 import video_to_text
+import neural_voice
 
 # NVML is imported AND initialised lazily - both steps are expensive and neither is
 # needed on most starts. Importing pynvml costs ~75 ms (it is a deprecation shim that
@@ -2837,6 +2838,58 @@ def memory_free():
     except Exception:  # noqa: BLE001
         pass
     return jsonify({"ok": True, "freed": freed})
+
+
+@app.route('/api/tts/voices', methods=['GET'])
+def tts_voices():
+    """Voices for the read-aloud picker.
+
+    The browser can only speak with voices the OS has installed - on a stock
+    Windows that is three (David, Mark, Zira) - so the picker also offers the
+    neural voices here. The response always carries ``available`` and ``reason``
+    so the UI can explain a missing list instead of showing an empty box.
+    """
+    try:
+        info = neural_voice.status()
+        listing = neural_voice.voices() if info["available"] else []
+        info["voices"] = listing
+        info["count"] = len(listing)
+        info["ok"] = True
+        return jsonify(info)
+    except Exception as e:  # noqa: BLE001 - the picker must never 500
+        return jsonify({"ok": False, "available": False, "voices": [],
+                        "reason": f"Neural voices unavailable: {e}"})
+
+
+@app.route('/api/tts/speak', methods=['POST'])
+def tts_speak():
+    """Render text with a neural voice and return MP3 bytes.
+
+    Used by the read-aloud button when the picked voice starts with "neural:".
+    Every failure comes back as JSON with a readable ``error`` and status 503 so
+    the UI can fall back to the offline Windows voice.
+    """
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '')
+    voice = (data.get('voice') or neural_voice.DEFAULT_VOICE)
+    try:
+        rate = int(data.get('rate') or 0)
+    except (TypeError, ValueError):
+        rate = 0
+    try:
+        pitch = int(data.get('pitch') or 0)
+    except (TypeError, ValueError):
+        pitch = 0
+    try:
+        audio = neural_voice.synthesize(text, voice, rate, pitch)
+    except neural_voice.NeuralVoiceError as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"Speech failed: {e}"}), 503
+    resp = Response(audio, mimetype="audio/mpeg")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Content-Length"] = str(len(audio))
+    return resp
 
 
 @app.route('/api/video_models', methods=['GET'])

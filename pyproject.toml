@@ -41,6 +41,13 @@ dependencies = [
     "pynvml>=13.0.1",                        # NVIDIA GPU monitoring
     "duckduckgo-search>=8.1.1",              # optional web search
 
+    # ── Voice output ──
+    # py/neural_voice.py lists ~316 neural voices and renders MP3 for the
+    # read-aloud button; Windows alone only ever offers its three SAPI voices.
+    # Imported lazily, so a machine without it still runs and the picker falls
+    # back to the PC voices. Mirrors requirements.txt.
+    "edge-tts>=7.2.7,<8.0.0",
+
     # ── Memory vault ──
     # py/memory.py: durable facts in a DuckDB file behind a Bloom filter gate
     # held in RAM. Imported lazily, so a missing duckdb degrades to a clear

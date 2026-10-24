@@ -159,6 +159,35 @@ below, so it carries the same version number on a build that is missing all of i
   is the only gender hint there is), the choice remembered across reloads, and a
   short sample spoken the moment you pick one. An engine with no voices at all shows
   a single honest "Default voice" entry instead of an empty box.
+
+### Voices that are not the three Windows ones
+
+- **316 neural voices, not 3 SAPI ones.** The picker could only ever offer what the
+  operating system has installed, which on a stock Windows is David, Mark and Zira —
+  no amount of app code changes that, which made it look like a limit of TrioForge.
+  The app now serves the neural voices through `py/neural_voice.py`:
+  `GET /api/tts/voices` lists them and `POST /api/tts/speak` returns the MP3 for a
+  piece of text. The dropdown shows two groups — **✨ Neural (online)** first, with a
+  ♂/♀ marker and the locale (`♀ Yasmin · ms-MY`), then **💻 This PC (offline)** — and
+  the default is a multilingual neural voice (`en-US-AvaMultilingualNeural`), so
+  replies that quote Malay or Chinese are read in the right accent. Malay is in there
+  twice over: `ms-MY-YasminNeural` and `ms-MY-OsmanNeural`.
+- **The first word arrives in about a second, not six.** Synthesising a 980-character
+  reply as one request took **6.0 s** of silence before anything was heard (measured).
+  Long replies are now split on sentence ends into ~220-character pieces: the first
+  chunk is back in well under a second, and the next one is fetched while the current
+  one plays, so the gap between sentences is not audible.
+- **Nothing breaks without it.** `edge-tts` is imported lazily: with the package
+  missing, or offline, or with `TRIOFORGE_TTS=off`, `GET /api/tts/voices` returns
+  `available: false` plus the reason, the picker lists the PC voices, and the reason
+  sits in the dropdown's tooltip. A failed neural request mid-reply falls back to the
+  offline voice on the first chunk and stops cleanly — rather than restarting a
+  half-spoken answer from the top. The voice list is cached
+  (`json_configuration/tts_voices.json`, gitignored, ~44 KB) so an offline start still
+  fills the picker; `TRIOFORGE_TTS_TIMEOUT` (default 30 s) bounds every request.
+- **It says what it costs.** The neural group's label states that the text being read
+  is sent to Microsoft — the one thing about this feature a user has to know up front.
+  The offline voices never leave the machine and stay the fallback.
 ### Local model: a hard deadline, so it can never hang for half an hour
 
 - **Requests to the local model now have a real wall-clock budget.** `requests`'

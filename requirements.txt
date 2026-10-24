@@ -53,6 +53,15 @@ psutil>=7.2.2,<8.0.0     # RAM / VRAM live monitor
 pynvml>=13.0.1,<14.0.0   # NVIDIA GPU monitoring
 duckduckgo-search>=8.1.1,<9.0.0  # optional web search
 
+# ── Voice output (neural voices for the read-aloud button) ──────
+# Windows only installs three SAPI voices (David, Mark, Zira) and the browser can
+# only speak with what the OS has, so the voice picker offered exactly three.
+# py/neural_voice.py adds the neural voices through edge-tts. The import is LAZY:
+# without this package the app still runs, and the picker lists the local voices
+# with the reason the neural list is missing. TRIOFORGE_TTS=off switches the
+# network voices off entirely for offline-first installs.
+edge-tts>=7.2.7,<8.0.0
+
 # ── Memory vault (DuckDB + Bloom filter gate) ───────────────────
 # py/memory.py keeps durable facts in a DuckDB file with a Bloom filter held
 # in RAM in front of it, so a key that is definitely absent costs no disk read.

@@ -2780,6 +2780,11 @@ var VOICE_FEMALE_HINTS = ['zira', 'susan', 'hazel', 'samantha', 'jenny', 'aria',
                           'michelle', 'victoria', 'karen', 'moira', 'tessa', 'fiona',
                           'female', 'siri', 'google uk english female'];
 
+// Neural playback state: an MP3 element instead of an utterance, and a counter
+// that makes a reply arriving mid-sentence cancel the previous request.
+var speakSeq = 0;
+var currentAudio = null;
+
 function _voiceGender(name) {
     var n = (name || '').toLowerCase();
     for (var i = 0; i < VOICE_MALE_HINTS.length; i++) {
@@ -2805,11 +2810,48 @@ function _sortedVoices() {
 function _pickVoice() {
     var sel = document.getElementById('voiceSelect');
     if (!sel || !sel.value || !window.speechSynthesis) return null;
+    if (sel.value.indexOf('neural:') === 0) return null;   // played from MP3 instead
+    var wanted = sel.value.indexOf('local:') === 0 ? sel.value.slice(6) : sel.value;
     var voices = window.speechSynthesis.getVoices();
     for (var i = 0; i < voices.length; i++) {
-        if ((voices[i].voiceURI || voices[i].name) === sel.value) return voices[i];
+        if ((voices[i].voiceURI || voices[i].name) === wanted) return voices[i];
     }
     return null;
+}
+
+function _pickedNeuralId() {
+    var sel = document.getElementById('voiceSelect');
+    if (!sel || !sel.value) return '';
+    return sel.value.indexOf('neural:') === 0 ? sel.value.slice(7) : '';
+}
+
+// ── Neural voices (served by the app) ────────────────────────────────────────
+// Windows only installs three voices and the browser cannot invent more, so the
+// dropdown also offers the neural voices /api/tts/voices lists. Fetch once, then
+// rebuild the select with one group per source.
+var NEURAL_VOICES = [];
+var NEURAL_STATE = { loaded: false, available: false, reason: '', def: '' };
+
+function fetchNeuralVoices() {
+    if (NEURAL_STATE.loaded) return;
+    NEURAL_STATE.loaded = true;
+    fetch('/api/tts/voices').then(function(r) { return r.json(); }).then(function(d) {
+        NEURAL_STATE.available = !!(d && d.available);
+        NEURAL_STATE.reason = (d && d.reason) || '';
+        NEURAL_STATE.def = (d && d.default) || '';
+        NEURAL_VOICES = (d && d.voices) || [];
+        populateVoiceSelect();
+    }).catch(function() {
+        NEURAL_STATE.reason = 'Could not reach the app server for the neural list.';
+        populateVoiceSelect();
+    });
+}
+
+function _neuralRank(v) {
+    // The app's chosen default leads, then English, then other languages.
+    var isDefault = NEURAL_STATE.def && v.id === NEURAL_STATE.def ? 0 : 1;
+    var isEnglish = (v.locale || '').toLowerCase().indexOf('en') === 0 ? 0 : 1;
+    return isDefault * 10 + isEnglish;
 }
 
 function populateVoiceSelect() {
@@ -2818,34 +2860,75 @@ function populateVoiceSelect() {
     var voices = _sortedVoices();
     var saved = '';
     try { saved = localStorage.getItem('tf.ttsVoice') || ''; } catch (e) {}
+
+    var neural = NEURAL_VOICES.slice().sort(function(a, b) {
+        var ka = _neuralRank(a), kb = _neuralRank(b);
+        if (ka !== kb) return ka - kb;
+        return (a.label || a.id).localeCompare(b.label || b.id);
+    });
+
     sel.innerHTML = '';
-    if (!voices.length) {
+    if (!voices.length && !neural.length) {
         // WebView2 can expose none at all - say so instead of showing an empty box.
         sel.innerHTML = '<option value="">🔈 Default voice</option>';
         sel.disabled = true;
+        sel.title = NEURAL_STATE.reason || '';
         return;
     }
     sel.disabled = false;
-    voices.forEach(function(v) {
-        var opt = document.createElement('option');
-        opt.value = v.voiceURI || v.name;
-        var g = _voiceGender(v.name);
-        opt.textContent = (g ? g + ' ' : '') + v.name + ' · ' + v.lang;
-        sel.appendChild(opt);
-    });
-    if (saved) sel.value = saved;
+    sel.title = neural.length ? '' : (NEURAL_STATE.reason || '');
+
+    if (neural.length) {
+        var neuralGroup = document.createElement('optgroup');
+        neuralGroup.label = '✨ Neural voices (online — what it reads is sent to Microsoft)';
+        neural.forEach(function(v) {
+            var opt = document.createElement('option');
+            opt.value = 'neural:' + v.id;
+            var g = v.gender === 'Male' ? '♂' : (v.gender === 'Female' ? '♀' : '');
+            opt.textContent = (g ? g + ' ' : '') + (v.label || v.id) + ' · neural';
+            neuralGroup.appendChild(opt);
+        });
+        sel.appendChild(neuralGroup);
+    }
+    if (voices.length) {
+        var localGroup = document.createElement('optgroup');
+        localGroup.label = '💻 This PC (offline)';
+        voices.forEach(function(v) {
+            var opt = document.createElement('option');
+            opt.value = 'local:' + (v.voiceURI || v.name);
+            var g = _voiceGender(v.name);
+            opt.textContent = (g ? g + ' ' : '') + v.name + ' · ' + v.lang;
+            localGroup.appendChild(opt);
+        });
+        sel.appendChild(localGroup);
+    }
+
+    // Restore the saved choice. Older builds stored a bare voiceURI, so a plain
+    // match still wins; looping the options avoids selector-escaping trouble.
+    if (saved) {
+        for (var i = 0; i < sel.options.length; i++) {
+            var val = sel.options[i].value;
+            if (val === saved || val === 'local:' + saved || val === 'neural:' + saved) {
+                sel.value = val;
+                break;
+            }
+        }
+    }
     if (!sel.value) sel.selectedIndex = 0;
     sel.onchange = function() {
         try { localStorage.setItem('tf.ttsVoice', sel.value); } catch (e) {}
         // Say a short sample: picking a voice should be audible immediately.
-        var voice = _pickVoice();
-        if (!voice || !window.speechSynthesis) return;
-        var u = new SpeechSynthesisUtterance('This is my voice.');
-        u.voice = voice;
-        u.lang = voice.lang;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(u);
+        speakSample('This is my voice.');
     };
+}
+
+function speakSample(text) {
+    var neuralId = _pickedNeuralId();
+    if (neuralId) {
+        speakNeural(text, neuralId, function() { speakLocal(text); });
+        return;
+    }
+    speakLocal(text);
 }
 
 if (window.speechSynthesis) {
@@ -2853,6 +2936,7 @@ if (window.speechSynthesis) {
     // Chrome and WebView2 fill the list asynchronously, once.
     window.speechSynthesis.onvoiceschanged = populateVoiceSelect;
 }
+fetchNeuralVoices();
 
 function toggleVoice() {
     voiceEnabled = !voiceEnabled;
@@ -2868,11 +2952,21 @@ function toggleVoice() {
     }
 }
 function stopSpeaking() {
-    if (currentUtterance && speaking) {
-        window.speechSynthesis.cancel();
-        speaking = false;
-        stopSpeakBtn.style.display = 'none';
+    speakSeq++;                                  // drop any neural request in flight
+    if (currentAudio) {
+        var dead = currentAudio;
+        currentAudio = null;
+        try { dead.pause(); } catch (e) {}
+        // Release the MP3 blob too: a paused element keeps its URL alive, and a
+        // long chat that is interrupted again and again would pile them up.
+        try {
+            if (dead.src && dead.src.indexOf('blob:') === 0) { URL.revokeObjectURL(dead.src); }
+        } catch (e) {}
     }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    currentUtterance = null;
+    speaking = false;
+    stopSpeakBtn.style.display = 'none';
 }
 
 function cleanForSpeech(text) {
@@ -2893,8 +2987,131 @@ function speakText(text) {
     if (!voiceEnabled || !text) return;
     var cleaned = cleanForSpeech(text);
     if (!cleaned.trim()) return;
+    var neuralId = _pickedNeuralId();
+    if (neuralId) {
+        // Neural voices arrive as an MP3 from the app; if that fails for any
+        // reason (offline, package missing) the PC voice reads it instead - a
+        // reply never goes silent just because the network blinked.
+        speakNeural(cleaned, neuralId, function() {
+            speakLocal(cleaned, '🔇 Neural voice unavailable — using the PC voice');
+        });
+        return;
+    }
+    speakLocal(cleaned);
+}
+
+// A whole reply is too much to synthesise before the first word: measured on
+// this machine, 980 characters took 6.0s to come back, so the user sat in
+// silence. Split on sentence ends and speak chunk by chunk instead - the first
+// ~220 characters are back in well under a second, and the next chunk is
+// fetched while the current one plays.
+var TTS_CHUNK_CHARS = 220;
+
+function _ttsChunks(text, max) {
+    var parts = text.match(/[^.!?\n]+[.!?]*[ \t]*\n?/g) || [text];
+    var out = [], current = '';
+    parts.forEach(function(part) {
+        if ((current.length + part.length) > max && current.trim()) {
+            out.push(current.trim());
+            current = part;
+        } else {
+            current += part;
+        }
+        // One very long line (a table row, a URL) still has to be cut somewhere.
+        while (current.length > max) {
+            var cut = current.lastIndexOf(' ', max);
+            if (cut < 40) cut = max;
+            out.push(current.slice(0, cut).trim());
+            current = current.slice(cut);
+        }
+    });
+    if (current.trim()) out.push(current.trim());
+    return out.filter(function(s) { return s.length > 0; });
+}
+
+function speakNeural(text, voiceId, onFail) {
+    stopSpeaking();
+    var seq = ++speakSeq;
+    var chunks = _ttsChunks(text, TTS_CHUNK_CHARS);
+    if (!chunks.length) return;
+
+    speaking = true;
+    stopSpeakBtn.style.display = 'flex';
+    status.textContent = '🔊 Speaking...';
+
+    var pending = new Array(chunks.length);
+    function request(index) {
+        if (index >= chunks.length) return null;
+        if (!pending[index]) {
+            pending[index] = fetch('/api/tts/speak', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: chunks[index], voice: voiceId, rate: 0, pitch: 0 })
+            }).then(function(r) {
+                if (!r.ok) {
+                    return r.json().then(function(d) {
+                        throw new Error((d && d.error) || ('HTTP ' + r.status));
+                    }, function() { throw new Error('HTTP ' + r.status); });
+                }
+                return r.blob();
+            });
+        }
+        return pending[index];
+    }
+
+    function done() {
+        if (seq !== speakSeq) return;
+        speaking = false;
+        stopSpeakBtn.style.display = 'none';
+        currentAudio = null;
+        status.textContent = voiceEnabled ? '🔊 Voice output ON (idle)' : '✅ Done';
+    }
+
+    function failed(index, err) {
+        if (seq !== speakSeq) return;
+        console.warn('Neural voice failed:', err && err.message ? err.message : err);
+        speaking = false;
+        stopSpeakBtn.style.display = 'none';
+        // Nothing was heard yet: hand the whole reply to the offline voice. If it
+        // broke halfway through, stopping is better than starting over.
+        if (index === 0 && onFail) onFail();
+        else status.textContent = '🔇 Voice output stopped (network)';
+    }
+
+    function playFrom(index) {
+        if (seq !== speakSeq) return;
+        if (index >= chunks.length) { done(); return; }
+        request(index + 1);            // prefetch while this one is speaking
+        request(index).then(function(blob) {
+            if (seq !== speakSeq) return;
+            var url = URL.createObjectURL(blob);
+            var audio = new Audio(url);
+            currentAudio = audio;
+            var release = function() {
+                try { URL.revokeObjectURL(url); } catch (e) {}
+                if (currentAudio === audio) currentAudio = null;
+            };
+            audio.onended = function() { release(); playFrom(index + 1); };
+            audio.onerror = function() { release(); failed(index, new Error('audio element error')); };
+            audio.play().catch(function() {
+                release();
+                failed(index, new Error('playback blocked'));
+            });
+        }).catch(function(err) { failed(index, err); });
+    }
+
+    playFrom(0);
+}
+
+function speakLocal(text, note) {
+    if (!window.speechSynthesis) {
+        speaking = false;
+        stopSpeakBtn.style.display = 'none';
+        status.textContent = note || '🔇 No speech engine on this machine';
+        return;
+    }
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(cleaned);
+    const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';                 // fallback when no voice is chosen
     const chosenVoice = _pickVoice();
     if (chosenVoice) {
@@ -2919,6 +3136,7 @@ function speakText(text) {
         stopSpeakBtn.style.display = 'none';
     };
     currentUtterance = utterance;
+    if (note) status.textContent = note;
     window.speechSynthesis.speak(utterance);
 }
 

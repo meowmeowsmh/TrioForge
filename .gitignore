@@ -174,3 +174,7 @@ webkit-build/
 
 # Discord bridge plugin settings (a folder path only - the bot token lives in the bridge's own .env).
 json_configuration/discord_bridge.json
+
+# Cached neural-voice list: a copy of Microsoft's public voice catalogue, kept so
+# the picker still fills in when the machine starts offline. Machine state, ~44 KB.
+json_configuration/tts_voices.json

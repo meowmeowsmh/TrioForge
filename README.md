@@ -555,7 +555,7 @@ Keys are never written to disk.
 | 📝 **Live coding** | every file edit / printed code as a colored diff (`sqlite_data/edits.db`) |
 | 📚 **Documents** | RAG over uploaded PDF/Word/Markdown/code (keyword, or semantic with the ML stack) |
 | 🧠 **Thinking** | live chain-of-thought for reasoning models |
-| 🗣️ **Voice** | local speech-to-speech, plus 🎤/🔊 |
+| 🗣️ **Voice** | local speech-to-speech, plus 🎤/🔊 — read-aloud with a picker: 300+ neural voices (incl. Malay) or the PC's own, male/female labelled |
 | 📺 **Video & audio → text** | frames (vision) or 4-at-a-time transcription (audio) |
 | 🚀 **Setup** | first-run checker + installers |
 | 💾 **Monitor** | live RAM/VRAM |
@@ -591,6 +591,17 @@ A workspace scopes a model to one folder (read or read/write) with a thinking-ef
 **Which model actually runs.** The image panel lists every text-to-image workflow ComfyUI can really run — 19 of them on ComfyUI Desktop, more once you save your own — fastest first, and the default is **a workflow you saved yourself**: a saved workflow is a deliberate choice, a bundled blueprint is only what ComfyUI happened to ship. Keep an uncensored fine-tune on disk and that is what runs, with nothing to select. Choosing one in the dropdown overrides it, and the choice is remembered across reloads. Audio works the same way, preferring your saved audio workflow over the bundled one.
 
 **The panel's controls are overrides, not defaults.** Leave `Steps` and `Seed` blank and each workflow's own tuned values are used — Z-Image-Turbo is tuned for 8 steps and FHDR-Setup for 20, which is why a generic 4 made local images look blurry and soft in a way the same workflow never did in ComfyUI. The seed the app used is printed under every image (`… · FHDR-Setup · seed 802384471`) so a picture you liked can be asked for again; that reproduces exactly only with `TRIOFORGE_COMFYUI_CACHE=ram`, because a seed only repeats while the models stay loaded — the default unloads them after each run to give the RAM back. Generated images are shown at full size and click to open.
+
+---
+
+## 🔊 Read-aloud voices
+
+The 🔊 button reads replies out loud, and the dropdown beside the country picker chooses the voice. It has two groups:
+
+- **✨ Neural (online)** — 300+ natural voices, male and female, every language the service offers (Malay included: Yasmin and Osman). The default is a multilingual one, so replies that quote Malay or Chinese are not mangled.
+- **💻 This PC (offline)** — whatever the operating system has installed. A stock Windows only ships three (David, Mark, Zira); adding more is a Windows Settings job, not an app one.
+
+A neural voice sends the text being read to Microsoft's speech service — that is stated in the group's own label. Nothing else leaves the machine, and the offline voices stay the fallback: if the request fails mid-reply the app either re-reads it with the PC voice (nothing heard yet) or stops cleanly, rather than starting a half-spoken answer over. Without internet, with the optional package missing, or with `TRIOFORGE_TTS=off`, the picker simply lists the PC voices with the reason in its tooltip. `TRIOFORGE_TTS_TIMEOUT` (default 30 s) bounds each request.
 
 ---
 

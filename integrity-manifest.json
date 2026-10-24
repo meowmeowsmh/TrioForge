@@ -16,7 +16,7 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "6bed221269a5c3aa6c60c4ed7638bda92c53263f009d6ba03c1e3bf3a9ca36cf",
+  "py/app.py": "60dc8aaa5112cc89ae7f4c2e138575b94c4a12f92eb1e9ff486b635a6f8ec3f5",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "15282747916a001fcfde348af361164002c4ae80e8e10954eddecd42ab30102a",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -44,6 +44,7 @@
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/mcp_client.py": "6ded3ba6b5ca0e3640943b7b6f514ee97740d9f28c44082505a400080d2c70ab",
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
+  "py/neural_voice.py": "47ad1da0510123585aa0f4e20cd4c87c496c1ca665ce506a8fc4678033ca5ab4",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
@@ -95,7 +96,7 @@
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
   "pyproject.toml": "ccfae739e170ec8651b67e89b6670576d5bc26a69c3fa826813244ee9ac91648",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
-  "requirements.txt": "3c61728882b06452c6451e3b736b927c626f29d2f461e0e2fe2845fb9d280246",
+  "requirements.txt": "b7a89a25238f139b6ca47ad2896c69ea2b04c922476ee2c41d64a0c2d919cd2d",
   "run.sh": "1c40f3bdaed157f961c7f34b972ed129274bb0be732ec2ac85a4e7ce9d21470e",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
@@ -117,9 +118,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "39fc40f6372d09dd221236cd02c81b58b76c75994be2174ac4dda18b21c81031",
+  "templates/index.html": "554851e6dcc289015e4f31c376fd947eb9abf262b5c003e7933e7ce982c2e814",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-24T03:39:40",
- "note": "1.5.6: AI voice picker (male/female)"
+ "generated": "2026-10-25T01:04:47",
+ "note": "1.5.6 - neural voices for read-aloud"
 }

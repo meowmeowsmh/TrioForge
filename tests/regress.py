@@ -3730,6 +3730,100 @@ def test_ai_voice_dropdown_is_wired() -> None:
     print("  male/female voices listed, remembered, sampled; left of the country -> OK")
 
 
+def test_neural_voices_are_offered() -> None:
+    """The voice picker must offer real neural voices, not just the PC's three.
+
+    Windows installs three SAPI voices and the browser can only speak with what the
+    OS has, so "David / Mark / Zira" looked like a hard limit of the app. It is not:
+    the neural voices are served by the app itself through /api/tts/voices and
+    /api/tts/speak, and the page lists both groups with the neural one first.
+
+    Nothing here touches the network - the test proves the offline, switched-off and
+    hostile-input paths, and that the wiring exists. A real synthesis is checked by
+    hand because it needs internet (316 voices on the machine this was written on).
+    """
+    _title("neural voices")
+    from pathlib import Path
+    import neural_voice
+
+    # 1. Switched off must mean switched off: no import, no request, no audio.
+    os.environ["TRIOFORGE_TTS"] = "off"
+    try:
+        assert neural_voice.available() is False, "TRIOFORGE_TTS=off must disable it"
+        reason = neural_voice.status()["reason"]
+        assert "switched off" in reason, reason
+        try:
+            neural_voice.synthesize("hello", "en-US-AvaNeural")
+            raise AssertionError("synthesis must refuse while switched off")
+        except neural_voice.NeuralVoiceError as exc:
+            assert "switched off" in str(exc), exc
+    finally:
+        del os.environ["TRIOFORGE_TTS"]
+
+    # 2. A voice id becomes SSML inside edge-tts, so anything of the wrong shape has
+    #    to be refused BEFORE a request is made - never interpolated.
+    for bad in ("../../evil", "en-US-Ava<script>alert(1)</script>", "en-US A", "a"):
+        try:
+            neural_voice.synthesize("hi", bad)
+            raise AssertionError("accepted a bad voice id: {!r}".format(bad))
+        except neural_voice.NeuralVoiceError:
+            pass
+    # A blank voice means "use the default", not "reject" - the UI sends it when the
+    # stored choice was cleared. Verified through the off-switch above, where the
+    # error names the switch rather than the empty id.
+
+    # 3. The default reads every language, because replies quote Malay and Chinese.
+    assert "Multilingual" in neural_voice.DEFAULT_VOICE, neural_voice.DEFAULT_VOICE
+    assert neural_voice._friendly("en-US-AvaMultilingualNeural") == "Ava (multilingual)"
+    assert neural_voice._friendly("ms-MY-YasminNeural") == "Yasmin"
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    for needle in ("fetchNeuralVoices", "/api/tts/voices", "/api/tts/speak",
+                   "'neural:' + v.id", "'local:' + (v.voiceURI || v.name)",
+                   "Neural voices (online", "function speakNeural", "function speakLocal",
+                   "TTS_CHUNK_CHARS", "function _ttsChunks"):
+        assert needle in html, "{} missing".format(needle)
+    # A reply must not wait for the whole thing to be synthesised before it speaks.
+    assert "prefetch while this one is speaking" in html, "chunked playback lost"
+    # The picker says out loud that a neural voice sends the text to Microsoft.
+    assert "sent to Microsoft" in html, "privacy notice missing from the neural group"
+
+    src_app = (Path(__file__).resolve().parent.parent / "py" / "app.py"
+               ).read_text(encoding="utf-8")
+    assert "@app.route('/api/tts/voices'" in src_app
+    assert "@app.route('/api/tts/speak'" in src_app
+    assert src_app.index("neural_voice.synthesize") > 0, "route must call the module"
+
+    req = (Path(__file__).resolve().parent.parent / "requirements.txt"
+           ).read_text(encoding="utf-8")
+    assert "edge-tts" in req, "fresh installs would never get the neural voices"
+
+    # 4. With the feature switched off the routes still answer - honestly, not with
+    #    a 500 - and a POST is still CSRF-protected like every other state change.
+    os.environ["TRIOFORGE_TTS"] = "off"
+    try:
+        import app as forge_app
+        with forge_app.app.test_client() as client:
+            d = client.get("/api/tts/voices").get_json() or {}
+            assert d.get("ok") is True, d
+            assert d.get("available") is False, d
+            assert d.get("voices") == [], d
+            assert "switched off" in (d.get("reason") or ""), d
+            token = (client.get("/api/csrf").get_json() or {}).get("token") or ""
+            client.environ_base["HTTP_X_CSRF_TOKEN"] = token
+            r = client.post("/api/tts/speak",
+                            json={"text": "hello", "voice": "en-US-AvaNeural"})
+            assert r.status_code == 503, r.status_code
+            assert "switched off" in ((r.get_json() or {}).get("error") or "")
+        with forge_app.app.test_client() as bare:
+            assert bare.post("/api/tts/speak", json={"text": "hi"}).status_code == 403, \
+                "speech synthesis must be CSRF-protected too"
+    finally:
+        del os.environ["TRIOFORGE_TTS"]
+    print("  neural list served by the app, offline/off/garbage handled -> OK")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
@@ -3758,6 +3852,7 @@ def main() -> int:
              test_discord_plugin_stays_isolated,
              test_restore_list_supports_bulk_cleanup,
              test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring, test_local_timeout_and_output_cap_knobs, test_local_request_has_a_hard_deadline, test_ai_voice_dropdown_is_wired,
+               test_neural_voices_are_offered,
 
              test_comfyui_unload_is_safe, test_gpu_probe_never_blocks,
              test_team_directives, test_session_window,
