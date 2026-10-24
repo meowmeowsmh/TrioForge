@@ -94,7 +94,7 @@
   "py/version.py": "5021fccb0994a6a061388671c769ce842113ac606c2d656f2053e4af90465de3",
   "py/video_to_text.py": "515ab66ca0c1138bf497855355bb67d565b2ba8509440e6851c007085068ece2",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "ccfae739e170ec8651b67e89b6670576d5bc26a69c3fa826813244ee9ac91648",
+  "pyproject.toml": "595865fccc8b45d60774a15818d2210493b71ab8c736ae9fded677e00f16b4de",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
   "requirements.txt": "b7a89a25238f139b6ca47ad2896c69ea2b04c922476ee2c41d64a0c2d919cd2d",
   "run.sh": "1c40f3bdaed157f961c7f34b972ed129274bb0be732ec2ac85a4e7ce9d21470e",
@@ -121,6 +121,6 @@
   "templates/index.html": "554851e6dcc289015e4f31c376fd947eb9abf262b5c003e7933e7ce982c2e814",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T01:04:47",
+ "generated": "2026-10-25T01:12:48",
  "note": "1.5.6 - neural voices for read-aloud"
 }
