@@ -335,6 +335,15 @@ def resolve_model(value):
     for f in _list_gguf_files():
         if os.path.basename(f).lower() == base.lower():
             return f
+    # A SHORT name — no .gguf, no quant suffix. The pickers show
+    # "qwen2.5-7b-instruct" while the file is "qwen2.5-7b-instruct-q4_k_m.gguf";
+    # without this pass resolve_model returned the abspath of a file that does
+    # not exist, and start() then fell into the best-fit auto-pick and loaded a
+    # DIFFERENT model than the one the user chose.
+    if not base.lower().endswith(".gguf"):
+        for f in _list_gguf_files():
+            if _base_gguf_name(os.path.basename(f)).lower() == base.lower():
+                return f
     return p
 
 

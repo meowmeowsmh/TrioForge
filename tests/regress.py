@@ -3825,6 +3825,31 @@ def test_neural_voices_are_offered() -> None:
 
 
 # ---------------------------------------------------------------------------
+# resolve_model — a SHORT name must map to a real .gguf, not a bogus path
+# ---------------------------------------------------------------------------
+def test_resolve_model_short_names() -> None:
+    _title("resolve_model maps short names")
+    import os
+
+    import llamacpp_service as svc
+
+    if not svc._list_gguf_files():
+        print("  skipped (no .gguf models on this machine)")
+        return
+
+    # The pickers show SHORT names — no .gguf, no quant suffix. resolve_model
+    # used to treat these as relative paths and return an abspath of a file that
+    # does not exist, which made start() fall into the best-fit auto-pick and load
+    # a DIFFERENT model than the one chosen.
+    for name in ("qwen2.5-7b-instruct", "gemma-3-12b-it",
+                 "NVIDIA-Nemotron-Nano-12B-v2-VL"):
+        p = svc.resolve_model(name)
+        assert p and os.path.isfile(p), f"{name} -> {p!r}"
+        assert name.lower() in os.path.basename(p).lower(), f"{name} -> {p}"
+    print("  short names resolve to real .gguf files -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3869,7 +3894,7 @@ def main() -> int:
              test_shipped_plugins_load, test_failures_are_visible,
              test_tool_calls_are_recorded, test_vision_paths,
              test_role_alternation, test_csrf_protection,
-             test_launcher_symlink_resolution]
+             test_launcher_symlink_resolution, test_resolve_model_short_names]
     failed = []
     for t in tests:
         try:
