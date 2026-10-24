@@ -802,6 +802,7 @@ class LlamaCppProvider(LLMProvider):
         # are merged in from a background thread instead, so the list fills in
         # when (and only when) something actually answers.
         self.available_models = self._discover_local_models()
+        self._server_models = []           # the running llama-server's list, polled separately
         self._server_models_merged = False
         threading.Thread(target=self._merge_server_models, daemon=True).start()
 
@@ -840,7 +841,11 @@ class LlamaCppProvider(LLMProvider):
         for root in roots:
             if not os.path.isdir(root):
                 continue
-            for f in glob.glob(os.path.join(root, "**", "*.gguf"), recursive=True):
+            # *.gguf is case-sensitive on Linux but not Windows/macOS; match the
+            # extension case-insensitively (same fix as llamacpp_service).
+            for f in glob.glob(os.path.join(root, "**", "*"), recursive=True):
+                if not os.path.isfile(f) or not os.path.basename(f).lower().endswith(".gguf"):
+                    continue
                 bn = os.path.basename(f)
                 if "mmproj" in bn.lower():
                     continue  # projector, not a standalone model
@@ -882,9 +887,14 @@ class LlamaCppProvider(LLMProvider):
         return all_models
 
     def _merge_server_models(self) -> None:
-        """Background: fold a running server's model list into available_models."""
+        """Background: record a running server's model list for the next list_models.
+
+        Folded in on each list_models() call rather than baked into a cached list,
+        so a GGUF dropped into or deleted from the model folders shows up live.
+        """
         server_models = self._discover_server_models()
         self._server_models_merged = True
+        self._server_models = server_models
         if server_models:
             self.available_models = self._merge_model_lists(self.available_models,
                                                             server_models)
@@ -899,6 +909,13 @@ class LlamaCppProvider(LLMProvider):
                                        self._discover_server_models())
 
     def list_models(self, api_key: Optional[str] = None) -> List[str]:
+        # Fresh local scan on EVERY call. A glob over three directories is
+        # microseconds, and re-running it is what makes a GGUF dropped into
+        # models/ appear — or a deleted one disappear — without a restart. The
+        # running server's models are merged from the last background poll, since
+        # asking the server itself is a network call.
+        self.available_models = self._merge_model_lists(self._discover_local_models(),
+                                                        self._server_models)
         return self.available_models
 
     def list_models_with_caps(self):
@@ -910,7 +927,8 @@ class LlamaCppProvider(LLMProvider):
         """
         import llamacpp_service as lcs
         out = []
-        for m in self.available_models:
+        models = self.list_models()          # fresh scan, so caps reflect the disk
+        for m in models:
             try:
                 path = self._resolve_model_path(m)
             except Exception:
@@ -944,8 +962,8 @@ class LlamaCppProvider(LLMProvider):
         for root in roots:
             if not os.path.isdir(root):
                 continue
-            for f in glob.glob(os.path.join(root, "**", "*.gguf"), recursive=True):
-                if os.path.basename(f).lower() == base.lower():
+            for f in glob.glob(os.path.join(root, "**", "*"), recursive=True):
+                if os.path.isfile(f) and os.path.basename(f).lower() == base.lower():
                     return f
         return str(model)
 

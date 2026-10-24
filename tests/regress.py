@@ -3874,6 +3874,32 @@ def test_scan_case_insensitive() -> None:
 
 
 # ---------------------------------------------------------------------------
+# the web model list must reflect files dropped in / deleted from models/
+# ---------------------------------------------------------------------------
+def test_model_list_rescans_live() -> None:
+    _title("model list rescans live")
+    import os
+
+    from providers.llm_providers import LlamaCppProvider
+
+    provider = LlamaCppProvider()
+    os.makedirs(provider.models_dir, exist_ok=True)
+    probe = os.path.join(provider.models_dir, "live_probe.GGUF")   # uppercase too
+    try:
+        with open(probe, "w", encoding="utf-8"):
+            pass
+        assert any("live_probe" in m.lower() for m in provider.list_models()), \
+            "a dropped GGUF must appear without a restart"
+        os.remove(probe)
+        assert not any("live_probe" in m.lower() for m in provider.list_models()), \
+            "a deleted GGUF must disappear without a restart"
+        print("  dropped -> appears, deleted -> disappears, no restart -> OK")
+    finally:
+        if os.path.exists(probe):
+            os.remove(probe)
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3919,7 +3945,7 @@ def main() -> int:
              test_tool_calls_are_recorded, test_vision_paths,
              test_role_alternation, test_csrf_protection,
              test_launcher_symlink_resolution, test_resolve_model_short_names,
-             test_scan_case_insensitive]
+             test_scan_case_insensitive, test_model_list_rescans_live]
     failed = []
     for t in tests:
         try:
