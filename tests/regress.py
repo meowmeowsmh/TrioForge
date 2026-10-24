@@ -979,7 +979,7 @@ async def _tui_checks() -> None:
         app._models = lambda: long_models
         # A Windows model path must reduce to the NAME: rsplit("/") alone left the
         # whole "D:\...\Ornith-1.5-9B-Q4_K_M.gguf" here, which is what wrapped.
-        app.session.model = (r"D:\TrioForge\models\Ornith"
+        app.session.model = (r"D:\models\Ornith"
                              r"\Ornith-1.5-9B-Q4_K_M.gguf")
         assert app._short_model() == "Ornith-1.5-9B-Q4_K_M", app._short_model()
         body = app._sidebar()
@@ -1241,7 +1241,7 @@ def test_write_empty_args() -> None:
 
     # The bug this locks: a truncated native tool call arrived as args={}, the
     # write tool resolved "" to the cwd, and the agent looped on
-    # "error: C:\Users\user is a folder, not a file". Now an empty path says so.
+    # "error: C:\Users\someone is a folder, not a file". Now an empty path says so.
     out = t_write(file_path="", content="x")
     assert "needs a file_path" in out, out
 

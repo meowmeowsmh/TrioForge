@@ -86,7 +86,7 @@
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
-  "py/tui/textual_app.py": "b864eb747ca59ebc9e0bb497644115c8c5ed68746583d6f03529cfd8112d0a78",
+  "py/tui/textual_app.py": "e120737bba5291acc2b77d750ec00da283757a2c47b3d671fa0d1f2b64bf3d59",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "0943494d0bef3dadc459713f39807674a0008cb70d7e9e5128b5f686fa92674c",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
@@ -121,6 +121,6 @@
   "templates/index.html": "f6548912d2de669b260d2830d9512e90799e84514d33c4c9deff81d7f67d5085",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T04:02:06",
- "note": "1.5.6 - live model re-scan"
+ "generated": "2026-10-25T04:15:51",
+ "note": "1.5.6 - no machine-specific paths"
 }

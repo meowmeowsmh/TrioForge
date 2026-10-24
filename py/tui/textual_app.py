@@ -988,7 +988,7 @@ class ForgeApp(App):
     def _short_model(self) -> str:
         m = self.session.model or getattr(self.backend, "name", "?")
         # Split on BOTH separators. On Windows a local model is
-        # "D:\TrioForge\models\Ornith\Ornith-1.5-9B-Q4_K_M.gguf", and rsplit("/")
+        # "D:\models\Ornith\Ornith-1.5-9B-Q4_K_M.gguf", and rsplit("/")
         # alone left that whole path intact - which then wrapped over two rows in
         # the sidebar and pushed the session block out of shape.
         m = str(m).replace("\\", "/").rsplit("/", 1)[-1]
