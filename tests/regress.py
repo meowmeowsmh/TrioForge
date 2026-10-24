@@ -3879,13 +3879,17 @@ def test_scan_case_insensitive() -> None:
 def test_model_list_rescans_live() -> None:
     _title("model list rescans live")
     import os
+    import tempfile
 
     from providers.llm_providers import LlamaCppProvider
 
-    provider = LlamaCppProvider()
-    os.makedirs(provider.models_dir, exist_ok=True)
-    probe = os.path.join(provider.models_dir, "live_probe.GGUF")   # uppercase too
-    try:
+    # A temp models_dir, and a server_url that is refused instantly (port 1), so
+    # this never writes into the real models/ folder and the provider's background
+    # server-poll returns immediately instead of probing a closed 8080 port.
+    with tempfile.TemporaryDirectory(prefix="tf-live-models-") as tmp:
+        provider = LlamaCppProvider(models_dir=tmp,
+                                    server_url="http://127.0.0.1:1/v1")
+        probe = os.path.join(tmp, "live_probe.GGUF")   # uppercase too
         with open(probe, "w", encoding="utf-8"):
             pass
         assert any("live_probe" in m.lower() for m in provider.list_models()), \
@@ -3894,9 +3898,6 @@ def test_model_list_rescans_live() -> None:
         assert not any("live_probe" in m.lower() for m in provider.list_models()), \
             "a deleted GGUF must disappear without a restart"
         print("  dropped -> appears, deleted -> disappears, no restart -> OK")
-    finally:
-        if os.path.exists(probe):
-            os.remove(probe)
 
 
 # ---------------------------------------------------------------------------
