@@ -31,6 +31,12 @@ below, so it carries the same version number on a build that is missing all of i
   transitive ones so a fresh install cannot drift back below the patched releases.
 - **Dead code.** `save_notes_async` / `save_notes_sync` had no callers for several
   releases and are gone; the backup functions they forwarded to are still used.
+- **No author machine paths in the public tree.** A voice-agent guide
+  (`voiceguide_llama.cpp_guide/bot_speech_to_speech.md`) shipped with the author's
+  Windows username (`C:\Users\user`), a full WinGet `llama-server` path and a
+  `D:\TrioForge` model path; a sidebar comment and two test fixtures carried the
+  same. All are placeholders now (`$env:USERPROFILE`, `<path to your GGUF model>`,
+  `D:\models`, `C:\Users\someone`), so a fresh clone names no one machine.
 
 ### The terminal client
 
