@@ -205,13 +205,20 @@ def _list_gguf_files(subdir=None):
     """All .gguf files under the model roots, recursively, as absolute paths.
 
     `subdir` (legacy) restricts to a single root; by default every root is scanned.
+
+    The extension is matched case-insensitively on purpose: ``glob("*.gguf")`` is
+    case-sensitive on Linux but NOT on Windows/macOS, so a ``Model.GGUF`` file was
+    silently invisible on Linux while the identical file appeared on the other two.
+    Listing every file and filtering keeps the three platforms behaving the same.
     """
     import glob
     roots = [os.path.abspath(root_path(subdir))] if subdir else _model_roots()
     files = []
     for r in roots:
         if os.path.isdir(r):
-            files.extend(glob.glob(os.path.join(r, "**", "*.gguf"), recursive=True))
+            for f in glob.glob(os.path.join(r, "**", "*"), recursive=True):
+                if os.path.isfile(f) and os.path.basename(f).lower().endswith(".gguf"):
+                    files.append(f)
     return files
 
 

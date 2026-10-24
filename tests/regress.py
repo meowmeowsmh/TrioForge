@@ -3850,6 +3850,30 @@ def test_resolve_model_short_names() -> None:
 
 
 # ---------------------------------------------------------------------------
+# the gguf scan must behave the SAME on case-sensitive and -insensitive systems
+# ---------------------------------------------------------------------------
+def test_scan_case_insensitive() -> None:
+    _title("gguf scan is case-insensitive")
+    import os
+
+    import llamacpp_service as svc
+
+    # A .GGUF (uppercase) file is invisible to glob("*.gguf") on Linux but visible
+    # on Windows/macOS — the same model folder behaved differently per OS. The scan
+    # must find it everywhere, so a probe file proves it on whatever this runs on.
+    models = Path(__file__).resolve().parent.parent / "models"
+    os.makedirs(models, exist_ok=True)
+    probe = models / "case_probe_upper.GGUF"
+    try:
+        probe.write_text("", encoding="utf-8")
+        found = [f for f in svc._list_gguf_files() if os.path.basename(f) == probe.name]
+        assert found, "an uppercase .GGUF must be found on every OS"
+        print("  an uppercase .GGUF is found (same on all OSes) -> OK")
+    finally:
+        probe.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3894,7 +3918,8 @@ def main() -> int:
              test_shipped_plugins_load, test_failures_are_visible,
              test_tool_calls_are_recorded, test_vision_paths,
              test_role_alternation, test_csrf_protection,
-             test_launcher_symlink_resolution, test_resolve_model_short_names]
+             test_launcher_symlink_resolution, test_resolve_model_short_names,
+             test_scan_case_insensitive]
     failed = []
     for t in tests:
         try:

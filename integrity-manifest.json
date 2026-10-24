@@ -39,7 +39,7 @@
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_cpp.py": "1a2f1339acf99d6f38629c33d5a9b1e9627483412dadf5a698d491c41df8bec7",
   "py/llama_installer.py": "dec27746f5c0f817418483e9c71f391d759c6022196699e5c6aa8b24b409a991",
-  "py/llamacpp_service.py": "ee995dfcccc99a02cb93a8d89209fe879016ed8f3c20abd2ec797b5d4218be70",
+  "py/llamacpp_service.py": "5e1c2ca26ba50b346bb6bcd3a2b4ec800af7675dd138d25fb030b9ede924ace3",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/mcp_client.py": "6ded3ba6b5ca0e3640943b7b6f514ee97740d9f28c44082505a400080d2c70ab",
@@ -121,6 +121,6 @@
   "templates/index.html": "554851e6dcc289015e4f31c376fd947eb9abf262b5c003e7933e7ce982c2e814",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T03:07:19",
- "note": "llamacpp: resolve_model maps short names to real .gguf files"
+ "generated": "2026-10-25T03:13:49",
+ "note": "gguf scan case-insensitive on every OS; resolve short names"
 }
