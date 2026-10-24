@@ -4180,6 +4180,9 @@ document.addEventListener('keydown', function(e) {
     } else if (mod && e.key === 'Enter') {
         e.preventDefault();
         doSend();
+    } else if (mod && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        location.reload();
     } else if (mod && e.key === '/') {
         e.preventDefault();
         toggleShortcutsModal();
@@ -11165,6 +11168,7 @@ if ('serviceWorker' in navigator) {
         <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">+</kbd> or <kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">&minus;</kbd></span><span class="hp-desc">Zoom in / out</span></div>
         <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">0</kbd></span><span class="hp-desc">Reset zoom</span></div>
         <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">wheel</kbd></span><span class="hp-desc">Zoom in / out</span></div>
+        <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">R</kbd></span><span class="hp-desc">Refresh everything &amp; re-scan models</span></div>
         <div class="hp-row"><span><kbd class="hp-key">Ctrl</kbd> + <kbd class="hp-key">/</kbd> or <kbd class="hp-key">?</kbd></span><span class="hp-desc">Open or close this help</span></div>
         <div class="hp-row"><span><kbd class="hp-key">Esc</kbd></span><span class="hp-desc">Close this help</span></div>
 

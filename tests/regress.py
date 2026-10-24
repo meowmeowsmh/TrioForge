@@ -3935,6 +3935,23 @@ def test_comfyui_object_info_ttl() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Ctrl+R must reload the app (which re-scans models) and be listed in the help
+# ---------------------------------------------------------------------------
+def test_ctrl_r_refresh_shortcut() -> None:
+    _title("Ctrl+R refreshes and rescans")
+    import re
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    assert re.search(r"e\.key === 'r' \|\| e\.key === 'R'", html), "Ctrl+R handler is gone"
+    assert "location.reload()" in html, "Ctrl+R no longer reloads the app"
+    assert "Refresh everything" in html, "the help entry for Ctrl+R is gone"
+    assert 'Ctrl</kbd> + <kbd class="hp-key">R</kbd>' in html, \
+        "Ctrl+R is not listed in the shortcuts panel"
+    print("  Ctrl+R reloads + rescans, and is listed in the help -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3981,7 +3998,7 @@ def main() -> int:
              test_role_alternation, test_csrf_protection,
              test_launcher_symlink_resolution, test_resolve_model_short_names,
              test_scan_case_insensitive, test_model_list_rescans_live,
-             test_comfyui_object_info_ttl]
+             test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut]
     failed = []
     for t in tests:
         try:
