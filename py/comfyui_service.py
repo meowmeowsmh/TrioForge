@@ -72,6 +72,8 @@ _LOCAL_APP_DATA = os.environ.get("LOCALAPPDATA", "")
 _WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
 
 _object_info_cache = None
+_object_info_fetched_at = 0.0
+_OBJECT_INFO_TTL = 10.0      # seconds: re-ask ComfyUI, so a dropped model shows up live
 
 
 # --------------------------------------------------------------------------- #
@@ -440,12 +442,26 @@ def ensure_comfyui_idle_watchdog():
 
 
 def get_object_info(force=False):
-    """Fetch (and cache) ComfyUI's /object_info — node type -> input schema."""
-    global _object_info_cache
-    if _object_info_cache is None or force:
-        r = requests.get(f"{COMFYUI_URL}/object_info", timeout=30)
-        r.raise_for_status()
-        _object_info_cache = r.json()
+    """Fetch (and cache) ComfyUI's /object_info — node type -> input schema.
+
+    The cache is not permanent: after ``_OBJECT_INFO_TTL`` seconds it asks ComfyUI
+    again. ComfyUI re-scans its own model folders, so a model dropped straight into
+    ``models/checkpoints`` (etc.) shows up within a few seconds instead of only
+    after a restart or a TrioForge-initiated download. A failed refresh keeps the
+    last good list rather than raising once a server goes quiet.
+    """
+    global _object_info_cache, _object_info_fetched_at
+    now = time.time()
+    if _object_info_cache is None or force or (now - _object_info_fetched_at) >= _OBJECT_INFO_TTL:
+        try:
+            r = requests.get(f"{COMFYUI_URL}/object_info", timeout=30)
+            r.raise_for_status()
+            _object_info_cache = r.json()
+            _object_info_fetched_at = now
+        except Exception:
+            if _object_info_cache is None or force:
+                raise          # nothing cached yet (or caller insisted): surface it
+            # TTL refresh failed with a usable cache: keep serving the stale list.
     return _object_info_cache
 
 

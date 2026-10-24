@@ -3901,6 +3901,40 @@ def test_model_list_rescans_live() -> None:
 
 
 # ---------------------------------------------------------------------------
+# comfyui /object_info must not cache forever (a dropped model shows up live)
+# ---------------------------------------------------------------------------
+def test_comfyui_object_info_ttl() -> None:
+    _title("comfyui object_info TTL")
+    import time
+    from unittest import mock
+
+    import requests
+    import comfyui_service as cs
+
+    saved = (cs._object_info_cache, cs._object_info_fetched_at)
+    try:
+        with mock.patch.object(cs.requests, "get",
+                               side_effect=requests.ConnectionError("down")):
+            # fresh cache -> served with no network round-trip
+            cs._object_info_cache = {"fresh": 1}
+            cs._object_info_fetched_at = time.time()
+            assert cs.get_object_info() == {"fresh": 1}
+            # stale cache + down server -> keeps the last good list, no raise
+            cs._object_info_fetched_at = time.time() - 999
+            assert cs.get_object_info() == {"fresh": 1}
+            # empty cache + down server -> still raises (caller decides)
+            cs._object_info_cache = None
+            try:
+                cs.get_object_info()
+                raise AssertionError("empty cache + down server must raise")
+            except requests.ConnectionError:
+                pass
+    finally:
+        cs._object_info_cache, cs._object_info_fetched_at = saved
+    print("  re-asks after the TTL, keeps the stale list on failure -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -3946,7 +3980,8 @@ def main() -> int:
              test_tool_calls_are_recorded, test_vision_paths,
              test_role_alternation, test_csrf_protection,
              test_launcher_symlink_resolution, test_resolve_model_short_names,
-             test_scan_case_insensitive, test_model_list_rescans_live]
+             test_scan_case_insensitive, test_model_list_rescans_live,
+             test_comfyui_object_info_ttl]
     failed = []
     for t in tests:
         try:
