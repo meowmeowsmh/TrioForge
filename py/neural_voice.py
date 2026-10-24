@@ -47,10 +47,12 @@ DISK_TTL = 7 * 24 * 3600
 
 CACHE_PATH = root_path("json_configuration", "tts_voices.json")
 
-# Voice ids go into SSML, which is built from an f-string inside edge-tts, so
-# only the shape the service itself uses is accepted. The middle segment is the
-# locale and can be longer than a language code ("zh-CN-liaoning-XiaobeiNeural").
-_VOICE_RE = re.compile(r"^[A-Za-z]{2,3}-[A-Za-z]{2,10}-[A-Za-z0-9]{2,40}$")
+# Voice ids go into SSML, which is built from an f-string inside edge-tts, so only
+# the shape the service itself uses is accepted. Three or four dash-separated
+# segments of letters/digits: "en-US-AvaNeural", and the longer ids the catalogue
+# genuinely contains ("iu-Cans-CA-SiqiqiniNeural", "zh-CN-liaoning-XiaobeiNeural").
+# Still refuses path tricks, markup and whitespace.
+_VOICE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,10}){1,2}-[A-Za-z0-9]{2,40}$")
 
 _VOICES: list[dict] | None = None
 _VOICES_AT = 0.0
@@ -265,8 +267,17 @@ def synthesize(text: str, voice: str = DEFAULT_VOICE, rate: int = 0, pitch: int 
     voice = (voice or DEFAULT_VOICE).strip()
     if not _VOICE_RE.match(voice):
         raise NeuralVoiceError(f"Not a valid neural voice id: {voice!r}")
-    rate = max(-50, min(50, int(rate or 0)))
-    pitch = max(-50, min(50, int(pitch or 0)))
+
+    def _percent(value) -> int:
+        """Rate/pitch as a clamped integer; a bad value means "no adjustment"."""
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return max(-50, min(50, number))
+
+    rate = _percent(rate)
+    pitch = _percent(pitch)
     try:
         return _run(_speak_async(text, voice, rate, pitch), _timeout() + 15)
     except NeuralVoiceError:

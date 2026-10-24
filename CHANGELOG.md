@@ -162,7 +162,7 @@ below, so it carries the same version number on a build that is missing all of i
 
 ### Voices that are not the three Windows ones
 
-- **316 neural voices, not 3 SAPI ones.** The picker could only ever offer what the
+- **322 neural voices, not 3 SAPI ones.** The picker could only ever offer what the
   operating system has installed, which on a stock Windows is David, Mark and Zira —
   no amount of app code changes that, which made it look like a limit of TrioForge.
   The app now serves the neural voices through `py/neural_voice.py`:

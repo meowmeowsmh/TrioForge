@@ -44,7 +44,7 @@
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/mcp_client.py": "6ded3ba6b5ca0e3640943b7b6f514ee97740d9f28c44082505a400080d2c70ab",
   "py/memory.py": "c4926d0a2154db1202f91cd5d5399e6b519217390f46e4440989097fe162052d",
-  "py/neural_voice.py": "47ad1da0510123585aa0f4e20cd4c87c496c1ca665ce506a8fc4678033ca5ab4",
+  "py/neural_voice.py": "a93f31a45445e09e3e7a1ae8d71325f145646829f866a549fcc5e23a8a0de8a0",
   "py/paths.py": "022e9577a9be19e53a1c33bdfe4660d6e6eded503a3b6e9019f23e891e590bf6",
   "py/personas.py": "659a74ee5d9d11735408e7e275dd17d976ac1034bd7c9c8e66ffe428dd091181",
   "py/plugin_loader.py": "633a39520e3169e4e5cbe89f662fe4e0a2a206b7ec8888c9f45fc20b2719e797",
@@ -121,6 +121,6 @@
   "templates/index.html": "554851e6dcc289015e4f31c376fd947eb9abf262b5c003e7933e7ce982c2e814",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T01:12:48",
+ "generated": "2026-10-25T01:35:09",
  "note": "1.5.6 - neural voices for read-aloud"
 }
