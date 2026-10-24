@@ -3830,23 +3830,37 @@ def test_neural_voices_are_offered() -> None:
 def test_resolve_model_short_names() -> None:
     _title("resolve_model maps short names")
     import os
+    import tempfile
 
     import llamacpp_service as svc
 
-    if not svc._list_gguf_files():
-        print("  skipped (no .gguf models on this machine)")
-        return
-
-    # The pickers show SHORT names — no .gguf, no quant suffix. resolve_model
-    # used to treat these as relative paths and return an abspath of a file that
-    # does not exist, which made start() fall into the best-fit auto-pick and load
-    # a DIFFERENT model than the one chosen.
-    for name in ("qwen2.5-7b-instruct", "gemma-3-12b-it",
-                 "NVIDIA-Nemotron-Nano-12B-v2-VL"):
-        p = svc.resolve_model(name)
-        assert p and os.path.isfile(p), f"{name} -> {p!r}"
-        assert name.lower() in os.path.basename(p).lower(), f"{name} -> {p}"
-    print("  short names resolve to real .gguf files -> OK")
+    # Hermetic: a temp models/ dir, not the real one, so the test runs the same on
+    # a fresh clone and on a machine full of models. (It used to probe hardcoded
+    # model names, which only passed on CI because CI has no models and hit the
+    # skip branch — a machine WITH models but without those exact three failed.)
+    with tempfile.TemporaryDirectory(prefix="tf-resolve-") as tmp:
+        model = os.path.join(tmp, "qwen2.5-7b-instruct-Q4_K_M.gguf")
+        projector = os.path.join(tmp, "mmproj-qwen2.5-7b-instruct-BF16.gguf")
+        for p in (model, projector):
+            with open(p, "w", encoding="utf-8"):
+                pass
+        saved = svc._model_roots
+        svc._model_roots = lambda: [tmp]
+        try:
+            # The pickers show SHORT names (no .gguf, no quant suffix); these used
+            # to be treated as relative paths, so start() auto-picked a different
+            # model than the one chosen.
+            got = svc.resolve_model("qwen2.5-7b-instruct")
+            assert got and os.path.isfile(got), f"short name -> {got!r}"
+            assert got == model, f"short name -> {got!r}, expected the model file"
+            # The paired projector shares the base name and sorts FIRST, so it must
+            # never win the short-name match — only find_mmproj returns it.
+            assert "mmproj" not in os.path.basename(got).lower(), got
+            # The exact full filename still resolves too.
+            assert svc.resolve_model("qwen2.5-7b-instruct-Q4_K_M.gguf") == model
+        finally:
+            svc._model_roots = saved
+    print("  short names resolve to the real model; the projector never wins -> OK")
 
 
 # ---------------------------------------------------------------------------

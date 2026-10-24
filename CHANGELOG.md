@@ -188,6 +188,24 @@ below, so it carries the same version number on a build that is missing all of i
 - **It says what it costs.** The neural group's label states that the text being read
   is sent to Microsoft — the one thing about this feature a user has to know up front.
   The offline voices never leave the machine and stay the fallback.
+### Live model re-scan (drop a GGUF in, see it without a restart)
+
+- **The model list is re-scanned on every call, not cached from startup.** A GGUF
+  dropped into `models/` (or `video_model/`, `universal_models_to_text/`) appears the
+  moment you next open the picker — and a deleted one disappears — instead of only
+  after a restart. `Ctrl+R` reloads the page and triggers the same fresh scan, and is
+  listed in the shortcuts panel. ComfyUI's `/object_info` is refreshed on a 10-second
+  TTL so a model dropped into its `models/` folders shows up live, keeping the last
+  good list if the server goes quiet mid-refresh.
+- **The `.gguf` scan is case-insensitive on every platform.** `glob("*.gguf")` is
+  case-sensitive on Linux but not Windows/macOS, so a `Model.GGUF` file was invisible
+  on Linux while the identical file worked elsewhere; listing every file and filtering
+  the extension makes all three behave the same.
+- **Short names resolve to the real model, never its projector.** The pickers show
+  `qwen2.5-7b-instruct` while the file is `qwen2.5-7b-instruct-q4_k_m.gguf`; that short
+  name now maps to the actual file. A paired `mmproj-…-BF16.gguf` shares the base name
+  and sorts first, so it is skipped during that match — otherwise picking the model
+  loaded the vision stub instead.
 ### Local model: a hard deadline, so it can never hang for half an hour
 
 - **Requests to the local model now have a real wall-clock budget.** `requests`'

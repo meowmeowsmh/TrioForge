@@ -39,7 +39,7 @@
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_cpp.py": "1a2f1339acf99d6f38629c33d5a9b1e9627483412dadf5a698d491c41df8bec7",
   "py/llama_installer.py": "dec27746f5c0f817418483e9c71f391d759c6022196699e5c6aa8b24b409a991",
-  "py/llamacpp_service.py": "5e1c2ca26ba50b346bb6bcd3a2b4ec800af7675dd138d25fb030b9ede924ace3",
+  "py/llamacpp_service.py": "81befeb6e619a5381d7cd6b428af05f4ae96e5e2b36570cd5e8a0e0f6affcb29",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
   "py/mcp_client.py": "6ded3ba6b5ca0e3640943b7b6f514ee97740d9f28c44082505a400080d2c70ab",
@@ -121,6 +121,6 @@
   "templates/index.html": "f6548912d2de669b260d2830d9512e90799e84514d33c4c9deff81d7f67d5085",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T03:49:19",
- "note": "web: Ctrl+R shortcut reloads and re-scans models"
+ "generated": "2026-10-25T04:02:06",
+ "note": "1.5.6 - live model re-scan"
 }

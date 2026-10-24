@@ -349,6 +349,12 @@ def resolve_model(value):
     # DIFFERENT model than the one the user chose.
     if not base.lower().endswith(".gguf"):
         for f in _list_gguf_files():
+            # Skip vision projectors: "mmproj-Qwen3.5-9B-Uncensored-…-BF16.gguf"
+            # shares the model's base name and sorts BEFORE the model file, so
+            # without this guard the short name resolved to the projector and
+            # start() loaded a vision stub instead of the language model.
+            if _is_mmproj(os.path.basename(f)):
+                continue
             if _base_gguf_name(os.path.basename(f)).lower() == base.lower():
                 return f
     return p
