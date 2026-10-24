@@ -29,7 +29,7 @@ git clone --recurse-submodules https://github.com/ServeurpersoCom/qwentts.cpp.gi
 Navigate to your local `qwentts.cpp` directory to build the binary using your CPU backend inside PowerShell [0.1.2]:
 
 ```powershell
-cd C:\Users\user\qwentts.cpp
+cd $env:USERPROFILE\qwentts.cpp
 ./buildcpu.sh
 ```
 
@@ -40,12 +40,13 @@ cd C:\Users\user\qwentts.cpp
 You need two active PowerShell tabs/windows to operate the local voice system. Always launch the LLM server **before** initiating the speech-to-speech client handler [0.1.1].
 
 ### Tab 1: Start the `llama.cpp` Server
-Execute the following to instantiate the local LLM server hosting your uncensored model profile:
+Execute the following to instantiate the local LLM server hosting your model:
 ```powershell
-& "C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\ggml.llamacpp_Microsoft.Winget.Source_8wekyb3d8bbwe\llama-server.exe" `
-  -m "D:\TrioForge\models\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf" `
+llama-server `
+  -m "<path to your GGUF model>" `
   --port 8080
 ```
+(`llama-server` must be on your PATH — `winget install ggml.llamacpp` puts it there.)
 
 ### Tab 2: Start the Speech-to-Speech Local Agent
 With the server running on port `8080`, spin up the client engine utilizing your local hardware resources:
