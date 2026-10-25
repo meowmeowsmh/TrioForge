@@ -2067,22 +2067,7 @@ if (window.self !== window.top) document.documentElement.classList.add('embedded
 html.embedded #weatherWidget,
 /* Framed: fullscreen is the shell's job. Letting this page fullscreen the FRAME
    would cover the shell's tab bar, so the button is only shown standalone. */
-html.embedded #fsBtn { display: none !important; }
-/* Framed, the shell already gives this page the whole window width but only part
-   of its height, and the header stack (title / search / mode / tags) was eating
-   196px of a 415px frame - which is why the list only showed two and a half notes
-   before it scrolled. The same controls, tightened. */
-html.embedded .sidebar-header { padding: 10px 12px 8px; gap: 8px; }
-html.embedded .search-box { padding: 6px 12px; }
-html.embedded .search-box input { padding: 6px 12px; }
-html.embedded .search-mode-toggle { padding: 3px 12px; }
-html.embedded .search-mode-toggle button { padding: 3px 12px; }
-html.embedded .tag-filter { padding: 3px 12px 8px; gap: 5px; }
-html.embedded .tag-filter .tag-pill { padding: 3px 10px; }
-/* Group headings ("OLDER") are the only thing between the filters and the first
-   note; they do not need a full empty line around them. */
-html.embedded .group-heading { padding: 6px 12px 3px; margin-top: 4px; }
-</style>
+html.embedded #fsBtn { display: none !important; }</style>
 <div class="app">
     <!-- Shown only while the sidebar is hidden (CSS :has) so the notes list can
          always be brought back, framed or standalone. -->

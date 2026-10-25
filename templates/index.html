@@ -357,29 +357,11 @@ html.view-embed #topBarIcons {
     justify-content: flex-end;
     padding-right: 18px;
 }
-/* Framed views only need three things from this bar: the tabs, the weather
-   country and the two corner buttons. Laid out as ONE row that is ~64px instead of
-   the 175px of stacked rows it used to be - measured at 877x590, where that stack
-   left the notes page a 415px frame and pushed its list into scrolling. The
-   wordmark goes with it: the tabs already say where you are.
-   A grid, not flex: the three cells keep their widths instead of one of them
-   collapsing and spilling over its neighbour. */
-html.view-embed .top-bar {
-    display: grid; grid-template-columns: auto 1fr auto;
-    align-items: center; gap: 10px; padding: 7px 14px;
+/* The sidebar toggle that used to give the top bar its left margin is hidden in
+   these views, so the wordmark would otherwise touch the window edge. */
+html.view-embed .top-bar .left {
+    padding-left: 16px;
 }
-html.view-embed .top-bar .left { display: none; }
-html.view-embed .top-bar .right {
-    grid-column: 1; grid-row: 1; display: flex; gap: 6px; align-items: center;
-    min-width: 0; flex-wrap: nowrap;
-}
-html.view-embed .top-bar .center-tabs { grid-column: 2; grid-row: 1; justify-self: center; }
-html.view-embed #topBarIcons {
-    grid-column: 3; grid-row: 1; justify-self: end;
-    flex-wrap: nowrap; overflow: visible; padding-right: 0;
-}
-html.view-embed #voiceSelect { display: none; }
-html.view-embed #weatherCountrySelect { max-width: 170px; }
 html.view-embed #topBarIcons > *:not(#fullscreenBtn):not(#weatherToggleBtn) {
     display: none !important;
 }
@@ -1495,26 +1477,23 @@ html.view-embed #scrollBottomBtn { display: none !important; }
     /* Every child gets an explicit grid row. .center-tabs used to be placed on
        row 2 and the icon toolbar was auto-placed into the same row, so on a
        window just under 900px the Chat/Notes/Cork Board pills were drawn on top
-       of the icons (measured: tabs 74-110px, icons 50-133px, overlapping). Three
-       rows now: [toggle+wordmark+tabs] [icon toolbar] [providers]. */
+       of the icons (measured: tabs 74-110px, icons 50-133px, overlapping). */
     .top-bar { padding: 8px 10px; gap: 6px; grid-template-columns: auto 1fr; }
-    .top-bar .left { grid-column: 1; grid-row: 1; }
+    .top-bar .left { grid-column: 1 / -1; grid-row: 1; }
     .top-bar .left h1 { font-size: 15px; }
-    /* The tabs share the first row with the toggle and wordmark (they fit: ~389px
-       of an 878px window), which is one 42px row less above the conversation. */
-    .top-bar .center-tabs { grid-column: 2; grid-row: 1; justify-self: end; }
+    .top-bar .center-tabs { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
     /* One row that scrolls sideways instead of two wrapped rows. Wrapping cost
        83px of a 593px-tall window; a single row costs 40 and keeps every button
        reachable, with a thin scrollbar so it is obvious there is more. */
     .top-bar-icons {
-        grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; gap: 6px;
+        grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; gap: 6px;
         flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px;
         scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.22) transparent;
     }
     .top-bar-icons::-webkit-scrollbar { height: 4px; }
     .top-bar-icons::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 2px; }
     .top-bar-icons > * { flex: 0 0 auto; }
-    .top-bar .right { grid-column: 1 / -1; grid-row: 3; justify-self: stretch; justify-content: flex-start; flex-wrap: wrap; }
+    .top-bar .right { grid-column: 1 / -1; grid-row: 4; justify-self: stretch; justify-content: flex-start; flex-wrap: wrap; }
     .top-bar-icons .clear-btn, .top-bar-icons .unload-btn { padding: 5px 8px; font-size: 12px; }
     .provider-select, .model-select { font-size: 12px; padding: 5px 8px; }
 
