@@ -260,6 +260,28 @@ below, so it carries the same version number on a build that is missing all of i
 - **Placeholders no longer wrap and clip.** The one-line box no longer shows a
   half-cut placeholder; the Enter/Shift-Enter hint moved to the box's tooltip.
 
+### A small window is usable again: the sidebar always comes back
+
+- **The drawer could be opened but never closed.** Under 900px the conversation list
+  becomes an overlay drawer, and the only control that closes it was the ☰ that
+  opened it — which the drawer (and its "Chats" heading) then covers, because the
+  click-away scrim was a `body::after` pseudo-element and a pseudo-element cannot
+  receive a click. Measured in headless Chrome on an 886×593 window: after opening,
+  the element under the ☰ was the drawer's own `H2`; clicking it again, pressing
+  Esc and clicking the scrim all did nothing, and widening the window left the
+  drawer marked open. Picking a conversation was the only way out. The scrim is a
+  real element now, the drawer carries its own **✕**, Esc closes it, and widening
+  the window clears the state so it cannot pop back open later.
+- **The top bar no longer draws its rows on top of each other.** `.center-tabs` was
+  given grid row 2 and the icon toolbar was auto-placed into the same row, so just
+  under 900px the Chat/Notes/Cork Board pills were painted across the icons
+  (measured: pills 74–110px, icons 50–133px). Every child has an explicit row now,
+  and the 20-icon toolbar is one sideways-scrolling row instead of two wrapped ones.
+- **More of the window is conversation.** On that 886×593 window the message box
+  keeps its row with the buttons (buttons and box together, model picker + Send on
+  the row below), which takes the chat area from 156px to **239px** of visible
+  history — the chrome used to leave less than a third of the window for the chat.
+
 ### Small quality-of-life
 
 - **🧊 Free memory, and the numbers to watch.** The top bar shows live RAM and VRAM

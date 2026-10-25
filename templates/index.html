@@ -135,6 +135,19 @@ body::before {
     overflow: hidden;
     padding: 0;
 }
+/* Small windows only: the drawer's own close button and the click-away scrim.
+   Both are hidden on a desktop-width window, where the sidebar is a normal
+   column. */
+.sidebar-scrim { display: none; }
+.sidebar-close {
+    display: none;
+    background: rgba(255,255,255,0.08);
+    border: none; color: #e6edf3; cursor: pointer;
+    border-radius: 8px; width: 32px; height: 32px;
+    font-size: 16px; line-height: 1; flex-shrink: 0;
+    align-items: center; justify-content: center;
+}
+.sidebar-close:hover { background: rgba(248,81,73,0.25); color: #fff; }
 .sidebar-header {
     padding: 20px 16px 12px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
@@ -809,6 +822,10 @@ html.view-embed #liveCodePanel {
     position: relative;
     transition: background 0.3s, border-color 0.3s;
 }
+/* The model controls normally live in the composer row itself (display:contents
+   means the wrapper adds no box); the small-window rules below turn it into a row
+   of its own. */
+.composer-controls { display: contents; }
 /* Drag handle for the composer. Auto-grow is capped, so without this a long
    pasted string became an unreadable sliver you could not fix by hand. */
 .composer-grip {
@@ -1457,11 +1474,26 @@ html.view-embed #scrollBottomBtn { display: none !important; }
 
 /* ===== mobile / small screens ===== */
 @media (max-width: 900px) {
-    .top-bar { padding: 8px 10px; gap: 8px; grid-template-columns: auto 1fr; }
+    /* Every child gets an explicit grid row. .center-tabs used to be placed on
+       row 2 and the icon toolbar was auto-placed into the same row, so on a
+       window just under 900px the Chat/Notes/Cork Board pills were drawn on top
+       of the icons (measured: tabs 74-110px, icons 50-133px, overlapping). */
+    .top-bar { padding: 8px 10px; gap: 6px; grid-template-columns: auto 1fr; }
+    .top-bar .left { grid-column: 1 / -1; grid-row: 1; }
     .top-bar .left h1 { font-size: 15px; }
     .top-bar .center-tabs { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
-    .top-bar .right { grid-column: 1 / -1; grid-row: 3; justify-self: stretch; justify-content: flex-start; }
-    .top-bar-icons { justify-content: flex-start; gap: 6px; }
+    /* One row that scrolls sideways instead of two wrapped rows. Wrapping cost
+       83px of a 593px-tall window; a single row costs 40 and keeps every button
+       reachable, with a thin scrollbar so it is obvious there is more. */
+    .top-bar-icons {
+        grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; gap: 6px;
+        flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px;
+        scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.22) transparent;
+    }
+    .top-bar-icons::-webkit-scrollbar { height: 4px; }
+    .top-bar-icons::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 2px; }
+    .top-bar-icons > * { flex: 0 0 auto; }
+    .top-bar .right { grid-column: 1 / -1; grid-row: 4; justify-self: stretch; justify-content: flex-start; flex-wrap: wrap; }
     .top-bar-icons .clear-btn, .top-bar-icons .unload-btn { padding: 5px 8px; font-size: 12px; }
     .provider-select, .model-select { font-size: 12px; padding: 5px 8px; }
 
@@ -1473,18 +1505,28 @@ html.view-embed #scrollBottomBtn { display: none !important; }
         box-shadow: 8px 0 30px rgba(0,0,0,0.6);
     }
     body.sidebar-open .sidebar { transform: translateX(0); }
-    body.sidebar-open::after {
-        content: ''; position: fixed; inset: 0; z-index: 8999;
+    /* The scrim is a real element, not a ::after: it has to receive the click
+       that closes the drawer. As a pseudo-element it swallowed nothing, so the
+       drawer could only be closed by picking a conversation - the ☰ that opened
+       it is underneath the drawer. */
+    body.sidebar-open .sidebar-scrim {
+        display: block; position: fixed; inset: 0; z-index: 8999;
         background: rgba(0,0,0,0.5);
     }
+    .sidebar-close { display: flex; }
     .sidebar-toggle { display: flex !important; }
 
-    /* input bar: model picker + send on their own row */
+    /* input bar: buttons + message box on the first row, the model controls and
+       Send on the second. Measured on an 886x593 window: the chat area goes from
+       156px to 239px tall, and Send stays at the bottom-right where it belongs. */
     .input-bar { flex-wrap: wrap; gap: 6px; padding: 8px; }
-    #msgInput { flex: 1 1 100%; min-height: 46px; }
+    #msgInput { flex: 1 1 220px; min-width: 150px; min-height: 46px; }
+    .composer-controls {
+        display: flex; flex: 1 1 100%; gap: 6px; align-items: flex-end; flex-wrap: wrap;
+    }
     #modelSearchInput { flex: 1 1 90px; }
     .model-select { flex: 1 1 130px; }
-    #sendBtn { flex: 0 0 auto; padding: 10px 18px; }
+    #sendBtn { flex: 0 0 auto; padding: 10px 18px; margin-left: auto; }
 
     /* modals fill the screen comfortably */
     .modal > div, #setupModal > div, #logsModal > div {
@@ -1632,9 +1674,13 @@ video.tf-video {
 </head>
 <body>
 <div class="app">
+  <!-- Click-away scrim for the small-window sidebar drawer (see the @media
+       <=900px rules). It is a real element so the click can close the drawer. -->
+  <div class="sidebar-scrim" id="sidebarScrim" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <h2>💬 Chats</h2>
+      <button class="sidebar-close" id="sidebarCloseBtn" onclick="closeSidebarDrawer()" title="Close the sidebar" aria-label="Close the sidebar">✕</button>
       <button class="new-chat-btn" onclick="newChat()">+ New</button>
       <button class="new-chat-btn" onclick="openRestoreModal()" style="background:#2d2d3d; box-shadow:none;" title="Restore deleted chats, notes and pins">🗄️</button>
     </div>
@@ -1792,6 +1838,11 @@ video.tf-video {
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
         <textarea id="msgInput" spellcheck="true" placeholder="Type your message..." title="Enter sends · Shift+Enter starts a new line · drag the bar above to resize"></textarea>
+        <!-- On a wide window this wrapper is display:contents, so these controls
+             sit in the same row as the box exactly as before. On a small window it
+             becomes a row of its own, which keeps the buttons and the message box
+             together on the first row instead of squeezing everything. -->
+        <div class="composer-controls" id="composerControls">
         <input id="modelSearchInput" type="text" placeholder="🔍 filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
         <select id="modelSelect" class="model-select" title="Select model"></select>
         <select id="reasoningEffortSelect" class="model-select" title="Reasoning effort (DeepSeek reasoning models)" style="display:none;">
@@ -1816,6 +1867,7 @@ video.tf-video {
         <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
         <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
         <button id="sendBtn">Send</button>
+        </div>
       </div>
       <!-- Skill apply picker (pinned skills + auto) -->
       <div id="skillPicker" style="display:none; position:fixed; bottom:130px; left:50%; transform:translateX(-50%); width:min(420px,92vw); max-height:340px; overflow:auto; background:#14141c; border:1px solid #333; border-radius:12px; padding:10px; z-index:11000; box-shadow:0 12px 40px rgba(0,0,0,0.6);">
@@ -2837,11 +2889,29 @@ function addDroppedFile(file) {
 
 var sidebar = document.getElementById('sidebar');
 var sidebarVisible = localStorage.getItem('sidebarVisible') !== 'false';
+var NARROW = '(max-width: 900px)';
+function isNarrow() {
+    return window.matchMedia(NARROW).matches;
+}
+function closeSidebarDrawer() {
+    document.body.classList.remove('sidebar-open');
+    var toggle = document.querySelector('.sidebar-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
 function toggleSidebar() {
     // Phones/tablets: the sidebar is an overlay drawer (see the @media <=900px
     // rules), so we toggle a class on <body>. Desktop keeps the normal collapse.
-    if (window.matchMedia('(max-width: 900px)').matches) {
-        document.body.classList.toggle('sidebar-open');
+    if (isNarrow()) {
+        var open = !document.body.classList.contains('sidebar-open');
+        document.body.classList.toggle('sidebar-open', open);
+        var toggle = document.querySelector('.sidebar-toggle');
+        if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        // The drawer covers the ☰ that opened it, so Esc has to work too - and the
+        // ✕ inside the drawer / the scrim are the other two ways out.
+        if (open) {
+            var close = document.getElementById('sidebarCloseBtn');
+            if (close) { try { close.focus({ preventScroll: true }); } catch (e) {} }
+        }
         return;
     }
     sidebarVisible = !sidebarVisible;
@@ -2849,6 +2919,21 @@ function toggleSidebar() {
     sidebar.classList.toggle('hidden', !sidebarVisible);
 }
 if (!sidebarVisible) sidebar.classList.add('hidden');
+
+// Esc closes the drawer; widening the window past the breakpoint clears the state
+// so it cannot be left open and pop back the next time the window is narrow.
+document.addEventListener('keydown', function(e) {
+    if ((e.key === 'Escape' || e.key === 'Esc') && document.body.classList.contains('sidebar-open')) {
+        closeSidebarDrawer();
+        if (msgInput) msgInput.focus();
+    }
+});
+(function watchBreakpoint() {
+    var mq = window.matchMedia(NARROW);
+    var onChange = function() { if (!mq.matches) closeSidebarDrawer(); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+})();
 
 var scrollBtn = document.getElementById('scrollBottomBtn');
 var _scrollRaf = false;
@@ -4133,7 +4218,7 @@ function renderConvList(convs) {
                 div.addEventListener('drop', handleDrop);
                 div.addEventListener('click', function() {
                     selectConversation(conv.id);
-                    document.body.classList.remove('sidebar-open');   // close mobile drawer
+                    closeSidebarDrawer();   // close mobile drawer
                 });
                 convList.appendChild(div);
             });

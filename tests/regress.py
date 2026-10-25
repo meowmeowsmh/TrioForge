@@ -4021,6 +4021,70 @@ def test_composer_cannot_be_crushed_or_hidden() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A small window must stay usable: the sidebar drawer has to be closable, and the
+# top bar must not stack its rows on top of each other.
+#
+# What went wrong: under 900px the sidebar becomes an overlay drawer drawn over the
+# ☰ that opened it, and the click-away scrim was a body::after pseudo-element, so it
+# could not receive a click. Measured in headless Chrome on an 886x593 window:
+# pressing ☰ put an H2 (the drawer's own heading) on top of the toggle, clicking the
+# toggle again did nothing, Esc did nothing, clicking the scrim did nothing, and
+# widening the window left the drawer marked open. The only escape was picking a
+# conversation. On the same window the Chat/Notes/Cork Board pills were painted over
+# the icon toolbar (tabs 74-110px, icons 50-133px) because .center-tabs was given
+# row 2 and the toolbar was auto-placed into the same row.
+# ---------------------------------------------------------------------------
+def test_small_window_chrome_stays_usable() -> None:
+    _title("a small window can always get its sidebar back")
+    import re
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+
+    # 1. The scrim is a real element that closes the drawer (a ::after cannot).
+    assert "body.sidebar-open::after" not in html, \
+        "the scrim is still a pseudo-element, so clicking it closes nothing"
+    assert re.search(r'id="sidebarScrim"', html), "the click-away scrim is gone"
+    assert re.search(r'id="sidebarScrim"[^>]*onclick="closeSidebarDrawer\(\)"', html), \
+        "clicking the scrim does not close the drawer"
+    assert "function closeSidebarDrawer" in html, "closeSidebarDrawer() is gone"
+    # 2. ...and the drawer carries its own ✕, because it covers the toggle.
+    assert re.search(r'id="sidebarCloseBtn"[^>]*onclick="closeSidebarDrawer\(\)"', html), \
+        "the drawer has no close button of its own"
+    # 3. Esc closes it.
+    assert re.search(r"e\.key === 'Escape'[^\n]*\n?[^\n]*sidebar-open", html) or \
+        ("'Escape'" in html and "classList.contains('sidebar-open')" in html), \
+        "Escape does not close the drawer"
+    # 4. Widening the window clears the state instead of leaving it armed.
+    assert re.search(r"addEventListener\('change'", html) and "isNarrow()" in html, \
+        "the drawer state is not cleared when the window gets wide again"
+
+    # 5. No stacked grid rows: every top-bar child has its own row under 900px.
+    #    There is more than one 900px block in the file (the logo rule is another),
+    #    so all of them are collected rather than trusting the first.
+    blocks = re.findall(r"@media \(max-width: 900px\) \{(.*?)\n\}", html, re.S)
+    assert blocks, "the small-window media query is gone"
+    block = "\n".join(blocks)
+    for sel, row in ((".top-bar .left", 1), (".center-tabs", 2),
+                     (".top-bar-icons", 3), (".top-bar .right", 4)):
+        assert re.search(re.escape(sel) + r"[^}]*grid-row:\s*%d" % row, block), \
+            "%s is not pinned to grid row %d, so rows can overlap" % (sel, row)
+
+    # 6. The icon toolbar is one scrollable row instead of two wrapped ones.
+    assert "flex-wrap: nowrap" in block and "overflow-x: auto" in block, \
+        "the icon toolbar wraps again, costing vertical space on a small window"
+
+    # 7. The model controls get their own row, leaving buttons + box together.
+    assert re.search(r'class="composer-controls"', html), "the controls wrapper is gone"
+    assert re.search(r"\.composer-controls \{ display: contents; \}", html), \
+        "the wrapper must be display:contents so the wide layout is unchanged"
+    assert re.search(r"\.composer-controls \{[^}]*flex: 1 1 100%", block), \
+        "the controls do not take their own row on a small window"
+
+    print("  drawer: scrim + ✕ + Esc + resize; top bar: one row per child -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4068,7 +4132,8 @@ def main() -> int:
              test_launcher_symlink_resolution, test_resolve_model_short_names,
              test_scan_case_insensitive, test_model_list_rescans_live,
              test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut,
-             test_composer_cannot_be_crushed_or_hidden]
+             test_composer_cannot_be_crushed_or_hidden,
+             test_small_window_chrome_stays_usable]
     failed = []
     for t in tests:
         try:
