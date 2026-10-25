@@ -3925,8 +3925,16 @@ WORKSPACE_TOOLS = [
 ]
 
 
-def _list_files_recursive(base, rel=""):
-    """Return a sorted list of relative paths (dirs end with '/') under `base`."""
+def _list_files_recursive(base, rel="", depth=0):
+    """Return a sorted list of relative paths (dirs end with '/') under `base`.
+
+    Symlink-safe: ``os.path.isdir`` follows a link, so a symlink loop planted in
+    the workspace (`loop -> .`) used to recurse forever and die with RecursionError
+    on the file-listing tool the agent calls. Symlinked directories are now
+    reported-not-descended, and a depth cap guards an absurdly deep tree.
+    """
+    if depth > 32:
+        return []
     out = []
     try:
         entries = sorted(os.listdir(os.path.join(base, rel) if rel else base))
@@ -3937,10 +3945,10 @@ def _list_files_recursive(base, rel=""):
             continue
         p = os.path.join(base, rel, name) if rel else os.path.join(base, name)
         relp = (rel + "/" + name) if rel else name
-        if os.path.isdir(p):
+        if os.path.isdir(p) and not os.path.islink(p):
             out.append(relp + "/")
-            out.extend(_list_files_recursive(base, relp))
-        else:
+            out.extend(_list_files_recursive(base, relp, depth + 1))
+        elif not os.path.isdir(p):
             out.append(relp)
     return out
 

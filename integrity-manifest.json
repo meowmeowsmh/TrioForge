@@ -16,7 +16,7 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "a5b16d037704abdf5d08486910b8b4076f07bfacb7c03e123440a01b59cf2d89",
+  "py/app.py": "0165ce92709d268e9ae41ec87bb36eb769d0f61b6c57326c12fb54cedd6cc678",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "ca95b117fa566c3eb6f9dc32af32ae23b0f544f00ca55f5a52989934d5f84050",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -122,6 +122,6 @@
   "templates/index.html": "a543fe9396a0930ebb5ba34d0cafde92a38e19d0d3672e0bd088549e091dc38c",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T23:33:04",
- "note": "security audit fixes"
+ "generated": "2026-10-25T23:41:36",
+ "note": "symlink-safe recursive listing"
 }

@@ -4364,6 +4364,50 @@ def test_security_audit_fixes_hold() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The agent's recursive file lister must never follow a symlink loop: os.path.isdir
+# resolves links, so a `loop -> .` in the workspace used to recurse forever and 500
+# the tool. It also must keep the DFS order callers expect.
+# ---------------------------------------------------------------------------
+def test_recursive_file_list_is_symlink_safe() -> None:
+    _title("recursive file listing cannot loop on a symlink")
+    import os
+    import tempfile
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "py"))
+    from app import _list_files_recursive
+
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "sub", "deep"))
+        open(os.path.join(d, "a.txt"), "w").close()
+        open(os.path.join(d, "sub", "b.txt"), "w").close()
+        open(os.path.join(d, "sub", "deep", "c.txt"), "w").close()
+        os.makedirs(os.path.join(d, "node_modules", "x"))
+
+        got = _list_files_recursive(d)
+        assert got == ["a.txt", "sub/", "sub/b.txt", "sub/deep/", "sub/deep/c.txt"], got
+        print("  dirs marked '/', noise pruned, DFS order kept -> OK")
+
+        # A symlink loop must terminate instead of recursing forever. Symlink
+        # creation needs a privilege some runners lack, so it is best-effort.
+        loop = os.path.join(d, "sub", "loop")
+        try:
+            os.symlink(d, loop)      # sub/loop -> the root (a cycle)
+        except OSError:
+            print("  (symlink not creatable here - loop check skipped) -> OK")
+            return
+        import sys as _sys
+        try:
+            _sys.setrecursionlimit(400)      # make an infinite loop fail FAST if it returns
+            out = _list_files_recursive(d)
+        finally:
+            _sys.setrecursionlimit(1000)
+        # It finished (no RecursionError) and did not descend the cycle.
+        assert not any(x.startswith("sub/loop/") for x in out), out
+        print("  a symlink loop terminates and is not descended -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4416,7 +4460,8 @@ def main() -> int:
              test_tiny_window_stays_usable,
              test_suggest_links_actually_creates_threads,
              test_tui_provider_variety,
-             test_security_audit_fixes_hold]
+             test_security_audit_fixes_hold,
+             test_recursive_file_list_is_symlink_safe]
     failed = []
     for t in tests:
         try:
