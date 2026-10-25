@@ -426,6 +426,8 @@ def t_web_search(query: str = "", max_results: int = 5, **_kw) -> str:
     query = (query or "").strip()
     if not query:
         return "error: query is required"
+    if not WEB_SEARCH_ON:
+        return "error: web search is off — turn it on with /search"
     try:
         from duckduckgo_search import DDGS
         n = max(1, min(int(max_results or 5), 10))
@@ -474,6 +476,16 @@ def _obj(props: dict, required: list[str]) -> dict:
 
 
 TOOLS: dict[str, Tool] = {}
+
+# The /search toggle: when OFF the model is not offered the web_search tool and a
+# direct call answers "web search is off". Default ON so the feature works out of
+# the box; the /search command flips it and the config remembers the choice.
+WEB_SEARCH_ON = True
+
+
+def set_web_search(on: bool) -> None:
+    global WEB_SEARCH_ON
+    WEB_SEARCH_ON = bool(on)
 
 
 def _register(tool: Tool) -> None:
@@ -619,7 +631,8 @@ _register(Tool(
 def schemas(names: list[str] | None = None) -> list[dict]:
     """JSON schemas for native tool calling."""
     chosen = names or list(TOOLS)
-    return [TOOLS[n].schema() for n in chosen if n in TOOLS]
+    return [TOOLS[n].schema() for n in chosen
+            if n in TOOLS and (n != "web_search" or WEB_SEARCH_ON)]
 
 
 # Escape sequences must never leave a tool. A command that prints
@@ -741,6 +754,8 @@ def protocol_text() -> str:
     """The protocol plus a plain-language list of the tools."""
     out = [PROTOCOL]
     for name, t in TOOLS.items():
+        if name == "web_search" and not WEB_SEARCH_ON:
+            continue
         props = t.parameters.get("properties", {})
         args = ", ".join(props) or "no arguments"
         danger = "  (asks permission first)" if t.danger else ""

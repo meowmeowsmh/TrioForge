@@ -4490,7 +4490,7 @@ def test_pipe_and_memory_lock_are_safe() -> None:
 # DuckDuckGo search) so local AND cloud models can reach current sources.
 # ---------------------------------------------------------------------------
 def test_web_search_for_local_models() -> None:
-    _title("web search is available to local models")
+    _title("web search is a toggle, available to local models")
     import sys
 
     root = Path(__file__).resolve().parent.parent
@@ -4504,13 +4504,24 @@ def test_web_search_for_local_models() -> None:
     assert "query" in (tool.parameters.get("properties") or {}), tool.parameters
     # A bare call asks for a query instead of hitting the network.
     assert tools.t_web_search("") == "error: query is required"
-    assert tools.t_web_search("   ") == "error: query is required"
-    # /search is now a live web search, not the old Hugging Face model browse.
+    # /search is the switch, not the old Hugging Face browse.
     doc = commands._search.__doc__ or ""
-    assert "search the web" in doc, doc
+    assert "switch" in doc or "toggle" in doc, doc
     assert "Hugging Face" not in doc, doc
-    # The offline demo keeps its own note that search still reaches the network.
-    print("  /search is a live web search; web_search is a read-only tool -> OK")
+
+    # OFF withholds the tool and blocks a direct call; ON restores both.
+    saved = tools.WEB_SEARCH_ON
+    try:
+        tools.set_web_search(False)
+        assert "web search is off" in tools.t_web_search("x")
+        assert all(s["function"]["name"] != "web_search" for s in tools.schemas())
+        assert "web_search" not in tools.protocol_text()
+        tools.set_web_search(True)
+        assert any(s["function"]["name"] == "web_search" for s in tools.schemas())
+        assert "web_search" in tools.protocol_text()
+    finally:
+        tools.set_web_search(saved)
+    print("  /search toggles the tool off and on for any provider -> OK")
 
 
 # ---------------------------------------------------------------------------

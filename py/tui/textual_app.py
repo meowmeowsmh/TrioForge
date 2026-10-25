@@ -3198,6 +3198,8 @@ def run(args) -> int:
     """Entry point used by app.main() for the full-screen UI."""
     _disable_quickedit()
     cfg = providers.load()
+    from . import tools as _tools
+    _tools.set_web_search(bool(getattr(cfg, "search_enabled", True)))
 
     if getattr(args, "provider", "") and args.provider in cfg.providers:
         cfg.provider = args.provider

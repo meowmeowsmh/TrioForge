@@ -45,7 +45,7 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/models"),
         Cmd("/start [name]", "load a local .gguf into llama-server",
             "/start gemma-3-12b-it"),
-        Cmd("/search <query>", "search the web for current articles, docs and sources",
+        Cmd("/search [on|off|query]", "the web-search switch; a query runs one live search",
             "/search llama.cpp quantization"),
         Cmd("/download <query>", "search Hugging Face and download a GGUF model",
             "/download qwen 7b"),
@@ -765,21 +765,36 @@ def _download(ctx, arg: str) -> None:
 
 
 def _search(ctx, arg: str) -> None:
-    """/search <query> — search the web for current articles, docs and sources.
+    """/search [on|off|<query>] — the web-search switch, or one live search.
 
-    This is the "online" lever for a LOCAL model: a llama.cpp model has no network,
-    so anything recent it answers is a guess from its training data. This runs a
-    live DuckDuckGo search and prints the snippets; the same capability is the
-    agent's `web_search` tool, so a conversation can reach it too.
+    With no argument it TOGGLES whether the model may reach the web (the agent's
+    `web_search` tool) - this is the on/off for a LOCAL llama.cpp model, which
+    otherwise only "views history" (its weights). `on`/`off` set it explicitly; a
+    query runs one DuckDuckGo search and prints the snippets.
     """
-    from . import tools
+    from . import providers, tools
 
-    query = arg.strip()
-    if not query:
-        render.error("usage: /search <query>  —  e.g. /search llama.cpp 4-bit quantization")
+    arg = (arg or "").strip()
+    low = arg.lower()
+
+    if arg in ("", "on", "off"):
+        if arg:
+            tools.set_web_search(arg == "on")
+        else:
+            tools.set_web_search(not tools.WEB_SEARCH_ON)
+        ctx.cfg.search_enabled = tools.WEB_SEARCH_ON
+        providers.save(ctx.cfg)
+        render.ok("web search " + ("ON" if tools.WEB_SEARCH_ON else "OFF"))
+        render.info("the model's web_search tool is "
+                    + ("available" if tools.WEB_SEARCH_ON else "withheld"))
         return
-    render.info(f"searching the web for {query!r}…")
-    render.info(tools.t_web_search(query))
+
+    if not tools.WEB_SEARCH_ON:
+        render.warn("web search is off — /search to turn it on")
+        return
+
+    render.info(f"searching the web for {arg!r}…")
+    render.info(tools.t_web_search(arg))
 
 
 def _echo(ctx, arg: str) -> None:

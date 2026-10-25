@@ -192,6 +192,8 @@ class Config:
     team_enabled: bool = False
     # Roles mode: the pool runs a planner -> coder -> reviewer -> fixer pipeline.
     roles_enabled: bool = False
+    # Web search: whether the model is offered the live web-search tool (/search).
+    search_enabled: bool = True
     # Token limits. 0 means "use the built-in default" so an unset value never
     # forces a number on a machine the user did not configure.
     max_tokens: int = 0       # cap on the reply length (output tokens)
@@ -311,6 +313,7 @@ def load(path: Path | None = None) -> Config:
         route_pool=list(data.get("route_pool") or []),
         team_enabled=bool(data.get("team_enabled", False)),
         roles_enabled=bool(data.get("roles_enabled", False)),
+        search_enabled=bool(data.get("search_enabled", True)),
         max_tokens=int(data.get("max_tokens", 0) or 0),
         ctx_size=int(data.get("ctx_size", 0) or 0),
     )
@@ -346,6 +349,7 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "route_pool": cfg.route_pool,
         "team_enabled": cfg.team_enabled,
         "roles_enabled": cfg.roles_enabled,
+        "search_enabled": cfg.search_enabled,
         "max_tokens": cfg.max_tokens,
         "ctx_size": cfg.ctx_size,
         "providers": cfg.providers,
