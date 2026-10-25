@@ -9,6 +9,7 @@
 
 import os
 import logging
+import math
 import threading
 import uuid
 import random
@@ -297,6 +298,87 @@ def compute_all_embeddings():
 
 # (Uncomment to enable background precomputation)
 # threading.Thread(target=compute_all_embeddings, daemon=True).start()
+
+
+# ---------- Link suggestions (the "💡 Suggest Links" button) ----------
+# A suggestion is a PAIR of pins that say similar things. The board's threads are
+# cheap to draw, so what is hard is noticing the pair at all - which is what this
+# does, with embeddings rather than an LLM: the same numbers the per-pin
+# "Suggest Links for this Pin" action has always used, applied to the whole board.
+LINK_THRESHOLD = 0.3      # cosine similarity a pair must beat to be worth a thread
+LINK_LIMIT = 25           # how many pairs to show at once
+LINK_MAX_PINS = 400       # beyond this, comparing every pair stops being instant
+
+try:                      # numpy is a hard requirement of the embedding model, but
+    import numpy as _np    # suggest_link_pairs must work (and be testable) without it
+except Exception:         # noqa: BLE001
+    _np = None
+
+
+def _cosine(u, v):
+    """Cosine similarity of two vectors, or None when either is empty/zero."""
+    if not u or not v or len(u) != len(v):
+        return None
+    dot = nu = nv = 0.0
+    for a, b in zip(u, v):
+        dot += a * b
+        nu += a * a
+        nv += b * b
+    if nu <= 0.0 or nv <= 0.0:
+        return None
+    return dot / math.sqrt(nu * nv)
+
+
+def suggest_link_pairs(pins, threshold=LINK_THRESHOLD, limit=LINK_LIMIT, existing=()):
+    """The most similar unlinked pin pairs on the board: [(id_a, id_b, score)].
+
+    ``pins`` is the board's {id: pin} dict (a pin without an embedding is skipped),
+    ``existing`` is an iterable of (from, to) links so a pair that is already
+    threaded is never suggested again. Best match first; at most ``limit`` pairs.
+    Pure-Python fallback when numpy is missing keeps this testable anywhere.
+    """
+    ids = [pid for pid, pin in pins.items() if pin.get('embedding')]
+    if len(ids) < 2:
+        return []
+    skip = set()
+    for pair in existing or ():
+        try:
+            a, b = pair
+        except (TypeError, ValueError):
+            continue
+        if a in pins and b in pins:
+            skip.add(frozenset((a, b)))
+
+    found = []
+    vectors = None
+    if _np is not None:
+        try:
+            vectors = _np.array([pins[pid]['embedding'] for pid in ids], dtype=float)
+            norms = _np.linalg.norm(vectors, axis=1)
+            safe = _np.where(norms > 0, norms, 1.0)
+            sim = (vectors @ vectors.T) / _np.outer(safe, safe)
+            zero = norms <= 0
+            sim[zero, :] = 0.0
+            sim[:, zero] = 0.0
+        except Exception as exc:      # noqa: BLE001 - fall back rather than fail
+            logger.warning("link suggestions: numpy path failed (%s); using pure python",
+                           exc)
+            vectors = None
+
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            if frozenset((ids[i], ids[j])) in skip:
+                continue
+            if vectors is not None:
+                score = float(sim[i][j])
+            else:
+                score = _cosine(pins[ids[i]]['embedding'], pins[ids[j]]['embedding'])
+                if score is None:
+                    continue
+            if score >= threshold:
+                found.append((ids[i], ids[j], score))
+    found.sort(key=lambda t: t[2], reverse=True)
+    return found[:limit]
 
 
 # ---------- Conversation tree → cork board layout ----------
@@ -788,6 +870,61 @@ def change_link_color():
     if update_link_color(a, b, new_color):
         return jsonify({"ok": True, "color": new_color})
     return jsonify({"error": "Link not found"}), 404
+
+
+# ---------- API: whole-board link suggestions ----------
+@corkboard_bp.route('/api/link_suggestions', methods=['POST'])
+def link_suggestions():
+    """Pairs of pins that say similar things and are not threaded yet.
+
+    Same embeddings as the per-pin action, compared across the whole board, so the
+    💡 button in the toolbar actually does something instead of telling the user to
+    go and find another button.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        threshold = float(data.get('threshold', LINK_THRESHOLD))
+    except (TypeError, ValueError):
+        threshold = LINK_THRESHOLD
+    threshold = min(max(threshold, 0.05), 0.95)
+
+    if not EMBED_AVAILABLE:
+        return jsonify({"error": "Embedding model not available. Install "
+                                 "sentence-transformers, numpy and scikit-learn "
+                                 "(Setup → Install) to compare pins."}), 503
+
+    board = load_board()
+    pins = board['pins']
+    if len(pins) < 2:
+        return jsonify({"pairs": [], "pins": len(pins),
+                        "note": "One pin on the board - a pair needs two."})
+    if len(pins) > LINK_MAX_PINS:
+        return jsonify({"error": "This board has %d pins; comparing every pair stops "
+                                 "being instant past %d." % (len(pins), LINK_MAX_PINS)}), 413
+
+    computed = 0
+    for pid, pin in pins.items():
+        if pin.get('embedding'):
+            continue
+        emb = embed_pin(pin)
+        if emb is not None:
+            set_pin_embedding(pid, emb)
+            pin['embedding'] = emb          # so this run can use it immediately
+            computed += 1
+
+    pairs = suggest_link_pairs(pins, threshold=threshold,
+                               existing=[(l['from'], l['to']) for l in board['links']])
+    out = []
+    for a, b, score in pairs:
+        out.append({
+            "a": a, "b": b,
+            "title_a": (pins[a].get('title') or 'Untitled'),
+            "title_b": (pins[b].get('title') or 'Untitled'),
+            "score": round(float(score), 3),
+        })
+    return jsonify({"pairs": out, "pins": len(pins), "computed": computed,
+                    "threshold": threshold, "linked": len(board['links'])})
+
 
 # ---------- API: clear all ----------
 @corkboard_bp.route('/api/clear_all', methods=['POST'])
@@ -1431,10 +1568,17 @@ svg.link-layer {
     box-shadow:0 20px 60px rgba(0,0,0,0.6);
 }
 .link-suggestions-box h3 { margin-bottom:12px; }
+.link-suggestions-box .suggestion-hint {
+    margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: #8b949e;
+}
+.link-suggestions-box .suggestion-empty {
+    padding: 14px 4px; font-size: 13px; color: #8b949e; text-align: center;
+}
 .link-suggestions-box .suggestion-item {
     display:flex;
     justify-content:space-between;
     align-items:center;
+    gap: 10px;
     padding:6px 8px;
     border-bottom:1px solid rgba(255,255,255,0.06);
 }
@@ -1454,6 +1598,21 @@ svg.link-layer {
     cursor:pointer;
 }
 .link-suggestions-box .suggestion-item .link-btn:hover { background:#388bfd; }
+/* The same rows are used inside the pin editor's AI result, so the row/button
+   styling is shared rather than duplicated there. */
+#aiResult .suggestion-item {
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.06);
+}
+#aiResult .suggestion-item .title { flex:1; }
+#aiResult .suggestion-item .score { font-size:11px; color:#8b949e; margin-right:8px; }
+#aiResult .suggestion-item .link-btn,
+.close-suggestions .link-btn {
+    background:#1f6feb; border:none; border-radius:4px; color:#fff;
+    padding:3px 12px; font-size:12px; cursor:pointer;
+}
+#aiResult .suggestion-item .link-btn:hover,
+.close-suggestions .link-btn:hover { background:#388bfd; }
 .link-suggestions-box .close-suggestions {
     margin-top:16px;
     text-align:right;
@@ -1754,6 +1913,9 @@ svg.link-layer {
 <script src="/static/theme-loader.js"></script>
 </head>
 <body>
+<!-- The shell's CSRF wrapper belongs to the shell's document, so this page needs
+     its own - without it every save here came back 403. See static/csrf-fetch.js. -->
+<script src="/static/csrf-fetch.js"></script>
 <script>
 /* Embedded in the chat shell (iframe): the shell already provides the top bar
    and the three tabs, so this page hides its own to avoid a double row. */
@@ -1926,7 +2088,12 @@ html.embedded #fsBtn { display: none !important; }</style>
 <div class="link-suggestions-overlay" id="linkSuggestionsOverlay">
     <div class="link-suggestions-box">
         <h3>💡 Suggested Links</h3>
+        <p class="suggestion-hint">Pins that say similar things and are not threaded yet — from
+           their text, compared on this machine. Draw a thread to keep them together.</p>
         <div id="suggestionsList"></div>
+        <div class="close-suggestions" id="suggestionsActions" style="display:none;">
+            <button class="link-btn" onclick="createAllSuggestedLinks()">Draw all of them</button>
+        </div>
         <div class="close-suggestions">
             <button onclick="closeLinkSuggestions()">Close</button>
         </div>
@@ -3391,8 +3558,34 @@ document.getElementById('aiAssistBtn').addEventListener('click', function() {
             }
             resultDiv.textContent = '✅ Suggested tags: ' + data.tags.join(', ') + ' (added to tags field)';
         } else if (action === 'suggest_links' && data.suggestions) {
-            var list = data.suggestions.map(s => `• ${s.title} (${(s.score*100).toFixed(0)}%)`).join('\n');
-            resultDiv.textContent = '🔗 Suggested links:\n' + list + '\n\nUse "💡 Suggest Links" button in toolbar to create them.';
+            // Each suggestion gets its own button: the old text told the user to go
+            // and press a toolbar button that did not do anything yet.
+            resultDiv.textContent = '';
+            if (!data.suggestions.length) {
+                resultDiv.textContent = '🔗 No related pins found for this one yet.';
+                return;
+            }
+            var head = document.createElement('div');
+            head.textContent = '🔗 Related pins — click to draw a thread:';
+            resultDiv.appendChild(head);
+            data.suggestions.forEach(function(s) {
+                var row = document.createElement('div');
+                row.className = 'suggestion-item';
+                var t = document.createElement('span');
+                t.className = 'title';
+                t.textContent = s.title;
+                var pct = document.createElement('span');
+                pct.className = 'score';
+                pct.textContent = Math.round(s.score * 100) + '%';
+                var b = document.createElement('button');
+                b.className = 'link-btn';
+                b.textContent = 'Create thread';
+                b.dataset.from = editingPinId;
+                b.dataset.to = s.id;
+                b.onclick = function() { createLink(editingPinId, s.id); };
+                row.appendChild(t); row.appendChild(pct); row.appendChild(b);
+                resultDiv.appendChild(row);
+            });
         } else if (action === 'improve' && data.result) {
             document.getElementById('pinContent').value = data.result;
             resultDiv.textContent = '✅ Pin content updated with improved version.';
@@ -3440,13 +3633,85 @@ function deleteCurrentPin() {
     }
 }
 
-// ─── LINK SUGGESTIONS (global) ──────────────────────
+// ─── LINK SUGGESTIONS (whole board) ──────────────────
+// "Which pins on this board are talking about the same thing and are not
+// threaded yet?" The comparison runs on the server (embeddings, no LLM), so this
+// only renders the result - and every row can create its thread right here.
 function openLinkSuggestions() {
-    alert('Global link suggestions will be implemented soon. Use "Suggest Links for this Pin" from the edit modal.');
+    var overlay = document.getElementById('linkSuggestionsOverlay');
+    var list = document.getElementById('suggestionsList');
+    var actions = document.getElementById('suggestionsActions');
+    overlay.classList.add('active');
+    if (actions) actions.style.display = 'none';
+    list.innerHTML = '<div class="suggestion-empty">Looking for related pins…</div>';
+
+    fetch('/corkboard/api/link_suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    }).then(function(r) {
+        return r.json().then(function(data) { return { ok: r.ok, data: data }; });
+    }).then(function(res) {
+        var data = res.data || {};
+        if (!res.ok) {
+            list.innerHTML = '<div class="suggestion-empty">❌ ' +
+                escapeHtml(data.error || 'Could not compare pins.') + '</div>';
+            return;
+        }
+        var pairs = data.pairs || [];
+        if (!pairs.length) {
+            list.innerHTML = '<div class="suggestion-empty">' +
+                (data.note || 'No unconnected pins look related at the moment. ' +
+                 '(' + (data.pins || 0) + ' pins compared.)') + '</div>';
+            return;
+        }
+        list.innerHTML = '';
+        pairs.forEach(function(p) {
+            var row = document.createElement('div');
+            row.className = 'suggestion-item';
+            var title = document.createElement('span');
+            title.className = 'title';
+            title.textContent = p.title_a + '  ↔  ' + p.title_b;
+            var score = document.createElement('span');
+            score.className = 'score';
+            score.textContent = Math.round(p.score * 100) + '%';
+            var btn = document.createElement('button');
+            btn.className = 'link-btn';
+            btn.textContent = 'Create thread';
+            btn.dataset.from = p.a;
+            btn.dataset.to = p.b;
+            btn.onclick = function() { createLink(p.a, p.b); };
+            row.appendChild(title);
+            row.appendChild(score);
+            row.appendChild(btn);
+            list.appendChild(row);
+        });
+        if (actions) {
+            actions.style.display = 'flex';
+            actions.dataset.pairs = JSON.stringify(pairs);
+        }
+    }).catch(function(err) {
+        list.innerHTML = '<div class="suggestion-empty">❌ ' + escapeHtml(String(err)) + '</div>';
+    });
+}
+
+// Every suggested pair becomes a thread in one go.
+function createAllSuggestedLinks() {
+    var actions = document.getElementById('suggestionsActions');
+    var pairs = [];
+    try { pairs = JSON.parse((actions && actions.dataset.pairs) || '[]'); } catch (e) { pairs = []; }
+    if (!pairs.length) return;
+    pairs.forEach(function(p) { createLink(p.a, p.b); });
 }
 
 function closeLinkSuggestions() {
     document.getElementById('linkSuggestionsOverlay').classList.remove('active');
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
 }
 
 function createLink(from, to) {
@@ -3466,6 +3731,13 @@ function createLink(from, to) {
                     item.remove();
                 }
             });
+            // Nothing left to approve: say so instead of leaving an empty box.
+            var list = document.getElementById('suggestionsList');
+            if (list && !list.querySelector('.suggestion-item')) {
+                list.innerHTML = '<div class="suggestion-empty">✅ All suggested threads are drawn.</div>';
+                var actions = document.getElementById('suggestionsActions');
+                if (actions) actions.style.display = 'none';
+            }
         }
     });
 }

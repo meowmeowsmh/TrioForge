@@ -2058,6 +2058,9 @@ html.embedded:has(#sidebar.hidden) #sbShow { top: 12px; }   /* no top bar when f
 <script src="/static/theme-loader.js"></script>
 </head>
 <body>
+<!-- The shell's CSRF wrapper belongs to the shell's document, so this page needs
+     its own - without it every note save came back 403. See static/csrf-fetch.js. -->
+<script src="/static/csrf-fetch.js"></script>
 <script>
 /* Embedded in the chat shell (iframe): the shell already provides the top bar
    and the three tabs, so this page hides its own to avoid a double row. */

@@ -2694,6 +2694,39 @@ def test_csrf_protection() -> None:
         assert forge_app._csrf_protect() is not None
     print("  /v1/ and /login exempt; everything else guarded -> OK")
 
+    # ── The pages that are their OWN documents must ship a token too ──────────
+    # The shell wraps window.fetch for itself; a page in an iframe (or opened
+    # directly) has its own window and sent nothing, so EVERY save on the Cork
+    # Board and in Notes came back "403 invalid or missing CSRF token": no pin
+    # could be created or edited, no thread drawn, no note saved or deleted.
+    # Nothing noticed because reads kept working - the board still drew itself.
+    with forge_app.app.test_client() as client:
+        token = _csrf_ok(client)
+        for page in ("/corkboard", "/notes"):
+            page_html = client.get(page)
+            assert page_html.status_code == 200, (page, page_html.status_code)
+            assert "/static/csrf-fetch.js" in page_html.get_data(as_text=True), \
+                "%s does not load the CSRF wrapper, so its saves are all 403" % page
+
+        js = client.get("/static/csrf-fetch.js")
+        assert js.status_code == 200, js.status_code
+        body = js.get_data(as_text=True)
+        for bit in ("window.fetch", "X-CSRF-Token", "/api/csrf"):
+            assert bit in body, "the shared wrapper lost %r" % bit
+
+        # And the endpoints those pages call really do let a tokened request in
+        # (4xx for a missing id, but no longer 403), while a tokenless one is
+        # still refused - the protection is not weakened by any of this.
+        client.environ_base.pop("HTTP_X_CSRF_TOKEN", None)
+        for url in ("/corkboard/api/pins/no-such-pin", "/notes/api/no-such-note"):
+            refused = client.put(url, json={})
+            assert refused.status_code == 403, (url, refused.status_code)
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = token
+        for url in ("/corkboard/api/pins/no-such-pin", "/notes/api/no-such-note"):
+            allowed = client.put(url, json={})
+            assert allowed.status_code != 403, (url, allowed.status_code)
+        print("  cork board + notes ship the wrapper; saves pass with a token -> OK")
+
 
 # ---------------------------------------------------------------------------
 def test_image_steps_default_to_the_workflow() -> None:
@@ -4151,6 +4184,84 @@ def test_tiny_window_stays_usable() -> None:
 
 
 # ---------------------------------------------------------------------------
+# "💡 Suggest Links" was a dead button: it popped an alert telling you to use a
+# different button, and even that one only printed "• Title (72%)" plus "use the
+# 💡 button in the toolbar to create them" - which did nothing. A button that
+# cannot do its job should not be in the toolbar.
+# ---------------------------------------------------------------------------
+def test_suggest_links_actually_creates_threads() -> None:
+    _title("Suggest Links finds related pins and draws the threads")
+    import re
+
+    root = Path(__file__).resolve().parent.parent
+    src = (root / "py" / "features" / "cork_board.py").read_text(encoding="utf-8")
+
+    # 1. No placeholder left anywhere.
+    assert "will be implemented soon" not in src, "the stub alert is still there"
+    assert "Use \"💡 Suggest Links\" button in toolbar to create them" not in src, \
+        "the per-pin result still points at the button instead of offering the action"
+
+    # 2. The whole-board endpoint exists and is wired to the toolbar button.
+    assert "@corkboard_bp.route('/api/link_suggestions'" in src, "the endpoint is gone"
+    assert re.search(r"function openLinkSuggestions\(\) \{[\s\S]{0,600}?/corkboard/api/link_suggestions",
+                     src), "the toolbar button does not call the endpoint"
+    assert "function createAllSuggestedLinks" in src, "there is no way to accept them all"
+    assert re.search(r"dataset\.from = p\.a", src) and re.search(r"dataset\.from = editingPinId", src), \
+        "the suggestion rows lost their Create-thread buttons"
+
+    # 3. The pairing logic itself, on fake embeddings - no model, no network.
+    sys.path.insert(0, str(root / "py"))
+    sys.path.insert(0, str(root / "py" / "tools"))
+    from features import cork_board as cb
+
+    def pin(vec, title="t"):
+        return {"title": title, "content": "", "embedding": vec}
+
+    pins = {
+        "a": pin([1.0, 0.0, 0.0], "prayer"),
+        "b": pin([0.98, 0.02, 0.0], "praising"),
+        "c": pin([0.0, 1.0, 0.0], "database migration"),
+        "d": pin([1.0, 0.0, 0.0], "same as a"),
+        "e": {"title": "no embedding", "content": "x"},      # must be skipped
+    }
+    got = cb.suggest_link_pairs(pins)
+    assert got, "the obvious duplicates were not suggested"
+    scores = [s for _, _, s in got]
+    assert scores == sorted(scores, reverse=True), scores
+    assert got[0][2] > 0.99 and {got[0][0], got[0][1]} == {"a", "d"}, got[0]
+    assert all(0.3 <= s <= 1.0001 for _, _, s in got), scores
+    keys = {frozenset((x, y)) for x, y, _ in got}
+    assert frozenset(("c", "e")) not in keys and not any("e" in k for k in keys), \
+        "a pin without an embedding was compared"
+    assert frozenset(("a", "c")) not in keys, "an unrelated pair (<0.3) was suggested"
+
+    # A pair that is already threaded is not offered again, in either direction.
+    skipped = cb.suggest_link_pairs(pins, existing=[("d", "a")])
+    assert not any({x, y} == {"a", "d"} for x, y, _ in skipped), skipped
+
+    # The limit is honoured, and a high threshold narrows the list (a and d are the
+    # same vector, so they survive any threshold; b sits at 0.9998).
+    assert len(cb.suggest_link_pairs(pins, limit=1)) == 1
+    tight = cb.suggest_link_pairs(pins, threshold=0.9999)
+    assert len(tight) == 1 and {tight[0][0], tight[0][1]} == {"a", "d"}, tight
+
+    # 4. The pure-Python fallback (no numpy) must agree with the numpy path, since
+    #    that is what runs if numpy is ever missing.
+    with_np = cb.suggest_link_pairs(pins)
+    saved = cb._np
+    try:
+        cb._np = None
+        without_np = cb.suggest_link_pairs(pins)
+    finally:
+        cb._np = saved
+    assert [(x, y) for x, y, _ in with_np] == [(x, y) for x, y, _ in without_np], \
+        (with_np, without_np)
+    assert all(abs(a[2] - b[2]) < 1e-9 for a, b in zip(with_np, without_np)), (with_np, without_np)
+
+    print("  pairs found, sorted, thresholded, deduped; both code paths agree -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4200,7 +4311,8 @@ def main() -> int:
              test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut,
              test_composer_cannot_be_crushed_or_hidden,
              test_small_window_chrome_stays_usable,
-             test_tiny_window_stays_usable]
+             test_tiny_window_stays_usable,
+             test_suggest_links_actually_creates_threads]
     failed = []
     for t in tests:
         try:

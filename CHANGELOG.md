@@ -282,9 +282,7 @@ below, so it carries the same version number on a build that is missing all of i
   the row below), which takes the chat area from 156px to **239px** of visible
   history — the chrome used to leave less than a third of the window for the chat.
 
-### A very small window still works
-
-- **The window could be dragged down to nothing.** `min_size: (900, 600)` is asked
+### A very small window still works- **The window could be dragged down to nothing.** `min_size: (900, 600)` is asked
   for, but the WebView2 backend does not implement it, so the OS allowed any size.
   Measured in headless Chrome: at **650×420** the chrome left the conversation
   **31px**; at **560×380** the composer's last row — Send included — was painted
@@ -305,6 +303,33 @@ below, so it carries the same version number on a build that is missing all of i
   `bottom: 100px`, which is inside the composer on any window where the composer is
   taller than that. It now measures the composer and the status bar and anchors
   above them, and moves when you resize the box.
+
+### "💡 Suggest Links" does what it says
+
+- **The button was a stub.** It popped an alert — *"Global link suggestions will be
+  implemented soon. Use 'Suggest Links for this Pin' from the edit modal"* — and even
+  that path only printed `• Title (72%)` plus *"use the 💡 button to create them"*,
+  i.e. it sent you back to a button that did nothing. A control that cannot do its
+  job should not be there at all.
+- **Now it compares the whole board and draws the threads.** One click finds the
+  most similar unlinked pin pairs (same sentence-embeddings the per-pin action used,
+  cosine similarity > 0.3, best first, never a pair already threaded), and every row
+  has a **Create thread** button plus a **Draw all of them** button — each of which
+  makes the real thread through the same link API dragging does. The per-pin result
+  got the same one-click buttons instead of pointing at a dead one. An empty board
+  says so ("one pin — a pair needs two") instead of failing.
+
+### Saves on the Cork Board and in Notes are possible again
+
+- **They were silently failing.** The CSRF wrapper that was added for the chat lives
+  in the *shell's* document, but Notes and the Cork Board are their own documents (in
+  an iframe), so they were sending no token and **every** `POST`/`PUT`/`DELETE` from
+  them came back `403 invalid or missing CSRF token` — new pins, pin edits,
+  deletions, threads, note saves, note deletes. Reads still worked, which is why the
+  board and notes looked fine while refusing to save. A shared
+  `static/csrf-fetch.js` now ships with both pages (and is tested: tokened requests
+  pass, tokenless ones still 403), so the fix is one file, not a third copy of the
+  wrapper.
 
 ### Small quality-of-life
 
