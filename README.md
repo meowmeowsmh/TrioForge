@@ -28,10 +28,28 @@
 - **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
 - **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` code-block protocol covers models without native function calling, and no workspace folder is required.
 
-### 1.5.6 — the final release
+### 1.6.0 — the current release
 
-**This is the final TrioForge release, and the one to install.** It supersedes 1.5.5,
-whose tag was cut before the security, terminal-client and performance work below.
+**This is the release to install.** It carries all of 1.5.6 (security, terminal
+client, image quality, packaging) plus what landed since:
+
+- **A message box you can resize.** It used to collapse into a 34px-wide sliver on a
+  pasted line with no spaces — unreadable, unscrollable, un-resizable. Now it wraps,
+  keeps a real minimum width, gets a scrollbar when text overflows, and has a drag
+  handle (double-click resets, `↑`/`↓` nudge).
+- **Small windows stay usable.** The sidebar drawer closes four ways (✕, click-away,
+  Esc, widening), the top bar no longer paints its rows on top of each other, and the
+  chrome is capped so the conversation keeps the window — measured: chat area 156px →
+  279px on a small window, and Send stays on screen down to 400×300.
+- **💡 Suggest Links works.** One click finds the related pins across the whole board
+  (embeddings, no LLM) and draws the threads — a button that used to just pop an
+  alert.
+- **Notes and the Cork Board save again.** They are their own pages and had no CSRF
+  token, so every save silently 403'd. A shared wrapper fixed it; the protection is
+  still enforced.
+- **The terminal client's provider list is opencode's too.** `/setup` now offers 15
+  providers — OpenAI, xAI, Mistral, Perplexity, Together, Cerebras, Fireworks join
+  the local + TrioForge set, one key each.
 
 - **Security.** CSRF protection on every state-changing route, every dependency floor
   pinned to a tested range, and the **11 Dependabot alerts cleared** — `uv.lock` was
@@ -67,7 +85,7 @@ whose tag was cut before the security, terminal-client and performance work belo
 
 ### 1.5.5 — no console windows, and one command from anywhere
 
-> Superseded by **1.5.6** above — the `v1.5.5` tag was cut before the security and
+> Superseded by **1.6.0** above — the `v1.5.5` tag was cut before the security and
 > performance fixes, so install the newer release.
 
 No console windows, a window that opens, and one command that works from anywhere.
@@ -387,12 +405,12 @@ forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
-forge --version                 # -> forge 1.5.6 (prints the name you typed)
+forge --version                 # -> forge 1.6.0 (prints the name you typed)
 trioforge-web                   # start the web app (same as double-clicking)
 trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
-Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.5.6**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.6.0**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 

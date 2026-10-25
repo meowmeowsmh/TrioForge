@@ -3,11 +3,16 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
-## [1.5.6] — the final release
+## [1.6.0] — resizable composer, usable small windows, working Suggest Links
 
-**This is the final TrioForge release and the one to install.** It supersedes
-1.5.5: that tag was cut before the security, terminal-client and performance work
-below, so it carries the same version number on a build that is missing all of it.
+**The current release, and the one to install.** It carries everything 1.5.6 had
+(the security hardening, terminal client, image-quality and packaging work below)
+plus the fixes and features since: a message box you can resize instead of one that
+collapsed into an unreadable sliver, a sidebar drawer that can always be closed, a
+top bar and composer that stop eating small windows, a "💡 Suggest Links" button that
+actually draws the threads, saves on the Cork Board and in Notes working again
+(their pages were silently 403-ing), and the hosted-provider variety the terminal
+client was missing.
 
 ### Security
 
