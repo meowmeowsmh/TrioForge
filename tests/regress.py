@@ -996,6 +996,20 @@ async def _tui_checks() -> None:
         app._models, app.session.model = real_models, real_model
         print("  sidebar fits its 34 columns; Windows model paths shorten -> OK")
 
+        # A modal dismissed twice used to crash: the first dismiss popped the
+        # picker, and a stray second Enter (or the enter binding firing alongside
+        # Input.Submitted) then popped the app's default screen -> ScreenStackError.
+        picker = ta.Picker("pick", [("a", "first"), ("b", "second")])
+        await app.push_screen(picker)
+        await pilot.pause()
+        picker._keys = ["a", "b"]
+        picker.query_one("#pickerlist", ta.ListView).index = 0
+        picker.action_choose()      # pops the picker, resolves the wait
+        picker.action_choose()      # guarded no-op - must not raise
+        picker.action_cancel()      # cancelling after choosing is a no-op too
+        await pilot.pause()
+        print("  a modal dismissed twice is a no-op, not ScreenStackError -> OK")
+
         # ...and the panel steps aside when the window cannot afford both panes.
         # At 60 columns it kept its 36 and left the transcript 24. Poll for the
         # relayout instead of trusting one pause - same reason as the compose wait.

@@ -2863,6 +2863,16 @@ class Picker(ModalScreen):
         self._current = current or ""
         self._keys: list[str] = []
         self._last_click: tuple = (None, 0.0)
+        self._done = False
+
+    def dismiss(self, result=None):
+        """Close once. A second Enter/click arrives after the screen is already
+        popped and used to raise ScreenStackError ("must be at least one screen")
+        from a bare pop_screen - the modal can only ever be dismissed once."""
+        if self._done:
+            return
+        self._done = True
+        super().dismiss(result)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="pickerbox"):
@@ -2962,6 +2972,13 @@ class ConfirmTool(ModalScreen):
         self._name = name
         self._args = args or {}
         self._summary = summary or ""
+        self._done = False
+
+    def dismiss(self, result=None):
+        if self._done:
+            return
+        self._done = True
+        super().dismiss(result)
 
     def compose(self) -> ComposeResult:
         import json
@@ -3017,6 +3034,13 @@ class InputDialog(ModalScreen):
         self._value = value
         self._placeholder = placeholder
         self._password = password
+        self._done = False
+
+    def dismiss(self, result=None):
+        if self._done:
+            return
+        self._done = True
+        super().dismiss(result)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="inputbox"):
@@ -3063,6 +3087,13 @@ class RouterScreen(ModalScreen):
         self._selected = set(selected or [])
         self._enabled = bool(enabled)
         self._keys: list[str] = []
+        self._done = False
+
+    def dismiss(self, result=None):
+        if self._done:
+            return
+        self._done = True
+        super().dismiss(result)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="routerbox"):

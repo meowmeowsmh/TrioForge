@@ -359,6 +359,11 @@ def save(cfg: Config, path: Path | None = None) -> Path:
 
 def check_permissions(path: Path | None = None) -> str | None:
     """Return a warning string if the config is readable by others."""
+    # POSIX-only concern: on Windows the file's ACL governs and the mode bits that
+    # `chmod 600` would clear are not what the OS reads, so the warning would be
+    # noise (and `chmod 600` cannot express it there).
+    if os.name == "nt":
+        return None
     path = path or CONFIG_FILE
     if not path.is_file():
         return None

@@ -80,13 +80,13 @@
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
   "py/tui/model_download.py": "29f783643a76af4d9857e0ca872004271a273023c997b18cc2ba1f1c1829b12a",
-  "py/tui/providers.py": "e12ba0dfc39918693024cd3d02ac096b386ff1d89feb1f3760716b5d6aea44a8",
+  "py/tui/providers.py": "c69b2a26ccd0d0bab9d5b3be93b783bca5219239e61c0004a09244add4afd729",
   "py/tui/render.py": "3ae672bf5efdd1656c0344f390f4dddcb55b4c3488169c6a9f3a0e975d4d0997",
   "py/tui/router.py": "5262e56a7d9f1e3981f507caf92b4be042e065acb0fae86f780f51c72554229c",
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
-  "py/tui/textual_app.py": "e120737bba5291acc2b77d750ec00da283757a2c47b3d671fa0d1f2b64bf3d59",
+  "py/tui/textual_app.py": "abecd9a4756c09b2f2841b651f6cf2d88fe9d16336d65d3363bd252ea001d56f",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "04342328a08e1ae988c4aa0cae24db87a75610f1281924bf51f3163a7f24e24d",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
@@ -122,6 +122,6 @@
   "templates/index.html": "a543fe9396a0930ebb5ba34d0cafde92a38e19d0d3672e0bd088549e091dc38c",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T23:41:36",
- "note": "symlink-safe recursive listing"
+ "generated": "2026-10-26T00:23:44",
+ "note": "picker double-dismiss + windows perms warning"
 }
