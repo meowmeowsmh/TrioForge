@@ -69,7 +69,8 @@ DEFAULT_SYSTEM = (
 # Ordered by consequence, not by feature list: the bar truncates on a narrow
 # terminal, so the keys that stop things come before the ones that start them.
 KEYBINDS = (" enter send  ·  ctrl+j newline  ·  ctrl+c cancel  ·  ctrl+q quit  ·  ctrl+y copy  ·  "
-            "ctrl+a auto-route  ·  tab chat  ·  ctrl+p commands  ·  ctrl+l model  ·  ctrl+n new")
+            "ctrl+a auto-route  ·  tab chat  ·  ctrl+p commands  ·  ctrl+l model  ·  "
+            "ctrl+t thinking  ·  ctrl+n new")
 
 # How long the pleading "Don't!!!" face stays on screen before the app exits.
 # Long enough to actually read: the plea is the point, so nothing except a
@@ -622,6 +623,7 @@ class ForgeApp(App):
         ("ctrl+n", "new_session", "New"),
         ("ctrl+p", "palette", "Commands"),
         ("ctrl+o", "pick_provider", "Provider"),
+        ("ctrl+t", "pick_thinking", "Thinking"),
         ("tab", "focus_chat", "Chat"),
         ("escape", "focus_prompt", "Prompt"),
     ]
@@ -1505,7 +1507,8 @@ class ForgeApp(App):
             key = "key set" if providers.resolve(entry.get("api_key", "")) else "NO KEY"
             up = router.reachable(url, timeout=3.0)
             verdict = "reachable" if up else "UNREACHABLE"
-            return f"status: ☁ {self.cfg.provider} · {model} · {verdict} · {key}"
+            return (f"status: ☁ {self.cfg.provider} · {model} · {verdict} · {key}"
+                    + self._thinking_suffix())
 
         try:
             import llamacpp_service as svc
@@ -1513,7 +1516,15 @@ class ForgeApp(App):
         except Exception:                       # noqa: BLE001
             running = router.reachable(url, timeout=1.0)
         verdict = "server up" if running else "server down (it will be started)"
-        return f"status: 💻 local · {model} · {verdict}"
+        return f"status: 💻 local · {model} · {verdict}" + self._thinking_suffix()
+
+    def _thinking_suffix(self) -> str:
+        """``· think high`` — the current effort, on every status line.
+
+        Without it the level was invisible: /thinking changed something real and
+        nothing on screen ever said what it was set to.
+        """
+        return " · think " + (self.cfg.thinking or "high").lower()
 
     def _backend_for(self, provider: str, model: str):
         """Build the backend for an ARBITRARY provider, not just the current one."""
@@ -2348,6 +2359,12 @@ class ForgeApp(App):
         if name == "/provider" and not arg:
             self.action_pick_provider()
             return
+        if name in ("/thinking", "/think") and not arg:
+            # The shared handler can only PRINT the menu (it has no screen), so
+            # the full-screen client opens the same searchable picker that
+            # /provider uses - arrows/click to move, enter to pick.
+            self.run_worker(self._pick_thinking(), exclusive=False)
+            return
         if name == "/setup":
             self.run_worker(self._setup_flow(), exclusive=False)
             return
@@ -2556,6 +2573,33 @@ class ForgeApp(App):
     def action_pick_provider(self) -> None:
         """ctrl+o - switch provider, then offer its models."""
         self.run_worker(self._pick_provider(), exclusive=False)
+
+    def action_pick_thinking(self) -> None:
+        """ctrl+t - pick how hard the model thinks (low / mid / high / max / off)."""
+        self.run_worker(self._pick_thinking(), exclusive=False)
+
+    async def _pick_thinking(self) -> bool:
+        """The switch-provider modal, reusing its Picker for /thinking's levels.
+
+        Same component on purpose: a beginner who has used ctrl+o already knows
+        this list - type to filter, arrows (or a click) to move, enter to pick.
+        """
+        from . import backend as B
+        from . import commands as C
+
+        options = [(lvl, C._THINKING_MEANING[lvl])
+                   for lvl in C._THINKING_LEVELS + ("off",)]
+        choice = await self.push_screen_wait(
+            Picker("thinking effort", options,
+                   current=(self.cfg.thinking or "high")))
+        if not choice:
+            return False
+        self.cfg.thinking = choice
+        providers.save(self.cfg)
+        B.set_thinking(choice)
+        self._add(f"_thinking → **{choice}**_  —  {C._THINKING_MEANING[choice]}", "bot")
+        self._refresh()
+        return True
 
     async def _pick_provider(self, then_model: bool = True) -> bool:
         options = []

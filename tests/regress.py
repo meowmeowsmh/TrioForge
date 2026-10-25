@@ -1158,6 +1158,30 @@ async def _tui_checks() -> None:
         assert painted == sb.size.height, f"gaps in the scrollbar: {painted}"
         print("  scrollbar continuous, no layout shift -> OK")
 
+        # /thinking must be SELECTABLE, not typed from memory: ctrl+t opens the
+        # same searchable picker as ctrl+o, and a bare /thinking opens it too
+        # instead of only printing a menu a beginner has to copy by hand.
+        import inspect as _inspect
+        assert ("ctrl+t", "pick_thinking", "Thinking") in ta.ForgeApp.BINDINGS, \
+            "ctrl+t no longer opens the thinking picker"
+        assert callable(getattr(ta.ForgeApp, "action_pick_thinking", None)), \
+            "action_pick_thinking is gone"
+        assert _inspect.iscoroutinefunction(ta.ForgeApp._pick_thinking), \
+            "_pick_thinking must be async - it awaits the modal"
+
+        # Drive it for real: a bare /thinking must open the modal (not merely
+        # print), and picking a row must actually change the setting.
+        from textual.widgets import Input as _Input
+        app._command("/thinking")
+        assert await settle(lambda: isinstance(app.screen, ta.Picker)), \
+            "bare /thinking must open the picker in the full-screen client"
+        app.screen.query_one("#pickerfilter", _Input).value = "max"
+        await pilot.pause(0.2)
+        await pilot.press("enter")
+        assert await settle(lambda: (app.cfg.thinking or "").lower() == "max"), \
+            f"picking a level did not stick: {app.cfg.thinking!r}"
+        print("  /thinking and ctrl+t open the provider-style picker -> OK")
+
 
 def _cards(app):
     from tui import textual_app as ta
