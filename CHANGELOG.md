@@ -89,9 +89,7 @@ client was missing.
   now go through one guarded helper that simply retries on the next tick, and only
   records what it drew once the paint actually landed.
 
-### Terminal client: the hosted providers opencode offers
-
-- **`/setup` now shows 15 providers instead of 8.** The terminal client's backend
+### Terminal client: the hosted providers opencode offers- **`/setup` now shows 15 providers instead of 8.** The terminal client's backend
   is generic OpenAI-compatible, but the default list had been trimmed to match the
   web UI's own backends — which dropped OpenAI, xAI, Mistral and Together even
   though the terminal could always chat with them. They are back, and Perplexity,
@@ -104,6 +102,22 @@ client was missing.
   so pasting the file never leaks the secret), switchable with `/provider <name>`
   and `/keys`. A config written against the old list that had already added
   `openai` is no longer migrated away.
+
+### Runtime bugs found by driving the app, then fixed
+
+- **`echo "/help" | forge` crashed instead of answering.** A piped (or `--classic`
+  in a non-console) session still built a `prompt_toolkit` PromptSession, which
+  raised `NoConsoleScreenBufferError` before one line was read. Piped input now
+  uses a plain reader, and every interactive prompt (`/keys`, `/setup`, `/keys
+  clear`) degrades to its existing "cancel / keep as-is" path under a pipe.
+- **`/memory` crashed while the web app was running.** DuckDB allows one process
+  per vault file, and the lock error wording on Windows ("being used by another
+  process") was not recognised, so the terminal died with a raw `IOException`.
+  It is now detected, raised as a clear "the vault is held by another TrioForge
+  process" message, and reported instead of crashing.
+- **An invalid ```mermaid block threw an unhandled error** on the web UI — the
+  diagram render now swallows both the synchronous throw and the rejection, so a
+  bad diagram falls back gracefully.
 
 ### Image quality: why local images looked blurry
 
@@ -303,7 +317,9 @@ client was missing.
   the row below), which takes the chat area from 156px to **239px** of visible
   history — the chrome used to leave less than a third of the window for the chat.
 
-### A very small window still works- **The window could be dragged down to nothing.** `min_size: (900, 600)` is asked
+### A very small window still works
+
+- **The window could be dragged down to nothing.** `min_size: (900, 600)` is asked
   for, but the WebView2 backend does not implement it, so the OS allowed any size.
   Measured in headless Chrome: at **650×420** the chrome left the conversation
   **31px**; at **560×380** the composer's last row — Send included — was painted

@@ -4422,6 +4422,69 @@ def test_recursive_file_list_is_symlink_safe() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Runtime bugs found by driving the app (not by reading it):
+#   * `echo "/help" | forge` crashed with NoConsoleScreenBufferError because a
+#     piped session still built a prompt_toolkit PromptSession.
+#   * `/memory` in the terminal crashed with a raw DuckDB IOException while the
+#     web app held the vault (DuckDB is single-process); _is_lock_error missed the
+#     Windows "being used by another process" wording and the read-only retry
+#     was unguarded.
+#   * an invalid ```mermaid block rejected mermaid.run() unhandled in the web UI.
+# ---------------------------------------------------------------------------
+def test_pipe_and_memory_lock_are_safe() -> None:
+    _title("piped CLI and a locked memory vault do not crash")
+    import sys as _sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    sys.path.insert(0, str(root / "py" / "tools"))
+
+    # 1. Non-TTY prompt fallback: the stub EOFs, exactly as the prompt sites expect.
+    from tui import render as _render
+    from tui import wizard as _wizard
+
+    class _NoTty:
+        def isatty(self):
+            return False
+
+    real_in, real_out = _sys.stdin, _sys.stdout
+    _sys.stdin, _sys.stdout = _NoTty(), _NoTty()
+    try:
+        assert _render.interactive_tty() is False
+        stub = _render.prompt_session_fallback()
+        assert stub is not None, "no fallback under a pipe"
+        try:
+            stub.prompt()
+            raise AssertionError("the pipe prompt stub must EOF")
+        except EOFError:
+            pass
+        # And the wizard uses that stub, not prompt_toolkit.
+        assert isinstance(_wizard._prompt_session(), _render._EofPrompt)
+    finally:
+        _sys.stdin, _sys.stdout = real_in, real_out
+    print("  a piped prompt becomes an EOF (cancel) instead of a crash -> OK")
+
+    # 2. The DuckDB lock wording is recognised, and it raises VaultLockedError.
+    import memory as mem
+    assert mem._is_lock_error(RuntimeError(
+        "IO Error: Cannot open file ...: The process cannot access the file "
+        "because it is being used by another process. File is already open in ..."))
+    assert not mem._is_lock_error(RuntimeError("something else"))
+    assert issubclass(mem.VaultLockedError, RuntimeError)
+    print("  the DuckDB lock is detected and raised as a clear error -> OK")
+
+    # 3. The mermaid render is guarded so a bad diagram cannot throw unhandled.
+    html = (root / "templates" / "index.html").read_text(encoding="utf-8")
+    import re
+    block = re.search(r"mermaid\.run\(\{ nodes: root\.querySelectorAll\('\.mermaid'\) \}\)",
+                      html)
+    assert block, "mermaid.run call not found"
+    assert ".catch(function() {})" in html and "} catch (e) {}" in html, \
+        "mermaid.run is not guarded against sync throw + rejection"
+    print("  an invalid mermaid diagram is swallowed, not unhandled -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4475,7 +4538,8 @@ def main() -> int:
              test_suggest_links_actually_creates_threads,
              test_tui_provider_variety,
              test_security_audit_fixes_hold,
-             test_recursive_file_list_is_symlink_safe]
+             test_recursive_file_list_is_symlink_safe,
+             test_pipe_and_memory_lock_are_safe]
     failed = []
     for t in tests:
         try:

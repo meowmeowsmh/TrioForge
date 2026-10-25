@@ -358,8 +358,9 @@ def _keys_clear(ctx, arg: str, everything: bool = False) -> None:
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.styles import Style
 
-    session = PromptSession(history=InMemoryHistory(),
-                            style=Style.from_dict({"prompt": "bold #7dcfff"}))
+    session = render.prompt_session_fallback() or PromptSession(
+        history=InMemoryHistory(),
+        style=Style.from_dict({"prompt": "bold #7dcfff"}))
     try:
         ans = session.prompt(
             f"  remove {len(doomed)} key(s), keeping {keep or 'nothing'}? [y/N] › "
@@ -445,7 +446,7 @@ def _keys(ctx, arg: str) -> None:
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.styles import Style
 
-    session = PromptSession(
+    session = render.prompt_session_fallback() or PromptSession(
         completer=WordCompleter(names, ignore_case=True, match_middle=True),
         complete_while_typing=True, history=InMemoryHistory(),
         style=Style.from_dict({"prompt": "bold #7dcfff"}))
@@ -973,6 +974,14 @@ def _memory(ctx, arg: str) -> None:
 
     if not mem.available():
         render.warn(mem.missing_reason())
+        return
+
+    # Force the vault open here: DuckDB allows one process per file, so when the
+    # web app is running the terminal's memory commands used to die with a raw
+    # IOException instead of explaining themselves.
+    err = mem.probe()
+    if err:
+        render.warn(err)
         return
 
     verb, _, rest = (arg or "").strip().partition(" ")

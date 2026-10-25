@@ -67,6 +67,28 @@ def width() -> int:
     return console().width
 
 
+# ── piped / non-interactive input ─────────────────────────────────────────────
+# prompt_toolkit needs a real Windows console; in a pipe (or git-bash/CI) building
+# a PromptSession raises NoConsoleScreenBufferError before one line is read. Every
+# interactive prompt already treats EOFError as "cancel / keep as-is", so a stub
+# that raises EOFError makes those same commands safe and silent under a pipe:
+# `echo "/keys" | forge` prints the table and exits instead of crashing.
+class _EofPrompt:
+    def prompt(self, *args, **kwargs):
+        raise EOFError
+
+
+def interactive_tty() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def prompt_session_fallback():
+    """A PromptSession, or a stand-in that EOFs when there is no terminal."""
+    if interactive_tty():
+        return None
+    return _EofPrompt()
+
+
 def _chip(label: str, bg: str, fg: str = "#16161e") -> Text:
     """A small filled label, like a pill: ' you ' on a coloured background."""
     return Text(f" {label} ", style=f"bold {fg} on {bg}")

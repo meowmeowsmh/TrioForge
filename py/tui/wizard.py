@@ -31,6 +31,12 @@ class Cancelled(Exception):
 
 
 def _prompt_session(**kw):
+    # A piped/non-TTY run cannot show an interactive prompt; prompt_toolkit would
+    # raise NoConsoleScreenBufferError. The EOF stand-in makes choose()/ask_key()
+    # take their "cancel, nothing changed" path instead of crashing.
+    stub = render.prompt_session_fallback()
+    if stub is not None:
+        return stub
     from prompt_toolkit import PromptSession
     from prompt_toolkit.styles import Style
 

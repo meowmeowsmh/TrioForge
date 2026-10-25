@@ -304,6 +304,23 @@ def run(args) -> int:
         except ImportError as exc:
             render.warn(f"full-screen UI unavailable ({exc}) — using the plain one")
 
+    # Plain scrolling UI. prompt_toolkit's PromptSession needs a real console: when
+    # stdin/stdout are piped (a script, a pipe, git-bash, CI) it raised
+    # NoConsoleScreenBufferError before one line was read - so `echo "/help" | forge`
+    # crashed instead of answering. A bare line reader is the right fallback there.
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("/"):
+                commands.handle(line, ctx)
+            else:
+                _one_turn(ctx, line)
+            if not ctx.running:
+                break
+        return 0
+
     prompt_session = _make_prompt_session()
 
     while ctx.running:

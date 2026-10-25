@@ -254,6 +254,11 @@ def _norm_key(key: str) -> str:
     return (key or "").strip()[:MAX_KEY_CHARS]
 
 
+class VaultLockedError(RuntimeError):
+    """The vault file is held exclusively by another process (DuckDB is
+    single-process), so neither a read-write nor a read-only open is possible."""
+
+
 class MemoryEngine:
     """DuckDB vault + RAM Bloom gate + RAM key index. Thread-safe.
 
@@ -299,7 +304,19 @@ class MemoryEngine:
         except Exception as exc:  # noqa: BLE001 - usually the cross-process lock
             if not _is_lock_error(exc):
                 raise
-            conn = duckdb.connect(str(self.db_path), read_only=True)
+            # Another process holds the vault. A read-only open can only work if
+            # that process is ALSO read-only; when it writes (the normal case) the
+            # read-only open fails too, so surface it as "locked", not a crash.
+            try:
+                conn = duckdb.connect(str(self.db_path), read_only=True)
+            except Exception as exc2:  # noqa: BLE001
+                if _is_lock_error(exc2):
+                    raise VaultLockedError(
+                        "the memory vault is held by another TrioForge process "
+                        "(the web app, or a second terminal). Close it, or use the "
+                        "web UI's memory view. (DuckDB allows one process per "
+                        "vault file.)") from exc2
+                raise
             self.writable = False
             self.reason = ("another TrioForge process holds the vault; "
                            "opened read-only")
@@ -604,7 +621,10 @@ class MemoryEngine:
 def _is_lock_error(exc: Exception) -> bool:
     """True when DuckDB refused the file because another process holds it."""
     text = str(exc).lower()
-    return "lock" in text or "conflict" in text
+    return ("lock" in text or "conflict" in text
+            or "being used by another process" in text
+            or "already open in" in text
+            or "cannot access the file" in text)
 
 
 # ------------------------------------------------------------- module façade
@@ -682,3 +702,15 @@ def context(sentence: str, limit: int = 3, budget: int = MAX_CONTEXT_CHARS) -> s
 
 def stats() -> dict:
     return engine().stats()
+
+
+def probe() -> str | None:
+    """Force the vault open and return a friendly error if another process holds
+    it (or any other open failure), else None."""
+    try:
+        engine()._db()          # noqa: SLF001 - open-on-demand is the point
+    except VaultLockedError as exc:
+        return str(exc)
+    except Exception as exc:    # noqa: BLE001 - a broken vault must not crash /memory
+        return f"memory vault unavailable: {type(exc).__name__}: {exc}"
+    return None

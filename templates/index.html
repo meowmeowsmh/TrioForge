@@ -2571,7 +2571,13 @@ function renderMermaidDiagrams(root) {
     });
     if (mermaidBlocks.length > 0) {
         if (window.mermaid) {
-            mermaid.run({ nodes: root.querySelectorAll('.mermaid') });
+            // A malformed diagram rejects mermaid.run() (and it can also throw
+            // synchronously). Left unhandled that fired an uncaught error for
+            // every bad ```mermaid block; the diagram just falls back to nothing.
+            try {
+                mermaid.run({ nodes: root.querySelectorAll('.mermaid') })
+                    .catch(function() {});
+            } catch (e) {}
         }
     }
 }
