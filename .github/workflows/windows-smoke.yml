@@ -247,12 +247,19 @@ jobs:
         if: failure()
         shell: python
         run: |
-          import os
-          # regress.log first: a failing test name is the most useful thing here.
+          import os, re
+          # regress.log first: a failing test's TRACEBACK is what actually matters,
+          # and it is printed at the point of failure (early in the log), so the
+          # last-2500-chars tail only ever showed the terminal-client section and
+          # the summary line. Publish the whole log - it is a few KB, well under the
+          # annotation limit - so the failing assertion is readable without a token.
           for path in ("regress.log", "platform-error.txt", "diag.txt", "app.log"):
               if not os.path.exists(path):
                   continue
-              text = open(path, errors="replace").read()[-2500:]
+              text = open(path, errors="replace").read()
+              if path == "regress.log" and len(text) > 30000:
+                  # Keep the head (which holds the FAIL + traceback) and the tail.
+                  text = text[:16000] + "\n...[middle omitted]...\n" + text[-10000:]
               escaped = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
               print("::error title=%s::%s" % (path, escaped))
 
