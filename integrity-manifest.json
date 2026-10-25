@@ -72,7 +72,7 @@
   "py/tui/__init__.py": "99ad95bd677c85521af387abe6bf786a6f4edfc526d3ab6fa448ba4d3823f666",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
-  "py/tui/app.py": "59e0c442ae6d074e6f63acfe525cfb909a9c345bb30b7929727a7488f07317da",
+  "py/tui/app.py": "f72808ff9440760d1f898b9c24a157ab5a4be673782af6dc1de19511b635c239",
   "py/tui/backend.py": "387ba89a60465033ea591c06fe2eadca4e97410fb5cde727d62649debb043f17",
   "py/tui/cli.py": "5241cf5aa16a3d415f0f699ad555c11efd5a571791063d0c1be8669ea53d5354",
   "py/tui/commands.py": "b5b4feec9f3871487b6c0b5ac421915aaf8b8ac86d89e33c36b5ad85f35df131",
@@ -122,6 +122,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-26T02:31:38",
- "note": "search toggle"
+ "generated": "2026-10-26T03:19:33",
+ "note": "safe command wrapper"
 }

@@ -316,7 +316,7 @@ def run(args) -> int:
             if not line:
                 continue
             if line.startswith("/"):
-                commands.handle(line, ctx)
+                _safe_command(ctx, line)
             else:
                 _one_turn(ctx, line)
             if not ctx.running:
@@ -338,12 +338,24 @@ def run(args) -> int:
         if not line:
             continue
         if line.startswith("/"):
-            commands.handle(line, ctx)
+            _safe_command(ctx, line)
             continue
         _one_turn(ctx, line)
 
     render.info("bye")
     return 0
+
+
+def _safe_command(ctx: Context, line: str) -> None:
+    """Run a slash command; a broken handler must not kill the session.
+
+    The full-screen UI already catches this and shows "command failed"; the plain
+    and piped loops did not, so one raising command took the whole client down.
+    """
+    try:
+        commands.handle(line, ctx)
+    except Exception as exc:  # noqa: BLE001 - report, never crash the loop
+        render.error(f"command failed: {exc}")
 
 
 def main(argv: list[str] | None = None) -> int:
