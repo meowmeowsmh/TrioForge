@@ -84,6 +84,22 @@ below, so it carries the same version number on a build that is missing all of i
   now go through one guarded helper that simply retries on the next tick, and only
   records what it drew once the paint actually landed.
 
+### Terminal client: the hosted providers opencode offers
+
+- **`/setup` now shows 15 providers instead of 8.** The terminal client's backend
+  is generic OpenAI-compatible, but the default list had been trimmed to match the
+  web UI's own backends — which dropped OpenAI, xAI, Mistral and Together even
+  though the terminal could always chat with them. They are back, and Perplexity,
+  Cerebras and Fireworks join them (the same set opencode ships), each with its own
+  key and a one-line note. One code path drives them all; providers with a native
+  non-OpenAI protocol (Bedrock, Azure, Vertex) are still not listed, and any
+  OpenAI-compatible endpoint remains addable with `/provider-add`.
+- **Multiple keys were already there — and stay there.** Each provider keeps its
+  own key in `~/.config/forge/config.json` (mode `0600`, `${ENV_VAR}` indirection
+  so pasting the file never leaks the secret), switchable with `/provider <name>`
+  and `/keys`. A config written against the old list that had already added
+  `openai` is no longer migrated away.
+
 ### Image quality: why local images looked blurry
 
 - **The workflow's own negative prompt survives.** FHDR-Setup ships a positive

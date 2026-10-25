@@ -73,15 +73,31 @@ Step 1 of 3 — choose a provider
 ────────────────────────────────────────────────────────────
   ▶  1  local        Local (llama.cpp) — your own .gguf files, no key
      2  ollama       Ollama — local models, no key
-     3  claude       Claude (Anthropic) — paid
-     4  deepseek     DeepSeek — cheap, strong at code
-     5  gemini       Google Gemini — free tier
-     6  groq         Groq — very fast, free tier
-     7  huggingface  Hugging Face — free tier
-     8  openrouter   OpenRouter — many vendors, one key
+     3  cerebras     Cerebras — fast inference
+     4  claude       Claude (Anthropic) — paid
+     5  deepseek     DeepSeek — cheap, strong at code
+     6  fireworks    Fireworks — hosted models
+     7  gemini       Google Gemini — free tier
+     8  groq         Groq — very fast, free tier
+     9  huggingface  Hugging Face — free tier
+    10  mistral      Mistral — Large / Small / Codestral
+    11  openai       OpenAI — GPT-4o, o1/o3
+    12  openrouter   OpenRouter — many vendors, one key
+    13  perplexity   Perplexity — Sonar (search-backed)
+    14  together     Together — hosted open models
+    15  xai          xAI (Grok)
 
   select › 1
+```
 
+The list is TrioForge's own backends **plus** the OpenAI-compatible hosted
+providers opencode ships. The terminal client's backend is generic — it drives
+any `/v1/chat/completions` endpoint — so every one of these works through the
+same code path, one key each, with nothing offered that cannot actually chat.
+(Providers with a *native*, non-OpenAI protocol — Bedrock, Azure, Vertex — are
+deliberately not listed; add any OpenAI-compatible one with `/provider-add`.)
+
+```
 Step 2 of 3 — choose a model  (1 on disk)
 ────────────────────────────────────────────────────────────
   ▶  1  gemma-3-12b-it  6.8 GB · text+image · vision projector paired
@@ -89,9 +105,6 @@ Step 2 of 3 — choose a model  (1 on disk)
 
   Start gemma-3-12b-it now? (loads it into memory) [Y/n] › y
 ```
-
-The provider list is **exactly** the set TrioForge's own
-`py/providers/llm_providers.py` implements. Nothing is offered that cannot work.
 
 For a local model it lists the **actual `.gguf` files on disk**, reusing
 TrioForge's own scanner (`_model_roots`, `_is_mmproj`, `find_mmproj`,
@@ -485,11 +498,13 @@ same, so nobody "simplifies" them back:
   `:focus` made the frame appear to break every time you tabbed away.
 - **The prompt and keybind bar share one docked container.** Docked separately,
   the keybind bar overlapped the input's bottom border.
-- **The provider list is TrioForge's list.** An earlier version offered Together
-  AI, Mistral, xAI and OpenAI — none of which have a backend here. `openai`
-  was a particular trap: `py/features/openai_api.py` is TrioForge *serving* an
-  OpenAI-shaped API from local models, the opposite direction. A config written
-  against that list is migrated automatically, and says what it changed.
+- **The provider list is every OpenAI-compatible endpoint, not just TrioForge's
+  own.** An earlier version offered Together AI, Mistral, xAI and OpenAI and then
+  dropped them because "the web UI has no backend for them" — but the terminal
+  client's backend is generic, so those providers always *did* work here and the
+  drop was wrong. They are back (plus Perplexity, Cerebras and Fireworks), one key
+  each, alongside the local options. A config written against the old list is
+  migrated automatically and says what it changed.
 - **Tool output is secret-redacted.** The agent can read any file it can see, and
   in team mode a local peer's findings are reviewed by a cloud model. `execute()`
   masks `sk-…` keys, bearer tokens, `api_key`/`password`/`secret` assignments and

@@ -36,10 +36,12 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 # Everything here speaks the OpenAI /chat/completions dialect, so one backend
 # class drives them all. `models` is only a hint for the picker; the live list
 # is fetched from the endpoint when it answers.
+#
+# The set is a superset of the WEB UI's providers: the terminal client can drive
+# any OpenAI-compatible endpoint (that is all opencode's providers do too), so
+# alongside TrioForge's own backends it offers the hosted ones opencode ships -
+# each with a one-line note answering "what is this and do I need it?".
 DEFAULT_PROVIDERS: dict[str, dict] = {
-    # This list is exactly the set TrioForge's own providers/llm_providers.py
-    # implements - no more, no less. Each "note" is the one-line answer to
-    # "what is this and do I need it?" shown in the setup wizard.
     "local": {
         "base_url": "http://127.0.0.1:8080/v1",
         "api_key": "",
@@ -99,6 +101,58 @@ DEFAULT_PROVIDERS: dict[str, dict] = {
         "api_key": "${OPENROUTER_API_KEY}",
         "label": "OpenRouter",
         "note": "One key for hundreds of models from many vendors. Pay-as-you-go.",
+        "models": [],
+    },
+    # ── The OpenAI-compatible providers opencode ships. TrioForge's terminal
+    #    client drives any /v1/chat/completions endpoint, so these work through the
+    #    same backend as everything else - one key each, stored like the rest.
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "${OPENAI_API_KEY}",
+        "label": "OpenAI",
+        "note": "OpenAI's hosted models (GPT-4o, o1/o3). Key from platform.openai.com.",
+        "models": [],
+    },
+    "xai": {
+        "base_url": "https://api.x.ai/v1",
+        "api_key": "${XAI_API_KEY}",
+        "label": "xAI (Grok)",
+        "note": "xAI's Grok models. Key from console.x.ai.",
+        "models": [],
+    },
+    "mistral": {
+        "base_url": "https://api.mistral.ai/v1",
+        "api_key": "${MISTRAL_API_KEY}",
+        "label": "Mistral",
+        "note": "Mistral's hosted models (Large, Small, Codestral). Key from console.mistral.ai.",
+        "models": [],
+    },
+    "perplexity": {
+        "base_url": "https://api.perplexity.ai",
+        "api_key": "${PERPLEXITY_API_KEY}",
+        "label": "Perplexity",
+        "note": "Perplexity's Sonar models (search-backed answers). Key from perplexity.ai.",
+        "models": ["sonar", "sonar-pro"],
+    },
+    "together": {
+        "base_url": "https://api.together.xyz/v1",
+        "api_key": "${TOGETHER_API_KEY}",
+        "label": "Together",
+        "note": "Together's hosted open models (Llama, DeepSeek, ...). Key from together.ai.",
+        "models": [],
+    },
+    "cerebras": {
+        "base_url": "https://api.cerebras.ai/v1",
+        "api_key": "${CEREBRAS_API_KEY}",
+        "label": "Cerebras",
+        "note": "Cerebras fast inference. Key from cloud.cerebras.ai.",
+        "models": [],
+    },
+    "fireworks": {
+        "base_url": "https://api.fireworks.ai/inference/v1",
+        "api_key": "${FIREWORKS_API_KEY}",
+        "label": "Fireworks",
+        "note": "Fireworks hosted models. Key from fireworks.ai.",
         "models": [],
     },
 }
@@ -186,18 +240,12 @@ class Config:
         self.current["models"] = names
 
 
-# Providers an earlier version of this file invented. TrioForge has no such
-# backend, so leaving them in the picker would offer something that cannot work.
-# Providers this file offered that TrioForge has NO chat backend for. Offering
-# them meant "pick a provider, then discover it cannot work" - exactly the
-# confusion this list exists to avoid.
-#
-#   together / mistral / xai  - I invented them; TrioForge never had them.
-#   openai                    - TrioForge has no OpenAI chat provider. The
-#                               openai_api.py feature is the OPPOSITE: TrioForge
-#                               SERVING an OpenAI-shaped API from your local
-#                               models. Re-add with /provider-add if ever needed.
-INVENTED = {"together", "mistral", "xai", "openai"}
+# Providers an earlier version of this file dropped because "TrioForge has no such
+# backend". That was about the WEB UI's provider list; the terminal client's
+# backend is generic OpenAI-compatible, so openai / xai / mistral / together have
+# real endpoints above now and are no longer invented. The set is empty: anything
+# past this is a custom endpoint, which /provider-add handles.
+INVENTED: set[str] = set()
 
 
 def _refresh_docs(providers: dict) -> bool:

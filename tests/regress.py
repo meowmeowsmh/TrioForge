@@ -4262,6 +4262,54 @@ def test_suggest_links_actually_creates_threads() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The terminal client should offer the same hosted-provider variety opencode does.
+# Its backend is generic OpenAI-compatible, so openai / xai / mistral / perplexity /
+# together / cerebras / fireworks all work through one code path - and an old
+# config that had already added "openai" must NOT be dropped any more.
+# ---------------------------------------------------------------------------
+def test_tui_provider_variety() -> None:
+    _title("the TUI offers opencode's provider variety")
+    import json
+    import tempfile
+    from tui import providers
+
+    want = {
+        "openai": ("https://api.openai.com/v1", "${OPENAI_API_KEY}"),
+        "xai": ("https://api.x.ai/v1", "${XAI_API_KEY}"),
+        "mistral": ("https://api.mistral.ai/v1", "${MISTRAL_API_KEY}"),
+        "perplexity": ("https://api.perplexity.ai", "${PERPLEXITY_API_KEY}"),
+        "together": ("https://api.together.xyz/v1", "${TOGETHER_API_KEY}"),
+        "cerebras": ("https://api.cerebras.ai/v1", "${CEREBRAS_API_KEY}"),
+        "fireworks": ("https://api.fireworks.ai/inference/v1", "${FIREWORKS_API_KEY}"),
+    }
+    for name, (url, env) in want.items():
+        entry = providers.DEFAULT_PROVIDERS.get(name)
+        assert entry, "%s is not a default provider" % name
+        assert entry["base_url"] == url, (name, entry["base_url"])
+        assert entry["api_key"] == env, (name, entry["api_key"])
+        assert entry.get("label") and entry.get("note"), "%s lacks label/note" % name
+        assert name not in providers.INVENTED, "%s would be dropped on load" % name
+
+    # A config written against the OLD list (which dropped these) must now keep them.
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "config.json"
+        path.write_text(json.dumps({
+            "provider": "openai",
+            "providers": {"openai": {"base_url": "https://api.openai.com/v1",
+                                      "api_key": "${OPENAI_API_KEY}",
+                                      "label": "OpenAI", "note": "n", "models": []}},
+        }), encoding="utf-8")
+        cfg = providers.load(path)
+        assert cfg.provider == "openai", cfg.provider
+        assert "openai" in cfg.providers, "a saved openai provider was dropped"
+        # The new defaults are merged in alongside it.
+        for name in want:
+            assert name in cfg.providers, name
+
+    print("  openai/xai/mistral/perplexity/together/cerebras/fireworks, kept on load -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4312,7 +4360,8 @@ def main() -> int:
              test_composer_cannot_be_crushed_or_hidden,
              test_small_window_chrome_stays_usable,
              test_tiny_window_stays_usable,
-             test_suggest_links_actually_creates_threads]
+             test_suggest_links_actually_creates_threads,
+             test_tui_provider_variety]
     failed = []
     for t in tests:
         try:

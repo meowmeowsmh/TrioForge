@@ -68,7 +68,7 @@
   "py/tools/shortcuts.py": "7b35ee35bc5226d023cd01e2c2d6ba6a26011baaec89680af6db62f9fe54ce0b",
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
-  "py/tui/README.md": "6c65261eb80e66d0404e0927b803e13d03617dc52880de1fea1c9a3da28097f4",
+  "py/tui/README.md": "b4e82f91dd0ffb744041a604059d0d614b1f958036e9738a26d18d8620dd829f",
   "py/tui/__init__.py": "23841cca14b1ec9327a6e81d94749bc6f73f9d06d0559fa60cccd6c8b4a47a62",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
@@ -80,7 +80,7 @@
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
   "py/tui/model_download.py": "29f783643a76af4d9857e0ca872004271a273023c997b18cc2ba1f1c1829b12a",
-  "py/tui/providers.py": "3b3aafd576d79bd01d4f637db7a329756026956f2445e639245b19b869ac476f",
+  "py/tui/providers.py": "e12ba0dfc39918693024cd3d02ac096b386ff1d89feb1f3760716b5d6aea44a8",
   "py/tui/render.py": "3ae672bf5efdd1656c0344f390f4dddcb55b4c3488169c6a9f3a0e975d4d0997",
   "py/tui/router.py": "5262e56a7d9f1e3981f507caf92b4be042e065acb0fae86f780f51c72554229c",
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
@@ -122,6 +122,6 @@
   "templates/index.html": "a543fe9396a0930ebb5ba34d0cafde92a38e19d0d3672e0bd088549e091dc38c",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-25T22:48:39",
- "note": "suggest links + feature-page csrf"
+ "generated": "2026-10-25T22:58:31",
+ "note": "tui provider variety"
 }
