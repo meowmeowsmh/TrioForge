@@ -4047,22 +4047,28 @@ def test_thinking_command() -> None:
     assert B._OLLAMA_BUDGET["low"] == 1024
     assert B._OLLAMA_BUDGET["max"] == 8192
 
+    # The autocomplete offers the five levels after a trailing space, so the level
+    # is selectable with the arrows rather than typed from memory.
+    assert [n for n, _d in C.slash_matches("/thinking ")] == [
+        "/thinking low", "/thinking mid", "/thinking high",
+        "/thinking max", "/thinking off"], C.slash_matches("/thinking ")
+
     with mock.patch.object(providers, "save", lambda *a, **k: None):
-        # no arg CYCLES from the default: high -> max -> low -> mid -> high
-        for want in ("max", "low", "mid", "high"):
-            C.handle("/thinking", ctx)
-            assert ctx.cfg.thinking == want, (ctx.cfg.thinking, want)
-            assert B.THINKING == want, (B.THINKING, want)
-        # explicit set, including "off"
+        # no arg -> shows the menu and changes nothing
+        C.handle("/thinking", ctx)
+        assert ctx.cfg.thinking == "high"
+        # explicit set
+        C.handle("/thinking low", ctx)
+        assert ctx.cfg.thinking == "low" and B.THINKING == "low"
         C.handle("/thinking off", ctx)
         assert ctx.cfg.thinking == "off" and B.THINKING == "off"
-        C.handle("/thinking mid", ctx)
-        assert ctx.cfg.thinking == "mid" and B.THINKING == "mid"
+        C.handle("/thinking max", ctx)
+        assert ctx.cfg.thinking == "max" and B.THINKING == "max"
         # unknown level -> usage error, state unchanged
         C.handle("/thinking banana", ctx)
-        assert ctx.cfg.thinking == "mid"
+        assert ctx.cfg.thinking == "max"
     B.set_thinking("high")
-    print("  /thinking cycles and sets a level, and the flag follows -> OK")
+    print("  /thinking offers a menu + autocomplete, and sets a level -> OK")
 
 
 # ---------------------------------------------------------------------------

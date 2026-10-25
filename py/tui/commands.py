@@ -169,6 +169,18 @@ def slash_commands() -> list[tuple[str, str]]:
     return out
 
 
+# /thinking's choices, shared by the autocomplete and the handler so the two can
+# never disagree about what a level is called.
+_THINKING_LEVELS = ("low", "mid", "high", "max")
+_THINKING_MEANING = {
+    "low": "quick, minimal reasoning",
+    "mid": "balanced",
+    "high": "deep reasoning",
+    "max": "deepest reasoning",
+    "off": "no thinking",
+}
+
+
 def slash_matches(text: str) -> list[tuple[str, str]]:
     """Autocomplete rows for what is typed - empty means "hide the menu".
 
@@ -181,7 +193,19 @@ def slash_matches(text: str) -> list[tuple[str, str]]:
     leaves the command visible and selected, ready for Enter - which is what
     Claude Code does.
     """
-    if not text.startswith("/") or " " in text or "\n" in text:
+    if not text.startswith("/"):
+        return []
+    # "/thinking " (trailing space) offers its LEVELS, not command names, so a
+    # beginner can arrow-select a level instead of remembering the four words.
+    # Typing a partial level narrows it further ("/thinking h" -> "high").
+    for cmd in ("/thinking", "/think"):
+        prefix = cmd + " "
+        if text.startswith(prefix):
+            typed = text[len(prefix):].strip().lower()
+            return [(f"{cmd} {lvl}", _THINKING_MEANING[lvl])
+                    for lvl in _THINKING_LEVELS + ("off",)
+                    if lvl.startswith(typed)]
+    if " " in text or "\n" in text:
         return []
     typed = text.lower()
     return [(name, desc) for name, desc in slash_commands()
@@ -568,20 +592,10 @@ def _system(ctx, arg: str) -> None:
     render.ok("system prompt set")
 
 
-_THINKING_LEVELS = ("low", "mid", "high", "max")
-_THINKING_MEANING = {
-    "low": "quick, minimal reasoning",
-    "mid": "balanced",
-    "high": "deep reasoning",
-    "max": "deepest reasoning",
-    "off": "no thinking",
-}
-
-
 def _thinking(ctx, arg: str) -> None:
     """/thinking [low|mid|high|max|off] — how hard the model thinks before answering.
 
-    With no argument it CYCLES low -> mid -> high -> max -> low. The level maps to
+    With no argument it prints the menu (nothing is changed). The level maps to
     DeepSeek's reasoning_effort (low/medium/high; max == high) and Ollama's
     thinking token budget (1024/2048/4096/8192); a local llama.cpp server has no
     such knob, so there the setting is remembered but the model's weights decide.
@@ -591,9 +605,14 @@ def _thinking(ctx, arg: str) -> None:
     arg = (arg or "").strip().lower()
     if not arg:
         cur = (ctx.cfg.thinking or "high").lower()
-        idx = _THINKING_LEVELS.index(cur) if cur in _THINKING_LEVELS else 2
-        arg = _THINKING_LEVELS[(idx + 1) % len(_THINKING_LEVELS)]
-    elif arg not in _THINKING_LEVELS and arg != "off":
+        render.table(f"thinking — pick a level (current: {cur})", [
+            (f"{lvl}{'  ← current' if lvl == cur else ''}", _THINKING_MEANING[lvl])
+            for lvl in _THINKING_LEVELS + ("off",)
+        ])
+        render.info("set one: /thinking <level>  —  e.g. /thinking low")
+        render.info("full-screen client: type \"/thinking \" then pick with the arrows")
+        return
+    if arg not in _THINKING_LEVELS and arg != "off":
         render.error("usage: /thinking [low|mid|high|max|off]  — e.g. /thinking high")
         return
 
