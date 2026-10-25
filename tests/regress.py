@@ -3966,6 +3966,61 @@ def test_ctrl_r_refresh_shortcut() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The message box must stay usable: it grows with the text, but it can always be
+# resized by hand and never hides what you typed.
+#
+# What went wrong: #msgInput was `flex: 1 1 0%` with `resize: none` and
+# `overflow-y: hidden`, next to a row of flex-shrink:0 controls. On a narrow
+# window the box was squeezed to 34px wide, a pasted 300-character string then
+# wrapped one character per line (6024px of scrollHeight in a 138px box), and
+# because there was no scrollbar and no handle there was no way to fix it. In a
+# real browser (headless Chrome, 1032px window) the box was 34px wide before and
+# 390px after, and dragging the handle resized it 64px -> 315px.
+# ---------------------------------------------------------------------------
+def test_composer_cannot_be_crushed_or_hidden() -> None:
+    _title("the message box stays usable and resizable")
+    import re
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+
+    box = re.search(r"#msgInput \{(.*?)\n\}", html, re.S)
+    assert box, "#msgInput CSS block is gone"
+    css = box.group(1)
+
+    # 1. It must not collapse: a real flex basis plus a minimum width.
+    assert re.search(r"flex:\s*1\s+1\s+\d+px", css), \
+        "a zero flex-basis lets the controls squeeze the box to nothing"
+    assert re.search(r"min-width:\s*[2-9]\d\dpx", css), "the box has no min-width"
+    # 2. A long unbroken paste must wrap instead of forming a 1-character column.
+    assert "overflow-wrap: anywhere" in css, "long pasted words no longer wrap"
+    # 3. The bar wraps its controls rather than crushing the box.
+    bar = re.search(r"\.input-bar \{(.*?)\n\}", html, re.S)
+    assert bar and "flex-wrap: wrap" in bar.group(1), ".input-bar does not wrap"
+
+    # 4. Overflow must be reachable: JS turns the scrollbar on when it matters.
+    assert "function applyComposerHeight" in html, "the composer sizing helper is gone"
+    assert re.search(r"overflowing\(\w+\) \? 'auto' : 'hidden'", html), \
+        "the box no longer un-hides its scrollbar when the text overflows"
+    assert re.search(r"!!msgInput\.value && msgInput\.scrollHeight", html), \
+        "an empty box would show a scrollbar for its placeholder"
+
+    # 5. A real, discoverable resize handle (auto-grow alone cannot be undone).
+    assert 'id="composerGrip"' in html, "the resize handle is gone"
+    assert ".composer-grip" in html and "ns-resize" in html, "the handle has no resize cursor"
+    assert "function composerMax" in html and "function resetComposerHeight" in html, \
+        "composer height helpers are missing"
+
+    # 6. The height the user drags to wins over auto-grow, and survives a reload.
+    assert "composerUserH" in html, "the user's chosen height is not tracked"
+    assert "tf.composerHeight" in html, "the chosen height is not remembered"
+    assert "msgInput.style.height = '46px'" not in html, \
+        "a hard 46px reset would throw away the height the user dragged to"
+
+    print("  can be crushed -> no; hidden overflow -> scrollbar; handle -> yes -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4012,7 +4067,8 @@ def main() -> int:
              test_role_alternation, test_csrf_protection,
              test_launcher_symlink_resolution, test_resolve_model_short_names,
              test_scan_case_insensitive, test_model_list_rescans_live,
-             test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut]
+             test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut,
+             test_composer_cannot_be_crushed_or_hidden]
     failed = []
     for t in tests:
         try:

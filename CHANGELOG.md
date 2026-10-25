@@ -241,6 +241,25 @@ below, so it carries the same version number on a build that is missing all of i
   plus the context lever. A junk or non-positive timeout falls back to 300 s —
   a negative one fails every request instantly and looks exactly like a dead server.
 
+### The message box can be resized, and never hides what you typed
+
+- **A long paste used to make the box unusable.** Typing a string with no spaces
+  (`99999…`, `ggggg…`) grew the box to its 140px cap, and the box itself was
+  `flex: 1 1 0%` sitting next to a row of fixed-width controls — so on a narrower
+  window it was squeezed to almost nothing and the text wrapped one character per
+  line. Measured in headless Chrome at a 1032px window: the box was **34px wide**
+  with 6024px of scrollHeight in a 138px box. With `resize: none` and
+  `overflow-y: hidden` there was **no scrollbar and no handle**, so there was no way
+  to get the text back. Now the box keeps a `260px` basis and a `220px` minimum
+  (390px at that window size — 11× wider), the input bar wraps its controls onto a
+  second row instead of crushing it, and text past the cap gets a real scrollbar.
+- **You can drag it.** A grip above the message box resizes it (drag up = taller,
+  double-click or `Home` = back to auto, `↑`/`↓` nudge it), the height is
+  remembered across reloads, and auto-grow never overrides a height you chose. The
+  cap is now ~45% of the window instead of a fixed 140px.
+- **Placeholders no longer wrap and clip.** The one-line box no longer shows a
+  half-cut placeholder; the Enter/Shift-Enter hint moved to the box's tooltip.
+
 ### Small quality-of-life
 
 - **🧊 Free memory, and the numbers to watch.** The top bar shows live RAM and VRAM

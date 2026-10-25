@@ -802,8 +802,31 @@ html.view-embed #liveCodePanel {
     padding: 14px 40px 18px;
     display: flex; gap: 10px;
     align-items: flex-end; flex-shrink: 0;
+    /* Wrap instead of crushing the text box: on a narrow window the model
+       controls drop to a second row rather than squeezing the composer down
+       to a few pixels wide. */
+    flex-wrap: wrap; row-gap: 8px;
+    position: relative;
     transition: background 0.3s, border-color 0.3s;
 }
+/* Drag handle for the composer. Auto-grow is capped, so without this a long
+   pasted string became an unreadable sliver you could not fix by hand. */
+.composer-grip {
+    position: absolute; top: 1px; left: 50%; transform: translateX(-50%);
+    width: 64px; height: 12px; border-radius: 0 0 8px 8px;
+    cursor: ns-resize; z-index: 5; touch-action: none;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; padding: 0;
+}
+.composer-grip::after {
+    content: ''; width: 40px; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,0.18); transition: background 0.15s;
+}
+.composer-grip:hover::after, .composer-grip:focus-visible::after {
+    background: #58a6ff;
+}
+.composer-grip:focus-visible { outline: none; }
+body.tf-resizing, body.tf-resizing * { user-select: none !important; cursor: ns-resize !important; }
 .search-toggle-btn {
     background: rgba(33,38,45,0.6);
     border: 1px solid rgba(255,255,255,0.1);
@@ -862,7 +885,10 @@ html.view-embed #liveCodePanel {
     background: rgba(248,81,73,0.15);
 }
 #msgInput {
-    flex:1;
+    /* A real basis keeps the box usable; the controls wrap around it instead.
+       260px measured as the size that still keeps the bar on one row at 1440px+. */
+    flex: 1 1 260px;
+    min-width: 220px;
     background: rgba(13, 17, 23, 0.7);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255,255,255,0.1);
@@ -873,9 +899,14 @@ html.view-embed #liveCodePanel {
     resize: none;
     font-family: inherit;
     min-height: 46px;
-    max-height: 140px;
+    max-height: 60vh;
     height: 46px;
-    overflow-y: hidden;
+    /* Text past the cap stays reachable (it used to be clipped with no
+       scrollbar and no way to resize). */
+    overflow-y: auto;
+    /* A pasted 300-character blob must wrap, not turn the box into a column. */
+    overflow-wrap: anywhere;
+    word-break: break-word;
     outline: none;
     transition: border-color 0.2s, background 0.3s, color 0.3s;
 }
@@ -1754,12 +1785,13 @@ video.tf-video {
       <div class="attachments" id="attachments"></div>
       <div id="skillChips" style="display:none; padding:0 16px 6px; gap:6px; flex-wrap:wrap; align-items:center;"></div>
       <div class="input-bar">
+        <button class="composer-grip" id="composerGrip" title="Drag to resize the message box (double-click to reset)" aria-label="Resize message box" tabindex="0"></button>
         <button class="search-toggle-btn" id="skillPickBtn" title="Apply a skill to your message" onclick="toggleSkillPicker()">🎓</button>
         <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
-        <textarea id="msgInput" spellcheck="true" placeholder="Type your message... (Enter to send, Shift+Enter for new line)"></textarea>
+        <textarea id="msgInput" spellcheck="true" placeholder="Type your message..." title="Enter sends · Shift+Enter starts a new line · drag the bar above to resize"></textarea>
         <input id="modelSearchInput" type="text" placeholder="🔍 filter models" title="Search models (OpenRouter has many)" autocomplete="off" style="width:104px; padding:5px 8px; background:#0a0a0f; color:#e1e4e8; border:1px solid #333; border-radius:6px; font-size:12px;">
         <select id="modelSelect" class="model-select" title="Select model"></select>
         <select id="reasoningEffortSelect" class="model-select" title="Reasoning effort (DeepSeek reasoning models)" style="display:none;">
@@ -2230,17 +2262,127 @@ function smoothScrollToBottom() {
     chatArea.scrollTop = chatArea.scrollHeight;
 }
 
+/* ---------------------------------------------------------------- composer size
+   The message box auto-grows with what you type, but the growth is capped so the
+   chat history stays visible. Two things follow from that cap:
+     * text past the cap must stay reachable -> overflow-y toggles to auto, and
+     * you must be able to size the box yourself -> drag the grip above it
+       (double-click resets to auto; the height is remembered).
+   A long pasted string with no spaces used to blow the box up to the cap and
+   leave it unreadable, with no scrollbar and no handle to fix it. */
+var COMPOSER_MIN = 46;
+var composerUserH = 0;        // 0 = auto-grow; >0 = height the user dragged to
+
+function composerMax() {
+    // Never let the box eat the conversation: at most ~45% of the viewport.
+    return Math.max(140, Math.min(480, Math.round(window.innerHeight * 0.45)));
+}
+
+function applyComposerHeight() {
+    if (!msgInput) return;
+    var max = composerMax();
+    // Only show a scrollbar when there is real text that does not fit — an empty
+    // box reports its two default rows as scroll height and would show one for
+    // nothing.
+    var overflowing = function (box) {
+        return !!msgInput.value && msgInput.scrollHeight > box + 2;
+    };
+    if (composerUserH > 0) {
+        var fixed = Math.max(COMPOSER_MIN, Math.min(composerUserH, max));
+        msgInput.style.height = fixed + 'px';
+        msgInput.style.overflowY = overflowing(fixed) ? 'auto' : 'hidden';
+        return;
+    }
+    msgInput.style.height = 'auto';
+    // An empty <textarea> reports two rows by default; keep the resting box at
+    // one line so the composer does not get taller than it used to be.
+    var want = msgInput.value ? msgInput.scrollHeight : COMPOSER_MIN;
+    var h = Math.max(COMPOSER_MIN, Math.min(want, max));
+    msgInput.style.height = h + 'px';
+    msgInput.style.overflowY = overflowing(h) ? 'auto' : 'hidden';
+}
+
+function resetComposerHeight() {
+    composerUserH = 0;
+    try { localStorage.removeItem('tf.composerHeight'); } catch (e) {}
+    applyComposerHeight();
+}
+
 var resizePending = false;
 msgInput.addEventListener('input', function() {
     if (resizePending) return;
     resizePending = true;
     requestAnimationFrame(function() {
         resizePending = false;
-        var el = msgInput;
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+        applyComposerHeight();
     });
 });
+
+(function initComposerResize() {
+    var grip = document.getElementById('composerGrip');
+    try {
+        var saved = parseInt(localStorage.getItem('tf.composerHeight'), 10);
+        if (saved > 0) composerUserH = saved;
+    } catch (e) {}
+    applyComposerHeight();
+    if (!grip) return;
+
+    // Keep the handle centred over the message box itself (the bar's centre can
+    // be over the model controls once the row wraps).
+    function positionGrip() {
+        var bar = grip.parentElement;
+        if (!bar) return;
+        var br = bar.getBoundingClientRect(), tr = msgInput.getBoundingClientRect();
+        if (!br.width || !tr.width) return;
+        grip.style.transform = 'none';
+        grip.style.left = Math.round(tr.left - br.left + (tr.width - grip.offsetWidth) / 2) + 'px';
+    }
+    positionGrip();
+    if (typeof ResizeObserver === 'function') {
+        try { new ResizeObserver(positionGrip).observe(msgInput); } catch (e) {}
+    }
+
+    var drag = null;
+    function setH(h) {
+        composerUserH = Math.round(Math.max(COMPOSER_MIN, Math.min(composerMax(), h)));
+        applyComposerHeight();
+        positionGrip();
+    }
+    function endDrag(e) {
+        if (!drag) return;
+        drag = null;
+        document.body.classList.remove('tf-resizing');
+        try { localStorage.setItem('tf.composerHeight', String(composerUserH)); } catch (err) {}
+        if (e && e.pointerId != null) { try { grip.releasePointerCapture(e.pointerId); } catch (err) {} }
+    }
+    grip.addEventListener('pointerdown', function(e) {
+        e.preventDefault();
+        drag = { y: e.clientY, h: msgInput.getBoundingClientRect().height };
+        document.body.classList.add('tf-resizing');
+        try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+        grip.focus({ preventScroll: true });
+    });
+    grip.addEventListener('pointermove', function(e) {
+        if (!drag) return;
+        e.preventDefault();
+        setH(drag.h + (drag.y - e.clientY));   // drag up = bigger box
+    });
+    grip.addEventListener('pointerup', endDrag);
+    grip.addEventListener('pointercancel', endDrag);
+    grip.addEventListener('dblclick', function(e) { e.preventDefault(); resetComposerHeight(); });
+    // Keyboard: arrows nudge, Home resets to auto.
+    grip.addEventListener('keydown', function(e) {
+        var step = e.shiftKey ? 60 : 20;
+        if (e.key === 'ArrowUp')   { e.preventDefault(); setH(composerUserH > 0 ? composerUserH + step : msgInput.getBoundingClientRect().height + step); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); setH((composerUserH > 0 ? composerUserH : msgInput.getBoundingClientRect().height) - step); }
+        else if (e.key === 'Home') { e.preventDefault(); resetComposerHeight(); }
+    });
+    // Keep the box inside the window when the window itself changes size.
+    window.addEventListener('resize', function() {
+        if (composerUserH > 0 || msgInput.scrollHeight > COMPOSER_MIN) applyComposerHeight();
+        positionGrip();
+    });
+})();
 msgInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
@@ -4332,7 +4474,7 @@ function generateVideoChat(text) {
         busy = true;
         renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
         msgInput.value = '';
-        msgInput.style.height = '46px';
+        applyComposerHeight();
         pending = [];
         attachments.innerHTML = '';
         var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
@@ -4908,7 +5050,7 @@ function generateDesignChat(text) {
     busy = true;
     renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
     msgInput.value = '';
-    msgInput.style.height = '46px';
+    applyComposerHeight();
     pending = [];
     attachments.innerHTML = '';
     var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
@@ -5099,7 +5241,7 @@ function generateAudioChat(text) {
         busy = true;
         renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
         msgInput.value = '';
-        msgInput.style.height = '46px';
+        applyComposerHeight();
         pending = [];
         attachments.innerHTML = '';
         var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
@@ -5150,7 +5292,7 @@ function generateImageChat(text) {
         busy = true;
         renderMsg('user', { role: 'user', text: text, ts: new Date().toLocaleTimeString() }, -1);
         msgInput.value = '';
-        msgInput.style.height = '46px';
+        applyComposerHeight();
         pending = [];
         attachments.innerHTML = '';
         var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
@@ -6555,7 +6697,7 @@ var liveReasoningChars = 0;   // live size of the thinking block while a reasoni
 function sendVoiceCommand(cmd) {
     renderMsg('user', { role: 'user', text: cmd, ts: new Date().toLocaleTimeString() }, -1);
     msgInput.value = '';
-    msgInput.style.height = '46px';
+    applyComposerHeight();
     var botDiv = renderMsg('bot', { role: 'bot', text: '', ts: '' }, -1);
     var bodyEl = botDiv.querySelector('.body');
     bodyEl.innerHTML = '<div class="loading-spinner"></div>';
@@ -6592,7 +6734,7 @@ function actuallySend(text) {
     };
     var userDiv = renderMsg('user', userEntry, -1);
     msgInput.value = '';
-    msgInput.style.height = '46px';
+    applyComposerHeight();
     pending = [];
     attachments.innerHTML = '';
     var botDiv = renderMsg('bot', { role:'bot', text:'', ts:'' }, -1);
