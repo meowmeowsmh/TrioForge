@@ -198,6 +198,7 @@ class Config:
     # forces a number on a machine the user did not configure.
     max_tokens: int = 0       # cap on the reply length (output tokens)
     ctx_size: int = 0         # context window (history kept), passed to llama.cpp
+    thinking: str = "high"    # reasoning effort: low | mid | high | max (off = none)
     providers: dict[str, dict] = field(default_factory=lambda: json.loads(
         json.dumps(DEFAULT_PROVIDERS)))
 
@@ -316,6 +317,7 @@ def load(path: Path | None = None) -> Config:
         search_enabled=bool(data.get("search_enabled", True)),
         max_tokens=int(data.get("max_tokens", 0) or 0),
         ctx_size=int(data.get("ctx_size", 0) or 0),
+        thinking=str(data.get("thinking", "high") or "high"),
     )
     merged = json.loads(json.dumps(DEFAULT_PROVIDERS))
     for name, entry in (data.get("providers") or {}).items():
@@ -352,6 +354,7 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "search_enabled": cfg.search_enabled,
         "max_tokens": cfg.max_tokens,
         "ctx_size": cfg.ctx_size,
+        "thinking": cfg.thinking,
         "providers": cfg.providers,
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     try:

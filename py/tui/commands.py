@@ -55,6 +55,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/base-url http://127.0.0.1:8080/v1"),
         Cmd("/set token <max> [context]", "cap the reply length and set the context window",
             "/set token 4096 8192"),
+        Cmd("/thinking [low|mid|high|max]", "how hard the model thinks (cycles with no arg)",
+            "/thinking high"),
     ]),
     ("keys", [
         Cmd("/key [value]", "show or set the key for the CURRENT provider",
@@ -564,6 +566,47 @@ def _system(ctx, arg: str) -> None:
         return
     ctx.session.system = arg
     render.ok("system prompt set")
+
+
+_THINKING_LEVELS = ("low", "mid", "high", "max")
+_THINKING_MEANING = {
+    "low": "quick, minimal reasoning",
+    "mid": "balanced",
+    "high": "deep reasoning",
+    "max": "deepest reasoning",
+    "off": "no thinking",
+}
+
+
+def _thinking(ctx, arg: str) -> None:
+    """/thinking [low|mid|high|max|off] — how hard the model thinks before answering.
+
+    With no argument it CYCLES low -> mid -> high -> max -> low. The level maps to
+    DeepSeek's reasoning_effort (low/medium/high; max == high) and Ollama's
+    thinking token budget (1024/2048/4096/8192); a local llama.cpp server has no
+    such knob, so there the setting is remembered but the model's weights decide.
+    """
+    from . import backend as B
+
+    arg = (arg or "").strip().lower()
+    if not arg:
+        cur = (ctx.cfg.thinking or "high").lower()
+        idx = _THINKING_LEVELS.index(cur) if cur in _THINKING_LEVELS else 2
+        arg = _THINKING_LEVELS[(idx + 1) % len(_THINKING_LEVELS)]
+    elif arg not in _THINKING_LEVELS and arg != "off":
+        render.error("usage: /thinking [low|mid|high|max|off]  — e.g. /thinking high")
+        return
+
+    ctx.cfg.thinking = arg
+    providers.save(ctx.cfg)
+    B.set_thinking(arg)
+    render.ok(f"thinking → {arg}")
+    render.table("thinking level", [
+        ("level", arg),
+        ("meaning", _THINKING_MEANING[arg]),
+        ("applies to", "DeepSeek (reasoning_effort) · Ollama (thinking budget)"
+                       " · local llama.cpp (remembered only)"),
+    ])
 
 
 # Built-in token defaults, so /set token can name what it falls back to.
@@ -1317,6 +1360,7 @@ _TABLE = {
     "/provider": _provider, "/provider-add": _provider_add,
     "/key": _key, "/keys": _keys, "/status": _status, "/base-url": _base_url,
     "/set": _set_token, "/token": _set_token,
+    "/thinking": _thinking, "/think": _thinking,
     "/system": _system, "/clear": _clear, "/history": _history,
     "/save": _save, "/echo": _echo, "/start": _start,
     "/download": _download, "/pull": _download,

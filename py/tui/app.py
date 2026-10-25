@@ -285,6 +285,8 @@ def run(args) -> int:
     ctx.args = args
     from . import tools as _tools
     _tools.set_web_search(bool(getattr(cfg, "search_enabled", True)))
+    from . import backend as _backend
+    _backend.set_thinking(getattr(cfg, "thinking", "high"))
 
     if not args.no_banner:
         render.banner(session.model, session.where, __version__)

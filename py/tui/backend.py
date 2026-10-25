@@ -153,6 +153,28 @@ SAFE_MAX_TOKENS = 8192
 # Extra attempts for a 429/5xx, a dropped connection, or a 400 that _adapt fixed.
 RETRIES = 3
 
+# How hard the model thinks before answering: "low" | "mid" | "high" | "max"
+# (plus "off" to not think). A module-level flag, like tools.WEB_SEARCH_ON, so a
+# /model or /provider switch does not silently reset it — the flag survives any
+# backend rebuild. /thinking writes it; stream() reads it.
+THINKING = "high"
+
+
+def set_thinking(level: str) -> None:
+    """Set the reasoning effort for every backend (from a command or config)."""
+    global THINKING
+    THINKING = (level or "high").strip().lower() or "high"
+
+
+# UI level -> DeepSeek reasoning_effort. Its API has only low/medium/high, so
+# "max" is the same as "high" and "off" means "do not send the field".
+_DEEPSEEK_EFFORT = {"off": None, "low": "low", "mid": "medium",
+                    "medium": "medium", "high": "high", "max": "high"}
+
+# UI level -> Ollama thinking budget (Ollama's thinking knob is a token budget).
+_OLLAMA_BUDGET = {"low": 1024, "mid": 2048, "medium": 2048,
+                  "high": 4096, "max": 8192}
+
 
 class OpenAICompatBackend(Backend):
     """Talks to an OpenAI-compatible endpoint, streaming by default."""
@@ -213,6 +235,21 @@ class OpenAICompatBackend(Backend):
             body["tool_choice"] = "auto"
         if self.thinking_off:
             body["thinking"] = {"type": "disabled"}
+        else:
+            # Apply the /thinking level. DeepSeek takes reasoning_effort; Ollama
+            # takes a thinking token budget; a local llama.cpp server has no such
+            # knob (thinking is baked into the weights), so it is left untouched.
+            level = THINKING
+            if self.is_deepseek:
+                eff = _DEEPSEEK_EFFORT.get(level)
+                if eff:
+                    body["reasoning_effort"] = eff
+            elif "11434" in self.base_url:   # Ollama's default port
+                if level == "off":
+                    body["thinking"] = {"type": "disabled"}
+                elif level in _OLLAMA_BUDGET:
+                    body["thinking"] = {"type": "enabled",
+                                        "budget_tokens": _OLLAMA_BUDGET[level]}
         url = f"{self.base_url}/chat/completions"
         waited_for_load = False
         for attempt in range(RETRIES + 1):

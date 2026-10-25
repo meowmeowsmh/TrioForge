@@ -4022,6 +4022,50 @@ def test_ctrl_r_refresh_shortcut() -> None:
 
 
 # ---------------------------------------------------------------------------
+# /thinking must cycle low -> mid -> high -> max and set a level explicitly
+# ---------------------------------------------------------------------------
+def test_thinking_command() -> None:
+    _title("/thinking levels")
+    from unittest import mock
+
+    from tui import backend as B
+    from tui import commands as C
+    from tui import providers
+
+    class Ctx:
+        pass
+
+    ctx = Ctx()
+    ctx.cfg = providers.Config()          # default thinking = "high"
+
+    # The wire mapping must agree with the shared DEEPSEEK_REASONING_EFFORT_WIRE:
+    # DeepSeek's API has only low/medium/high, so "max" == "high".
+    assert B._DEEPSEEK_EFFORT["low"] == "low"
+    assert B._DEEPSEEK_EFFORT["mid"] == "medium"
+    assert B._DEEPSEEK_EFFORT["high"] == "high"
+    assert B._DEEPSEEK_EFFORT["max"] == "high"
+    assert B._OLLAMA_BUDGET["low"] == 1024
+    assert B._OLLAMA_BUDGET["max"] == 8192
+
+    with mock.patch.object(providers, "save", lambda *a, **k: None):
+        # no arg CYCLES from the default: high -> max -> low -> mid -> high
+        for want in ("max", "low", "mid", "high"):
+            C.handle("/thinking", ctx)
+            assert ctx.cfg.thinking == want, (ctx.cfg.thinking, want)
+            assert B.THINKING == want, (B.THINKING, want)
+        # explicit set, including "off"
+        C.handle("/thinking off", ctx)
+        assert ctx.cfg.thinking == "off" and B.THINKING == "off"
+        C.handle("/thinking mid", ctx)
+        assert ctx.cfg.thinking == "mid" and B.THINKING == "mid"
+        # unknown level -> usage error, state unchanged
+        C.handle("/thinking banana", ctx)
+        assert ctx.cfg.thinking == "mid"
+    B.set_thinking("high")
+    print("  /thinking cycles and sets a level, and the flag follows -> OK")
+
+
+# ---------------------------------------------------------------------------
 # The message box must stay usable: it grows with the text, but it can always be
 # resized by hand and never hides what you typed.
 #
@@ -4572,6 +4616,7 @@ def main() -> int:
              test_launcher_symlink_resolution, test_resolve_model_short_names,
              test_scan_case_insensitive, test_model_list_rescans_live,
              test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut,
+             test_thinking_command,
              test_composer_cannot_be_crushed_or_hidden,
              test_small_window_chrome_stays_usable,
              test_tiny_window_stays_usable,
