@@ -50,6 +50,13 @@ _CLAIM_PATH = os.path.join(REPO_ROOT, "json_configuration", ".daily_briefing.cla
 PIN_PREFIX = "daily-briefing-"
 TAG = "briefing"
 
+# The title is English by design (the rest of the UI is), so it must not depend on
+# the machine's locale: strftime("%a"/"%b") gave "Sa Okt" on a German-locale box,
+# which made the title drift from the rest of the app (and broke the test there).
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
 DEFAULTS = {
     "auto": True,
     "hour": 7,
@@ -341,7 +348,8 @@ def build(cfg=None, use_model=True, now=None):
         sections.append({"title": "Nothing connected yet", "count": 0, "lines": [
             "Connect Google Calendar or Gmail in the 🔌 panel and this pin fills in with your "
             "day. Until then it will show old pins worth a second look once you have some."]})
-    title = "☀️ Briefing — {} {} {}".format(now.strftime("%a"), now.day, now.strftime("%b"))
+    title = "☀️ Briefing — {} {} {}".format(
+        _WEEKDAYS[now.weekday()], now.day, _MONTHS[now.month - 1])
     return title, _render(sections, headsup, notes), len(sections), notes
 
 
