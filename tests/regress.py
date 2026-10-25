@@ -4059,16 +4059,20 @@ def test_small_window_chrome_stays_usable() -> None:
     assert re.search(r"addEventListener\('change'", html) and "isNarrow()" in html, \
         "the drawer state is not cleared when the window gets wide again"
 
-    # 5. No stacked grid rows: every top-bar child has its own row under 900px.
+    # 5. No stacked grid rows: every top-bar child has an explicit cell under 900px.
     #    There is more than one 900px block in the file (the logo rule is another),
     #    so all of them are collected rather than trusting the first.
     blocks = re.findall(r"@media \(max-width: 900px\) \{(.*?)\n\}", html, re.S)
     assert blocks, "the small-window media query is gone"
     block = "\n".join(blocks)
-    for sel, row in ((".top-bar .left", 1), (".center-tabs", 2),
-                     (".top-bar-icons", 3), (".top-bar .right", 4)):
-        assert re.search(re.escape(sel) + r"[^}]*grid-row:\s*%d" % row, block), \
-            "%s is not pinned to grid row %d, so rows can overlap" % (sel, row)
+    # Row 1 carries the toggle/wordmark AND the tabs (they fit side by side, which
+    # saves a whole row); the toolbar and the provider row get their own rows.
+    for sel, cell in ((".top-bar .left", r"grid-column:\s*1;.*grid-row:\s*1"),
+                      (".center-tabs", r"grid-column:\s*2;.*grid-row:\s*1"),
+                      (".top-bar-icons", r"grid-row:\s*2"),
+                      (".top-bar .right", r"grid-row:\s*3")):
+        assert re.search(re.escape(sel) + r"\s*\{[^}]*" + cell, block), \
+            "%s has no explicit grid cell, so rows can overlap" % sel
 
     # 6. The icon toolbar is one scrollable row instead of two wrapped ones.
     assert "flex-wrap: nowrap" in block and "overflow-x: auto" in block, \
@@ -4082,6 +4086,47 @@ def test_small_window_chrome_stays_usable() -> None:
         "the controls do not take their own row on a small window"
 
     print("  drawer: scrim + ✕ + Esc + resize; top bar: one row per child -> OK")
+
+
+# ---------------------------------------------------------------------------
+# Framed views (Notes, Cork Board) must not spend half the window on chrome.
+#
+# Measured on an 877x590 window before this: the shell's own bar stacked four rows
+# above the frame (175px: wordmark, tabs, two corner buttons, weather country), and
+# the framed notes page then spent 196px of the remaining 415px on its title,
+# search box, keyword/semantic toggle and tag pills. The notes list was left 178px
+# - two and a half notes before it scrolled. One row for the shell bar and a
+# tightened framed header give the list 313px instead.
+# ---------------------------------------------------------------------------
+def test_framed_views_keep_their_space() -> None:
+    _title("Notes / Cork Board keep the window, header is compact")
+    import re
+
+    root = Path(__file__).resolve().parent.parent
+    html = (root / "templates" / "index.html").read_text(encoding="utf-8")
+    notes = (root / "py" / "features" / "notes.py").read_text(encoding="utf-8")
+
+    # The shell bar is a single grid row with three cells in these views.
+    embed = re.search(r"html\.view-embed \.top-bar \{(.*?)\n\}", html, re.S)
+    assert embed, "the framed top-bar rule is gone"
+    eb = embed.group(1)
+    assert "display: grid" in eb and "grid-template-columns: auto 1fr auto" in eb, \
+        "the framed top bar is not a single three-cell row"
+    # The wordmark goes: the tabs already say where you are.
+    assert re.search(r"html\.view-embed \.top-bar \.left \{ display: none; \}", html), \
+        "the wordmark still takes a row in framed views"
+    # Tabs and the two corner buttons stay on that row.
+    for sel, col in ((r"html\.view-embed \.top-bar \.center-tabs", 2),
+                     (r"html\.view-embed #topBarIcons", 3)):
+        assert re.search(sel + r" \{[^}]*grid-column:\s*%d" % col, html), \
+            "%s is not on the framed row" % sel
+
+    # The framed notes page tightens its own header stack.
+    for rule in (r"html\.embedded \.sidebar-header \{", r"html\.embedded \.search-box \{",
+                 r"html\.embedded \.search-mode-toggle \{", r"html\.embedded \.tag-filter \{"):
+        assert re.search(rule, notes), "the framed notes header is no longer compacted: %s" % rule
+
+    print("  shell bar: one row; framed notes header: compacted -> OK")
 
 
 # ---------------------------------------------------------------------------
@@ -4133,7 +4178,8 @@ def main() -> int:
              test_scan_case_insensitive, test_model_list_rescans_live,
              test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut,
              test_composer_cannot_be_crushed_or_hidden,
-             test_small_window_chrome_stays_usable]
+             test_small_window_chrome_stays_usable,
+             test_framed_views_keep_their_space]
     failed = []
     for t in tests:
         try:

@@ -279,8 +279,17 @@ below, so it carries the same version number on a build that is missing all of i
   and the 20-icon toolbar is one sideways-scrolling row instead of two wrapped ones.
 - **More of the window is conversation.** On that 886×593 window the message box
   keeps its row with the buttons (buttons and box together, model picker + Send on
-  the row below), which takes the chat area from 156px to **239px** of visible
-  history — the chrome used to leave less than a third of the window for the chat.
+  the row below), and the three tabs share the first row with the toggle and
+  wordmark. The visible chat area goes from 156px to **279px** — the chrome used to
+  leave less than a third of the window for the chat.
+- **Notes and Cork Board stop wasting their head.** Framed, the shell's bar stacked
+  four rows (wordmark, tabs, the two corner buttons, the weather country) — 175px of
+  an 877×590 window — and the notes page then spent 196px of the remaining 415px on
+  its title, search box, keyword/semantic toggle and tag pills, leaving the notes
+  list **178px**: two and a half notes before it scrolled. The framed bar is one
+  three-cell row (tabs centred, corner buttons right, no wordmark — the tabs already
+  say where you are) and the framed notes header is tightened, so the list gets
+  **313px** and the frame itself 517px instead of 415px.
 
 ### Small quality-of-life
 
