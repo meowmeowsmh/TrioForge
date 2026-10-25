@@ -89,7 +89,19 @@ client was missing.
   now go through one guarded helper that simply retries on the next tick, and only
   records what it drew once the paint actually landed.
 
-### Terminal client: the hosted providers opencode offers- **`/setup` now shows 15 providers instead of 8.** The terminal client's backend
+### Terminal client: the web reaches local models too
+
+- **`/search <query>` is a live web search now.** It used to browse Hugging Face
+  for GGUF models; a local llama.cpp model had no way to find current articles,
+  docs or latest versions, so anything recent it answered was a guess from its
+  weights. `/search` now runs a DuckDuckGo search and prints the snippets, and the
+  same capability is the agent's new **`web_search` tool** — so a conversation with
+  a local or cloud model can reach live sources. Finding a model to install stays
+  under `/download <query>`.
+
+### Terminal client: the hosted providers opencode offers
+
+- **`/setup` now shows 15 providers instead of 8.** The terminal client's backend
   is generic OpenAI-compatible, but the default list had been trimmed to match the
   web UI's own backends — which dropped OpenAI, xAI, Mistral and Together even
   though the terminal could always chat with them. They are back, and Perplexity,

@@ -4485,6 +4485,35 @@ def test_pipe_and_memory_lock_are_safe() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A local llama.cpp model has no network, so anything recent it says is a guess.
+# The terminal client now has a real web-search tool (and /search does a live
+# DuckDuckGo search) so local AND cloud models can reach current sources.
+# ---------------------------------------------------------------------------
+def test_web_search_for_local_models() -> None:
+    _title("web search is available to local models")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    sys.path.insert(0, str(root / "py" / "tools"))
+    from tui import commands, tools
+
+    tool = tools.TOOLS.get("web_search")
+    assert tool is not None, "web_search is not a registered agent tool"
+    assert tool.danger is False, "searching the web must not require approval"
+    assert "query" in (tool.parameters.get("properties") or {}), tool.parameters
+    # A bare call asks for a query instead of hitting the network.
+    assert tools.t_web_search("") == "error: query is required"
+    assert tools.t_web_search("   ") == "error: query is required"
+    # /search is now a live web search, not the old Hugging Face model browse.
+    doc = commands._search.__doc__ or ""
+    assert "search the web" in doc, doc
+    assert "Hugging Face" not in doc, doc
+    # The offline demo keeps its own note that search still reaches the network.
+    print("  /search is a live web search; web_search is a read-only tool -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4539,7 +4568,8 @@ def main() -> int:
              test_tui_provider_variety,
              test_security_audit_fixes_hold,
              test_recursive_file_list_is_symlink_safe,
-             test_pipe_and_memory_lock_are_safe]
+             test_pipe_and_memory_lock_are_safe,
+             test_web_search_for_local_models]
     failed = []
     for t in tests:
         try:

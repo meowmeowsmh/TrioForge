@@ -45,8 +45,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/models"),
         Cmd("/start [name]", "load a local .gguf into llama-server",
             "/start gemma-3-12b-it"),
-        Cmd("/search <query>", "search Hugging Face for GGUF models (browse only)",
-            "/search qwen 7b"),
+        Cmd("/search <query>", "search the web for current articles, docs and sources",
+            "/search llama.cpp quantization"),
         Cmd("/download <query>", "search Hugging Face and download a GGUF model",
             "/download qwen 7b"),
         Cmd("/provider [name]", "list providers, or switch to one",
@@ -765,21 +765,21 @@ def _download(ctx, arg: str) -> None:
 
 
 def _search(ctx, arg: str) -> None:
-    """/search <query> — search Hugging Face for GGUF models (browse, no download)."""
-    from . import model_download
+    """/search <query> — search the web for current articles, docs and sources.
+
+    This is the "online" lever for a LOCAL model: a llama.cpp model has no network,
+    so anything recent it answers is a guess from its training data. This runs a
+    live DuckDuckGo search and prints the snippets; the same capability is the
+    agent's `web_search` tool, so a conversation can reach it too.
+    """
+    from . import tools
 
     query = arg.strip()
     if not query:
-        render.error("usage: /search <query>  —  e.g. /search qwen 7b")
+        render.error("usage: /search <query>  —  e.g. /search llama.cpp 4-bit quantization")
         return
-    render.info(f"searching Hugging Face for GGUF models matching {query!r}…")
-    results = model_download.search(query)
-    if not results:
-        render.warn("no GGUF models found — try a shorter or different query")
-        return
-    render.table(f"GGUF models matching {query!r}",
-                 [(repo, f"{dl:,} downloads" if dl else "") for repo, dl in results[:20]])
-    render.info("download one with /download <query>")
+    render.info(f"searching the web for {query!r}…")
+    render.info(tools.t_web_search(query))
 
 
 def _echo(ctx, arg: str) -> None:

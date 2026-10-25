@@ -416,6 +416,39 @@ def t_memory(action: str = "", key: str = "", value: str = "",
             "list, stats")
 
 
+def t_web_search(query: str = "", max_results: int = 5, **_kw) -> str:
+    """Search the web (DuckDuckGo) and return up to 5 snippets with titles/URLs.
+
+    This is how a LOCAL llama.cpp model finds current information — articles, docs,
+    latest versions, news — that is not in its training data. A model with no web
+    access can only "view history" (its weights); this tool reaches live sources.
+    """
+    query = (query or "").strip()
+    if not query:
+        return "error: query is required"
+    try:
+        from duckduckgo_search import DDGS
+        n = max(1, min(int(max_results or 5), 10))
+        results = list(DDGS().text(query, max_results=n))
+    except ImportError:
+        return ("error: web search needs the duckduckgo-search package "
+                "(pip install duckduckgo-search)")
+    except Exception as exc:  # noqa: BLE001 - a network/library failure is not fatal
+        return f"error: search failed: {exc}"
+    if not results:
+        return "(no results)"
+    lines = []
+    for r in results:
+        title = (r.get("title") or "").strip()
+        body = " ".join((r.get("body") or "").split())
+        href = (r.get("href") or "").strip()
+        line = f"• {title}: {body}" if title else f"• {body}"
+        if href:
+            line += f"  [{href}]"
+        lines.append(line)
+    return _truncate("\n".join(lines))
+
+
 # ============================================================ the registry
 
 
@@ -486,6 +519,19 @@ _register(Tool(
     t_memory,
     summary=lambda a: "memory {} {}".format(
         a.get("action", ""), a.get("key") or a.get("query") or "").strip(),
+))
+
+_register(Tool(
+    "web_search",
+    "Search the web (DuckDuckGo) and return article snippets with their titles and "
+    "URLs. Use this for anything recent or factual - current events, latest "
+    "versions, documentation - that is not in your training data. Works for any "
+    "provider; a local model without this tool can only answer from its weights.",
+    _obj({"query": {"type": "string", "description": "the search query"},
+          "max_results": {"type": "integer", "description": "1-10, default 5"}},
+         ["query"]),
+    t_web_search,
+    summary=lambda a: f"web_search {a.get('query', '')}",
 ))
 
 _register(Tool(

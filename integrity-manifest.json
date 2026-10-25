@@ -75,7 +75,7 @@
   "py/tui/app.py": "e0bdbe1db916d0581bdf390b6a1b5bf82686adf7ff9ba8bc6b1ad0db8d65f1d7",
   "py/tui/backend.py": "387ba89a60465033ea591c06fe2eadca4e97410fb5cde727d62649debb043f17",
   "py/tui/cli.py": "5241cf5aa16a3d415f0f699ad555c11efd5a571791063d0c1be8669ea53d5354",
-  "py/tui/commands.py": "b4b68d1887499acb43fb98672dddab7785b240d560562db787c3b4a306866372",
+  "py/tui/commands.py": "6c5127655fe977fa8393155f86d32e6a5af721535d5faf2c78de39274f8390cc",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
@@ -88,7 +88,7 @@
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
   "py/tui/textual_app.py": "abecd9a4756c09b2f2841b651f6cf2d88fe9d16336d65d3363bd252ea001d56f",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
-  "py/tui/tools.py": "04342328a08e1ae988c4aa0cae24db87a75610f1281924bf51f3163a7f24e24d",
+  "py/tui/tools.py": "f4db39c02c7b5ca4e1b6f8140e421e49e559286a33c3e857ac78d4f62dfae090",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "09e646f836b083f9ecf8327edd0229b9391d10986ed36cade4b3057fee5f5b6a",
   "py/version.py": "77d956c8fb17e98969bf82aaf2b190d4c0c034fe81b5d3d3e05a26840829915d",
@@ -122,6 +122,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-26T01:48:42",
- "note": "pipe/memory/mermaid fixes"
+ "generated": "2026-10-26T02:10:23",
+ "note": "tui web search"
 }
