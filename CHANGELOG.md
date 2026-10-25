@@ -3,9 +3,29 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.6.1] — web search toggle, native Apple Silicon Docker, TUI crash fixes
+
+**The current release, and the one to install.** It carries all of 1.6.0 plus:
+
+- **`/search` is the web-search switch.** With no argument it toggles on/off (`on` /
+  `off` set it); when on, the agent is offered a live `web_search` tool so a local
+  llama.cpp model can find current articles, docs and latest versions instead of
+  guessing from its weights. `/search <query>` runs one DuckDuckGo search, and the
+  choice is remembered in the config.
+- **Docker** now publishes a **native arm64 image** for Apple Silicon (it was
+  amd64-only and ran under Rosetta), and the `docker run` one-liner persists
+  `static/uploads` so attached/generated media survives a `docker rm`.
+- **Terminal-client crash fixes**, each found by driving the app: a second Enter no
+  longer pops the picker off the stack (`ScreenStackError`), a piped/`--classic`
+  session no longer crashes building a prompt, `/memory` no longer dies with a raw
+  DuckDB lock error while the web app is running, a broken slash command can no
+  longer take the whole session down, and the daily-briefing title no longer depends
+  on the machine's locale.
+- **Web UI**: an invalid ```mermaid block no longer throws unhandled.
+
 ## [1.6.0] — resizable composer, usable small windows, working Suggest Links
 
-**The current release, and the one to install.** It carries everything 1.5.6 had
+> Superseded by **1.6.1** above. It carries everything 1.5.6 had
 (the security hardening, terminal client, image-quality and packaging work below)
 plus the fixes and features since: a message box you can resize instead of one that
 collapsed into an unreadable sliver, a sidebar drawer that can always be closed, a

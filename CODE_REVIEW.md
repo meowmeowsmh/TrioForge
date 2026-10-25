@@ -2,7 +2,7 @@
 
 A prioritized review of the codebase, kept up to date as the project evolves.
 
-> **Current scale — v1.6.0** — 172 tracked files, ~72,700 lines of text on disk
+> **Current scale — v1.6.1** — 172 tracked files, ~72,700 lines of text on disk
 >
 > | File | Lines |
 > |---|---|

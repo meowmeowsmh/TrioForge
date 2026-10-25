@@ -69,7 +69,7 @@
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
   "py/tui/README.md": "b4e82f91dd0ffb744041a604059d0d614b1f958036e9738a26d18d8620dd829f",
-  "py/tui/__init__.py": "99ad95bd677c85521af387abe6bf786a6f4edfc526d3ab6fa448ba4d3823f666",
+  "py/tui/__init__.py": "9cd7d62d6aadff654e7c7d806453a9de6224c94f76fdc2f6ba2654ab886d7453",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
   "py/tui/app.py": "f72808ff9440760d1f898b9c24a157ab5a4be673782af6dc1de19511b635c239",
@@ -91,10 +91,10 @@
   "py/tui/tools.py": "53e5a7592e961c4329e419774d5422455187861e07511818e269d3c27bda0342",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "09e646f836b083f9ecf8327edd0229b9391d10986ed36cade4b3057fee5f5b6a",
-  "py/version.py": "77d956c8fb17e98969bf82aaf2b190d4c0c034fe81b5d3d3e05a26840829915d",
+  "py/version.py": "0a070af3cd8c028a1fe96b26fdeb21c0c4ce4430fd48874df704289e759bcb03",
   "py/video_to_text.py": "515ab66ca0c1138bf497855355bb67d565b2ba8509440e6851c007085068ece2",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "eec44155032b1370bc8089899e3591aec2fec3c834f66a14c59c48595cb7968f",
+  "pyproject.toml": "e7711ca814b17336db0a7792ed7c5d234cc0b1ca378c5d6691fac9ea24e3931b",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
   "requirements.txt": "b7a89a25238f139b6ca47ad2896c69ea2b04c922476ee2c41d64a0c2d919cd2d",
   "run.sh": "1c40f3bdaed157f961c7f34b972ed129274bb0be732ec2ac85a4e7ce9d21470e",
@@ -122,6 +122,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-26T03:19:33",
- "note": "safe command wrapper"
+ "generated": "2026-10-26T03:44:52",
+ "note": "v1.6.1"
 }
