@@ -172,6 +172,7 @@ the scrolling UI's help hides those rather than advertising something it cannot 
 | `/start [name]` | load an offline `.gguf` into llama-server |
 | `/model [name]` | show or switch model; `auto` re-detects |
 | `/status` | provider, endpoint, model, key state, health |
+| `/thinking [low\|mid\|high\|max\|off]` | reasoning effort; a bare `/thinking` opens the picker |
 | `/system [text]` | show or set the system prompt |
 | `/clear` · `/history` · `/save [path]` | session handling |
 | `/memory [list\|get\|set\|forget\|recall]` | the offline memory vault (DuckDB + Bloom gate) |
@@ -183,8 +184,9 @@ recognise *which* key it is, never enough to use it.
 
 ### Keybindings (full-screen UI)
 
-`ctrl+p` commands · `ctrl+l` model · `ctrl+n` new session · `tab` focus chat ·
-`esc` focus prompt · `ctrl+y` copy the last answer · `ctrl+a` auto-route · `ctrl+q` quit
+`ctrl+p` commands · `ctrl+l` model · `ctrl+o` provider · `ctrl+t` thinking ·
+`ctrl+n` new session · `tab` focus chat · `esc` focus prompt · `ctrl+y` copy the
+last answer · `ctrl+a` auto-route · `ctrl+q` quit
 
 `PageUp`/`PageDown` scroll the **transcript** — the prompt box keeps keyboard
 focus, and `TextArea` binds those keys to cursor-paging, so before this the
@@ -370,6 +372,19 @@ Vision models are bigger, so they are likelier to split GPU+CPU and reply slowly
 weights *and* projector only both fit an 8 GB card for a small model.
 
 ## Reasoning / thinking
+
+**How hard to think is a setting, not a guess.** `/thinking` (or **`ctrl+t`**, or
+a bare `/thinking` which opens the picker) chooses `low` → `mid` → `high` →
+`max`, plus `off`. One level, applied wherever the provider has a knob for it:
+
+| Provider | What the level changes |
+|---|---|
+| **DeepSeek** | `reasoning_effort`: `low` / `medium` / `high`. Its API has only those three, so `max` sends `high` |
+| **Ollama** | the thinking token budget: 1024 / 2048 / 4096 / 8192 |
+| **local llama.cpp** | nothing on the wire — the model either reasons or does not. The level is still remembered and shown (`· think high` on the status line) |
+
+The choice persists in the config and survives a model or provider switch, because
+the flag lives beside `WEB_SEARCH_ON` rather than on a backend instance.
 
 Reasoning models (DeepSeek's reasoner, Claude with thinking, and Ollama's
 thinking models) emit their chain of thought on a **separate stream field** from

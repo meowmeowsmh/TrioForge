@@ -28,9 +28,28 @@
 - **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
 - **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` code-block protocol covers models without native function calling, and no workspace folder is required.
 
-### 1.6.1 — the current release
+### 1.6.2 — the current release
 
-**This is the release to install.** It carries all of 1.6.0 plus what landed since:
+**This is the release to install.** It carries all of 1.6.1 plus what landed since:
+
+- **`/thinking` picks the reasoning effort** — `low` → `mid` → `high` → `max` (and
+  `off`), for API models and local ones alike: DeepSeek's `reasoning_effort`,
+  Ollama's thinking token budget, and remembered-and-shown elsewhere. A bare
+  `/thinking` — or **`ctrl+t`** — opens the same searchable picker as `ctrl+o`, and
+  every status line ends with `· think high`.
+- **Dropped or deleted models show up without a restart.** The web UI re-scans the
+  model folders on every list request (it used to scan once at start-up), and
+  ComfyUI's cached `/object_info` refreshes on a 10-second TTL.
+- **Model files resolve on every OS** — `.gguf` matching is case-insensitive, and a
+  short name such as `qwen2.5-7b-instruct` maps to the real `…-q4_k_m.gguf` instead
+  of loading a different model that fits. Vision projectors are skipped there.
+- **`trioforge-web` on Linux/macOS**, `run.sh` resolves its own symlink so the
+  command works from any directory, and the web UI has **`ctrl+r`** to reload and
+  re-scan models.
+
+### 1.6.1
+
+> Superseded by **1.6.2** above. It carries all of 1.6.0 plus:
 
 - **`/search` is the web-search switch** — on/off, remembered; when on, the agent's
   live `web_search` tool lets a local llama.cpp model find current articles/docs.
@@ -42,7 +61,7 @@
 
 ### 1.6.0
 
-> Superseded by 1.6.1. Carries all of 1.5.6 (security, terminal client, image quality, packaging) plus:
+> Superseded by **1.6.2**. Carries all of 1.5.6 (security, terminal client, image quality, packaging) plus:
 
 - **A message box you can resize.** It used to collapse into a 34px-wide sliver on a
   pasted line with no spaces — unreadable, unscrollable, un-resizable. Now it wraps,
@@ -96,7 +115,7 @@
 
 ### 1.5.5 — no console windows, and one command from anywhere
 
-> Superseded by **1.6.1** above — the `v1.5.5` tag was cut before the security and
+> Superseded by **1.6.2** above — the `v1.5.5` tag was cut before the security and
 > performance fixes, so install the newer release.
 
 No console windows, a window that opens, and one command that works from anywhere.
@@ -404,7 +423,7 @@ That route needs the four packages by hand: `python -m pip install rich prompt_t
 Both install `rich`, `prompt_toolkit`, `textual` and `duckdb` into the repo's own venv, then put the commands on your PATH:
 
 - **Windows** writes three shims into `%USERPROFILE%\bin` — `forge.cmd` and `trioforge.cmd` (the terminal client) plus `trioforge-web.cmd` (the web app) — and appends that folder to your **user** PATH — **open a new terminal** before they resolve.
-- **Linux / macOS** symlinks `forge` and `trioforge` into the first writable folder already on your PATH (`~/.local/bin`, `~/bin`, `~/.bin`), falling back to `~/.local/bin`, and prints the exact `export PATH=...` line to add if that folder is not on your PATH yet.
+- **Linux / macOS** symlinks `forge`, `trioforge` **and `trioforge-web`** into the first writable folder already on your PATH (`~/.local/bin`, `~/bin`, `~/.bin`), falling back to `~/.local/bin`, and prints the exact `export PATH=...` line to add if that folder is not on your PATH yet.
 
 Neither needs admin, and both are safe to re-run. Both also fetch the prebuilt llama.cpp for your GPU (`TRIOFORGE_SKIP_LLAMA=1` skips that). If the packages cannot be installed, **nothing is linked, on purpose** — a `forge` that exists and then dies with `ModuleNotFoundError: textual` is worse than no launcher at all, which is why both scripts verify the imports before they link anything.
 
@@ -418,12 +437,12 @@ forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
-forge --version                 # -> forge 1.6.1 (prints the name you typed)
+forge --version                 # -> forge 1.6.2 (prints the name you typed)
 trioforge-web                   # start the web app (same as double-clicking)
 trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
-Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.6.1**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.6.2**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 
@@ -447,6 +466,7 @@ print(llm("Q: 2+2? A:", max_tokens=32)["choices"][0]["text"])
 | `ctrl+j` | new line |
 | `ctrl+p` | command palette (also edits keys/models) |
 | `ctrl+l` / `ctrl+o` | switch model / provider |
+| `ctrl+t` | **thinking effort**: `low` / `mid` / `high` / `max` — same picker as `/thinking` |
 | `ctrl+y` | copy the last answer |
 | `ctrl+a` | **auto-route**: send to local (llama.cpp) or cloud, decided by offline/complexity |
 | `/team` | **parallel team**: every model in the pool does the task, first finished answer ships |

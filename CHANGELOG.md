@@ -3,9 +3,44 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.6.2] — `/thinking`: pick how hard the model reasons
+
+**The current release, and the one to install.** It carries all of 1.6.1 plus:
+
+- **`/thinking` sets the reasoning effort** — `low` → `mid` → `high` → `max` (and
+  `off`), for **API models and local ones alike**. On DeepSeek it sets
+  `reasoning_effort` (its API has only low/medium/high, so `max` is the same as
+  `high` on the wire); on Ollama it sets the thinking token budget
+  (1024 / 2048 / 4096 / 8192); a local llama.cpp server has no such knob, so the
+  level is remembered and displayed and the model's weights decide. The choice
+  persists in the config, and every status line now ends with `· think high` so
+  the current level is visible at a glance.
+- **No typing needed to pick one.** In the full-screen client a bare `/thinking`
+  opens the **same searchable modal as `ctrl+o` switch-provider** — type to
+  filter, arrows or a click to move, enter to pick — also bound to **`ctrl+t`**.
+  Typing `/thinking ` in the prompt narrows the list as you go. The plain
+  line-based client prints the same menu and takes `/thinking <level>`.
+- **The model list no longer goes stale.** A `.gguf` dropped into `models/` — or
+  deleted from it — now appears or disappears in the web UI **without a
+  restart** (it used to be scanned once, at start-up). ComfyUI's cached
+  `/object_info` now refreshes on a **10-second TTL**, so a checkpoint added
+  straight into its folders shows up too.
+- **Model files resolve on every OS.** `.gguf` matching is case-insensitive (a
+  `Model.GGUF` was invisible on Linux while the same file worked on
+  Windows/macOS), and a short name such as `qwen2.5-7b-instruct` now maps to the
+  real `…-q4_k_m.gguf` instead of falling through to "load some other model that
+  fits". Vision projectors are skipped in that lookup, so picking a model can
+  never load its `mmproj` file by mistake.
+- **`trioforge-web` exists on Linux and macOS.** `install.sh` linked only `forge`
+  and `trioforge`; it now creates the third command, `bootstrap.sh` notices it is
+  missing on an existing install, and `run.sh` resolves its own symlink so the
+  command works from any directory.
+- **`ctrl+r` in the web UI** reloads the app and re-scans the models, and is
+  listed in the Help & shortcuts panel.
+
 ## [1.6.1] — web search toggle, native Apple Silicon Docker, TUI crash fixes
 
-**The current release, and the one to install.** It carries all of 1.6.0 plus:
+> Superseded by **1.6.2** above. It carries all of 1.6.0 plus:
 
 - **`/search` is the web-search switch.** With no argument it toggles on/off (`on` /
   `off` set it); when on, the agent is offered a live `web_search` tool so a local
