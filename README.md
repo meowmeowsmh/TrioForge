@@ -172,6 +172,7 @@ docker run -d --name trioforge -p 5002:5001 \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
   -v trioforge-data:/app/sqlite_data \
   -v trioforge-config:/app/json_configuration \
+  -v trioforge-uploads:/app/static/uploads \
   ghcr.io/meowmeowsmh/trioforge:latest
 ```
 
@@ -232,6 +233,7 @@ docker run -d --name trioforge -p 5002:5001 \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
   -v trioforge-data:/app/sqlite_data \
   -v trioforge-config:/app/json_configuration \
+  -v trioforge-uploads:/app/static/uploads \
   ghcr.io/meowmeowsmh/trioforge:latest
 ```
 
