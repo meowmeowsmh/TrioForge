@@ -435,13 +435,20 @@ def hang_watchdog(get_handle, url: str, hung_seconds: int = 20, interval: float 
 
 
 def size_watchdog(window, get_handle, width: int, height: int, interval: float = 3.0) -> None:
-    """Restore the window when WebView2 collapses it to a sliver.
+    """Restore the window when WebView2 collapses it to a sliver, and hold a floor.
 
     On this machine the embedded window sometimes shrinks to ~160x28 AFTER it has
     already painted - a WebView2/GPU quirk, not a user action. A 160x28 window is
     invisible in practice, which is the "double-click, nothing appears" report that
     survived every other fix. A user minimisation (IsIconic) is left alone, so this
     never fights a deliberate Minimise.
+
+    It also enforces a minimum usable size. pywebview's ``min_size`` is not
+    implemented by the WebView2 backend, so the OS lets the window be dragged down
+    to a few hundred pixels, where the app has no room left: measured at 470x320
+    the top bar alone grew to 268px and the message box's Send row was painted
+    below the window. Growing to the FLOOR (not back to the previous size) means a
+    too-small window is nudged just past the limit instead of jumping.
     """
     import time
     import ctypes
@@ -462,30 +469,50 @@ def size_watchdog(window, get_handle, width: int, height: int, interval: float =
             if not user32.GetWindowRect(wintypes.HWND(int(hwnd)), ctypes.byref(r)):
                 continue
             w, h = r.right - r.left, r.bottom - r.top
-            if w >= 300 and h >= 300:
-                continue
             if bool(user32.IsIconic(wintypes.HWND(int(hwnd)))):
                 continue                       # the user minimised it - respect that
-            # Collapsed by the engine, not by the user: put the size back.
+            target, why = _size_target(w, h, width, height)
+            if not target:
+                continue
+            if why == "floor":
+                note = "below the {}x{} floor - grown to {}x{}".format(
+                    MIN_USABLE_W, MIN_USABLE_H, target[0], target[1])
+            else:
+                note = "collapsed to {}x{} - restored {}x{}".format(
+                    w, h, target[0], target[1])
             try:
-                window.resize(int(width), int(height))
+                window.resize(int(target[0]), int(target[1]))
                 try:
                     window.show()
                 except Exception:
                     pass
-                print("[window] window collapsed to {}x{} - restored {}x{}".format(
-                    w, h, width, height))
+                print("[window] window " + note)
             except Exception:
                 try:
                     SWP_NOZORDER = 0x0004
                     user32.SetWindowPos(wintypes.HWND(int(hwnd)), 0, 0, 0,
-                                        int(width), int(height), SWP_NOZORDER)
-                    print("[window] Win32 resize to {}x{}".format(width, height))
+                                        int(target[0]), int(target[1]), SWP_NOZORDER)
+                    print("[window] " + note + " (Win32)")
                 except Exception as exc:
                     print("[window] could not restore size: {}: {}".format(
                         type(exc).__name__, exc))
         except Exception as exc:
             print("[window] size check failed: {}: {}".format(type(exc).__name__, exc))
+
+
+def _size_target(w: int, h: int, want_w: int, want_h: int):
+    """What a w x h window should be restored to, and why - or (None, "").
+
+    Two different problems land here. The engine collapsing the window to a sliver
+    (~160x28) is put back to the size that was asked for. A window the USER shrank
+    into the unusable band is only nudged up to the floor, so it barely moves
+    instead of springing back to full size.
+    """
+    if w < 300 or h < 300:
+        return (int(want_w), int(want_h)), "collapsed"
+    if w < MIN_USABLE_W or h < MIN_USABLE_H:
+        return (max(w, MIN_USABLE_W), max(h, MIN_USABLE_H)), "floor"
+    return None, ""
 
 
 def _window_fraction_blank(hwnd: int) -> float:
@@ -728,6 +755,11 @@ APP_ID = "TrioForge.Desktop"
 # while the app looked like it would not launch at all.
 _window_ready = False
 _hang_check_error_logged = False
+
+# The smallest window the app can still be used in. pywebview's min_size is not
+# implemented by the WebView2 backend, so size_watchdog() is what actually holds it.
+MIN_USABLE_W = 520
+MIN_USABLE_H = 420
 
 
 def fallback_watchdog(url: str, timeout: float = 25.0, storage: Path = None) -> None:

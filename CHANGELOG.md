@@ -282,6 +282,30 @@ below, so it carries the same version number on a build that is missing all of i
   the row below), which takes the chat area from 156px to **239px** of visible
   history — the chrome used to leave less than a third of the window for the chat.
 
+### A very small window still works
+
+- **The window could be dragged down to nothing.** `min_size: (900, 600)` is asked
+  for, but the WebView2 backend does not implement it, so the OS allowed any size.
+  Measured in headless Chrome: at **650×420** the chrome left the conversation
+  **31px**; at **560×380** the composer's last row — Send included — was painted
+  *below* the window edge (bar top 260 + 167 in a 380px window); at **470×320** the
+  provider/persona/voice/country row wrapped onto four lines, the bar alone grew to
+  268px, and nothing above the chat could give up any height. Three rules stop it:
+  the dropdown row scrolls sideways in one line, the bar may never take more than
+  ~42% of the window (it scrolls instead), and the chat area is explicitly allowed
+  to shrink. Under 620px the model *filter* gives up its row and the pickers squeeze
+  to 80px. The composer is now two rows (115px) at every size, **Send stays on
+  screen down to 400×300**, and the conversation at 650×420 goes from 31px to
+  **85px**.
+- **A real minimum size, enforced where `min_size` cannot.** A 520×420 floor lives
+  in `size_watchdog`: a window dragged below it is nudged *up to the floor only* (it
+  barely moves), while the engine-collapse case still restores the requested size —
+  and a window that is already big enough is never touched.
+- **The scroll-to-bottom arrow no longer sits in the message box.** It was pinned at
+  `bottom: 100px`, which is inside the composer on any window where the composer is
+  taller than that. It now measures the composer and the status bar and anchors
+  above them, and moves when you resize the box.
+
 ### Small quality-of-life
 
 - **🧊 Free memory, and the numbers to watch.** The top bar shows live RAM and VRAM

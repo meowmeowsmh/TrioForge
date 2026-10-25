@@ -4085,6 +4085,72 @@ def test_small_window_chrome_stays_usable() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The window can be dragged very small - WebView2 ignores pywebview's min_size -
+# and the app has to survive it.
+#
+# Measured in headless Chrome before this:
+#   650x420  top bar 230px, conversation 31px
+#   560x380  composer 167px tall and its last row - Send included - painted BELOW
+#            the window (bar top 260 + 167 = 427 in a 380px window)
+#   470x320  the provider/persona/voice/country row wrapped onto four lines, top
+#            bar 268px, Send off-screen
+# and the scroll-to-bottom arrow sat at a fixed bottom:100px, i.e. on top of the
+# message box on any window where the composer was taller than that.
+# After: composer 115px (two rows) at every size, Send inside the window at
+# 400x300, top bar capped at 42vh, conversation 85px at 650x420.
+# ---------------------------------------------------------------------------
+def test_tiny_window_stays_usable() -> None:
+    _title("a very small window keeps its composer and its conversation")
+    import re
+
+    root = Path(__file__).resolve().parent.parent
+    html = (root / "templates" / "index.html").read_text(encoding="utf-8")
+    win = (root / "py" / "tools" / "app_window.py").read_text(encoding="utf-8")
+
+    # 1. The dropdown row scrolls instead of wrapping into four lines, and the bar
+    #    may never take more than ~42% of the window.
+    assert re.search(r"\.top-bar \{ max-height: 42vh; overflow-y: auto; \}", html), \
+        "the top bar can grow without limit again on a short window"
+    assert re.search(r"\.top-bar \.right \{[^}]*flex-wrap: nowrap[^}]*overflow-x: auto", html), \
+        "the dropdown row wraps onto more lines instead of scrolling"
+    # 2. The chat area is allowed to shrink rather than pushing the composer out.
+    assert ".chat-area { min-height: 0; }" in html, \
+        "the chat area can still push the composer below the window"
+    # 3. Narrow windows: drop the model filter and let the pickers squeeze, so the
+    #    composer stays two rows tall.
+    narrow = re.search(r"@media \(max-width: 620px\) \{(.*?)\n\}", html, re.S)
+    assert narrow, "the 620px block is gone"
+    nb = narrow.group(1)
+    assert re.search(r"#modelSearchInput \{ display: none; \}", nb), \
+        "the model filter still costs a composer row on a narrow window"
+    assert re.search(r"\.input-bar \.model-select \{[^}]*min-width: 80px", nb), \
+        "the pickers keep their 120px floor and wrap Send onto a third row"
+
+    # 4. The scroll arrow is measured off the composer, not fixed at 100px.
+    assert re.search(r"scrollBtn\.style\.bottom = Math\.round\(lift\)", html), \
+        "the scroll arrow is positioned by a fixed offset again"
+    assert "bar.offsetHeight" in html and "statusEl.offsetHeight" in html, \
+        "the arrow offset does not measure the composer"
+
+    # 5. A real minimum size, enforced where min_size actually is not.
+    assert re.search(r"^MIN_USABLE_W = \d+", win, re.M) and \
+        re.search(r"^MIN_USABLE_H = \d+", win, re.M), "the usable minimum size is gone"
+    assert "min_size" in win, "the reason min_size cannot do this is no longer documented"
+    from tools import app_window
+    # A normal window is left alone; a user-shrunk one is nudged to the floor and
+    # nothing more; the engine collapse still goes back to the requested size.
+    assert app_window._size_target(1400, 800, 1400, 800) == (None, ""), "a good window was resized"
+    assert app_window._size_target(app_window.MIN_USABLE_W, app_window.MIN_USABLE_H,
+                                   1400, 800) == (None, ""), "the floor itself must be allowed"
+    floor = app_window._size_target(400, 300, 1400, 800)
+    assert floor == ((app_window.MIN_USABLE_W, app_window.MIN_USABLE_H), "floor"), floor
+    collapsed = app_window._size_target(160, 28, 1400, 800)
+    assert collapsed == ((1400, 800), "collapsed"), collapsed
+
+    print("  composer two rows; Send on screen; bar capped; arrow above it -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4133,7 +4199,8 @@ def main() -> int:
              test_scan_case_insensitive, test_model_list_rescans_live,
              test_comfyui_object_info_ttl, test_ctrl_r_refresh_shortcut,
              test_composer_cannot_be_crushed_or_hidden,
-             test_small_window_chrome_stays_usable]
+             test_small_window_chrome_stays_usable,
+             test_tiny_window_stays_usable]
     failed = []
     for t in tests:
         try:

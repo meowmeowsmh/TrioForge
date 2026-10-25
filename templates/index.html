@@ -1543,6 +1543,39 @@ html.view-embed #scrollBottomBtn { display: none !important; }
     #searchInput { font-size: 13px; }
 }
 
+/* ── Very small windows ──────────────────────────────────────────────────────
+   Measured before this: at 650x420 the chrome left the conversation 31px; at
+   470x320 the provider/persona/voice/country row wrapped onto four lines (the bar
+   alone grew to 268px), the chat collapsed to 20px and the message box's second
+   row - Send included - was painted BELOW the window, because nothing above it
+   could give up any height. Three rules stop that:
+     * the dropdown row scrolls sideways in one line instead of wrapping,
+     * the bar may never take more than ~42% of the window (it scrolls instead),
+     * the chat area is explicitly allowed to shrink. */
+@media (max-width: 900px), (max-height: 620px) {
+    .top-bar .right {
+        flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px;
+        scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.22) transparent;
+    }
+    .top-bar .right::-webkit-scrollbar { height: 4px; }
+    .top-bar .right::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 2px; }
+    .top-bar .right > * { flex: 0 0 auto; }
+    .top-bar { max-height: 42vh; overflow-y: auto; }
+    .chat-area { min-height: 0; }
+}
+
+@media (max-width: 620px) {
+    /* The model FILTER is an optimisation; the picker itself is what matters. Not
+       showing it keeps the composer at two rows instead of three. */
+    #modelSearchInput { display: none; }
+    /* Both pickers may squeeze here: a 120-130px basis each is what pushed the
+       voice and Send buttons onto a third composer row (167px tall) on a 400px
+       window, which put Send below the bottom edge. */
+    .input-bar .model-select { flex: 1 1 90px; min-width: 80px; }
+    .top-bar { padding: 6px 8px; }
+    #statusBar { padding: 4px 12px; font-size: 11px; }
+}
+
 /* The player's colours. Dark themes get the deep-space look; the light theme gets a
    quiet grey card. Everything below reads these, so the player can never be a dark
    island on a light page again. */
@@ -2343,6 +2376,7 @@ function applyComposerHeight() {
         var fixed = Math.max(COMPOSER_MIN, Math.min(composerUserH, max));
         msgInput.style.height = fixed + 'px';
         msgInput.style.overflowY = overflowing(fixed) ? 'auto' : 'hidden';
+        if (typeof updateScrollBtn === 'function') updateScrollBtn();
         return;
     }
     msgInput.style.height = 'auto';
@@ -2352,6 +2386,8 @@ function applyComposerHeight() {
     var h = Math.max(COMPOSER_MIN, Math.min(want, max));
     msgInput.style.height = h + 'px';
     msgInput.style.overflowY = overflowing(h) ? 'auto' : 'hidden';
+    // The scroll arrow is anchored above the composer, whose height just changed.
+    if (typeof updateScrollBtn === 'function') updateScrollBtn();
 }
 
 function resetComposerHeight() {
@@ -2953,6 +2989,13 @@ function updateScrollBtn() {
                       chatArea.getBoundingClientRect().height > 0;
     scrollBtn.style.display = (onChat && chatVisible && overflows && below >= 80)
         ? 'block' : 'none';
+    // Sit ABOVE the composer rather than at a fixed 100px: on a small window the
+    // composer is taller than that, so the arrow landed on top of the message box
+    // and the Send button. Its offset is measured, not guessed.
+    var bar = document.querySelector('.input-bar');
+    var statusEl = document.getElementById('statusBar');
+    var lift = 14 + (bar ? bar.offsetHeight : 0) + (statusEl ? statusEl.offsetHeight : 0);
+    scrollBtn.style.bottom = Math.round(lift) + 'px';
 }
 // Leaving the page hides it immediately. Reported flow: scroll up (arrow appears), click
 // Notes - and the arrow was still sitting there while the next page loaded. Hiding on
