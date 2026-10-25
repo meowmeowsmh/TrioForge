@@ -71,12 +71,19 @@ jobs:
       # ── The regression suite (no network, no GPU, no model needed) ────────
       # The explicit errorlevel check matters: a bare `if errorlevel 1` would be
       # masked by the echo on the next line, and cmd would report success.
+      #
+      # The output is also written to regress.log: when this step fails, the log
+      # is the ONLY way to learn which assertion failed, because the raw step log
+      # needs a token to read. regress.log is turned into annotations by the
+      # "Publish diagnostics" step below, which the public API does serve.
       - name: Regression suite (behaviour that has actually broken before)
         shell: cmd
         run: |
           set PYTHONWARNINGS=ignore
-          .venv\Scripts\python.exe tests\regress.py
-          if errorlevel 1 (echo FAIL: regression suite failed & exit /b 1)
+          .venv\Scripts\python.exe tests\regress.py > regress.log 2>&1
+          set REGRESS_RC=%ERRORLEVEL%
+          type regress.log
+          if not %REGRESS_RC%==0 (echo FAIL: regression suite failed & exit /b 1)
           echo PASS: regression suite
 
       # ── 3. The Windows-only logic nothing had ever executed ───────────────
@@ -241,7 +248,8 @@ jobs:
         shell: python
         run: |
           import os
-          for path in ("platform-error.txt", "diag.txt", "app.log"):
+          # regress.log first: a failing test name is the most useful thing here.
+          for path in ("regress.log", "platform-error.txt", "diag.txt", "app.log"):
               if not os.path.exists(path):
                   continue
               text = open(path, errors="replace").read()[-2500:]
@@ -254,6 +262,7 @@ jobs:
         with:
           name: windows-app-log
           path: |
+            regress.log
             app.log
             diag.txt
             help.txt
