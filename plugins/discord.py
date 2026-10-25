@@ -17,7 +17,7 @@
 # secret at all. The only thing saved in TrioForge is where the bridge lives.
 #
 # Setup lives in the 🔌 Connectors panel as a guide, and the long version is in
-# D:\discord-bridge\README.md.
+# the bridge's own README.
 
 import json
 import os
@@ -27,7 +27,10 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SETTINGS_PATH = os.path.join(REPO_ROOT, "json_configuration", "discord_bridge.json")
 
-DEFAULT_BRIDGE_DIR = r"D:\discord-bridge"
+# Where the bridge lives by default. This must not be a machine-specific path: a
+# public repo should never name one computer's drive. The real location is saved
+# in the (gitignored) settings file the first time the user points at it.
+DEFAULT_BRIDGE_DIR = os.path.join(REPO_ROOT, "discord-bridge")
 CALL_TIMEOUT = 45          # seconds: the bridge itself answers in well under a second
 
 MANIFEST = {

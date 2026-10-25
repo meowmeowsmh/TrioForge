@@ -2530,6 +2530,7 @@ def test_vision_paths() -> None:
     _title("images by path")
     import tempfile
 
+    from tui import tools as tools_mod
     from tui import vision
     from tui.commands import is_command
     from tui.tools import t_view
@@ -2568,7 +2569,15 @@ def test_vision_paths() -> None:
 
         # Pixels read as text are noise, and a model asked to explain noise invents
         # an answer ("it appears to be an image of a cat"). view must refuse.
-        refusal = t_view(str(root / "shot.png"))
+        # The image lives in a temp dir outside the cwd, so let that specific read
+        # through the workspace confinement - this test is about images, not about
+        # the confinement (which has its own test).
+        saved_full_fs = tools_mod.ALLOW_FULL_FS
+        tools_mod.ALLOW_FULL_FS = True
+        try:
+            refusal = t_view(str(root / "shot.png"))
+        finally:
+            tools_mod.ALLOW_FULL_FS = saved_full_fs
         assert "is an image" in refusal and "NOT guess" in refusal, refusal
         print("  view refuses an image instead of inventing a description -> OK")
 
@@ -4310,6 +4319,51 @@ def test_tui_provider_variety() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Fixes from the security audit, pinned so they cannot silently regress:
+#   * the TUI file tools are confined to the folder forge was started in
+#   * a garbage llama_port in the config no longer raises in status()
+#   * the host-login page escapes its `next` parameter (pre-auth XSS)
+# ---------------------------------------------------------------------------
+def test_security_audit_fixes_hold() -> None:
+    _title("security-audit fixes")
+    import os
+
+    # 1. The terminal client's file tools cannot silently read/write outside cwd.
+    from tui import tools as tools_mod
+
+    inside = tools_mod._resolve(".")          # the repo, where the suite runs
+    assert tools_mod._in_workspace(inside) is True
+    outside = tools_mod._resolve(os.path.join(os.path.expanduser("~"), ".ssh"))
+    assert tools_mod._in_workspace(outside) is False
+    assert "outside the working directory" in tools_mod._confined(outside)
+    # The escape hatch restores whole-disk access.
+    saved = tools_mod.ALLOW_FULL_FS
+    tools_mod.ALLOW_FULL_FS = True
+    try:
+        assert tools_mod._confined(outside) is None
+    finally:
+        tools_mod.ALLOW_FULL_FS = saved
+    print("  file tools confined to the working directory; opt-out env works -> OK")
+
+    # 2. A non-numeric llama_port must not 500 the status route.
+    import llamacpp_service as svc
+    real_config = svc._config
+    svc._config = lambda: {"llama_port": "not-a-port"}
+    try:
+        assert svc.status()["port"] == 8080, svc.status()
+    finally:
+        svc._config = real_config
+    print("  a garbage llama_port falls back to 8080 instead of raising -> OK")
+
+    # 3. The host-login page must not let `next` break out of its attribute.
+    import app as forge_app
+    page = forge_app._host_login_page(next_url='/" autofocus onfocus="alert(1)')
+    assert '" autofocus onfocus="alert(1)' not in page, page
+    assert "&quot;" in page or "&quot;" in page, "next was not HTML-escaped"
+    print("  login `next` is HTML-escaped (no attribute breakout) -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4361,7 +4415,8 @@ def main() -> int:
              test_small_window_chrome_stays_usable,
              test_tiny_window_stays_usable,
              test_suggest_links_actually_creates_threads,
-             test_tui_provider_variety]
+             test_tui_provider_variety,
+             test_security_audit_fixes_hold]
     failed = []
     for t in tests:
         try:

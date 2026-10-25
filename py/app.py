@@ -346,6 +346,11 @@ app.secret_key = _host_secret()
 
 def _host_login_page(error: str = "", next_url: str = "/") -> str:
     """On-brand, dependency-free login page."""
+    # `next` comes from the query string and is written into an HTML attribute, so
+    # it must be escaped: /login?next=/"><script>… is served WITHOUT the password
+    # (login is a host-open path), and unescaped it breaks out of value="…".
+    from html import escape
+    next_url = escape(next_url)
     err = ('<p style="color:#f85149;margin:0 0 14px">{}</p>'.format(error)) if error else ""
     return """<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">

@@ -959,6 +959,7 @@ NOTES_HTML = r"""<!DOCTYPE html>
 <link rel="apple-touch-icon" href="/static/pwa/apple-touch-icon.png">
 <title>Notes · Obsidian + AI + Weather</title>
 <script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
 <!-- vis-network for graph view -->
 <script src="/static/vendor/vis-network.min.js"></script>
 <link href="/static/vendor/vis-network.min.css" rel="stylesheet" type="text/css" />
@@ -2299,6 +2300,16 @@ html.embedded #fsBtn { display: none !important; }</style>
         return (text || '').replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
     }
 
+    // ─── Safe HTML + Markdown ───────────────────────────
+    // marked passes raw HTML through, so a note whose body contains
+    // `<img src=x onerror=…>` would otherwise execute for anyone who opens it.
+    // (escapeHtml is declared once, further down in this same script.)
+    function md(source) {
+        var html = '';
+        try { html = marked.parse(source || ''); } catch (e) { html = String(source); }
+        try { return DOMPurify.sanitize(html); } catch (e) { return escapeHtml(String(source)); }
+    }
+
     // ─── Markdown preview with Obsidian links ──────────
     function renderWikiPreview(htmlContent) {
         // Replace ![[Title]] with embedded blockquote
@@ -2314,11 +2325,11 @@ html.embedded #fsBtn { display: none !important; }</style>
                 var note = notesData[foundId];
                 var snippet = note.content.substring(0, 300) + (note.content.length > 300 ? '…' : '');
                 return `<blockquote style="border-left:3px solid #58a6ff; padding-left:12px; margin:8px 0; background:rgba(255,255,255,0.03); border-radius:4px;">
-                    📄 <strong><a href="#" onclick="selectNote('${foundId}')">${title}</a></strong><br>
-                    ${marked.parse(convertHighlights(snippet))}
+                    📄 <strong><a href="#" onclick="selectNote('${escapeHtml(foundId)}')">${escapeHtml(title)}</a></strong><br>
+                    ${md(convertHighlights(snippet))}
                 </blockquote>`;
             }
-            return `<span style="color:#f85149;">[![[${title}]]]</span>`;
+            return `<span style="color:#f85149;">[![[${escapeHtml(title)}]]]</span>`;
         });
         // Replace [[Title]] with clickable link
         htmlContent = htmlContent.replace(/\[\[([^\]]+)\]\]/g, function(match, title) {
@@ -2330,7 +2341,7 @@ html.embedded #fsBtn { display: none !important; }</style>
                 }
             }
             if (foundId) {
-                return `<a href="#" onclick="selectNote('${foundId}')" style="color:#58a6ff; text-decoration:underline;">${title}</a>`;
+                return `<a href="#" onclick="selectNote('${escapeHtml(foundId)}')" style="color:#58a6ff; text-decoration:underline;">${escapeHtml(title)}</a>`;
             }
             return `<span style="color:#f85149;">[[${title}]]</span>`;
         });
@@ -2340,7 +2351,7 @@ html.embedded #fsBtn { display: none !important; }</style>
     function updatePreview() {
         var content = document.getElementById('noteContentInput').value;
         var preview = document.getElementById('notePreview');
-        var rendered = marked.parse(convertHighlights(content || ''));
+        var rendered = md(convertHighlights(content || ''));
         rendered = renderWikiPreview(rendered);
         preview.innerHTML = rendered;
     }

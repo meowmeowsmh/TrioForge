@@ -572,7 +572,10 @@ def server_ready(host, port, timeout=180):
 def status():
     cfg = _config() or {}
     host = cfg.get("llama_host", "127.0.0.1")
-    port = int(cfg.get("llama_port", 8080))
+    try:
+        port = int(cfg.get("llama_port", 8080))
+    except (TypeError, ValueError):
+        port = 8080
     running = _port_in_use(host, port)
     model = os.path.basename(_running_model) if _running_model else (cfg.get("model", ""))
     return {"running": running, "host": host, "port": port, "model": model}
@@ -1124,12 +1127,24 @@ def start(model=None, ctx_size=None):
         # startup, so a context change means a restart).
         terminated_ours = False
         if _process is not None and _process.poll() is None:
+            old = _process
+            _process = None
             try:
-                _process.terminate()
+                old.terminate()
                 terminated_ours = True
+                # Reap the child before replacing the handle: Popen's destructor
+                # does not wait, so skipping this left a zombie llama-server entry
+                # on every model/context switch.
+                try:
+                    old.wait(timeout=5)
+                except Exception:
+                    old.kill()
+                    try:
+                        old.wait(timeout=5)
+                    except Exception:
+                        pass
             except Exception:
                 pass
-            _process = None
 
         # If the port is taken by an external process, figure out whether it is
         # actually serving the requested model. A stale server (e.g. one started
@@ -1442,17 +1457,33 @@ def stop():
     with _lock:
         child = (_process.pid if (_process is not None and _process.poll() is None)
                  else None)
+        our_model = _running_model      # the model WE launched, before it is cleared
         _process = None
         _running_model = None
         _running_ctx = None
     if child:
         targets.add(child)
 
+    # A stale server left over from an earlier app instance serves OUR model; only
+    # then is killing a foreign pid (that is not our child) ever justified. Port 8080
+    # is a popular dev port, so a llama-server the USER started by hand with a
+    # different model must survive a "free memory" / idle-unload stop. The idle
+    # watchdog calls this automatically, so the old behaviour could silently kill a
+    # 6 GB+ hand-launched server.
+    serves_ours = None
+    if our_model:
+        try:
+            serving = _server_model(host, port)
+            if serving and _same_model(serving, our_model):
+                serves_ours = serving
+        except Exception:
+            serves_ours = None
+
     killed, refused = [], []
     for pid in sorted(targets):
-        # Only llama-server, or the child we spawned ourselves. Port 8080 is a
-        # popular dev port: this must never take down somebody else's server.
-        if pid == child or _is_llama_server(pid):
+        # Only llama-server, or the child we spawned ourselves - and a foreign
+        # llama-server only when it is serving the model we started.
+        if pid == child or (serves_ours and _is_llama_server(pid)):
             if _kill_pid(pid):
                 killed.append(pid)
         else:

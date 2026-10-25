@@ -59,11 +59,44 @@ def _resolve(path: str) -> Path:
     return p if p.is_absolute() else (Path.cwd() / p)
 
 
+# The file tools are confined to the folder `forge` was started in. The web app
+# does the same for its workspace, and for the same reason: a prompt-injected (or
+# just over-eager) model should not silently read `~/.ssh`, `.env`, or the
+# connector credential files with no prompt at all - `view`/`grep`/`glob`/`ls` are
+# not "dangerous" tools, so they run without approval. `bash` remains the gated
+# escape hatch for anything genuinely outside the workspace.
+WORKSPACE_ROOT = os.path.realpath(os.environ.get("TRIOFORGE_WORKSPACE") or os.getcwd())
+ALLOW_FULL_FS = os.environ.get("TRIOFORGE_ALLOW_FULL_FS", "").strip().lower() in (
+    "1", "true", "yes", "on")
+
+
+def _in_workspace(p: Path) -> bool:
+    if ALLOW_FULL_FS:
+        return True
+    try:
+        real = os.path.realpath(p)
+    except Exception:      # noqa: BLE001 - a path that cannot be resolved is refused
+        return False
+    prefix = WORKSPACE_ROOT if WORKSPACE_ROOT.endswith(os.sep) else WORKSPACE_ROOT + os.sep
+    return real == WORKSPACE_ROOT or real.startswith(prefix)
+
+
+def _confined(p: Path) -> str | None:
+    """Error string when a path escapes the workspace, or None when it is allowed."""
+    if _in_workspace(p):
+        return None
+    return ("error: {p} is outside the working directory ({root}). Run forge from "
+            "the folder to work in, or set TRIOFORGE_ALLOW_FULL_FS=1 to allow reads "
+            "anywhere.").format(p=p, root=WORKSPACE_ROOT)
+
+
 # ------------------------------------------------------------------- the tools
 
 
 def t_ls(path: str = ".", **_kw) -> str:
     p = _resolve(path)
+    if (msg := _confined(p)):
+        return msg
     if not p.is_dir():
         return f"error: not a directory: {p}"
     entries = []
@@ -88,6 +121,8 @@ def t_ls(path: str = ".", **_kw) -> str:
 def t_view(file_path: str = "", offset: int = 1, limit: int = DEFAULT_READ_LIMIT,
            **_kw) -> str:
     p = _resolve(file_path)
+    if (msg := _confined(p)):
+        return msg
     if p.is_dir():
         return f"error: {p} is a folder, not a file — pass a file path"
     if not p.is_file():
@@ -138,6 +173,8 @@ def t_write(file_path: str = "", content: str = "", **_kw) -> str:
     if not file_path or not file_path.strip():
         return "error: write needs a file_path (and content)"
     p = _resolve(file_path)
+    if (msg := _confined(p)):
+        return msg
     # A directory path resolves to the folder itself (the agent's cwd is often
     # the home dir), and write_text on it raised a raw "Permission denied" that
     # read like a crash. Say what it is instead.
@@ -161,6 +198,8 @@ def t_edit(file_path: str = "", old_string: str = "", new_string: str = "",
     silently edit the wrong place, which is worse than failing.
     """
     p = _resolve(file_path)
+    if (msg := _confined(p)):
+        return msg
     if p.is_dir():
         return f"error: {p} is a folder, not a file — view a file inside it first"
     if not p.is_file():
@@ -252,6 +291,8 @@ def t_bash(command: str = "", working_dir: str = "", **_kw) -> str:
 
 def t_grep(pattern: str = "", path: str = ".", include: str = "", **_kw) -> str:
     p = _resolve(path)
+    if (msg := _confined(p)):
+        return msg
     try:
         rx = re.compile(pattern)
     except re.error as exc:
@@ -278,6 +319,8 @@ def t_grep(pattern: str = "", path: str = ".", include: str = "", **_kw) -> str:
 
 def t_glob(pattern: str = "*", path: str = ".", **_kw) -> str:
     p = _resolve(path)
+    if (msg := _confined(p)):
+        return msg
     try:
         found = sorted(str(f.relative_to(p)) for f in p.rglob(pattern) if f.is_file())
     except OSError as exc:
@@ -572,6 +615,14 @@ _SECRET_RES = [
                r"|(?=[A-Za-z0-9_\-]*\d)[A-Za-z0-9_\-]{16,}(?![\w.(]))"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
                re.S),
+    # Prefixed tokens from the big providers, so a viewed key is masked even when
+    # it is not written as `key = …`: AWS access keys, GitHub PATs, Slack and
+    # Google service keys, Stripe live/test keys.
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    re.compile(r"\bsk_(?:live|test)_[A-Za-z0-9]{10,}\b"),
 ]
 
 
@@ -588,6 +639,8 @@ def _redact(text: str) -> str:
     out = _SECRET_RES[1].sub(r"\1[REDACTED]", out)
     out = _SECRET_RES[2].sub(r"\1=[REDACTED]", out)
     out = _SECRET_RES[3].sub("[REDACTED PRIVATE KEY]", out)
+    for rx in _SECRET_RES[4:]:
+        out = rx.sub("[REDACTED]", out)
     return out
 
 

@@ -1030,6 +1030,7 @@ CORKBOARD_HTML = r"""<!DOCTYPE html>
 <link rel="apple-touch-icon" href="/static/pwa/apple-touch-icon.png">
 <title>Trio-Forge Cork Board · AI‑Powered</title>
 <script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
 <style>
 /* ── Base (same as original) ─────────────────────────── */
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -2439,7 +2440,7 @@ function updatePinElement(el, pin) {
     el.style.height = h + 'px';
     el.style.transform = 'translate3d(' + (pin.x || 40) + 'px, ' + (pin.y || 40) + 'px, 0) rotate(' + (pin.rotation || 0) + 'deg)';
 
-    var contentHtml = marked.parse(convertHighlights(pin.content || ''));
+    var contentHtml = md(convertHighlights(pin.content || ''));
     var tagsHtml = (pin.tags || []).map(t => `<span class="tag-label">#${escapeHtml(t)}</span>`).join('');
 
     el.innerHTML = `
@@ -3500,7 +3501,7 @@ function closeModal() {
 function togglePreview() {
     var preview = document.getElementById('pinPreview');
     var content = document.getElementById('pinContent').value;
-    preview.innerHTML = marked.parse(convertHighlights(content || ''));
+    preview.innerHTML = md(convertHighlights(content || ''));
     preview.classList.toggle('visible');
 }
 
@@ -3508,6 +3509,15 @@ function togglePreview() {
 // handing content to marked.js, which has no built-in syntax for it.
 function convertHighlights(text) {
     return (text || '').replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
+}
+
+// marked passes raw HTML through, so a pin whose body contains
+// `<img src=x onerror=…>` would execute for whoever opens the board.
+// (escapeHtml is declared elsewhere in this script.)
+function md(source) {
+    var html = '';
+    try { html = marked.parse(source || ''); } catch (e) { html = String(source); }
+    try { return DOMPurify.sanitize(html); } catch (e) { return escapeHtml(String(source)); }
 }
 
 // ─── AI Assist in Modal ──────────────────────────────

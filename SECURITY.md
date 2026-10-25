@@ -1,7 +1,9 @@
 # Security Policy
 
 ## Reporting a Vulnerability
-Please do **not** open a public issue. Email **limcherng1@gmail.com**
+Please do **not** open a public issue. Use GitHub's private reporting
+instead: **Security → Report a vulnerability** on the repository
+(https://github.com/meowmeowsmh/TrioForge/security/advisories/new),
 with a description, reproduction steps, and impact. You'll get an
 acknowledgement within 48 hours.
 
