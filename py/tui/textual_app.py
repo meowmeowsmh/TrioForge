@@ -1481,8 +1481,8 @@ class ForgeApp(App):
         self.cfg.route_enabled = enabled
         self.cfg.route_pool = selected
         providers.save(self.cfg)
-        self._add_meta(f"auto-route {'ON' if enabled else 'OFF'} · "
-                        f"{len(selected)} model(s) in the pool")
+        self._add_meta(f"{len(selected)} model(s) in the team · "
+                       f"auto-route {'ON' if enabled else 'OFF'}")
         self._refresh()
 
     def _target_status(self) -> str:
@@ -2431,6 +2431,13 @@ class ForgeApp(App):
             self._route(arg)
             self._ask(arg)
             return
+        # /pool with no argument opens the multi-select panel - nobody remembers
+        # exact "provider:model" ids, so pick them from the list instead (select
+        # as many as you want; /team runs them all). /pool add/remove/clear still
+        # work for scripts.
+        if name == "/pool" and not arg:
+            self.run_worker(self._router_panel(), exclusive=False)
+            return
 
         class _Ctx:
             pass
@@ -3114,7 +3121,7 @@ class InputDialog(ModalScreen):
 
 
 class RouterScreen(ModalScreen):
-    """ctrl+a (empty prompt): choose which models auto-route may use.
+    """ctrl+a or /pool (empty prompt): choose the team's models.
 
     ``space`` / click toggles a model's checkbox; ``a`` toggles auto-route itself;
     ``enter`` saves; ``escape`` cancels. ``push_screen_wait`` resolves to
@@ -3144,10 +3151,10 @@ class RouterScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="routerbox"):
-            yield Static(f"[bold {T.YELLOW}]auto-route[/]", id="routerhead")
+            yield Static(f"[bold {T.YELLOW}]team models[/]", id="routerhead")
             yield Static("", id="routerstatus")
             yield ListView(id="routerlist")
-            yield Static(f"[{T.GREY}]space/click toggle a model · a auto on/off · "
+            yield Static(f"[{T.GREY}]space/click toggle a model · a auto-route on/off · "
                          f"enter done · esc cancel[/]", id="routerhint")
 
     def on_mount(self) -> None:

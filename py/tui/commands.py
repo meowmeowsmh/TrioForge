@@ -76,8 +76,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/team", "tui"),
         Cmd("/roles", "senior plans+reviews, junior codes+fixes (planner → coder → reviewer → fixer)",
             "/roles", "tui"),
-        Cmd("/pool [add|remove|clear]", "choose the team's models (local:name or provider:model)",
-            "/pool add deepseek:deepseek-chat"),
+        Cmd("/pool", "pick the team's models from a list (add/remove/clear for scripts)",
+            "/pool"),
         Cmd("/copy [n]", "copy an answer (n = how many answers back)", "/copy 2"),
     ]),
     ("llama.cpp", [
