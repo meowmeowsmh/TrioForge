@@ -1399,6 +1399,24 @@ class ForgeApp(App):
             out[name] = live
         return out
 
+    def _cached_provider_models(self) -> dict:
+        """Cached provider /models lists only - never touches the network.
+
+        The /pool panel opens instantly with these (plus local .gguf files and
+        the config's fallback names), then :meth:`_refresh_router_live` fills in
+        the real lists in the background. A cold cache means "nothing yet", so
+        the caller still opens the panel and lets the live pass populate it.
+        """
+        now = time.time()
+        out = {}
+        for name, entry in (self.cfg.providers or {}).items():
+            if name == "local" or not entry.get("base_url"):
+                continue
+            cached = self._providers_cache.get(name)
+            if cached and now - cached[0] < 120:
+                out[name] = cached[1]
+        return out
+
     def _route_candidates(self, live=None):
         """Every model auto-route may pick from, as (key, label) pairs.
 
@@ -1413,10 +1431,10 @@ class ForgeApp(App):
         out = []
         for m in lm.available():
             out.append((f"local:{m.name}", f"💻 {m.name}  · {m.size_gb:.1f} GB"))
-        for name in ("deepseek", "claude", "groq", "gemini", "openrouter",
-                     "huggingface", "ollama"):
-            entry = self.cfg.providers.get(name, {})
-            if not entry.get("base_url"):
+        # Every configured chat provider, not a hard-coded handful: a key added
+        # for openai/xai/mistral/... must be pickable in /pool too.
+        for name, entry in (self.cfg.providers or {}).items():
+            if name == "local" or not entry.get("base_url"):
                 continue
             has = "key" if providers.resolve(entry.get("api_key", "")) else "no key"
             kind = "💻" if name in offline else "☁"
@@ -1460,19 +1478,28 @@ class ForgeApp(App):
             providers.save(self.cfg)
 
     async def _router_panel(self) -> None:
-        """ctrl+a with no prompt: pick models and toggle auto-route."""
+        """ctrl+a with no prompt: pick models and toggle auto-route.
+
+        The screen opens INSTANTLY with local .gguf files, cached provider lists
+        and the config's fallback names. Provider /models lists are then fetched
+        in the background and merged in as they arrive - asking every provider up
+        front, each with its own network timeout, used to freeze the panel and
+        made /pool feel broken on any machine with one slow or dead endpoint.
+        """
         import asyncio
 
-        # Ask each provider what it actually offers, off the UI thread: an
-        # unreachable one (Ollama not running) would otherwise freeze the panel
-        # for as long as its timeout.
-        live = await asyncio.to_thread(self._live_provider_models)
-        candidates = self._route_candidates(live)
-        if not candidates:
+        candidates = self._route_candidates(self._cached_provider_models())
+        has_cloud = any(
+            entry.get("base_url")
+            for name, entry in (self.cfg.providers or {}).items()
+            if name != "local")
+        if not candidates and not has_cloud:
             self._add_meta("no models to route between — download a .gguf or add a key")
             return
-        result = await self.push_screen_wait(
-            RouterScreen(candidates, self._route_pool, self._auto_route))
+        screen = RouterScreen(candidates, self._route_pool, self._auto_route)
+        live_task = asyncio.create_task(self._refresh_router_live(screen))
+        result = await self.push_screen_wait(screen)
+        live_task.cancel()
         if result is None:
             return
         enabled, selected = result
@@ -1484,6 +1511,36 @@ class ForgeApp(App):
         self._add_meta(f"{len(selected)} model(s) in the team · "
                        f"auto-route {'ON' if enabled else 'OFF'}")
         self._refresh()
+
+    async def _refresh_router_live(self, screen) -> None:
+        """Fill an open /pool screen with each provider's real model list.
+
+        Runs concurrently with the modal; every provider is fetched in a thread
+        so an unreachable endpoint cannot block the UI, and each result is merged
+        into the list the moment it lands (fast providers appear first).
+        """
+        import asyncio
+
+        for name, entry in (self.cfg.providers or {}).items():
+            if name == "local" or not entry.get("base_url"):
+                continue
+            cached = self._providers_cache.get(name)
+            if cached and time.time() - cached[0] < 120:
+                continue  # already shown from the cache in the initial render
+            key = providers.resolve(entry.get("api_key", ""))
+            try:
+                models = await asyncio.to_thread(
+                    fetch_models, entry["base_url"], key)
+            except Exception:  # noqa: BLE001 - a dead provider just stays empty
+                models = []
+            if not models:
+                continue
+            self._providers_cache[name] = (time.time(), models)
+            kind = "💻" if name == "ollama" else "☁"
+            has = "key" if key else "no key"
+            screen.add_candidates(
+                [(f"{name}:{m}", f"{kind} {name}:{m}  · {has}")
+                 for m in models[:6]])
 
     def _target_status(self) -> str:
         """Check the destination is actually usable, and say so in one line.
@@ -3179,6 +3236,29 @@ class RouterScreen(ModalScreen):
         self.query_one("#routerstatus", Static).update(
             f"[{style}]auto-route {'ON' if on else 'OFF'}[/] · "
             f"{len(self._selected)} model(s) selected")
+
+    def add_candidates(self, pairs) -> None:
+        """Merge late-arriving models (live provider lists) into the open list.
+
+        Appends only keys not already present, in place, without resetting the
+        cursor - so a provider that answers first shows up first and the user's
+        scroll position survives. If the screen hasn't mounted yet the pairs are
+        queued in ``_candidates`` and picked up by ``on_mount``'s rebuild.
+        """
+        if self._done:
+            return
+        existing = {k for k, _ in self._candidates}
+        added = [(k, l) for k, l in pairs if k not in existing]
+        if not added:
+            return
+        self._candidates.extend(added)
+        if not self.is_mounted:
+            return
+        lv = self.query_one("#routerlist", ListView)
+        for key, label in added:
+            mark = "☑" if key in self._selected else "☐"
+            self._keys.append(key)
+            lv.append(ListItem(Label(f"{mark}  {label}")))
 
     def _toggle_at(self, idx) -> None:
         if not (0 <= idx < len(self._keys)):

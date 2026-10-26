@@ -1188,6 +1188,36 @@ async def _tui_checks() -> None:
             f"picking a level did not stick: {app.cfg.thinking!r}"
         print("  /thinking and ctrl+t open the provider-style picker -> OK")
 
+        # /pool must open INSTANTLY. The old path asked EVERY provider for its
+        # /models up front - each with its own network timeout - so one dead
+        # endpoint froze the panel before it appeared. Now the screen opens with
+        # local .gguf files + cached lists, and the live lists merge in behind
+        # it. Drive the real command and watch the merge land.
+        app._providers_cache = {}
+        saved_fetch = ta.fetch_models
+        def _fake_fetch(base_url, api_key=""):
+            if "api.deepseek.com" in (base_url or ""):
+                return ["deepseek-flash", "deepseek-chat"]
+            return []
+        ta.fetch_models = _fake_fetch
+        try:
+            app._command("/pool")
+            assert await settle(lambda: isinstance(app.screen, ta.RouterScreen)), \
+                "bare /pool must open the team picker in the full-screen client"
+            assert await settle(
+                lambda: "deepseek:deepseek-chat" in getattr(app.screen, "_keys", [])), \
+                "live provider models never merged into the open /pool screen"
+            keys = list(getattr(app.screen, "_keys", []))
+            assert keys.count("deepseek:deepseek-flash") == 1, \
+                f"a config-fallback model was duplicated by the live merge: {keys}"
+            await pilot.press("escape")
+            assert await settle(
+                lambda: not isinstance(app.screen, ta.RouterScreen)), \
+                "escape must close the /pool screen"
+        finally:
+            ta.fetch_models = saved_fetch
+        print("  /pool opens instantly and merges live provider models -> OK")
+
 
 def _cards(app):
     from tui import textual_app as ta
