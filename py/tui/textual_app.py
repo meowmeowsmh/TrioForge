@@ -1594,11 +1594,55 @@ class ForgeApp(App):
             temperature=getattr(self.args, "temperature", 0.7),
             max_tokens=self.cfg.max_tokens)
 
+    def _local_model_fallback(self) -> str:
+        """A real local .gguf path to route to, or "" when none is known.
+
+        The pool's ``local:`` entry wins; when it is absent (the user picked
+        cloud models only) this prefers the configured model - but ONLY when it
+        names a local .gguf. ``cfg.model`` may hold a cloud id like
+        ``deepseek-v4-pro`` from a previous provider, and reusing that as the
+        local target is exactly how "local model not found: deepseek-v4-pro"
+        happened (and got persisted to disk).
+        """
+        from . import localmodels as lm
+        # A persisted local model is a .gguf path; a cloud id never ends in
+        # .gguf. Trust the suffix even when the file cannot be re-scanned (a CI
+        # fake path), so a real local model is never erased by a local route.
+        for name in (self.cfg.model, self.session.model):
+            if name and name.lower().endswith(".gguf"):
+                return name
+        local = lm.available()
+        # Otherwise, a short name that resolves to a model on disk - exact
+        # basename only, never a substring guess.
+        for name in (self.cfg.model, self.session.model):
+            if not name:
+                continue
+            base = os.path.basename(name).lower()
+            for m in local:
+                if base in (m.name.lower(), os.path.basename(m.path).lower()):
+                    return m.path
+        return local[0].path if local else ""
+
+    def _resolve_local_target(self, model: str) -> str:
+        """Turn a pool/model name into a real .gguf path, or "" when unknown.
+
+        A value already ending in .gguf IS the local model (keep it as-is even
+        if the file can't be re-scanned right now); anything else is a short
+        name that must resolve to a file on disk.
+        """
+        from . import localmodels as lm
+        if not model:
+            return ""
+        if model.lower().endswith(".gguf"):
+            return model
+        found = lm.find(model)
+        return found.path if found else ""
+
     def _route(self, text: str) -> dict:
         """Decide local vs cloud for ``text`` and point the app at the winner.
 
         The chosen models come from the ctrl+a pool; when nothing is selected the
-        defaults are used (current local model, first keyed cloud provider) so
+        defaults are used (a real local .gguf, first keyed cloud provider) so
         routing still works out of the box.
         """
         from . import router
@@ -1606,38 +1650,35 @@ class ForgeApp(App):
         cloud_provider, cloud_url, cloud_model = self._cloud_target()
         if cloud is not None:
             cloud_provider, cloud_url, cloud_model = cloud
+        if local_model:
+            local_model = self._resolve_local_target(local_model)
         if not local_model:
-            # The pool may hold NO local entry (the user picked cloud models
-            # only). A local route then has no model of its own, so fall back to
-            # the configured one - and if even that is unset, ask the machine
-            # rather than routing to a nameless "default".
-            local_model = self.cfg.model or auto_model(self.cfg.base_url,
-                                                       self.cfg.api_key) or ""
+            local_model = self._local_model_fallback()
         decision = router.decide(
             text, cloud_provider=cloud_provider, cloud_url=cloud_url,
             cloud_model=cloud_model, local_model=local_model)
 
+        # A "local" verdict needs a local model. With a cloud-only pool and no
+        # .gguf on disk, local is impossible: send it to the cloud model we DO
+        # have (unless that cloud is unreachable, which decide() already reports
+        # as "offline").
+        if (decision["provider"] == "local" and not local_model
+                and cloud is not None
+                and not decision.get("reason", "").startswith("offline")):
+            decision = {"engine": "cloud", "provider": cloud_provider,
+                        "model": cloud_model,
+                        "reason": "no local model — routed to cloud",
+                        "complexity": decision.get("complexity", "simple")}
+
         self.cfg.provider = decision["provider"]
         model = decision.get("model") or ""
-        if not model and decision["provider"] == "local":
-            # An empty decision must NEVER erase the configured model. It used
-            # to: a pool with no local entry returned "" for a local route, and
-            # saving that wrote model:"" to disk - the gguf path was gone for
-            # good and every later launch showed the model as "default".
-            model = self.cfg.model or auto_model(self.cfg.base_url,
-                                                 self.cfg.api_key) or ""
-        if decision["provider"] == "local" and model:
-            # The routing pool holds the picker's SHORT name ("gemma-3-12b-it"),
-            # but llama.cpp needs a real path: resolve_model() treats a bare name
-            # as a relative path, fails, and the turn dies with "model not
-            # found". _set_model already does this conversion; routing must too.
-            from . import localmodels as lm
-            found = lm.find(model)
-            if found:
-                model = found.path
-        if model:
-            # Only ever assign a real model; an empty one leaves the config and
-            # the session exactly as they were.
+        if decision["provider"] == "local":
+            # Store the REAL path, never a cloud id: a local route leaves the
+            # configured model as either a .gguf path or "" (so _ask can say
+            # "pick a model" instead of "model not found: deepseek-v4-pro").
+            self.cfg.model = model
+            self.session.model = model
+        elif model:
             self.cfg.model = model
             self.session.model = model
         if not isinstance(self.backend, EchoBackend):

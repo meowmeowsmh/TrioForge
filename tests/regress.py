@@ -1218,6 +1218,30 @@ async def _tui_checks() -> None:
             ta.fetch_models = saved_fetch
         print("  /pool opens instantly and merges live provider models -> OK")
 
+        # Routing to LOCAL must never treat a cloud id in cfg.model as a local
+        # .gguf. The observed bug: a cloud-only pool routed "hello" to local,
+        # and the fallback stuffed "deepseek-v4-pro" into the local model slot,
+        # so _ensure_local_server died with "local model not found:
+        # deepseek-v4-pro" - and persisted that poison to disk.
+        from tui import router as _router2
+        saved2 = (app.cfg.provider, app.cfg.model, app.session.model, app._route_pool)
+        _real_reachable2 = _router2.reachable
+        _router2.reachable = lambda url, timeout=3.0: False    # force the local route
+        app.cfg.provider = "deepseek"
+        app.cfg.model = "deepseek-v4-pro"
+        app.session.model = "deepseek-v4-pro"
+        app._route_pool = ["deepseek:deepseek-v4-pro"]          # cloud only, no local:
+        try:
+            app._route("hello")
+            assert app.session.model != "deepseek-v4-pro", \
+                f"a cloud id leaked into the local model slot: {app.session.model!r}"
+            assert app.cfg.model != "deepseek-v4-pro", \
+                f"a cloud id was persisted as the local model: {app.cfg.model!r}"
+        finally:
+            _router2.reachable = _real_reachable2
+            (app.cfg.provider, app.cfg.model, app.session.model, app._route_pool) = saved2
+        print("  routing to local never swallows a cloud model id -> OK")
+
 
 def _cards(app):
     from tui import textual_app as ta
