@@ -247,7 +247,18 @@ jobs:
         if: failure()
         shell: python
         run: |
-          import os, re
+          import os, sys
+          # regress.log is UTF-8 and full of emoji (☀️💻👥✅☁). The runner's
+          # console is cp1252, so a bare print(emoji) raised UnicodeEncodeError -
+          # which made THIS step fail and swallowed the very traceback it exists
+          # to surface. Force UTF-8 on both streams before printing anything.
+          for stream in (sys.stdout, sys.stderr):
+              reconfigure = getattr(stream, "reconfigure", None)
+              if reconfigure is not None:
+                  try:
+                      reconfigure(encoding="utf-8", errors="replace")
+                  except Exception:
+                      pass
           # regress.log first: a failing test's TRACEBACK is what actually matters,
           # and it is printed at the point of failure (early in the log), so the
           # last-2500-chars tail only ever showed the terminal-client section and
@@ -256,12 +267,21 @@ jobs:
           for path in ("regress.log", "platform-error.txt", "diag.txt", "app.log"):
               if not os.path.exists(path):
                   continue
-              text = open(path, errors="replace").read()
+              try:
+                  text = open(path, encoding="utf-8", errors="replace").read()
+              except OSError:
+                  continue
               if path == "regress.log" and len(text) > 30000:
                   # Keep the head (which holds the FAIL + traceback) and the tail.
                   text = text[:16000] + "\n...[middle omitted]...\n" + text[-10000:]
+              # Drop control characters a workflow command cannot carry; keep
+              # emoji (printable) now that stdout is UTF-8.
+              text = "".join(ch if ch.isprintable() or ch in "\n\t" else "?" for ch in text)
               escaped = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
-              print("::error title=%s::%s" % (path, escaped))
+              try:
+                  print("::error title=%s::%s" % (path, escaped))
+              except Exception:
+                  pass
 
       - name: Upload logs on failure
         if: failure()
