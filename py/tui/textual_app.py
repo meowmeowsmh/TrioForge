@@ -2454,7 +2454,10 @@ class ForgeApp(App):
         # stale entry silently reverts the switch and freezes the sidebar's green
         # "active" marker on the old model. /start was the worst case: the server
         # really was serving the new model while the UI still named the old one.
-        if name in ("/model", "/start", "/provider"):
+        # /pool edits the pool directly, so the in-memory copy must be reloaded.
+        if name == "/pool":
+            self._route_pool = list(self.cfg.route_pool or [])
+        elif name in ("/model", "/start", "/provider"):
             self._sync_route_pool_local()
         self._refresh()
 

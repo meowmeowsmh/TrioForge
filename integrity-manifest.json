@@ -75,7 +75,7 @@
   "py/tui/app.py": "57bd92cde0532279ddb3de970fdda5de572f2514193669b08b04df5088a6cc9d",
   "py/tui/backend.py": "f8bfe713c21ad079359cc324ec3e2506fc9ecbd6c5a4453b88a109774aa6103f",
   "py/tui/cli.py": "5241cf5aa16a3d415f0f699ad555c11efd5a571791063d0c1be8669ea53d5354",
-  "py/tui/commands.py": "a717e6b7aaa7835293b4c4464aa951ddad06190c0f0701b6fa11070d02f1655f",
+  "py/tui/commands.py": "0e3f30b4d072f031a46a1aa326a4cce0f325e4101bef45d74fa187f0e174d6ce",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
@@ -86,7 +86,7 @@
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
-  "py/tui/textual_app.py": "1863e00729ed03cdaa77a111204bfe13c1185fb57774cafe9a9066095f3488d7",
+  "py/tui/textual_app.py": "1290e9c29cf7e187e8a6506474c89bf54f7863706ca93ab6cfa378a95a4d77c2",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "d6e2d9e511536af807f3057343b09f32186fcecf73de1510366984fff16cd418",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
@@ -122,6 +122,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-26T23:23:54",
- "note": "web search loop fixes"
+ "generated": "2026-10-27T00:04:20",
+ "note": "pool command"
 }

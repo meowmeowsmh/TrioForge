@@ -76,6 +76,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/team", "tui"),
         Cmd("/roles", "senior plans+reviews, junior codes+fixes (planner → coder → reviewer → fixer)",
             "/roles", "tui"),
+        Cmd("/pool [add|remove|clear]", "choose the team's models (local:name or provider:model)",
+            "/pool add deepseek:deepseek-chat"),
         Cmd("/copy [n]", "copy an answer (n = how many answers back)", "/copy 2"),
     ]),
     ("llama.cpp", [
@@ -1372,6 +1374,74 @@ def _connectors(ctx, arg: str) -> None:
     render.info("detail with /connectors <id> · sign in with /connectors connect <id>")
 
 
+def _pool(ctx, arg: str) -> None:
+    """The team/route roster, managed from the command line.
+
+    ``/team`` runs EVERY model in this pool in parallel, so this is how you choose
+    the team. A key is ``local:<name>`` (a .gguf in models/) or ``provider:<model>``
+    (cloud). A bare name in ``add`` is taken as a local model.
+    """
+    from . import providers
+
+    words = (arg or "").strip().split()
+    verb = words[0].lower() if words else ""
+
+    if not verb or verb in ("list", "show", "ls"):
+        pool = list(getattr(ctx.cfg, "route_pool", []) or [])
+        if not pool:
+            render.warn("the pool is empty — add models with /pool add <model>")
+            render.info("examples: /pool add local:qwen.gguf  ·  "
+                        "/pool add deepseek:deepseek-chat")
+        else:
+            render.table("routing pool — /team runs every model here",
+                         [(k, "") for k in pool])
+            render.info("remove with /pool remove <model> · clear with /pool clear")
+        return
+
+    if verb in ("add", "+"):
+        key = " ".join(words[1:]).strip()
+        if not key:
+            render.error("usage: /pool add <local:name | provider:model | bare-local-name>")
+            return
+        if ":" not in key:                     # a bare name means a local model
+            key = "local:" + key.lstrip("./\\")
+        pool = list(getattr(ctx.cfg, "route_pool", []) or [])
+        if key in pool:
+            render.warn(f"{key} is already in the pool")
+        else:
+            pool.append(key)
+            ctx.cfg.route_pool = pool
+            providers.save(ctx.cfg)
+            render.ok(f"added {key} — pool has {len(pool)} model(s)")
+        return
+
+    if verb in ("remove", "rm", "del", "-"):
+        key = " ".join(words[1:]).strip()
+        if not key:
+            render.error("usage: /pool remove <model>")
+            return
+        pool = list(getattr(ctx.cfg, "route_pool", []) or [])
+        matches = [k for k in pool
+                   if k == key or ("local:" + key == k)]
+        if not matches:
+            render.warn(f"{key} is not in the pool")
+            return
+        for k in matches:
+            pool.remove(k)
+        ctx.cfg.route_pool = pool
+        providers.save(ctx.cfg)
+        render.ok(f"removed {', '.join(matches)} — pool has {len(pool)} model(s)")
+        return
+
+    if verb in ("clear", "reset"):
+        ctx.cfg.route_pool = []
+        providers.save(ctx.cfg)
+        render.ok("pool cleared — /team falls back to the current model")
+        return
+
+    render.error("usage: /pool [list | add <model> | remove <model> | clear]")
+
+
 _TABLE = {
     "/help": _help, "/?": _help, "/setup": _setup,
     "/model": _model, "/models": _models, "/specs": _specs, "/llama": _llama,
@@ -1387,6 +1457,7 @@ _TABLE = {
     "/quit": _quit, "/exit": _quit, "/q": _quit,
     "/memory": _memory, "/mem": _memory,
     "/plugins": _plugins, "/connectors": _connectors,
+    "/pool": _pool,
 }
 
 

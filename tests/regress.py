@@ -4605,6 +4605,42 @@ def test_web_search_for_local_models() -> None:
 
 
 # ---------------------------------------------------------------------------
+# /pool picks the team roster from the command line, instead of only the ctrl+a
+# panel. /team runs every model in this pool, so "select certain models" is this.
+# ---------------------------------------------------------------------------
+def test_pool_command_selects_team() -> None:
+    _title("/pool chooses the team roster")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    sys.path.insert(0, str(root / "py" / "tools"))
+    from tui import commands, providers
+
+    class _Ctx:
+        pass
+
+    ctx = _Ctx()
+    ctx.cfg = providers.Config()
+    saved_save = providers.save
+    providers.save = lambda cfg: None        # the command must not touch the real config
+    try:
+        commands._pool(ctx, "add qwen.gguf")            # bare name -> local:
+        commands._pool(ctx, "add deepseek:deepseek-chat")
+        assert ctx.cfg.route_pool == ["local:qwen.gguf", "deepseek:deepseek-chat"], \
+            ctx.cfg.route_pool
+        commands._pool(ctx, "add local:qwen.gguf")      # duplicate is not re-added
+        assert ctx.cfg.route_pool.count("local:qwen.gguf") == 1
+        commands._pool(ctx, "remove qwen.gguf")
+        assert ctx.cfg.route_pool == ["deepseek:deepseek-chat"], ctx.cfg.route_pool
+        commands._pool(ctx, "clear")
+        assert ctx.cfg.route_pool == []
+    finally:
+        providers.save = saved_save
+    print("  /pool add/remove/clear edit the roster (no config write) -> OK")
+
+
+# ---------------------------------------------------------------------------
 def main() -> int:
     # Tests must not read or write the user's real configuration.
     os.environ.setdefault("FORGE_CONFIG_DIR", str(Path(__file__).parent / ".tmp"))
@@ -4661,7 +4697,8 @@ def main() -> int:
              test_security_audit_fixes_hold,
              test_recursive_file_list_is_symlink_safe,
              test_pipe_and_memory_lock_are_safe,
-             test_web_search_for_local_models]
+             test_web_search_for_local_models,
+             test_pool_command_selects_team]
     failed = []
     for t in tests:
         try:
