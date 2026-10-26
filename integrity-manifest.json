@@ -71,7 +71,7 @@
   "py/tui/README.md": "d80aabaf1462074ff5c2c490681dfb138041ce34935fbdb3ab17bcd2b838fdbc",
   "py/tui/__init__.py": "891826ab7c6aadf1bed85ea4f722f2ce17e7dd6bfc109210fb1b144873c94f95",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
-  "py/tui/agent.py": "6d197a070300a3f1603f544af57fcb792799c4d8fccd5eb984a731fdd4de336e",
+  "py/tui/agent.py": "bf13f6cc918b3b414eddca679f47b7f3af2227792cb2981d621690e21522c060",
   "py/tui/app.py": "57bd92cde0532279ddb3de970fdda5de572f2514193669b08b04df5088a6cc9d",
   "py/tui/backend.py": "f8bfe713c21ad079359cc324ec3e2506fc9ecbd6c5a4453b88a109774aa6103f",
   "py/tui/cli.py": "5241cf5aa16a3d415f0f699ad555c11efd5a571791063d0c1be8669ea53d5354",
@@ -88,7 +88,7 @@
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
   "py/tui/textual_app.py": "1863e00729ed03cdaa77a111204bfe13c1185fb57774cafe9a9066095f3488d7",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
-  "py/tui/tools.py": "53e5a7592e961c4329e419774d5422455187861e07511818e269d3c27bda0342",
+  "py/tui/tools.py": "d6e2d9e511536af807f3057343b09f32186fcecf73de1510366984fff16cd418",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "09e646f836b083f9ecf8327edd0229b9391d10986ed36cade4b3057fee5f5b6a",
   "py/version.py": "7e5e49a999393def1398a3bb47b161b28f37d8e96d082511429624889b4ca7fc",
@@ -122,6 +122,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-26T05:00:20",
- "note": "release: 1.6.2 - /thinking picker, live model rescan, portable model paths"
+ "generated": "2026-10-26T23:23:54",
+ "note": "web search loop fixes"
 }

@@ -68,6 +68,12 @@ def test_parse_text_calls() -> None:
         ('```tool\n{"name": "specs"}\n```', [("specs", {})]),
         # a bare object in prose is NOT a call - the fence is required
         ('{"name": "grep", "pattern": "x"}', []),
+        # a local model's fences drift: 4 and 6 backticks still parse, otherwise a
+        # malformed block was silently skipped and the model re-asked the question.
+        ('````tool\n{"name": "web_search", "args": {"query": "y"}}\n````',
+         [("web_search", {"query": "y"})]),
+        ('``````tool\n{"name": "web_search", "args": {"query": "z"}}\n``````',
+         [("web_search", {"query": "z"})]),
     ]
     for text, want in cases:
         got = parse_text_calls(text)

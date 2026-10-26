@@ -24,6 +24,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -432,13 +433,22 @@ def t_web_search(query: str = "", max_results: int = 5, **_kw) -> str:
         from duckduckgo_search import DDGS
         n = max(1, min(int(max_results or 5), 10))
         results = list(DDGS().text(query, max_results=n))
+        # DuckDuckGo's anonymous API rate-limits hard: under a burst of searches it
+        # returns an empty list, which a local model then misread as "wrong query"
+        # and asked again (the WandaVision loop). One retry after a breath, plus an
+        # honest message, lets a transient throttle clear instead of looping.
+        if not results:
+            time.sleep(1.0)
+            results = list(DDGS().text(query, max_results=n))
     except ImportError:
         return ("error: web search needs the duckduckgo-search package "
                 "(pip install duckduckgo-search)")
     except Exception as exc:  # noqa: BLE001 - a network/library failure is not fatal
         return f"error: search failed: {exc}"
     if not results:
-        return "(no results)"
+        return ("(no results — the search engine may be rate-limiting. Do not ask "
+                "the same query again; either simplify it or answer from what you "
+                "already know.)")
     lines = []
     for r in results:
         title = (r.get("title") or "").strip()
@@ -763,7 +773,11 @@ def protocol_text() -> str:
     return "".join(out)
 
 
-_CALL_RE = re.compile(r"```tool\s*(\{.*?\})\s*```", re.S)
+# A local model's fences are unreliable: 4 or 6 backticks instead of 3, sometimes a
+# missing closing fence. Accept 3+ backticks so a ````tool block is still parsed
+# instead of silently skipped - skipping is what made the model re-ask the same
+# question (it never saw a result for the malformed call).
+_CALL_RE = re.compile(r"`{3,}tool\s*(\{.*?\})\s*`{3,}", re.S)
 
 
 def parse_text_calls(text: str) -> list[tuple[str, dict]]:

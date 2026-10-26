@@ -34,7 +34,10 @@ BAD_ARGS = "__invalid_arguments__"  # marks a call whose JSON did not parse
 
 #: Tools that only LOOK at things. A round made only of these changes nothing,
 #: so a model that keeps picking them is not working - it is stalling.
-READ_ONLY_TOOLS = frozenset({"view", "grep", "glob", "ls"})
+#: web_search is read-only (no side effects) and was MISSING here, so a local
+#: model that looped on searches never triggered the stall nudge - it ran the
+#: full 12 rounds asking the same question, as the WandaVision report showed.
+READ_ONLY_TOOLS = frozenset({"view", "grep", "glob", "ls", "web_search"})
 
 #: How many read-only rounds in a row before the loop intervenes. The observed
 #: failure: a task to fix one button produced seven straight view/grep rounds
