@@ -194,6 +194,9 @@ class Config:
     roles_enabled: bool = False
     # Web search: whether the model is offered the live web-search tool (/search).
     search_enabled: bool = True
+    # Full filesystem access: when True the file tools may read/write ANYWHERE
+    # (the whole machine), not just the folder forge was started in (/fullfs).
+    allow_full_fs: bool = False
     # Token limits. 0 means "use the built-in default" so an unset value never
     # forces a number on a machine the user did not configure.
     max_tokens: int = 0       # cap on the reply length (output tokens)
@@ -315,6 +318,7 @@ def load(path: Path | None = None) -> Config:
         team_enabled=bool(data.get("team_enabled", False)),
         roles_enabled=bool(data.get("roles_enabled", False)),
         search_enabled=bool(data.get("search_enabled", True)),
+        allow_full_fs=bool(data.get("allow_full_fs", False)),
         max_tokens=int(data.get("max_tokens", 0) or 0),
         ctx_size=int(data.get("ctx_size", 0) or 0),
         thinking=str(data.get("thinking", "high") or "high"),
@@ -352,6 +356,7 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "team_enabled": cfg.team_enabled,
         "roles_enabled": cfg.roles_enabled,
         "search_enabled": cfg.search_enabled,
+        "allow_full_fs": cfg.allow_full_fs,
         "max_tokens": cfg.max_tokens,
         "ctx_size": cfg.ctx_size,
         "thinking": cfg.thinking,

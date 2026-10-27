@@ -47,6 +47,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/start gemma-3-12b-it"),
         Cmd("/search [on|off|query]", "the web-search switch; a query runs one live search",
             "/search llama.cpp quantization"),
+        Cmd("/fullfs [on|off]", "let the file tools reach the whole machine, not just the workspace",
+            "/fullfs on"),
         Cmd("/download <query>", "search Hugging Face and download a GGUF model",
             "/download qwen 7b"),
         Cmd("/provider [name]", "list providers, or switch to one",
@@ -861,6 +863,30 @@ def _search(ctx, arg: str) -> None:
     render.info(tools.t_web_search(arg))
 
 
+def _fullfs(ctx, arg: str) -> None:
+    """/fullfs [on|off] — whether the file tools may reach the whole machine.
+
+    Off (the default) confines view/grep/glob/ls/write/edit/bash to the folder
+    forge was started in, so an over-eager model cannot silently read .env,
+    ~/.ssh or credentials elsewhere on the disk. On removes that guard: every
+    file tool reaches any path on C:, D:, ... Turn it on when you trust the
+    model to edit a project OUTSIDE the workspace (e.g. D:\\calculator_html).
+    """
+    from . import providers, tools
+
+    arg = (arg or "").strip().lower()
+    if arg in ("", "on", "off"):
+        tools.set_full_fs(arg == "on" if arg else not tools.ALLOW_FULL_FS)
+        ctx.cfg.allow_full_fs = tools.ALLOW_FULL_FS
+        providers.save(ctx.cfg)
+        render.ok("full filesystem access "
+                  + ("ON" if tools.ALLOW_FULL_FS else "OFF"))
+        render.info("file tools " + ("reach the whole machine" if tools.ALLOW_FULL_FS
+                                     else "are confined to the working directory"))
+        return
+    render.info("usage: /fullfs [on|off]  (no argument toggles)")
+
+
 def _echo(ctx, arg: str) -> None:
     if isinstance(ctx.backend, EchoBackend):
         ctx.backend = ctx.real_backend
@@ -1454,6 +1480,7 @@ _TABLE = {
     "/save": _save, "/echo": _echo, "/start": _start,
     "/download": _download, "/pull": _download,
     "/search": _search, "/find": _search,
+    "/fullfs": _fullfs,
     "/quit": _quit, "/exit": _quit, "/q": _quit,
     "/memory": _memory, "/mem": _memory,
     "/plugins": _plugins, "/connectors": _connectors,

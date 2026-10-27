@@ -498,6 +498,19 @@ def set_web_search(on: bool) -> None:
     WEB_SEARCH_ON = bool(on)
 
 
+def set_full_fs(on: bool) -> None:
+    """Turn the workspace confinement on/off at runtime (config-driven).
+
+    When ON, :func:`_in_workspace` answers True for every path, so ``ls``,
+    ``view``, ``grep``, ``glob``, ``write``, ``edit`` and ``bash`` reach the
+    whole machine instead of only the folder ``forge`` was started in. This is
+    the same switch the ``TRIOFORGE_ALLOW_FULL_FS=1`` env var flips, but settable
+    from inside the app (/fullfs) and remembered in the config.
+    """
+    global ALLOW_FULL_FS
+    ALLOW_FULL_FS = bool(on)
+
+
 def _register(tool: Tool) -> None:
     TOOLS[tool.name] = tool
 

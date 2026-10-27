@@ -4659,6 +4659,43 @@ def test_web_search_for_local_models() -> None:
 
 
 # ---------------------------------------------------------------------------
+# /fullfs removes the workspace confinement, so the file tools can edit a
+# project on another drive (D:\calculator_html) instead of only the folder
+# forge was started in. Off by default - it is the safety guard.
+# ---------------------------------------------------------------------------
+def test_fullfs_toggle() -> None:
+    _title("/fullfs opens the file tools to the whole machine")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    sys.path.insert(0, str(root / "py" / "tools"))
+    from tui import commands, providers, tools
+
+    class _Ctx:
+        pass
+
+    ctx = _Ctx()
+    ctx.cfg = providers.Config()
+    saved_fs, saved_save = tools.ALLOW_FULL_FS, providers.save
+    providers.save = lambda cfg: None      # the command must not touch the real config
+    try:
+        assert tools.ALLOW_FULL_FS is False, "full access must be OFF by default"
+        commands._fullfs(ctx, "on")
+        assert tools.ALLOW_FULL_FS is True
+        assert ctx.cfg.allow_full_fs is True, "the choice must persist in the config"
+        # With the guard off, any path (another drive included) is accepted.
+        assert tools._in_workspace(Path("D:/calculator_html/index.html")) is True
+        commands._fullfs(ctx, "off")
+        assert tools.ALLOW_FULL_FS is False
+        assert ctx.cfg.allow_full_fs is False
+    finally:
+        tools.set_full_fs(saved_fs)
+        providers.save = saved_save
+    print("  /fullfs toggles whole-machine access and persists it -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -4752,6 +4789,7 @@ def main() -> int:
              test_recursive_file_list_is_symlink_safe,
              test_pipe_and_memory_lock_are_safe,
              test_web_search_for_local_models,
+             test_fullfs_toggle,
              test_pool_command_selects_team]
     failed = []
     for t in tests:

@@ -3375,6 +3375,7 @@ def run(args) -> int:
     cfg = providers.load()
     from . import tools as _tools
     _tools.set_web_search(bool(getattr(cfg, "search_enabled", True)))
+    _tools.set_full_fs(bool(getattr(cfg, "allow_full_fs", False)))
     from . import backend as _backend
     _backend.set_thinking(getattr(cfg, "thinking", "high"))
 
