@@ -57,6 +57,8 @@ COMMAND_GROUPS: list[tuple[str, list[Cmd]]] = [
             "/base-url http://127.0.0.1:8080/v1"),
         Cmd("/set token <max> [context]", "cap the reply length and set the context window",
             "/set token 4096 8192"),
+        Cmd("/kvq [auto|f16|q8_0|q5_0|q4_0]", "KV-cache precision — lower = less RAM on a split load",
+            "/kvq q4_0"),
         Cmd("/thinking [low|mid|high|max]", "how hard the model thinks (cycles with no arg)",
             "/thinking high"),
     ]),
@@ -686,6 +688,36 @@ def _set_token(ctx, arg: str) -> None:
         render.ok(f"max output → {max_out} tokens")
 
 
+def _kvq(ctx, arg: str) -> None:
+    """/kvq [auto|f16|q8_0|q5_0|q4_0] — KV-cache precision (the RAM lever).
+
+    llama.cpp keeps the conversation's KV cache in memory; quantising it is the
+    cheapest RAM saving on a split GPU+CPU load. auto is q8_0 on a split load and
+    f16 when the whole model fits in VRAM; q5_0 / q4_0 use less RAM with slightly
+    fuzzier recall. Takes effect the next time the local model starts.
+    """
+    from . import providers
+
+    arg = (arg or "").strip().lower()
+    if not arg:
+        render.table("KV-cache precision", [
+            ("precision", ctx.cfg.kv_quant or "auto (q8_0 on a split load)"),
+            ("context", f"{ctx.cfg.ctx_size or 16384} tokens"),
+        ])
+        render.info("usage: /kvq [auto|f16|q8_0|q5_0|q4_0]  — q4_0 = least RAM, f16 = most")
+        render.info("the context window is the other RAM lever: /set token <max> <context>")
+        return
+    if arg == "auto":
+        ctx.cfg.kv_quant = ""
+    elif arg in ("f16", "q8_0", "q5_0", "q4_0"):
+        ctx.cfg.kv_quant = arg
+    else:
+        render.error(f"unknown KV cache type {arg!r} — try auto|f16|q8_0|q5_0|q4_0")
+        return
+    providers.save(ctx.cfg)
+    render.ok(f"KV cache → {ctx.cfg.kv_quant or 'auto'} (applies next model load)")
+
+
 def _clear(ctx, arg: str) -> None:
     n = len(ctx.session.messages)
     ctx.session.clear()
@@ -762,7 +794,8 @@ def _start(ctx, arg: str) -> None:
         render.error(f"cannot reach TrioForge's server manager: {exc}")
         return
     try:
-        res = svc.start(model=m.path, ctx_size=ctx.cfg.ctx_size or None)
+        res = svc.start(model=m.path, ctx_size=ctx.cfg.ctx_size or None,
+                        kv_quant=ctx.cfg.kv_quant or None)
     except Exception as exc:  # noqa: BLE001
         render.error(f"failed to start: {exc}")
         return
@@ -1475,6 +1508,7 @@ _TABLE = {
     "/provider": _provider, "/provider-add": _provider_add,
     "/key": _key, "/keys": _keys, "/status": _status, "/base-url": _base_url,
     "/set": _set_token, "/token": _set_token,
+    "/kvq": _kvq,
     "/thinking": _thinking, "/think": _thinking,
     "/system": _system, "/clear": _clear, "/history": _history,
     "/save": _save, "/echo": _echo, "/start": _start,

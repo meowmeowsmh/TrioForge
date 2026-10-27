@@ -1069,7 +1069,8 @@ class ForgeApp(App):
             return "local model not found: {}".format(model)
 
         try:
-            result = svc.start(model_path, ctx_size=self.cfg.ctx_size or None)
+            result = svc.start(model_path, ctx_size=self.cfg.ctx_size or None,
+                               kv_quant=self.cfg.kv_quant or None)
         except Exception as exc:            # noqa: BLE001
             return "could not start llama.cpp: {}".format(exc)
         if not result.get("running"):

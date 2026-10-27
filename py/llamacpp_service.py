@@ -1054,7 +1054,7 @@ def _auto_install_llama_server():
     return None
 
 
-def start(model=None, ctx_size=None):
+def start(model=None, ctx_size=None, kv_quant=None):
     global _process, _running_model, _last_spawn, _last_used, _running_ctx
     # Resolve the requested context length to a concrete int (the UI's token
     # dropdown passes a value; a missing/invalid one falls back to the env var,
@@ -1331,7 +1331,8 @@ def start(model=None, ctx_size=None):
         # so shrinking the cache to 8 bits buys more than adding a second GPU does.
         # A model that fits entirely in VRAM keeps f16 - that is the safe choice and
         # the cache is not what limits it there.
-        kv_quant = os.environ.get("TRIOFORGE_KV_QUANT", "").strip()
+        kv_quant = (kv_quant or "").strip() if kv_quant is not None else os.environ.get(
+            "TRIOFORGE_KV_QUANT", "").strip()
         if kv_quant.lower() in ("f16", "none", "off"):
             # _default_server_args() always adds q8_0, so opting back out has to
             # REMOVE those flags - appending f16 left a duplicate the server may

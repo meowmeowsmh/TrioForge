@@ -201,6 +201,7 @@ class Config:
     # forces a number on a machine the user did not configure.
     max_tokens: int = 0       # cap on the reply length (output tokens)
     ctx_size: int = 0         # context window (history kept), passed to llama.cpp
+    kv_quant: str = ""        # KV-cache precision for llama.cpp: "" auto | f16 | q8_0 | q5_0 | q4_0
     thinking: str = "high"    # reasoning effort: low | mid | high | max (off = none)
     providers: dict[str, dict] = field(default_factory=lambda: json.loads(
         json.dumps(DEFAULT_PROVIDERS)))
@@ -321,6 +322,7 @@ def load(path: Path | None = None) -> Config:
         allow_full_fs=bool(data.get("allow_full_fs", False)),
         max_tokens=int(data.get("max_tokens", 0) or 0),
         ctx_size=int(data.get("ctx_size", 0) or 0),
+        kv_quant=str(data.get("kv_quant", "") or ""),
         thinking=str(data.get("thinking", "high") or "high"),
     )
     merged = json.loads(json.dumps(DEFAULT_PROVIDERS))
@@ -359,6 +361,7 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "allow_full_fs": cfg.allow_full_fs,
         "max_tokens": cfg.max_tokens,
         "ctx_size": cfg.ctx_size,
+        "kv_quant": cfg.kv_quant,
         "thinking": cfg.thinking,
         "providers": cfg.providers,
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")

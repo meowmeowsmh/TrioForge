@@ -4719,6 +4719,41 @@ def test_fullfs_toggle() -> None:
 
 
 # ---------------------------------------------------------------------------
+# /kvq lowers llama.cpp's KV-cache precision, which is the cheapest RAM saving
+# on a split GPU+CPU load. q4_0 < q5_0 < q8_0 < f16 in RAM, f16 is full quality.
+# ---------------------------------------------------------------------------
+def test_kvq_command() -> None:
+    _title("/kvq sets the KV-cache precision (RAM lever)")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    sys.path.insert(0, str(root / "py" / "tools"))
+    from tui import commands, providers
+
+    class _Ctx:
+        pass
+
+    ctx = _Ctx()
+    ctx.cfg = providers.Config()
+    saved_save = providers.save
+    providers.save = lambda cfg: None      # the command must not touch the real config
+    try:
+        assert ctx.cfg.kv_quant == "", "KV precision must default to auto"
+        commands._kvq(ctx, "q4_0")
+        assert ctx.cfg.kv_quant == "q4_0"
+        commands._kvq(ctx, "auto")
+        assert ctx.cfg.kv_quant == "", "auto must clear the persisted choice"
+        commands._kvq(ctx, "f16")
+        assert ctx.cfg.kv_quant == "f16"
+        commands._kvq(ctx, "bogus")
+        assert ctx.cfg.kv_quant == "f16", "an invalid type must be ignored, not saved"
+    finally:
+        providers.save = saved_save
+    print("  /kvq sets q4_0/q5_0/f16/auto and persists -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -4813,6 +4848,7 @@ def main() -> int:
              test_pipe_and_memory_lock_are_safe,
              test_web_search_for_local_models,
              test_fullfs_toggle,
+             test_kvq_command,
              test_pool_command_selects_team]
     failed = []
     for t in tests:
