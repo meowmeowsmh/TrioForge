@@ -3451,7 +3451,15 @@ def test_daily_briefing_plugin() -> None:
                 ids[label] = mod._pin_id(day)
                 vals = cork.upsert_pin(ids[label], {"title": label, "content": "x", "tags": ["briefing"]})
                 mod._remember_written(ids[label], vals["last_modified"])
-            cork.update_pin_fields(ids["edited"], {"content": "I kept this"})
+            # "touched" means the pin's last_modified differs from the stamp we
+            # remembered when we wrote it. update_pin_fields stamps datetime.now(),
+            # and on the Windows CI VM the clock can return the SAME microsecond as
+            # the create above - _prune then sees the pin as untouched and prunes it
+            # too (the intermittent, Windows-only flake). Rewrite with an explicit
+            # timestamp that can never collide with the remembered stamp.
+            edited = cork.get_pin(ids["edited"])
+            cork.upsert_pin(ids["edited"], {"content": "I kept this"},
+                            now="2000-01-01T00:00:00.000000", existing=edited)
             assert mod._prune(mod._cfg(), today) == 1
             assert cork.get_pin(ids["untouched"]) is None
             assert cork.get_pin(ids["edited"]) is not None and cork.get_pin(ids["recent"]) is not None
