@@ -39,7 +39,7 @@ from pathlib import Path
 
 from rich.cells import cell_len
 from rich.text import Text
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Click, Resize
@@ -627,6 +627,28 @@ class ForgeApp(App):
         ("tab", "focus_chat", "Chat"),
         ("escape", "focus_prompt", "Prompt"),
     ]
+
+    async def on_event(self, event) -> None:
+        """Drop a click that lands on a widget that is no longer in the tree.
+
+        Textual bug (Textualize/textual#6643, still open in 8.2.x): while a
+        ``Markdown`` widget is being re-rendered - which is exactly what streaming
+        an answer does - its old children can stay in the compositor for a frame.
+        A ``MouseDown`` on one of them makes ``Screen._forward_event`` compute
+        ``container = content_widget.parent``, which is ``None`` for a detached
+        child, and then ``container.region`` raises:
+
+            AttributeError: 'NoneType' object has no attribute 'region'
+
+        Clicking a code block while an answer streams in is enough to trigger it.
+        The click is stale either way, so drop it instead of crashing the session.
+        Same guard as gptme/gptme#4323.
+        """
+        if isinstance(event, events.MouseDown) and not self.mouse_captured:
+            widget, _offset = self.screen.get_widget_and_offset_at(event.x, event.y)
+            if widget is not None and widget is not self.screen and not widget.parent:
+                return
+        await super().on_event(event)
 
     def __init__(self, args, cfg, backend, session: Session):
         super().__init__()

@@ -1188,6 +1188,29 @@ async def _tui_checks() -> None:
             f"picking a level did not stick: {app.cfg.thinking!r}"
         print("  /thinking and ctrl+t open the provider-style picker -> OK")
 
+        # Textual #6643 (open in 8.2.x): re-rendering a Markdown widget - i.e.
+        # streaming an answer - can leave a child in the compositor for a frame.
+        # Clicking it made Screen._forward_event compute content_widget.parent
+        # (None) and raise "AttributeError: 'NoneType' object has no attribute
+        # 'region'", killing the session. on_event must drop that stale click.
+        import textual.events as _events
+        from textual.geometry import Offset as _Offset
+        from textual.widgets import Label as _Label
+
+        detached = _Label("gone")        # never added to the DOM: .parent is None
+        # A REAL offset (not None) matters: with None, _forward_event takes its
+        # other branch and never dereferences content_widget.parent.
+        real_lookup = app.screen.get_widget_and_offset_at
+        app.screen.get_widget_and_offset_at = lambda x, y: (detached, _Offset(0, 0))
+        try:
+            app.post_message(
+                _events.MouseDown(None, 5, 5, 0, 0, 1, False, False, False))
+            await pilot.pause(0.2)
+            assert app.is_running, "a click on a detached widget killed the app"
+        finally:
+            app.screen.get_widget_and_offset_at = real_lookup
+        print("  a click on a detached widget is dropped, not fatal -> OK")
+
         # /pool must open INSTANTLY. The old path asked EVERY provider for its
         # /models up front - each with its own network timeout - so one dead
         # endpoint froze the panel before it appeared. Now the screen opens with
