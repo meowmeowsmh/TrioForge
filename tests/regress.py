@@ -4754,6 +4754,34 @@ def test_kvq_command() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The RAM cap launches a program inside a Windows Job Object whose memory is
+# limited, so one runaway app cannot eat the whole machine. The struct layout
+# is the classic 32/64-bit bug that silently disables the cap, so it is pinned.
+# ---------------------------------------------------------------------------
+def test_ram_cap_job_object() -> None:
+    _title("RAM cap uses a correct Windows Job Object")
+    if os.name != "nt":
+        print("  skipped: Job Objects are Windows-only -> OK")
+        return
+    import ctypes
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    from tools import ram_cap
+
+    # 144 bytes on 64-bit, 112 on 32-bit. A wrong size means the struct does not
+    # match what the OS expects, so the memory limit is silently ignored.
+    want = 144 if ctypes.sizeof(ctypes.c_size_t) == 8 else 112
+    assert ctypes.sizeof(ram_cap._EXTENDED) == want, \
+        (ctypes.sizeof(ram_cap._EXTENDED), want)
+    job = ram_cap._create_job(128 * 1024 * 1024)
+    assert job, "CreateJobObject failed"
+    ram_cap._k32.CloseHandle(job)
+    print("  Job Object struct + creation are correct on this Windows -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -4849,6 +4877,7 @@ def main() -> int:
              test_web_search_for_local_models,
              test_fullfs_toggle,
              test_kvq_command,
+             test_ram_cap_job_object,
              test_pool_command_selects_team]
     failed = []
     for t in tests:

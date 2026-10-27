@@ -65,6 +65,7 @@
   "py/tools/launcher.py": "a1564ab69ebeea4aad977ec4b8da778fcbccac347a00c8bc3b5f6c28a402c73e",
   "py/tools/launcher_gui.py": "4c0bcb6ec236692d5a5b8be3972b4b68e2c59e81478d50b8d4ec613b874bfd2e",
   "py/tools/procutil.py": "e76efefbb03f70149d4b7579e30fd84a1f7e3aeb0929e57cf3d7f77767450a60",
+  "py/tools/ram_cap.py": "32dffb24aadd44b706f7ee90b5bdb79cc1ed6addcb8636496f2ca76aa2110bcf",
   "py/tools/shortcuts.py": "7b35ee35bc5226d023cd01e2c2d6ba6a26011baaec89680af6db62f9fe54ce0b",
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
@@ -122,6 +123,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-28T01:34:18",
- "note": "baseline after adding /kvq KV-cache precision lever"
+ "generated": "2026-10-28T01:46:31",
+ "note": "baseline after adding RAM-cap Job Object utility"
 }
