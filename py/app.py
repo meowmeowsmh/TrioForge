@@ -1374,23 +1374,37 @@ def describe_image_with_llava(image_b64):
         logger.warning("llava fallback failed: %s", e)
         return ""
 
-def trim_conversation_history(messages, max_messages=10, max_tokens=3000):
+def trim_conversation_history(messages, max_messages=10, max_tokens=3000, ctx_size=None):
+    """Trim a message list so the request fits the model's context window.
+
+    Counts the SYSTEM message and the final user turn in the budget. The old code
+    lifted the system prompt out of the count and appended the new prompt AFTER,
+    so a long system prompt pushed the request past n_ctx and llama.cpp rejected
+    it outright (8241 > 8192, HTTP 400). Oldest non-system turns are dropped
+    first; the system message and the newest turn are never removed.
+    """
     if not messages:
         return messages
-    system_msg = None
-    if messages and messages[0]["role"] == "system":
-        system_msg = messages.pop(0)
-    if len(messages) > max_messages:
-        messages = messages[-max_messages:]
-    total_len = sum(len(m.get("content", "")) for m in messages)
-    while messages and total_len > max_tokens * 4:
-        if len(messages) > 1:
-            removed = messages.pop(1)
-            total_len -= len(removed.get("content", ""))
-        else:
+    # Budget in characters (~4 chars per token). With a known context, reserve a
+    # quarter of it for the reply; otherwise fall back to the caller's max_tokens.
+    ctx = 0
+    if ctx_size:
+        try:
+            ctx = int(ctx_size)
+        except (TypeError, ValueError):
+            ctx = 0
+    if ctx > 0:
+        budget_chars = max(1024, ctx - max(256, ctx // 4)) * 4
+    else:
+        budget_chars = max_tokens * 4
+        if len(messages) > max_messages:
+            messages = messages[-max_messages:]
+    total = sum(len(str(m.get("content", ""))) for m in messages)
+    while total > budget_chars and len(messages) > 2:
+        idx = 1 if messages[0].get("role") == "system" else 0
+        if idx >= len(messages) - 1:
             break
-    if system_msg:
-        messages.insert(0, system_msg)
+        total -= len(str(messages.pop(idx).get("content", "")))
     return messages
 
 def get_ollama_memory_settings():
@@ -4439,7 +4453,19 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
             else:
                 messages.insert(0, {"role": "user", "content": protocol})
     for _ in range(max_steps):
-        resp = provider.generate_raw(messages, tools=tools, **extra_kwargs)
+        try:
+            resp = provider.generate_raw(messages, tools=tools, **extra_kwargs)
+        except Exception as exc:
+            # A local llama.cpp can reject the native tool schema with "failed to
+            # parse grammar" (or a 400 from a chat template that cannot express
+            # tools) even though the tools are ALSO described in the prompt text.
+            # Retry once without the native array so the text protocol keeps the
+            # turn alive instead of failing outright.
+            err = str(exc)
+            if "grammar" in err.lower() or "400" in err:
+                resp = provider.generate_raw(messages, **extra_kwargs)
+            else:
+                raise
         content = resp.get("content")
         tool_calls = resp.get("tool_calls") or []
         if not tool_calls and local:
@@ -4588,8 +4614,12 @@ def _build_final_prompt(system_prompt: str, user_message: str, files: List[dict]
     return final_prompt
 
 
-def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include_system: bool = True) -> List[dict]:
-    """Build the full message list for a provider call from stored history."""
+def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include_system: bool = True, ctx_size=None) -> List[dict]:
+    """Build the full message list for a provider call from stored history.
+
+    The new user turn (final_prompt) is appended BEFORE trimming, so the context
+    budget covers system + history + prompt, not just history.
+    """
     messages = []
     if include_system and system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -4598,9 +4628,8 @@ def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include
             messages.append({"role": "user", "content": msg['text']})
         elif msg['role'] == 'bot':
             messages.append({"role": "assistant", "content": msg['text']})
-    messages = trim_conversation_history(messages)
     messages.append({"role": "user", "content": final_prompt})
-    return messages
+    return trim_conversation_history(messages, ctx_size=ctx_size)
 
 
 def _build_vision_messages(messages, images):
@@ -5430,7 +5459,8 @@ def chat():
         # user/assistant roles, so drop the separate "system" role there (the
         # system prompt is already folded into final_prompt by _build_final_prompt).
         messages = _build_messages(conv_id, system_prompt, final_prompt,
-                                   include_system=(provider_name != 'llamacpp'))
+                                   include_system=(provider_name != 'llamacpp'),
+                                   ctx_size=ctx_size)
 
         extra_kwargs = {"model": model}
         if api_key:
@@ -5714,7 +5744,8 @@ def chat_stream():
             final_prompt = _skill_prompt + "\n\n" + final_prompt
         applied_skill_ids = [s["id"] for s in _applied_skills]
         include_system = (provider_name != 'llamacpp')
-        messages = _build_messages(conv_id, system_prompt, final_prompt, include_system=include_system)
+        messages = _build_messages(conv_id, system_prompt, final_prompt, include_system=include_system,
+                                   ctx_size=ctx_size)
 
         mem_settings = get_ollama_memory_settings()
         # Transcription sources (llama.cpp): explicit audio clips + the audio track

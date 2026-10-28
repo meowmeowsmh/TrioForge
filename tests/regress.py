@@ -4841,6 +4841,35 @@ def test_base_model_detection() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A long system prompt plus many long turns used to push the request past n_ctx,
+# and llama.cpp rejected the whole call (8241 tokens > 8192). The trimmer must
+# count the system prompt AND the new user turn, and drop old turns to fit.
+# ---------------------------------------------------------------------------
+def test_context_window_is_respected() -> None:
+    _title("long conversations are trimmed to fit the context window")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    import app as forge_app
+
+    messages = [{"role": "system", "content": "S" * 8000}]
+    for i in range(20):
+        messages.append({"role": "user", "content": "U%d " % i + "x" * 1200})
+        messages.append({"role": "assistant", "content": "A%d " % i + "y" * 1200})
+    messages.append({"role": "user", "content": "latest question " + "z" * 500})
+
+    trimmed = forge_app.trim_conversation_history(list(messages), ctx_size=8192)
+    total = sum(len(str(m.get("content", ""))) for m in trimmed)
+    budget_chars = (8192 - 2048) * 4          # ctx minus the quarter reply reserve
+    assert len(trimmed) < len(messages), "nothing was trimmed"
+    assert total <= budget_chars, (total, budget_chars)
+    assert trimmed[0]["role"] == "system", trimmed[0]
+    assert trimmed[-1]["content"].startswith("latest question"), trimmed[-1]
+    print("  old turns drop; system + newest turn survive; total fits -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -4939,6 +4968,7 @@ def main() -> int:
              test_ram_cap_job_object,
              test_llama_installer_picks_binary_not_cudart,
              test_base_model_detection,
+             test_context_window_is_respected,
              test_pool_command_selects_team]
     failed = []
     for t in tests:
