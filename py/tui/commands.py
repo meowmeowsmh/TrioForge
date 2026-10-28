@@ -860,6 +860,39 @@ def _download(ctx, arg: str) -> None:
         render.error(f"download failed: {exc}")
         return
     render.ok(f"downloaded → {path}")
+
+    # A vision model is TWO files: the text .gguf PLUS a separate mmproj
+    # projector (usually BF16). Grab it automatically so images/video work,
+    # instead of the model silently loading text-only. Skip when the user just
+    # picked a projector themselves.
+    low = filename.lower()
+    if "mmproj" not in low and "clip" not in low:
+        projs = model_download.projectors(repo)
+        proj = None
+        if len(projs) == 1:
+            proj = projs[0]
+        elif projs:
+            # Several projectors: prefer the one whose base name shares the
+            # model's; refuse to guess when it is ambiguous (a wrong projector
+            # crashes llama-server on startup).
+            try:
+                import llamacpp_service as _svc
+                base = _svc._base_gguf_name(Path(filename).name).lower()
+                matches = [p for p in projs
+                           if base and base in _svc._base_gguf_name(Path(p).name).lower()]
+                proj = matches[0] if len(matches) == 1 else None
+            except Exception:  # noqa: BLE001
+                proj = None
+        if proj:
+            render.info(f"downloading vision projector {proj}…")
+            try:
+                pproj = model_download.download(repo, proj)
+                render.ok(f"vision projector → {pproj}")
+            except Exception as exc:  # noqa: BLE001
+                render.warn(f"projector download failed (model still works, text-only): {exc}")
+        elif projs:
+            render.info("vision projectors in this repo: " + ", ".join(projs[:5]))
+            render.info("grab the matching one with /download again for images/video")
     render.info("load it with /start <name>, or pick it with ctrl+l")
 
 

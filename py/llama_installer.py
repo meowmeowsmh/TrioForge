@@ -71,6 +71,14 @@ def _pick_asset(names, backend):
     the versions meant a rename would silently drop the user to a CPU build - the
     slowest possible outcome nobody asked for. The highest-sorting matching name wins.
     """
+    # The release also ships `cudart-llama-bin-...` packages that contain ONLY the
+    # CUDA runtime DLLs - no llama-server at all. A bare substring match on
+    # "-bin-win-cuda-" used to pick that package instead of the real binaries, so
+    # llama-server was never extracted and every local model died with "not found".
+    # The actual binaries are the assets whose names START with "llama-"; anything
+    # else (cudart-..., etc.) is a runtime, not the server.
+    names = [n for n in names if n.startswith("llama-")]
+
     os_name, x = _platform_key()
     b = backend if backend in ("cuda", "rocm", "vulkan") else "cpu"
 

@@ -38,7 +38,7 @@
   "py/hardware.py": "d5deb04df9f9914c282b9fdf74aa38fa518f7b20f969249e98509feb910cd5f0",
   "py/https_guni_n_waitress.py": "de72f2e3c2f852269c57e668ae034b92f7b9c398a211f4fdf24b9056d4f06999",
   "py/llama_cpp.py": "1a2f1339acf99d6f38629c33d5a9b1e9627483412dadf5a698d491c41df8bec7",
-  "py/llama_installer.py": "dec27746f5c0f817418483e9c71f391d759c6022196699e5c6aa8b24b409a991",
+  "py/llama_installer.py": "3d93bf0d910f8a65224a2dfd984dc1c7edb5959a0f6e691f643ec0023e760f82",
   "py/llamacpp_service.py": "081ad7e1e114c913f5392146caca12e85abebc8b5b8735d58bcc30078130240a",
   "py/make_brand_assets.py": "2955585ca1cdde5313f37801a773313d9b1cbc96aea68e752aabb4e0852cffee",
   "py/make_pwa_icons.py": "6b519469d6fc152ba2b96567290f4e91f4ba16af95de5137dc3ea64c9af76fc9",
@@ -76,11 +76,11 @@
   "py/tui/app.py": "9624df3a1096cc3c78d326cca6fa6f53f310f72fe58a7dea3d51411360f90fbb",
   "py/tui/backend.py": "f8bfe713c21ad079359cc324ec3e2506fc9ecbd6c5a4453b88a109774aa6103f",
   "py/tui/cli.py": "5241cf5aa16a3d415f0f699ad555c11efd5a571791063d0c1be8669ea53d5354",
-  "py/tui/commands.py": "f0154d3607508fda21870c87cef64b8e35ced122c9e50534325a1dbbbf43d637",
+  "py/tui/commands.py": "a0e053a3c32e9e8801d308b59f0c38f03588cfaf9ff9d5583d2511d6e6cbf7d9",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
-  "py/tui/model_download.py": "29f783643a76af4d9857e0ca872004271a273023c997b18cc2ba1f1c1829b12a",
+  "py/tui/model_download.py": "682a688ea284caab99b26b89f355fc6b9728153ecf6daa7aefd563168952b1f7",
   "py/tui/providers.py": "02838688564aace3ed342354520b81c74b385fb8ae927aaf4c76cbf37fec7e73",
   "py/tui/render.py": "02dc4f91f5d24a4d08899a15587e626f8a1b2f7154727a3b811a7a4d54a700c1",
   "py/tui/router.py": "5262e56a7d9f1e3981f507caf92b4be042e065acb0fae86f780f51c72554229c",
@@ -123,6 +123,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-28T01:46:31",
- "note": "baseline after adding RAM-cap Job Object utility"
+ "generated": "2026-10-28T19:14:15",
+ "note": "baseline after llama.cpp cudart-pick fix + auto mmproj download"
 }

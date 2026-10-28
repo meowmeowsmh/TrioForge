@@ -64,6 +64,27 @@ def files(repo_id: str) -> list[tuple[str, float]]:
     return out
 
 
+def projectors(repo_id: str) -> list[str]:
+    """mmproj/clip projector filenames in a repo (the vision companion files).
+
+    A vision model is TWO files - the text ``.gguf`` and a separate mmproj
+    (usually BF16/f16). ``files()`` already lists both, but the picker grabs one
+    file at a time; this lets the downloader auto-fetch the projector so images
+    and video work out of the box instead of silently loading text-only.
+    """
+    out: list[str] = []
+    try:
+        info = _api().model_info(repo_id, files_metadata=True)
+        for sib in (info.siblings or []):
+            name = getattr(sib, "rfilename", "") or ""
+            low = name.lower()
+            if low.endswith(".gguf") and ("mmproj" in low or "clip" in low):
+                out.append(name)
+    except Exception:
+        return out
+    return sorted(out)
+
+
 def download(repo_id: str, filename: str) -> str:
     """Download one file into ``models/`` and return its absolute path. Raises on error."""
     from huggingface_hub import hf_hub_download

@@ -4790,6 +4790,35 @@ def test_ram_cap_job_object() -> None:
 
 
 # ---------------------------------------------------------------------------
+# llama.cpp ships a `cudart-llama-bin-...` package that contains ONLY the CUDA
+# runtime DLLs (no llama-server). A bare substring match picked it instead of the
+# real `llama-...` binaries, so the auto-install "succeeded" but llama-server was
+# never extracted. The pick must never return the cudart package.
+# ---------------------------------------------------------------------------
+def test_llama_installer_picks_binary_not_cudart() -> None:
+    _title("llama.cpp installer picks the binary, not the cudart runtime")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    import llama_installer as li
+
+    saved = li._platform_key
+    li._platform_key = lambda: ("Windows", "x64")
+    try:
+        names = [
+            "cudart-llama-bin-win-cuda-12.4-x64.zip",
+            "llama-b11558-bin-win-cuda-12.4-x64.zip",
+            "llama-b11558-bin-win-cpu-x64.zip",
+        ]
+        picked = li._pick_asset(names, "cuda")
+        assert picked == "llama-b11558-bin-win-cuda-12.4-x64.zip", picked
+    finally:
+        li._platform_key = saved
+    print("  cudart-llama package is never mistaken for the server -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -4886,6 +4915,7 @@ def main() -> int:
              test_fullfs_toggle,
              test_kvq_command,
              test_ram_cap_job_object,
+             test_llama_installer_picks_binary_not_cudart,
              test_pool_command_selects_team]
     failed = []
     for t in tests:
