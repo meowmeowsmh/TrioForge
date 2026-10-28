@@ -3246,17 +3246,30 @@ function stopSpeaking() {
 }
 
 function cleanForSpeech(text) {
-    var lines = text.split('\n');
-    var cleanedLines = [];
-    for (var i = 0; i < lines.length; i++) {
-        var line = lines[i].trim();
-        if (/^[=*_\-#]+$/.test(line)) {
-            continue;
-        }
-        line = line.replace(/([=*_\-#])\1{2,}/g, ' ');
-        cleanedLines.push(line);
-    }
-    return cleanedLines.join('\n').trim();
+    // A speech engine reads whatever it is given. Markdown is for the eye, so
+    // `**bold**` becomes "asterisk" (you hear "Astra"), `#` becomes "hash", `-`
+    // becomes "dash", and every `:` makes it stall. Strip ALL of it before the
+    // voice ever sees the text.
+    if (!text) return '';
+    var out = String(text);
+    out = out.replace(/```[\s\S]*?```/g, ' ');          // fenced code
+    out = out.replace(/~~~[\s\S]*?~~~/g, ' ');          // fenced code (tilde)
+    out = out.replace(/`([^`]*)`/g, '$1');              // inline code -> text
+    out = out.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1'); // images -> alt
+    out = out.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');  // links -> text
+    out = out.replace(/(\*\*|__)(.*?)\1/g, '$2');       // bold
+    out = out.replace(/(\*|_)(.*?)\1/g, '$2');          // italic
+    out = out.replace(/^\s{0,3}#{1,6}\s*/gm, '');       // headings
+    out = out.replace(/^\s{0,3}>\s?/gm, '');            // blockquotes
+    out = out.replace(/^\s*[-*+]\s+/gm, '');            // bullet lists
+    out = out.replace(/^\s*\d+[.)]\s+/gm, '');          // numbered lists
+    out = out.replace(/\|/g, ' ');                      // table pipes
+    out = out.replace(/\s*:\s*/g, ', ');                // colon -> comma pause
+    out = out.replace(/[=*_#~`^<>\[\]{}]+/g, ' ');      // leftover markup
+    out = out.replace(/[ \t]{2,}/g, ' ');               // double spaces
+    out = out.replace(/\n{3,}/g, '\n\n');
+    out = out.replace(/^[\s,.;]+|[\s,]+$/g, '');
+    return out.trim();
 }
 
 function speakText(text) {
@@ -3357,7 +3370,8 @@ function speakNeural(text, voiceId, onFail) {
     function playFrom(index) {
         if (seq !== speakSeq) return;
         if (index >= chunks.length) { done(); return; }
-        request(index + 1);            // prefetch while this one is speaking
+        request(index + 1);            // prefetch the next chunk
+        request(index + 2);            // ...and one more, so slow synthesis cannot gap
         request(index).then(function(blob) {
             if (seq !== speakSeq) return;
             var url = URL.createObjectURL(blob);

@@ -120,9 +120,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
+  "templates/index.html": "64f97982eca4ea480d51b5dfea4e47dd1f3eb6b4b44f3565b0708fb673018c00",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-28T21:02:32",
- "note": "baseline after download ranking (instruct first, base last)"
+ "generated": "2026-10-28T23:25:10",
+ "note": "baseline after stripping markdown before speech"
 }

@@ -3956,7 +3956,9 @@ def test_neural_voices_are_offered() -> None:
                    "TTS_CHUNK_CHARS", "function _ttsChunks"):
         assert needle in html, "{} missing".format(needle)
     # A reply must not wait for the whole thing to be synthesised before it speaks.
-    assert "prefetch while this one is speaking" in html, "chunked playback lost"
+    assert "prefetch the next chunk" in html, "chunked playback lost"
+    # Speech must not read markdown symbols aloud ("asterisk", "hash", "colon").
+    assert "asterisk" in html and "cleanForSpeech" in html, "markdown is not stripped before speech"
     # The picker says out loud that a neural voice sends the text to Microsoft.
     assert "sent to Microsoft" in html, "privacy notice missing from the neural group"
 
