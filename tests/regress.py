@@ -4902,6 +4902,30 @@ def test_local_provider_never_sends_native_tools() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Opening the download picker and pressing Enter must land on a model that
+# actually chats. Instruct/chat files sort first, base models last, and vision
+# projectors are not offered as the default.
+# ---------------------------------------------------------------------------
+def test_download_ranking_prefers_instruct() -> None:
+    _title("the download list puts a chat-ready model first")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    from tui import commands
+
+    files = [
+        ("Llama-3.1-Minitron-4B-Width-Base-Q4_K_M.gguf", 2.65),
+        ("Qwen2.5-7B-Instruct-Q4_K_M.gguf", 4.4),
+        ("mmproj-Qwen2.5-VL-f16.gguf", 0.5),
+    ]
+    ordered = sorted(files, key=lambda nv: (commands._model_rank(nv[0]), -nv[1]))
+    assert ordered[0][0] == "Qwen2.5-7B-Instruct-Q4_K_M.gguf", ordered
+    assert ordered[-1][0] == "Llama-3.1-Minitron-4B-Width-Base-Q4_K_M.gguf", ordered
+    print("  instruct first, base last, projector after -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -5002,6 +5026,7 @@ def main() -> int:
              test_base_model_detection,
              test_context_window_is_respected,
              test_local_provider_never_sends_native_tools,
+             test_download_ranking_prefers_instruct,
              test_pool_command_selects_team]
     failed = []
     for t in tests:

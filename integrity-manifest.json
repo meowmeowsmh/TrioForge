@@ -76,7 +76,7 @@
   "py/tui/app.py": "9624df3a1096cc3c78d326cca6fa6f53f310f72fe58a7dea3d51411360f90fbb",
   "py/tui/backend.py": "f8bfe713c21ad079359cc324ec3e2506fc9ecbd6c5a4453b88a109774aa6103f",
   "py/tui/cli.py": "5241cf5aa16a3d415f0f699ad555c11efd5a571791063d0c1be8669ea53d5354",
-  "py/tui/commands.py": "cb34e6a0009cf0f0966179854c73bc8bb122486a3100e517da98da71f71487bd",
+  "py/tui/commands.py": "076c8ba209cc7d048549270ed9b8172997e231ac00b16c7f9d9c0a7b61e23c6a",
   "py/tui/faces.py": "f7ddf553e3bc4b98e878c25b5a49e5452b12acc6dfcc72f8be0ae4dbc54dee9e",
   "py/tui/history.py": "26871581724d799c481a71db055d88c7bd14d2585269ed6c408df172bff0f8ed",
   "py/tui/localmodels.py": "d7c71b870203009d192e22dbab6d938849fe91572d5f2ab2aaed8bdc88ab58e6",
@@ -123,6 +123,6 @@
   "templates/index.html": "95882119b214894e7ba4da9c9cf83db2b10d033b8f5a4df1440827c31f3f48f6",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-28T20:53:51",
- "note": "baseline after never sending native tools to local llama.cpp"
+ "generated": "2026-10-28T21:02:32",
+ "note": "baseline after download ranking (instruct first, base last)"
 }

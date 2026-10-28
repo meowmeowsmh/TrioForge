@@ -830,6 +830,23 @@ def _is_base_model(name: str) -> bool:
     return _re.search(r"(?:^|[-_./ ])base(?:$|[-_./ ])", low) is not None
 
 
+def _model_rank(name: str) -> int:
+    """Sort key for a download list: chat-ready models first, BASE models last.
+
+    The whole point is that opening the file picker and pressing Enter must land
+    on something that actually chats. A base model (or a vision projector) is
+    never offered as the default pick.
+    """
+    low = (name or "").lower()
+    if "mmproj" in low or "clip" in low:
+        return 3                                  # projectors are auto-fetched
+    if any(h in low for h in ("instruct", "-it", "chat", "-vl", "vision-vl")):
+        return 0                                  # chat/vision-ready
+    if _is_base_model(name):
+        return 4                                  # base: never the default
+    return 1
+
+
 def _download(ctx, arg: str) -> None:
     """/download <query> — search Hugging Face and download a GGUF model."""
     from . import model_download, wizard
@@ -859,13 +876,18 @@ def _download(ctx, arg: str) -> None:
         render.warn("no .gguf files in that repo")
         return
 
-    rows = [(name, f"{size:.2f} GB") for name, size in repo_files[:20]]
+    # Rank the files so a chat-ready model is what you see FIRST and a BASE
+    # model is never the accidental default. Vision projectors go last (they are
+    # auto-fetched with their model anyway).
+    ordered = sorted(repo_files, key=lambda nv: (_model_rank(nv[0]), -nv[1]))
+    rows = [(name + ("  ⚠ BASE — won't chat" if _is_base_model(name) else ""),
+             f"{size:.2f} GB") for name, size in ordered[:20]]
     try:
         fidx = wizard.choose("pick a file to download", rows, default=0)
     except wizard.Cancelled:
         render.warn("cancelled")
         return
-    filename = repo_files[fidx][0]
+    filename = ordered[fidx][0]
 
     # A BASE model continues text; it does not answer an instruction. Picking one
     # by accident is the "it downloaded but replies with garbage / echoes my
