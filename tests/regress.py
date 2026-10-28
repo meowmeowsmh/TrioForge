@@ -4819,6 +4819,28 @@ def test_llama_installer_picks_binary_not_cudart() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A "Base" model continues text and echoes the prompt instead of answering, so
+# picking one by accident looks like "it downloaded but doesn't work". The name
+# is the only signal we have; flag it, and do not flag "database"-style words.
+# ---------------------------------------------------------------------------
+def test_base_model_detection() -> None:
+    _title("base models are flagged; instruct and lookalike names are not")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    from tui import commands
+
+    assert commands._is_base_model("Llama-3.1-Minitron-4B-Width-Base-Q4_K_M.gguf")
+    assert commands._is_base_model("Llama-3.2-3B-Base-GGUF.gguf")
+    assert not commands._is_base_model("gemma-4-12B-it-qat-UD-Q4_K_XL.gguf")
+    assert not commands._is_base_model("Qwen2.5-7B-Instruct-Q4_K_M.gguf")
+    assert not commands._is_base_model("my-database-model.gguf")
+    assert not commands._is_base_model("baseline-model.gguf")
+    print("  Base models flagged; instruct/database/baseline are not -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -4916,6 +4938,7 @@ def main() -> int:
              test_kvq_command,
              test_ram_cap_job_object,
              test_llama_installer_picks_binary_not_cudart,
+             test_base_model_detection,
              test_pool_command_selects_team]
     failed = []
     for t in tests:

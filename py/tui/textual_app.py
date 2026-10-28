@@ -2699,6 +2699,11 @@ class ForgeApp(App):
             self.real_backend = self.backend
         providers.save(self.cfg)
         self._add(f"_model → **{name}**_", "bot")
+        from .commands import _is_base_model
+        if _is_base_model(name):
+            self._add("⚠ this is a **Base** model — it continues text and echoes "
+                      "your prompt instead of answering. Pick an Instruct/chat "
+                      "model for chat.", "bot")
         self._refresh()
 
     def action_pick_provider(self) -> None:

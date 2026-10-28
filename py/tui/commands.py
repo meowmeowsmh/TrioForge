@@ -816,6 +816,20 @@ def _start(ctx, arg: str) -> None:
         render.error(f"could not start: {res.get('error', 'unknown error')}")
 
 
+def _is_base_model(name: str) -> bool:
+    """True when a GGUF filename names a BASE (continuation) model.
+
+    A base model continues text; it does not follow instructions, so a user who
+    downloads one sees the prompt echoed back with raw template tokens. The token
+    "base" (separated by a hyphen/dot/underscore/space) is the reliable marker -
+    e.g. ``Llama-3.1-Minitron-4B-Width-Base-Q4_K_M``. Words like "database" or
+    "baseline" do not match because they need a separator, not a bare substring.
+    """
+    import re as _re
+    low = (name or "").lower()
+    return _re.search(r"(?:^|[-_./ ])base(?:$|[-_./ ])", low) is not None
+
+
 def _download(ctx, arg: str) -> None:
     """/download <query> — search Hugging Face and download a GGUF model."""
     from . import model_download, wizard
@@ -852,6 +866,14 @@ def _download(ctx, arg: str) -> None:
         render.warn("cancelled")
         return
     filename = repo_files[fidx][0]
+
+    # A BASE model continues text; it does not answer an instruction. Picking one
+    # by accident is the "it downloaded but replies with garbage / echoes my
+    # prompt" trap. Say so BEFORE spending the download.
+    if _is_base_model(filename):
+        render.warn(f"{filename} looks like a BASE model — it will echo/continue "
+                    "text instead of answering. You want an Instruct/chat model.")
+        render.info("pick a file with 'Instruct', 'it' or 'Chat' in its name instead")
 
     render.info(f"downloading {filename}… (this can take a while)")
     try:
