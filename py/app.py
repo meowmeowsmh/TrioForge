@@ -4426,9 +4426,11 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
     max_steps caps the number of model→tool round-trips (a "coding agent" loop:
     read, edit, run, repeat until done). 20 is enough for a multi-file task.
 
-    Local providers get BOTH: the native ``tools`` array (used when the model
-    supports it) and the text protocol in the prompt (used when it does not), so a
-    local model is never locked out of plugins just because of its chat template.
+    Local providers get ONLY the text protocol in the prompt, never the native
+    ``tools`` array: llama.cpp converts that array into a GBNF grammar, and its
+    JSON-schema-to-grammar conversion crashes on some schemas ("failed to parse
+    grammar"), which rejects the whole turn with a 400. The text protocol covers
+    every tool and works for any model, so local turns stay reliable.
     """
     if isinstance(provider, ClaudeProvider):
         return _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps)
@@ -4452,17 +4454,21 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
                     break
             else:
                 messages.insert(0, {"role": "user", "content": protocol})
+    # For local providers the native `tools` array is NOT sent: llama.cpp turns it
+    # into a GBNF grammar, and its JSON-schema-to-grammar conversion crashes on
+    # some tool schemas ("failed to parse grammar"), which killed the whole turn
+    # with a 400. The text protocol above already covers every tool and works for
+    # any model, so a local turn never depends on that conversion. Cloud
+    # providers keep the native array, which is reliable there.
+    native_tools = None if local else tools
     for _ in range(max_steps):
         try:
-            resp = provider.generate_raw(messages, tools=tools, **extra_kwargs)
+            resp = provider.generate_raw(messages, tools=native_tools, **extra_kwargs)
         except Exception as exc:
-            # A local llama.cpp can reject the native tool schema with "failed to
-            # parse grammar" (or a 400 from a chat template that cannot express
-            # tools) even though the tools are ALSO described in the prompt text.
-            # Retry once without the native array so the text protocol keeps the
-            # turn alive instead of failing outright.
+            # Cloud providers can still 400 on a bad tool schema; retry the turn
+            # without the native array so the prompt-text tools keep it alive.
             err = str(exc)
-            if "grammar" in err.lower() or "400" in err:
+            if native_tools and ("400" in err or "tool" in err.lower()):
                 resp = provider.generate_raw(messages, **extra_kwargs)
             else:
                 raise

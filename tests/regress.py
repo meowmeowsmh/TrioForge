@@ -4870,6 +4870,38 @@ def test_context_window_is_respected() -> None:
 
 
 # ---------------------------------------------------------------------------
+# llama.cpp turns a native `tools` array into a GBNF grammar, and its generator
+# crashes on some schemas ("failed to parse grammar") - a 400 that killed the
+# whole turn. Local providers must therefore get the TEXT protocol only.
+# ---------------------------------------------------------------------------
+def test_local_provider_never_sends_native_tools() -> None:
+    _title("local llama.cpp gets text-protocol tools, never a native grammar")
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "py"))
+    import app as forge_app
+
+    class _Local:
+        server_url = "http://127.0.0.1:8080/v1"
+
+        def __init__(self):
+            self.seen = []
+            self.last_reasoning = ""
+
+        def generate_raw(self, messages, **kwargs):
+            self.seen.append(kwargs.get("tools"))
+            return {"role": "assistant", "content": "plain answer", "tool_calls": None}
+
+    fake = _Local()
+    out = forge_app._run_chat_with_tools(fake, [{"role": "user", "content": "hi"}], {})
+    assert out == "plain answer", out
+    assert fake.seen and all(t is None for t in fake.seen), \
+        "a local provider must never be sent a native tools array (grammar crash)"
+    print("  local turns omit native tools; the text protocol carries them -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /pool picks the team roster from the command line, instead of only the ctrl+a
 # panel. /team runs every model in this pool, so "select certain models" is this.
 # ---------------------------------------------------------------------------
@@ -4969,6 +5001,7 @@ def main() -> int:
              test_llama_installer_picks_binary_not_cudart,
              test_base_model_detection,
              test_context_window_is_respected,
+             test_local_provider_never_sends_native_tools,
              test_pool_command_selects_team]
     failed = []
     for t in tests:
