@@ -4692,6 +4692,33 @@ def test_web_search_for_local_models() -> None:
 
 
 # ---------------------------------------------------------------------------
+# the Setup panel must count MODELS, not vision projectors, and agree with the
+# scanner the model picker uses
+# ---------------------------------------------------------------------------
+def test_setup_check_counts_models_not_projectors() -> None:
+    _title("Setup counts models, not projectors")
+    import os
+
+    import llamacpp_service as svc
+    import setup_check as sc
+
+    files = svc._list_gguf_files()
+    if not files:
+        print("  skipped (no .gguf models on this machine)")
+        return
+    models = sum(1 for f in files if not svc._is_mmproj(os.path.basename(f)))
+    projectors = len(files) - models
+    counted = sc._gguf_count()
+    assert counted == models, (counted, models)
+    if projectors:
+        assert counted < len(files), \
+            "vision projectors must not be counted as models"
+    detail = [i for i in sc.check_all() if i["id"] == "models"][0]["detail"]
+    assert str(models) in detail, detail
+    print(f"  {models} model(s), {projectors} projector(s) excluded -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /fullfs removes the workspace confinement, so the file tools can edit a
 # project on another drive (D:\calculator_html) instead of only the folder
 # forge was started in. Off by default - it is the safety guard.
@@ -4993,6 +5020,7 @@ def main() -> int:
              test_recursive_file_list_is_symlink_safe,
              test_pipe_and_memory_lock_are_safe,
              test_web_search_for_local_models,
+             test_setup_check_counts_models_not_projectors,
              test_fullfs_toggle,
              test_kvq_command,
              test_llama_installer_picks_binary_not_cudart,

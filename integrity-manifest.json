@@ -54,7 +54,7 @@
   "py/providers/llm_providers.py": "7ab5746ee2e810af1ea4edd8e7fabf7f19e4fea87eb285fb535be4b69b76defc",
   "py/python_support.py": "c5350837040736b1e509a0ddbda84a8dc0c68678265abd953c1dfca0cc5b5bde",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
-  "py/setup_check.py": "2ca5cd922f6566d28ac12009c2e817ebaec05ccfc59162c5a7d655b996a9522f",
+  "py/setup_check.py": "759dd1bfcb2c7c391d407a1911592262f31972ace41b3607291298b3d67594c0",
   "py/skills_loader.py": "b23ae52b2daab7c5294a51ef3abf1ede22c7bb3a262c2a808169a2a28567db99",
   "py/tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/tools/app_window.py": "375aef7acffd527a87bb52854968d9b7dc2f2c7f8da8bc288e1d845a7687ebe5",
@@ -122,6 +122,6 @@
   "templates/index.html": "64f97982eca4ea480d51b5dfea4e47dd1f3eb6b4b44f3565b0708fb673018c00",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-28T23:56:53",
- "note": "baseline after removing ram_cap.py"
+ "generated": "2026-10-30T23:37:39",
+ "note": "setup panel: count models, not projectors (match the real scanner)"
 }

@@ -108,7 +108,27 @@ def _llama_server_candidates():
 
 
 def _gguf_count():
-    return len(glob.glob(root_path("models", "**", "*.gguf"), recursive=True))
+    """How many real MODEL files are on disk — projectors are not models.
+
+    This used to count `glob("models/**/*.gguf")` itself, which drifted from the
+    scanner the rest of the app uses. Three ways it lied on a normal machine:
+
+      * a vision PROJECTOR (`mmproj-*.gguf`) was counted as a model, so a folder
+        with 4 models + 2 projectors reported "6 model file(s)";
+      * only `models/` was scanned, though the picker also reads `video_model/`
+        and `universal_models_to_text/`, so models kept there read as "missing";
+      * `*.gguf` is case-sensitive on Linux, so a `Model.GGUF` was invisible here
+        while the rest of the app found it.
+
+    Ask llamacpp_service instead, so the Setup panel and the model picker can
+    never disagree about how many models exist.
+    """
+    try:
+        import llamacpp_service as svc
+        return sum(1 for f in svc._list_gguf_files()
+                   if not svc._is_mmproj(os.path.basename(f)))
+    except Exception:            # noqa: BLE001 - a probe must never raise
+        return len(glob.glob(root_path("models", "**", "*.gguf"), recursive=True))
 
 
 def _ollama_status():
@@ -378,7 +398,8 @@ def check_all():
         "id": "models",
         "name": "GGUF models",
         "status": "ok" if n > 0 else "missing",
-        "detail": f"{n} model file(s) in models/",
+        "detail": (f"{n} model file(s) in models/ · video_model/ · "
+                   "universal_models_to_text/" if n else "no .gguf model files found"),
         "url": "https://huggingface.co/models?library=gguf",
         "required": True,
         "hint": "Download GGUF models into models/ (or use the ⬇ button in the app).",
