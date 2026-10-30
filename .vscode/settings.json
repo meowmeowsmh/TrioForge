@@ -17,6 +17,15 @@
   "python.venvFolders": [".venv-linux"],
   "python-envs.defaultEnvManager": "ms-python.python:venv",
 
+  // The NEW "Python Environments" extension (ms-python.vscode-python-envs)
+  // ignores defaultInterpreterPath and does its own discovery, searching only
+  // `.venv` and `*/.venv` by default. TrioForge's Linux venv is `.venv-linux`
+  // (see run.sh), so the extension found the STALE `.venv` (Python 3.12) first
+  // and used that instead — the "No Python environment is set for this resource"
+  // warnings, then a second "Active interpreter" line pointing at .venv. Point
+  // its search at the real venv and leave the old one out entirely.
+  "python-envs.workspaceSearchPaths": [".venv-linux", "*/.venv-linux"],
+
   // Keep Pylance's analysis pointed at the venv's site-packages.
   "python.analysis.extraPaths": ["${workspaceFolder}/py"]
 }
