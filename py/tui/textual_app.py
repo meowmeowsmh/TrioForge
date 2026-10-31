@@ -939,6 +939,27 @@ class ForgeApp(App):
             return f"{s // 60}m {s % 60}s"
         return f"{s // 3600}h {(s % 3600) // 60}m"
 
+    def _turn_stats(self, state: dict, text: str, started: float) -> str:
+        """``859 tok · 61.7 tok/s · first 0.50s`` — what the answer footer shows.
+
+        The rate is measured over the GENERATION window (first token → last), not
+        from the moment Enter was pressed: the model load and the prefill of the
+        prompt are not decode speed, and counting them made a 60 tok/s stream read
+        as ~40. Token count is the same chars/4 estimate the rest of the UI uses.
+
+        Returns "" when nothing was streamed, so the footer simply omits it.
+        """
+        first = state.get("first")
+        tokens = len(text) // 4 if text else 0
+        if not tokens or not first:
+            return ""
+        gen = time.time() - first
+        bits = [f"{tokens} tok"]
+        if gen >= 0.05:
+            bits.append(f"{tokens / gen:.1f} tok/s")
+        bits.append(f"first {max(0.0, first - started):.2f}s")
+        return " · ".join(bits)
+
     def _paint_widget(self, selector: str, text: str) -> bool:
         """Update a Static from a TIMER, tolerating one that is not mounted yet.
 
@@ -1901,7 +1922,9 @@ class ForgeApp(App):
         card = None if team else self._add("", "bot")
         state = {"text": "", "reasoning": "", "card": card,
                  "think": None, "think_body": None,
-                 "started": started, "tokens": 0}
+                 "started": started, "tokens": 0,
+                 #: when the first token arrived, for the tok/s + first-token footer
+                 "first": None}
         self._active = state
 
         def on_event(kind: str, payload: dict) -> None:
@@ -1985,9 +2008,11 @@ class ForgeApp(App):
                 # The route note names the destination AND why; fall back to the
                 # bare model when nothing was routed.
                 head = self._route_note or self._short_model()
+                stats = self._turn_stats(state, final, started)
                 await state["card"].update(
                     f"{final}\n\n_{head} · "
-                    f"{time.time() - started:.1f}s · {len(turn.steps)} tool"
+                    f"{time.time() - started:.1f}s"
+                    f"{' · ' + stats if stats else ''} · {len(turn.steps)} tool"
                     f"{'s' if len(turn.steps) != 1 else ''}_")
             elif turn.steps:
                 await state["card"].update(
@@ -2278,6 +2303,11 @@ class ForgeApp(App):
 
     async def _on_event_ui(self, state: dict, kind: str, payload: dict) -> None:
         """Apply one agent event on the app thread (see ``_ask``)."""
+        # Stamp time-to-first-token for the footer. Reasoning counts: a reasoning
+        # model "answers" with its thinking before any prose arrives, and waiting
+        # to count that would blame the model for time it did not spend.
+        if kind in ("reasoning", "content") and state.get("first") is None:
+            state["first"] = time.time()
         if kind == "reasoning":
             state["reasoning"] += payload["text"]
             self._set_mood("thinking")

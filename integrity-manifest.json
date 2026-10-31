@@ -86,7 +86,7 @@
   "py/tui/session.py": "6387ad5e97381a93333880c9d0919ba279b0803ed4ad3c0ab43efcb697843d67",
   "py/tui/team.py": "5e73b2c6f82b1f39bcd2ceedce42ad02e5cbd5e9f6d1294e3d56803d2df3f6eb",
   "py/tui/team_roles.py": "9cc7ff9e8b0ea9a684303d6896e71e1943a905b25d0a2b25f8003eca1b0aa299",
-  "py/tui/textual_app.py": "e162ca92d05dbb868909e6e60de8b276ff2c77a49e44ec4e91b173dad2ad8535",
+  "py/tui/textual_app.py": "14ddc8149a141734fe02570133e70773630529da7ed31c350cb99d6d00df33ea",
   "py/tui/theme.py": "bdd3bea604a4e8a81430a5d5276971909fd580e06ce5231ecd63f8b95dddd81e",
   "py/tui/tools.py": "45133e7860941f92011a432f7df2757e704b9202adb64d88b094ad1b4a4008d5",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
@@ -119,9 +119,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "64f97982eca4ea480d51b5dfea4e47dd1f3eb6b4b44f3565b0708fb673018c00",
+  "templates/index.html": "ae89783f04e241946341024785469fd5d1e8500b936643afc881dde1ad876b54",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-30T23:37:39",
- "note": "setup panel: count models, not projectors (match the real scanner)"
+ "generated": "2026-10-31T14:53:39",
+ "note": "stats: tok/s + time-to-first-token in the TUI footer and the web readout"
 }

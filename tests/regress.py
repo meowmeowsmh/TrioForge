@@ -4719,6 +4719,39 @@ def test_setup_check_counts_models_not_projectors() -> None:
 
 
 # ---------------------------------------------------------------------------
+# the answer footer reports tok/s and time-to-first-token (the numbers Unsloth's
+# chat shows), measured over the GENERATION window - not from the keypress
+# ---------------------------------------------------------------------------
+def test_turn_stats_footer() -> None:
+    _title("answer footer stats")
+    import time
+
+    from tui import textual_app as ta
+
+    now = time.time()
+    # first token 0.5 s after send, answer finished 2.0 s after the first token,
+    # 400 chars ~= 100 tokens -> 100/2.0 = 50.0 tok/s
+    out = ta.ForgeApp._turn_stats(None, {"first": now - 2.0}, "x" * 400, now - 2.5)
+    assert "100 tok" in out, out
+    assert "50.0 tok/s" in out, out
+    assert "first 0.50s" in out, out
+    # nothing streamed -> no stats at all, so the footer just omits them
+    assert ta.ForgeApp._turn_stats(None, {"first": None}, "", now) == ""
+
+    # The web UI must compute it the same way: rate from the first token, and the
+    # TTFB stamped when the counter goes 0 -> 1.
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    assert "firstTokenMs = Date.now() - startTimeToken" in html, \
+        "the web UI no longer records time-to-first-token"
+    assert "first ${(firstTokenMs / 1000)" in html, \
+        "the web UI no longer shows the first-token time"
+    assert "elapsed - firstTokenMs / 1000" in html, \
+        "the web UI must rate over the generation window, not from the send"
+    print("  tok/s + first-token in both UIs, generation-window rate -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /fullfs removes the workspace confinement, so the file tools can edit a
 # project on another drive (D:\calculator_html) instead of only the folder
 # forge was started in. Off by default - it is the safety guard.
@@ -5021,6 +5054,7 @@ def main() -> int:
              test_pipe_and_memory_lock_are_safe,
              test_web_search_for_local_models,
              test_setup_check_counts_models_not_projectors,
+             test_turn_stats_footer,
              test_fullfs_toggle,
              test_kvq_command,
              test_llama_installer_picks_binary_not_cudart,

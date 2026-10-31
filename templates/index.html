@@ -6840,6 +6840,7 @@ function doSend() {
 var tokenCount = 0;
 var startTimeToken = null;
 var speedInterval = null;
+var firstTokenMs = null;      // time-to-first-token: send -> first streamed token
 var liveReasoningChars = 0;   // live size of the thinking block while a reasoning model runs
 
 function sendVoiceCommand(cmd) {
@@ -6902,6 +6903,7 @@ function actuallySend(text) {
     var streamingProviders = ['ollama', 'llamacpp', 'deepseek', 'groq', 'openrouter', 'huggingface'];
     var endpoint = (streamingProviders.indexOf(provider) !== -1) ? '/chat_stream' : '/chat';
     tokenCount = 0;
+    firstTokenMs = null;
     liveReasoningChars = 0;
     startTimeToken = Date.now();
     if (speedInterval) clearInterval(speedInterval);
@@ -6916,8 +6918,13 @@ function actuallySend(text) {
                 tokenSpeedSpan.textContent = `🧠 thinking… ${liveReasoningChars.toLocaleString()} chars · ${elapsed.toFixed(0)}s`;
                 return;
             }
-            var speed = (tokenCount / elapsed).toFixed(1);
-            tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens | ${elapsed.toFixed(1)}s`;
+            // Rate over the GENERATION window (first token → now), not from the
+            // send: the model-load + prompt prefill are not decode speed, and
+            // including them made a 60 tok/s stream read as ~40.
+            var gen = firstTokenMs === null ? elapsed : elapsed - firstTokenMs / 1000;
+            var speed = gen > 0 ? (tokenCount / gen).toFixed(1) : '0.0';
+            var first = firstTokenMs === null ? '' : ` | first ${(firstTokenMs / 1000).toFixed(2)}s`;
+            tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s | ${tokenCount} tokens${first} | ${elapsed.toFixed(1)}s`;
         }
     }, 200);
 
@@ -7045,6 +7052,9 @@ function actuallySend(text) {
                             try {
                                 var data = JSON.parse(jsonStr);
                                 if (data.token) {
+                                    if (tokenCount === 0) {
+                                        firstTokenMs = Date.now() - startTimeToken;
+                                    }
                                     tokenCount++;
                                     tokenQueue.push(data.token);
                                     scheduleFlush();
@@ -7112,7 +7122,14 @@ function finalizeStats(usage) {
     var out = usage.tokens || tokenCount;
     var total = input + think + out;
     var secs = usage.duration_sec || ((Date.now() - startTimeToken) / 1000);
-    tokenSpeedSpan.textContent = `⏱️ ${secs.toFixed(1)}s · ~${total.toLocaleString()} tokens total (in ${input} + think ${think} + out ${out})`;
+    // The two numbers that say how the engine actually behaved: decode rate over
+    // the generation window, and the time-to-first-token. Same shape as Unsloth's
+    // chat readout, so the two can be compared directly.
+    var gen = firstTokenMs === null ? secs : Math.max(0, secs - firstTokenMs / 1000);
+    var speed = gen > 0 ? (out / gen).toFixed(1) : '0.0';
+    var first = firstTokenMs === null ? '' : ` · first ${(firstTokenMs / 1000).toFixed(2)}s`;
+    tokenSpeedSpan.textContent = `⏱️ ${speed} tok/s · out ${out}${first} · `
+        + `${secs.toFixed(1)}s · ~${total.toLocaleString()} tokens (in ${input} + think ${think})`;
 }
 
 var recordBtn = document.getElementById('recordBtn');
