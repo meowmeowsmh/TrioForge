@@ -2734,8 +2734,8 @@ function mbLoadFiles(repo) {
     fetch('/api/models/files?repo_id=' + encodeURIComponent(repo)).then(function(r){ return r.json(); }).then(function(d){
         if (d.error) { box.innerHTML = '<span style="color:#f85149;">' + d.error + '</span>'; return; }
         var html = '<div style="font-size:12px; color:#8b949e; margin:6px 0;">' + repo +
-                   ' — best size/quality first · <a href="javascript:void(0)" onclick="mbLoadCard(\'' +
-                   repo.replace(/'/g, "\\'") + '\')" style="color:#58a6ff;">📄 model card</a></div>';
+                   ' — best size/quality first · <button data-repo="' + repo +
+                   '" onclick="mbLoadCard(this.dataset.repo)" style="' + MB_BTN + '">📄 Card</button></div>';
         (d.models || []).forEach(function(f){
             html += mbRow(f.filename + '<br><span style="color:#8b949e;">' + f.size_gb + ' GB</span>',
                           mbFitBadge(f.fit) +
