@@ -4752,6 +4752,31 @@ def test_turn_stats_footer() -> None:
 
 
 # ---------------------------------------------------------------------------
+# the model browser must show each repo's MODEL CARD (README), like a hub page,
+# not just a name + download count
+# ---------------------------------------------------------------------------
+def test_model_card_endpoint() -> None:
+    _title("model card (README) in the browser")
+    from flask import Flask
+
+    from features import model_browser as mb
+
+    app = Flask("t")
+    app.register_blueprint(mb.models_bp)
+    c = app.test_client()
+    # A bad repo_id must be rejected BEFORE any network call (400, no HF lookup).
+    assert c.get("/api/models/card?repo_id=nope").status_code == 400
+    assert c.get("/api/models/card?repo_id=bad/repo/extra").status_code == 400
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html"
+            ).read_text(encoding="utf-8")
+    assert "function mbLoadCard" in html, "the model-card loader is gone"
+    assert "/api/models/card" in html, "the card endpoint is not wired"
+    assert "renderMarkdown(d.readme)" in html, "the README is not rendered"
+    print("  /api/models/card + README view wired, bad input rejected -> OK")
+
+
+# ---------------------------------------------------------------------------
 # /fullfs removes the workspace confinement, so the file tools can edit a
 # project on another drive (D:\calculator_html) instead of only the folder
 # forge was started in. Off by default - it is the safety guard.
@@ -5055,6 +5080,7 @@ def main() -> int:
              test_web_search_for_local_models,
              test_setup_check_counts_models_not_projectors,
              test_turn_stats_footer,
+             test_model_card_endpoint,
              test_fullfs_toggle,
              test_kvq_command,
              test_llama_installer_picks_binary_not_cudart,

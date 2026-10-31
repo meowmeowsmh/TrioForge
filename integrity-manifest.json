@@ -27,7 +27,7 @@
   "py/features/cork_board.py": "bb629eeafc0e058b837ad1604265a73202b18df17a70f06ae15111d9144fe8b5",
   "py/features/design.py": "52e372d38e96244341551c1dcfdf5452ce62476cd68afe99f6f58cc589a3a29f",
   "py/features/extensions_api.py": "b6f51aa4d9b59ba885c4c170f4fb8b9fe4a87b0af99f785f085da44858934d0e",
-  "py/features/model_browser.py": "24b9d5e79c74721a4ca6a140c9d1bb88dc59e5659cff11b8e2131471a2eee2d0",
+  "py/features/model_browser.py": "7c93672ee53abff63ce7f13fe89b01e05b8d3bc56fb74cdb6b999629a1b80e59",
   "py/features/notes.py": "444bfa4ba613e0f03df0970905a8e982d42794e27886d80fe1284fe198e70434",
   "py/features/obsidian_ai.py": "95eea13e9882e4bf1fc69108298286e8f822bfe0e202571c11f75ca509d42461",
   "py/features/openai_api.py": "8bdbce9d3c8414c1c18cf413dab8ce787e267c2d830dabf48d24c6b4cc2c299a",
@@ -119,9 +119,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "ae89783f04e241946341024785469fd5d1e8500b936643afc881dde1ad876b54",
+  "templates/index.html": "6a990afe79e32bd76e3305855bba215f81226f70d9bb8c5198920e36f5c84f50",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-10-31T14:53:39",
- "note": "stats: tok/s + time-to-first-token in the TUI footer and the web readout"
+ "generated": "2026-10-31T15:21:18",
+ "note": "model browser: show each repo's model card (README + metadata)"
 }

@@ -2721,6 +2721,7 @@ function mbSearch() {
         var rows = (d.results || []).map(function(m){
             return mbRow('<b>' + m.repo_id + '</b><br><span style="color:#8b949e;">⬇ ' +
                          (m.downloads || 0).toLocaleString() + '</span>',
+                         '<button data-repo="' + m.repo_id + '" onclick="mbLoadCard(this.dataset.repo)" style="' + MB_BTN + '">📄 Card</button> ' +
                          '<button data-repo="' + m.repo_id + '" onclick="mbLoadFiles(this.dataset.repo)" style="' + MB_BTN + '">Files</button>');
         }).join('');
         box.innerHTML = rows || '<span style="color:#8b949e;">No results.</span>';
@@ -2733,7 +2734,8 @@ function mbLoadFiles(repo) {
     fetch('/api/models/files?repo_id=' + encodeURIComponent(repo)).then(function(r){ return r.json(); }).then(function(d){
         if (d.error) { box.innerHTML = '<span style="color:#f85149;">' + d.error + '</span>'; return; }
         var html = '<div style="font-size:12px; color:#8b949e; margin:6px 0;">' + repo +
-                   ' — best size/quality first</div>';
+                   ' — best size/quality first · <a href="javascript:void(0)" onclick="mbLoadCard(\'' +
+                   repo.replace(/'/g, "\\'") + '\')" style="color:#58a6ff;">📄 model card</a></div>';
         (d.models || []).forEach(function(f){
             html += mbRow(f.filename + '<br><span style="color:#8b949e;">' + f.size_gb + ' GB</span>',
                           mbFitBadge(f.fit) +
@@ -2752,6 +2754,30 @@ function mbLoadFiles(repo) {
         html += '<div id="mbDownloadStatus" style="margin-top:8px; font-size:12px; color:#8b949e;"></div>';
         box.innerHTML = html;
     }).catch(function(e){ box.innerHTML = '<span style="color:#f85149;">Could not list files: ' + e + '</span>'; });
+}
+
+function mbLoadCard(repo) {
+    var box = document.getElementById('mbCard');
+    if (!box) return;
+    box.innerHTML = 'Loading model card…';
+    fetch('/api/models/card?repo_id=' + encodeURIComponent(repo)).then(function(r){ return r.json(); }).then(function(d){
+        if (d.error) { box.innerHTML = '<span style="color:#f85149;">' + d.error + '</span>'; return; }
+        var tags = (d.tags || []).map(function(t){ return '<code style="background:#1c1c26;border:1px solid #333;border-radius:4px;padding:0 4px;margin:0 2px;">' + t + '</code>'; }).join('');
+        var head = '<div style="font-size:12px; color:#8b949e; margin:6px 0; line-height:1.7;">'
+            + '<b style="color:#e1e4e8; font-size:13px;">' + d.repo_id + '</b><br>'
+            + [d.pipeline, d.library, (d.license ? 'license ' + d.license : '')].filter(Boolean).join(' · ')
+            + (d.downloads ? ' · ⬇ ' + Number(d.downloads).toLocaleString() : '')
+            + (d.likes ? ' · ♥ ' + Number(d.likes).toLocaleString() : '')
+            + '<br>updated ' + d.updated
+            + (d.created ? ' · created ' + d.created : '')
+            + (d.gated ? ' · 🔒 gated' : '')
+            + (d.base_model ? '<br>base model: ' + d.base_model : '')
+            + (tags ? '<br>' + tags : '')
+            + '</div>';
+        var md = d.readme ? renderMarkdown(d.readme)
+                          : '<span style="color:#8b949e;">no README in this repo</span>';
+        box.innerHTML = head + '<div style="max-height:420px; overflow:auto; border:1px solid #222; border-radius:6px; padding:10px 12px; margin-top:6px; font-size:13px;">' + md + '</div>';
+    }).catch(function(e){ box.innerHTML = '<span style="color:#f85149;">Could not load card: ' + e + '</span>'; });
 }
 
 function mbDownload(repo, file) {
@@ -11173,6 +11199,7 @@ if ('serviceWorker' in navigator) {
       <div id="mbRecommended"></div>
       <div id="mbResults" style="margin-top:10px;"></div>
       <div id="mbFiles" style="margin-top:10px;"></div>
+      <div id="mbCard" style="margin-top:10px;"></div>
     </div>
   </div>
 </div>

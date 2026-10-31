@@ -192,6 +192,52 @@ def files():
                     "hardware": hw})
 
 
+@models_bp.route('/card', methods=['GET'])
+def card():
+    """One repo's model card: metadata plus the README, so the browser reads like
+    the hub page instead of just a name and a download count. The README is the
+    source of truth for how the model behaves, its license, and its settings.
+    """
+    repo_id = (request.args.get('repo_id') or '').strip()
+    if not repo_id or not re.match(r'^[\w.\-]+/[\w.\-]+$', repo_id):
+        return jsonify({"error": "a valid repo_id like 'bartowski/Qwen2.5-7B-Instruct-GGUF' is required"}), 400
+    try:
+        meta = requests.get("%s/models/%s" % (HF_API, repo_id), timeout=TIMEOUT).json()
+    except Exception as exc:
+        return jsonify({"error": "could not read the model card: %s" % exc}), 502
+
+    card_data = meta.get("cardData") or {}
+    lic = card_data.get("license")
+    if isinstance(lic, list):
+        lic = ", ".join(str(x) for x in lic)
+
+    readme = ""
+    try:
+        r = requests.get("https://huggingface.co/%s/raw/main/README.md" % repo_id,
+                         timeout=TIMEOUT)
+        if r.status_code == 200:
+            # A card is rarely longer than this; capping keeps the DOM sane. The
+            # frontend renders it through marked + DOMPurify, so it is safe HTML.
+            readme = r.text[:60000]
+    except Exception:
+        readme = ""
+
+    return jsonify({
+        "repo_id": repo_id,
+        "license": lic or "",
+        "pipeline": meta.get("pipeline_tag") or "",
+        "library": meta.get("library_name") or "",
+        "tags": card_data.get("tags") or [],
+        "base_model": card_data.get("base_model") or "",
+        "downloads": meta.get("downloads") or 0,
+        "likes": meta.get("likes") or 0,
+        "created": (meta.get("createdAt") or "")[:10],
+        "updated": (meta.get("lastModified") or "")[:10],
+        "gated": bool(meta.get("gated")),
+        "readme": readme,
+    })
+
+
 @models_bp.route('/recommended', methods=['GET'])
 def recommended():
     """Curated picks annotated with how they will run on THIS machine."""
