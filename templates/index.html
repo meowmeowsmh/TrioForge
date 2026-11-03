@@ -11737,7 +11737,7 @@ if ('serviceWorker' in navigator) {
             // The theme can change at runtime, so re-read the accent ~twice a second.
             if ((colorTick++ % 90) === 0) color = themeColor('--tf-accent', '#58a6ff');
             if (!document.hidden) {
-                if (!reduceMotion) phase += 0.10;   // one lattice cell ≈ 10 s
+                if (!reduceMotion) phase += 0.012;   // ~1.4 s per cell: a slow drift
                 paint(now);
             }
             raf = requestAnimationFrame(frame);
