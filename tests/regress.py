@@ -3609,6 +3609,55 @@ def test_human_text_fields_are_spellcheckable() -> None:
 
 
 # ---------------------------------------------------------------------------
+def test_motion_backdrop_is_wired() -> None:
+    """The GG Coder-style backdrop must never rot into a dead decoration.
+
+    Three things turn an animation from a nice touch into a bug: a canvas that
+    swallows clicks, a ✨ button wired to a function that no longer exists, and an
+    animation that ignores the OS "reduce motion" setting. Each is invisible in a
+    screenshot and easy for a later refactor to break, so they are pinned here.
+
+    The floor deliberately keeps painting one frame when motion is reduced - a
+    blank panel would look like the feature is broken, whereas a still picture is
+    what "reduce motion" actually asks for. The burst, which has no still form,
+    does nothing at all.
+    """
+    _title("motion backdrop")
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    html = (root / "templates" / "index.html").read_text(encoding="utf-8")
+
+    for needle in ('<canvas id="tfDotGrid"', '<canvas id="tfConfetti"',
+                   'onclick="tfCelebrate(this)"', "window.tfCelebrate",
+                   "(function sceneFloor()"):
+        assert needle in html, "{} missing - the backdrop is not fully wired".format(needle)
+
+    # Both layers are pure decoration, so neither may ever intercept a click.
+    grid_css = html.split("#tfDotGrid {", 1)[1].split("}", 1)[0]
+    conf_css = html.split("#tfConfetti {", 1)[1].split("}", 1)[0]
+    assert "pointer-events: none" in grid_css, "the floor would eat clicks"
+    assert "pointer-events: none" in conf_css, "the burst would eat clicks"
+    assert "z-index: -1" in grid_css, "the floor must sit behind the chat"
+
+    # .main needs its own stacking context: without one a z-index:-1 child paints
+    # over the chat text instead of underneath it.
+    assert "position: relative; isolation: isolate;" in html, \
+        ".main must own a stacking context for the floor"
+
+    # Reduced motion is honoured in both directions.
+    burst = html.split("window.tfCelebrate = function", 1)[1][:500]
+    assert "if (reduceMotion) return;" in burst, \
+        "the burst must be a no-op under prefers-reduced-motion"
+    assert "if (!reduceMotion) raf = requestAnimationFrame(frame);" in html, \
+        "the frozen floor must still paint one frame"
+
+    # The first attempt drew a dot field; the grid replaced it. No leftovers.
+    assert "(function dotGrid()" not in html, "the old dot-field implementation is still here"
+    print("  both canvases inert; burst respects reduced motion -> OK")
+
+
+# ---------------------------------------------------------------------------
 def test_memory_panel_and_free_are_honest() -> None:
     """The top-bar memory badge and free button report only what really happened.
 
@@ -5088,7 +5137,8 @@ def main() -> int:
              test_context_window_is_respected,
              test_local_provider_never_sends_native_tools,
              test_download_ranking_prefers_instruct,
-             test_pool_command_selects_team]
+             test_pool_command_selects_team,
+             test_motion_backdrop_is_wired]
     failed = []
     for t in tests:
         try:

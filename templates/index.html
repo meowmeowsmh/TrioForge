@@ -260,9 +260,26 @@ body::before {
 /* ── Main content ────────────────────────────── */
 .main {
     flex:1; display:flex; flex-direction:column; min-width:0;
+    /* `isolation` gives .main its own stacking context so the dot-grid canvas
+       below can sit at z-index:-1 - behind the chat, above the panel colour. */
+    position: relative; isolation: isolate;
     background: rgba(10,10,15,0.7);
     backdrop-filter: blur(10px);
     transition: background 0.3s ease;
+}
+/* ── Motion backdrop (ported from the GG Coder framework) ─────────────────────
+   #tfDotGrid  - the perspective line-grid floor that drifts toward the viewer.
+   #tfConfetti - a one-shot particle burst fired by the ✨ composer button.
+   Both are plain <canvas> + requestAnimationFrame with no dependencies; see the
+   script just before </body>. Both are skipped under prefers-reduced-motion. */
+#tfDotGrid {
+    position: absolute; inset: 0; z-index: -1;
+    width: 100%; height: 100%;
+    pointer-events: none; opacity: 0.65;
+}
+#tfConfetti {
+    position: fixed; inset: 0; z-index: 12000;
+    pointer-events: none; display: none;
 }
 /* ── Top bar with CSS grid for perfect centering ── */
 .top-bar {
@@ -1731,6 +1748,9 @@ video.tf-video {
   </div>
 
   <div class="main">
+    <!-- Perspective line-grid floor, drawn behind the chat (GG Coder style).
+         Decorative only: aria-hidden, and pointer-events are off in CSS. -->
+    <canvas id="tfDotGrid" aria-hidden="true"></canvas>
     <!-- TOP BAR WITH CENTER TABS -->
     <div class="top-bar">
       <div class="left">
@@ -1867,6 +1887,7 @@ video.tf-video {
         <button class="composer-grip" id="composerGrip" title="Drag to resize the message box (double-click to reset)" aria-label="Resize message box" tabindex="0"></button>
         <button class="search-toggle-btn" id="skillPickBtn" title="Apply a skill to your message" onclick="toggleSkillPicker()">🎓</button>
         <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
+        <button class="search-toggle-btn" id="celebrateBtn" title="Celebrate — fire a particle burst" aria-label="Fire a particle burst" onclick="tfCelebrate(this)" style="color:#a371f7; border-color:rgba(163,113,247,0.35);">✨</button>
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
@@ -11524,6 +11545,315 @@ if ('serviceWorker' in navigator) {
     <div id="statsBody"></div>
   </div>
 </div>
+
+<!-- One-shot particle-burst overlay, fired by the ✨ button in the composer. -->
+<canvas id="tfConfetti" aria-hidden="true"></canvas>
+
+<script>
+/* ── Motion backdrop for the chat (ported from the GG Coder framework) ────────
+   Two decorative canvases, no dependencies, no build step:
+
+     #tfDotGrid  - a perspective dot-grid floor whose camera walks forward, so the
+                   dots are born at the horizon and drift toward the viewer.
+     #tfConfetti - Confetti.tsx's one-shot burst (140 particles, gravity 0.18,
+                   drag 0.985, fade after 900ms, gone by 1700ms).
+
+   Both follow one rule from the original: prefers-reduced-motion wins. The burst
+   then does nothing at all (exactly like Confetti returning null), and the grid
+   still paints its picture but never moves. Nothing here reads or writes app
+   state, so it cannot affect chats, streams or modals. */
+(function () {
+    'use strict';
+
+    var reduceMotion = false;
+    try {
+        reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) { /* old engine - treat motion as allowed */ }
+
+    /* Canvas cannot read `var(--tf-accent)`, so resolve custom properties through
+       getComputedStyle and fall back to the Midnight palette. */
+    function themeColor(name, fallback) {
+        try {
+            var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            return v || fallback;
+        } catch (e) { return fallback; }
+    }
+
+    /* ── 1. Perspective scene floor ─────────────────────────────────────────
+       A glowing line grid on a ground plane, seen through a real pinhole camera:
+
+           screenY = horizon + (focal * cameraHeight) / z
+           screenX = centreX + (focal * x) / z
+
+       Rows are spaced GEOMETRICALLY in z so they stay evenly spaced on screen.
+       That is what the reference art does, and it is why the floor does not
+       collapse into one solid band three pixels under the horizon. The camera
+       walks forward, so rows are born at the horizon and slide toward the
+       viewer. The converging lines never drift sideways: travelling along z
+       cannot change where a fixed world-x line projects - it only stretches it
+       toward the vanishing point. */
+    (function sceneFloor() {
+        var cv = document.getElementById('tfDotGrid');
+        if (!cv) return;
+        var ctx = cv.getContext('2d');
+        if (!ctx) return;
+
+        var W = 0, H = 0, DPR = 1, raf = 0;
+        var color = themeColor('--tf-accent', '#58a6ff');
+        var colorTick = 0;
+        var phase = 0;                 // camera travel, measured in lattice cells
+
+        var FOCAL = 380;               // focal length
+        var CAM_H = 38;                // camera height above the floor
+        var K = FOCAL * CAM_H;
+        var CELL_X = 9;                // world pitch between the converging lines
+        var RATIO = 1.12;              // z grows geometrically -> even screen rows
+        var ROWS = 26;                 // rows from the bottom edge to the horizon
+        var SEG = 9;                   // segments used to fade one converging line
+        var HORIZON_FRAC = 0.45;
+
+        /* A fixed scatter of stars above the floor, seeded so it never boils. */
+        var stars = [];
+        (function seed() {
+            var s = 20240917;
+            function rnd() {
+                s = (s * 1664525 + 1013904223) % 4294967296;
+                return s / 4294967296;
+            }
+            for (var i = 0; i < 170; i++) {
+                stars.push({
+                    x: rnd(), y: rnd(),
+                    r: 0.4 + rnd() * 1.2,
+                    a: 0.10 + rnd() * 0.42,
+                    p: rnd() * 6.2832
+                });
+            }
+        })();
+
+        function resize() {
+            DPR = Math.min(window.devicePixelRatio || 1, 2);
+            var r = cv.getBoundingClientRect();
+            W = Math.max(1, Math.round(r.width));
+            H = Math.max(1, Math.round(r.height));
+            cv.width = Math.round(W * DPR);
+            cv.height = Math.round(H * DPR);
+            ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+            paint(0);                  // repaint at once so a resize never flashes
+        }
+
+        function paint(now) {
+            if (!W || !H) return;
+
+            var horizon = H * HORIZON_FRAC;
+            var depth = Math.max(1, H - horizon);
+            var cx = W * 0.5;
+            var zNear = K / depth;         // z whose projection lands on the bottom edge
+            var t = phase % 1;
+
+            ctx.clearRect(0, 0, W, H);
+            ctx.lineCap = 'round';
+
+            /* ── sky: a still scatter of stars above the floor ── */
+            ctx.fillStyle = '#ffffff';
+            for (var si = 0; si < stars.length; si++) {
+                var st = stars[si];
+                ctx.globalAlpha = st.a * (0.65 + 0.35 * Math.sin(now * 0.0011 + st.p));
+                ctx.fillRect(st.x * W, st.y * horizon, st.r, st.r);
+            }
+            ctx.globalAlpha = 1;
+
+            /* ── the floor's rows, nearest first ── */
+            var rows = [];
+            for (var k = 0; k < ROWS; k++) {
+                var z = zNear * Math.pow(RATIO, k - t);
+                rows.push(horizon + K / z);
+            }
+
+            /* Half-extent, in lattice cells, of the lines that are still on screen
+               at the bottom edge. Anything further out is off-canvas anyway. */
+            var jMax = Math.ceil((W * 0.5 * zNear) / (FOCAL * CELL_X)) + 1;
+
+            /* ── converging lines ──
+               A constant world-x line projects to one straight screen segment from
+               the vanishing point (cx, horizon) to the bottom edge, so it is drawn
+               in SEG pieces purely so its brightness can fade toward the horizon. */
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            for (var j = -jMax; j <= jMax; j++) {
+                var xb = cx + (j * CELL_X) * FOCAL * depth / K;    // x at the bottom edge
+                for (var s = 0; s < SEG; s++) {
+                    var f0 = s / SEG;
+                    var f1 = (s + 1) / SEG;
+                    ctx.globalAlpha = 0.06 + 0.30 * ((f0 + f1) * 0.5);
+                    ctx.beginPath();
+                    ctx.moveTo(cx + (xb - cx) * f0, horizon + depth * f0);
+                    ctx.lineTo(cx + (xb - cx) * f1, horizon + depth * f1);
+                    ctx.stroke();
+                }
+            }
+
+            /* ── rows: the horizontal lines, plus a glowing node at every crossing ── */
+            ctx.fillStyle = color;
+            for (var ri = 0; ri < rows.length; ri++) {
+                var y = rows[ri];
+                if (y > H + 6) continue;
+
+                var d = (y - horizon) / depth;     // 0 at the horizon, 1 at the bottom
+                if (d < 0) d = 0;
+                if (d > 1) d = 1;
+
+                ctx.globalAlpha = 0.05 + 0.26 * d;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(W, y);
+                ctx.stroke();
+
+                if (d < 0.14) continue;            // too close to the horizon to read
+
+                var r = 0.8 + 1.5 * d;
+                for (var jj = -jMax; jj <= jMax; jj++) {
+                    var nx = cx + (jj * CELL_X) * FOCAL * (y - horizon) / K;
+                    if (nx < -6 || nx > W + 6) continue;
+
+                    ctx.globalAlpha = 0.10 + 0.30 * d;      // halo
+                    ctx.beginPath();
+                    ctx.arc(nx, y, r * 2.6, 0, 6.2832);
+                    ctx.fill();
+
+                    ctx.globalAlpha = 0.35 + 0.55 * d;      // core
+                    ctx.beginPath();
+                    ctx.arc(nx, y, r, 0, 6.2832);
+                    ctx.fill();
+                }
+            }
+
+            /* ── the seam where the floor meets the fog ── */
+            ctx.globalAlpha = 0.16;
+            ctx.fillRect(0, horizon - 1, W, 2);
+            ctx.globalAlpha = 1;
+        }
+
+        function frame(now) {
+            // The theme can change at runtime, so re-read the accent ~twice a second.
+            if ((colorTick++ % 90) === 0) color = themeColor('--tf-accent', '#58a6ff');
+            if (!document.hidden) {
+                if (!reduceMotion) phase += 0.10;   // one lattice cell ≈ 10 s
+                paint(now);
+            }
+            raf = requestAnimationFrame(frame);
+        }
+
+        resize();
+        if (window.ResizeObserver) {
+            try { new ResizeObserver(resize).observe(cv); }
+            catch (e) { window.addEventListener('resize', resize); }
+        } else {
+            window.addEventListener('resize', resize);
+        }
+
+        if (!reduceMotion) raf = requestAnimationFrame(frame);
+    })();
+    /* ── 2. One-shot particle burst ───────────────────────────────────────────
+       A direct port of Confetti.tsx: same count, same physics constants, same
+       fade window, same upward launch bias. */
+    var CONF_COUNT = 140;
+    var CONF_GRAVITY = 0.18;
+    var CONF_DRAG = 0.985;
+    var CONF_FADE_AFTER_MS = 900;
+    var CONF_LIFE_MS = 1700;
+    var confRaf = 0;
+
+    window.tfCelebrate = function (originEl) {
+        if (reduceMotion) return;                    // same rule as the original
+        var cv = document.getElementById('tfConfetti');
+        if (!cv) return;
+        var ctx = cv.getContext('2d');
+        if (!ctx) return;
+
+        if (confRaf) { cancelAnimationFrame(confRaf); confRaf = 0; }
+
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        var w = Math.max(1, window.innerWidth);
+        var h = Math.max(1, window.innerHeight);
+        cv.width = Math.round(w * dpr);
+        cv.height = Math.round(h * dpr);
+        cv.style.width = w + 'px';
+        cv.style.height = h + 'px';
+        cv.style.display = 'block';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // Burst out of the button that was pressed so the particles look like they
+        // came from the click; anything without a box bursts from the centre.
+        var ox = w * 0.5, oy = h * 0.5;
+        if (originEl && typeof originEl.getBoundingClientRect === 'function') {
+            var r = originEl.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+                ox = r.left + r.width / 2;
+                oy = r.top + r.height / 2;
+            }
+        }
+
+        var palette = [
+            themeColor('--tf-accent', '#58a6ff'),
+            themeColor('--tf-accent-2', '#a371f7'),
+            '#3fb950', '#d29922', '#ff7b72', '#ffffff'
+        ];
+
+        var parts = [];
+        for (var i = 0; i < CONF_COUNT; i++) {
+            var ang = Math.random() * Math.PI * 2;
+            var speed = 5 + Math.random() * 9;
+            parts.push({
+                x: ox, y: oy,
+                vx: Math.cos(ang) * speed,
+                vy: Math.sin(ang) * speed - 3,      // bias upward so it arcs
+                rot: Math.random() * Math.PI,
+                vrot: (Math.random() - 0.5) * 0.4,
+                size: 5 + Math.random() * 6,
+                color: palette[(Math.random() * palette.length) | 0]
+            });
+        }
+
+        var start = performance.now();
+
+        function tick(now) {
+            var elapsed = now - start;
+            ctx.clearRect(0, 0, w, h);
+
+            var fade = elapsed < CONF_FADE_AFTER_MS
+                ? 1
+                : Math.max(0, 1 - (elapsed - CONF_FADE_AFTER_MS) /
+                                   (CONF_LIFE_MS - CONF_FADE_AFTER_MS));
+
+            for (var p = 0; p < parts.length; p++) {
+                var q = parts[p];
+                q.vx *= CONF_DRAG;
+                q.vy = q.vy * CONF_DRAG + CONF_GRAVITY;
+                q.x += q.vx;
+                q.y += q.vy;
+                q.rot += q.vrot;
+
+                ctx.save();
+                ctx.globalAlpha = fade;
+                ctx.translate(q.x, q.y);
+                ctx.rotate(q.rot);
+                ctx.fillStyle = q.color;
+                ctx.fillRect(-q.size / 2, -q.size / 2, q.size, q.size * 0.6);
+                ctx.restore();
+            }
+
+            if (elapsed < CONF_LIFE_MS) {
+                confRaf = requestAnimationFrame(tick);
+            } else {
+                ctx.clearRect(0, 0, w, h);
+                cv.style.display = 'none';
+                confRaf = 0;
+            }
+        }
+        confRaf = requestAnimationFrame(tick);
+    };
+})();
+</script>
 
 </body>
 </html>
