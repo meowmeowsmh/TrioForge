@@ -3609,63 +3609,6 @@ def test_human_text_fields_are_spellcheckable() -> None:
 
 
 # ---------------------------------------------------------------------------
-def test_motion_backdrop_is_wired() -> None:
-    """The GG Coder-style backdrop must never rot into a dead decoration.
-
-    Three things turn an animation from a nice touch into a bug: a canvas that
-    swallows clicks, a button wired to a function that no longer exists, and an
-    animation that ignores the OS "reduce motion" setting. Each is invisible in a
-    screenshot and easy for a later refactor to break, so they are pinned here.
-
-    The three scenes live in one file, /static/backdrop.js, and are reached from
-    the template: the backdrop canvas behind the chat, the full-screen scene
-    overlay, and the 🎨 (switch) / ⛶ (full screen) / ✨ (burst) buttons. Under
-    reduced motion the ambient motion is frozen and the burst does nothing.
-    """
-    _title("motion backdrop")
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parent.parent
-    html = (root / "templates" / "index.html").read_text(encoding="utf-8")
-    js = (root / "static" / "backdrop.js").read_text(encoding="utf-8")
-
-    # Template wiring: the canvases, the three buttons, and the external script.
-    for needle in ('<canvas id="tfDotGrid"', '<canvas id="tfConfetti"',
-                   '<canvas id="tfScene"', 'id="tfSceneOverlay"',
-                   'onclick="tfCelebrate(this)"', 'onclick="tfCycleBackdrop()"',
-                   'onclick="tfOpenScene()"', 'src="/static/backdrop.js"'):
-        assert needle in html, "{} missing - the backdrop is not fully wired".format(needle)
-
-    # The backdrop behind the chat is pure decoration and must never eat a click.
-    grid_css = html.split("#tfDotGrid {", 1)[1].split("}", 1)[0]
-    conf_css = html.split("#tfConfetti {", 1)[1].split("}", 1)[0]
-    assert "pointer-events: none" in grid_css, "the backdrop would eat clicks"
-    assert "pointer-events: none" in conf_css, "the burst would eat clicks"
-    assert "z-index: -1" in grid_css, "the backdrop must sit behind the chat"
-
-    # .main needs its own stacking context: without one a z-index:-1 child paints
-    # over the chat text instead of underneath it.
-    assert "position: relative; isolation: isolate;" in html, \
-        ".main must own a stacking context for the floor"
-
-    # All three scenes and the public actions are defined in the shared script.
-    for needle in ("function drawFloor", "function drawCampfire", "function drawFarm",
-                   "window.tfCelebrate", "window.tfCycleBackdrop",
-                   "window.tfOpenScene", "window.tfCloseScene"):
-        assert needle in js, "{} missing from static/backdrop.js".format(needle)
-
-    # Reduced motion is honoured: ambient motion freezes, the burst is a no-op.
-    assert "prefers-reduced-motion: reduce" in js
-    assert "if (reduceMotion) return;" in js, \
-        "the burst must be a no-op under prefers-reduced-motion"
-
-    # The first attempt drew a dot field, replaced by the line grid; no leftovers.
-    assert "(function dotGrid()" not in html
-    assert "(function dotGrid()" not in js
-    print("  backdrop + scenes wired; inert canvas; reduced motion respected -> OK")
-
-
-# ---------------------------------------------------------------------------
 def test_memory_panel_and_free_are_honest() -> None:
     """The top-bar memory badge and free button report only what really happened.
 
@@ -5145,8 +5088,7 @@ def main() -> int:
              test_context_window_is_respected,
              test_local_provider_never_sends_native_tools,
              test_download_ranking_prefers_instruct,
-             test_pool_command_selects_team,
-             test_motion_backdrop_is_wired]
+             test_pool_command_selects_team]
     failed = []
     for t in tests:
         try:

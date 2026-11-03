@@ -260,54 +260,10 @@ body::before {
 /* ── Main content ────────────────────────────── */
 .main {
     flex:1; display:flex; flex-direction:column; min-width:0;
-    /* `isolation` gives .main its own stacking context so the dot-grid canvas
-       below can sit at z-index:-1 - behind the chat, above the panel colour. */
-    position: relative; isolation: isolate;
     background: rgba(10,10,15,0.7);
     backdrop-filter: blur(10px);
     transition: background 0.3s ease;
 }
-/* ── Motion backdrop (ported from the GG Coder framework) ─────────────────────
-   #tfDotGrid  - the backdrop canvas behind the chat. It shows one of three
-                 scenes (floor / campfire / farm), switched with the 🎨 button;
-                 the code lives in /static/backdrop.js so it is easy to edit.
-   #tfConfetti - the one-shot particle burst fired by the ✨ composer button.
-   Both are plain canvas + requestAnimationFrame; the backdrop honours
-   prefers-reduced-motion and never takes pointer events (interaction happens
-   only in the full-screen scene opened by the ⛶ button). */
-#tfDotGrid {
-    position: absolute; inset: 0; z-index: -1;
-    width: 100%; height: 100%;
-    pointer-events: none; opacity: 0.65;
-}
-#tfConfetti {
-    position: fixed; inset: 0; z-index: 12000;
-    pointer-events: none; display: none;
-}
-/* ── Micro-motion (ported from GG Coder: ShimmerText + WorkingBeam) ──────────
-   Two pure-CSS effects, no canvas and no state:
-   .tf-shimmer - a bright spot sweeping across text (background-clip: text).
-   .tf-beam    - a colourful beam sweeping the composer's top edge.            */
-.tf-shimmer {
-    background: linear-gradient(100deg, var(--tf-accent, #58a6ff) 25%,
-                #ffffff 50%, var(--tf-accent, #58a6ff) 75%) !important;
-    background-size: 220% 100% !important;
-    -webkit-background-clip: text !important;
-    background-clip: text !important;
-    -webkit-text-fill-color: transparent !important;
-    animation: tf-shimmer 2.8s linear infinite !important;
-}
-@keyframes tf-shimmer { to { background-position: -220% 0; } }
-.tf-beam::before {
-    content: '';
-    position: absolute; top: -1px; left: -130px;
-    height: 2px; width: 130px; border-radius: 2px;
-    background: linear-gradient(90deg, transparent, #58a6ff 35%, #a371f7 65%, #3fb950, transparent);
-    box-shadow: 0 0 8px rgba(88,166,255,0.55);
-    animation: tf-beam-slide 3.2s linear infinite;
-    pointer-events: none; z-index: 6;
-}
-@keyframes tf-beam-slide { to { left: 100%; } }
 /* ── Top bar with CSS grid for perfect centering ── */
 .top-bar {
     display: grid;
@@ -1756,7 +1712,7 @@ video.tf-video {
   <div class="sidebar-scrim" id="sidebarScrim" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <h2 class="tf-shimmer">💬 Chats</h2>
+      <h2>💬 Chats</h2>
       <button class="sidebar-close" id="sidebarCloseBtn" onclick="closeSidebarDrawer()" title="Close the sidebar" aria-label="Close the sidebar">✕</button>
       <button class="new-chat-btn" onclick="newChat()">+ New</button>
       <button class="new-chat-btn" onclick="openRestoreModal()" style="background:#2d2d3d; box-shadow:none;" title="Restore deleted chats, notes and pins">🗄️</button>
@@ -1775,9 +1731,6 @@ video.tf-video {
   </div>
 
   <div class="main">
-    <!-- Perspective line-grid floor, drawn behind the chat (GG Coder style).
-         Decorative only: aria-hidden, and pointer-events are off in CSS. -->
-    <canvas id="tfDotGrid" aria-hidden="true"></canvas>
     <!-- TOP BAR WITH CENTER TABS -->
     <div class="top-bar">
       <div class="left">
@@ -1910,13 +1863,10 @@ video.tf-video {
       </div>
       <div class="attachments" id="attachments"></div>
       <div id="skillChips" style="display:none; padding:0 16px 6px; gap:6px; flex-wrap:wrap; align-items:center;"></div>
-      <div class="input-bar tf-beam">
+      <div class="input-bar">
         <button class="composer-grip" id="composerGrip" title="Drag to resize the message box (double-click to reset)" aria-label="Resize message box" tabindex="0"></button>
         <button class="search-toggle-btn" id="skillPickBtn" title="Apply a skill to your message" onclick="toggleSkillPicker()">🎓</button>
         <button class="search-toggle-btn" id="searchToggleBtn" title="Toggle web search">🔍</button>
-        <button class="search-toggle-btn" id="celebrateBtn" title="Celebrate — fire a particle burst" aria-label="Fire a particle burst" onclick="tfCelebrate(this)" style="color:#a371f7; border-color:rgba(163,113,247,0.35);">✨</button>
-        <button class="search-toggle-btn" id="backdropBtn" title="Backdrop: floor — click to switch" aria-label="Switch backdrop" onclick="tfCycleBackdrop()" style="color:#3fb950; border-color:rgba(63,185,80,0.35);">🎨</button>
-        <button class="search-toggle-btn" id="sceneBtn" title="Open the backdrop full screen" aria-label="Open backdrop full screen" onclick="tfOpenScene()" style="color:#58a6ff; border-color:rgba(88,166,255,0.35);">⛶</button>
         <button class="attach-btn" title="Attach image or file" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="file" id="fileInput" accept="*/*" multiple style="display:none"/>
         <input type="file" id="ragFileInput" accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.go,.rs,.c,.cpp,.h,.sh,.yaml,.yml,.xml" multiple style="display:none"/>
@@ -1949,7 +1899,7 @@ video.tf-video {
         <button id="recordBtn" class="record-btn" title="Click to record voice input">🎤</button>
         <button id="speakToggleBtn" class="voice-toggle" title="Toggle AI voice output" onclick="toggleVoice()">🔊</button>
         <button id="stopSpeakBtn" class="voice-toggle" title="Stop speaking" style="display:none;" onclick="stopSpeaking()">⏹️</button>
-        <button id="sendBtn"><span class="tf-shimmer">Send</span></button>
+        <button id="sendBtn">Send</button>
         </div>
       </div>
       <!-- Skill apply picker (pinned skills + auto) -->
@@ -11573,18 +11523,6 @@ if ('serviceWorker' in navigator) {
     </div>
     <div id="statsBody"></div>
   </div>
-</div>
-
-<!-- One-shot particle-burst overlay, fired by the ✨ button in the composer. -->
-<canvas id="tfConfetti" aria-hidden="true"></canvas>
-
-<script src="/static/backdrop.js" defer></script>
-
-<!-- Fullscreen scene mode (the ⛶ button): the active backdrop, interactive. -->
-<div id="tfSceneOverlay" style="display:none; position:fixed; inset:0; z-index:11900; background:#05070d; touch-action:none;">
-  <canvas id="tfScene" style="width:100%; height:100%; display:block; cursor:grab;"></canvas>
-  <button id="tfSceneClose" onclick="tfCloseScene()" title="Close scene (Esc)" style="position:fixed; top:14px; right:14px; width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,0.2); background:rgba(20,20,28,0.85); color:#c9d1d9; font-size:18px; cursor:pointer; z-index:2;">&#10005;</button>
-  <div id="tfSceneHint" style="position:fixed; bottom:16px; left:50%; transform:translateX(-50%); padding:7px 14px; border-radius:999px; background:rgba(20,20,28,0.8); border:1px solid rgba(255,255,255,0.12); color:#8b949e; font-size:12px; pointer-events:none; z-index:2;">drag to turn &#183; Esc to close</div>
 </div>
 
 </body>

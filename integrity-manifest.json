@@ -98,7 +98,6 @@
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
   "requirements.txt": "b7a89a25238f139b6ca47ad2896c69ea2b04c922476ee2c41d64a0c2d919cd2d",
   "run.sh": "1c40f3bdaed157f961c7f34b972ed129274bb0be732ec2ac85a4e7ce9d21470e",
-  "static/backdrop.js": "9a5a7ba8157d586770861f1588dfa8db64b78addadf90764f9ba304969af3e39",
   "static/csrf-fetch.js": "4ce420eaa367b4ae27a1c1bd0f0651ed023b4f15ceb25ed9f3e26571e62ad528",
   "static/logo/favicon.png": "9b528c4b59f3284bc58b926317074f55514756a82f7df752662fc7410e434b71",
   "static/logo/logo-512.png": "e485462801da8dfaaa797122600b060b61f65057006a83c80778cafe271718e4",
@@ -120,9 +119,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "76e58489c082e100ac63e2d5556587dcf21bb340fbaf1d4b73a8076b5e21ec4b",
+  "templates/index.html": "4af3fcce0c61530ca7fb75f837990a244c10097b818bca560d65a4206b905d41",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-11-03T23:35:05",
+ "generated": "2026-11-04T00:45:16",
  "note": ""
 }
