@@ -69,7 +69,7 @@
   "py/tools/updater.py": "c5a959549febf2b058f50b0f8dda737d70e6880e2b230da6480f0c23e93b7a86",
   "py/tools/voice_agent.py": "215e68f026a8051a8dbf37acf8f9ad44e90e94fe85853992e9b8a69801cc767f",
   "py/tui/README.md": "1068276fc496725a86573c77f5884d7d7e46947e1867404cd22a470b65dfd44f",
-  "py/tui/__init__.py": "357902f61e8e2d8f11d144e5b118593747b7001b419c17f50b46514f72c9495a",
+  "py/tui/__init__.py": "5671490eec94a51bc181fd308ffdfae9aecbb9b027a2420778f9a41adfc55fa1",
   "py/tui/__main__.py": "89e84ab4cbb2c3509242a69d02c968a0a8af06803fefaa3a50ad27b3032d1646",
   "py/tui/agent.py": "b3e5173956ff0661dee639c64de3f7cb2e698e5bb7a366bd7b5d5266fb9c0b75",
   "py/tui/app.py": "9624df3a1096cc3c78d326cca6fa6f53f310f72fe58a7dea3d51411360f90fbb",
@@ -91,10 +91,10 @@
   "py/tui/tools.py": "45133e7860941f92011a432f7df2757e704b9202adb64d88b094ad1b4a4008d5",
   "py/tui/vision.py": "7445099e359cef74d686a11f854f704bcf89a927e6854445e651baf475eb0b6f",
   "py/tui/wizard.py": "09e646f836b083f9ecf8327edd0229b9391d10986ed36cade4b3057fee5f5b6a",
-  "py/version.py": "2e0babc83afa1cfc4ef62d1fe3dfc251ffe34c19f8c4437d870fbb2f8a7bec76",
+  "py/version.py": "12a4f7dddfc8618b71cb995686cf7edd1f1120cff3c3ff6c87df28e6230fe0ad",
   "py/video_to_text.py": "515ab66ca0c1138bf497855355bb67d565b2ba8509440e6851c007085068ece2",
   "py/voice_service.py": "e3df15bf6bc9a04071abc5f13a04db132a56fb4003af9f4bdd96edea9967360a",
-  "pyproject.toml": "1168cc4bfc9057a147d5046658ed256033e520aa4b6b01ead7ae6f51b0c9ecd9",
+  "pyproject.toml": "788de1209bb207d8fba12ae51bec5732ddad9456f448162c07eaebcf3c3d7962",
   "requirements-ml.txt": "6250b2f67d09de841ee92213d963751c4f136077457de9fc5d27ef0d887c9640",
   "requirements.txt": "b7a89a25238f139b6ca47ad2896c69ea2b04c922476ee2c41d64a0c2d919cd2d",
   "run.sh": "1c40f3bdaed157f961c7f34b972ed129274bb0be732ec2ac85a4e7ce9d21470e",
@@ -122,6 +122,6 @@
   "templates/index.html": "ec71fa295464c4b142b2f33d8c742a48d3243755a972af885965b9cff7a092ae",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-11-05T02:31:30",
- "note": "baseline after 1.6.3: Gemini tools, DeepSeek vision, webhook Discord"
+ "generated": "2026-11-05T02:42:31",
+ "note": "1.9.9 - deliberate version jump"
 }

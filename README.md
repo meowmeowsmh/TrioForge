@@ -28,9 +28,11 @@
 - **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
 - **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` code-block protocol covers models without native function calling, and no workspace folder is required.
 
-### 1.6.3 — the current release
+### 1.9.9 — the current release
 
-**This is the release to install.** It carries all of 1.6.2 plus:
+**This is the release to install.** A deliberate version jump (1.6.3 -> 1.9.9) to
+mark the release where every provider can finally use tools. It carries all of 1.6.3
+plus:
 
 - **🔌 Gemini can call plugins and connectors.** Gemini was chat-only: it answered,
   but it could not read your Obsidian vault, list skills, or touch any tool. Its
@@ -131,7 +133,7 @@
 
 ### 1.6.1
 
-> Superseded by **1.6.3** above. It carries all of 1.6.0 plus:
+> Superseded by **1.9.9** above. It carries all of 1.6.0 plus:
 
 - **`/search` is the web-search switch** — on/off, remembered; when on, the agent's
   live `web_search` tool lets a local llama.cpp model find current articles/docs.
@@ -143,7 +145,7 @@
 
 ### 1.6.0
 
-> Superseded by **1.6.3**. Carries all of 1.5.6 (security, terminal client, image quality, packaging) plus:
+> Superseded by **1.9.9**. Carries all of 1.5.6 (security, terminal client, image quality, packaging) plus:
 
 - **A message box you can resize.** It used to collapse into a 34px-wide sliver on a
   pasted line with no spaces — unreadable, unscrollable, un-resizable. Now it wraps,
@@ -197,7 +199,7 @@
 
 ### 1.5.5 — no console windows, and one command from anywhere
 
-> Superseded by **1.6.3** above — the `v1.5.5` tag was cut before the security and
+> Superseded by **1.9.9** above — the `v1.5.5` tag was cut before the security and
 > performance fixes, so install the newer release.
 
 No console windows, a window that opens, and one command that works from anywhere.
@@ -519,12 +521,12 @@ forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
-forge --version                 # -> forge 1.6.3 (prints the name you typed)
+forge --version                 # -> forge 1.9.9 (prints the name you typed)
 trioforge-web                   # start the web app (same as double-clicking)
 trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
-Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.6.3**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.9.9**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 
@@ -606,7 +608,7 @@ quality depend on what fits on your hardware:
 | **llama.cpp (gemma/nemotron 12B)** | ⚠️ weak / text-protocol | ~1 tok/s | ✅ offline |
 
 **HuggingFace** does not forward tools, so plugins are unavailable on that
-provider. (Gemini used to be in this list too — see 1.6.3.)
+provider. (Gemini used to be in this list too — see 1.9.9.)
 
 #### The connectors at a glance
 
