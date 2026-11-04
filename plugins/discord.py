@@ -1,68 +1,49 @@
-# discord.py — a TrioForge PLUGIN that puts Discord in the app: a Connectors card
-# and two agent tools (discord_send, discord_status).
+# discord.py — a TrioForge PLUGIN that posts to Discord from the agent.
 #
-# ── Why this plugin does almost nothing itself ────────────────────────────────
-# Plugins run INSIDE the app process with full permissions - the app's own docs say
-# a crashing plugin "crashes the app". A chat bot is the one component you expect to
-# break: a bad reply, a loop, a Discord rate limit, a token that expires. So the
-# actual Discord work lives in a SEPARATE process (`bridge.py`) and this file is a
-# thin shim around it:
+# ── Why a webhook instead of a bot / bridge ───────────────────────────────────
+# The old design needed a Discord Developer-Portal app, a bot token in a separate
+# bridge.py's .env, OAuth2 scopes, and a DM-channel lookup — a seven-step chore for
+# "post this to Discord". A channel WEBHOOK is one URL: the user creates it in
+# Discord (Server Settings > Integrations > Webhooks > New Webhook), pastes it
+# here ONCE, and TrioForge posts straight to that channel forever after.
 #
-#   * no network calls here at all - it only spawns a child and reads its output
-#   * every call has a hard timeout, and the child is killed if it overruns
-#   * a crash or a hang in the bridge comes back as an error string, nothing more
+#   * auto-detects whether Discord is installed / running (no config needed)
+#   * the webhook URL is the ONLY secret, stored in the gitignored settings file
+#   * a send is one bounded HTTPS POST; failures come back as an error string
 #
-# The bot token is NEVER stored here and never read by this plugin. It lives in the
-# bridge's own .env, so the app's configuration (and its backups) contain no Discord
-# secret at all. The only thing saved in TrioForge is where the bridge lives.
-#
-# Setup lives in the 🔌 Connectors panel as a guide, and the long version is in
-# the bridge's own README.
+# The URL grants exactly one capability — write to that one channel — and can be
+# deleted in Discord at any time to revoke it.
 
 import json
 import os
-import subprocess
 import sys
+
+try:
+    import requests
+except ImportError:  # pragma: no cover - requests is a TrioForge dependency
+    requests = None
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SETTINGS_PATH = os.path.join(REPO_ROOT, "json_configuration", "discord_bridge.json")
 
-# Where the bridge lives by default. This must not be a machine-specific path: a
-# public repo should never name one computer's drive. The real location is saved
-# in the (gitignored) settings file the first time the user points at it.
-DEFAULT_BRIDGE_DIR = os.path.join(REPO_ROOT, "discord-bridge")
-CALL_TIMEOUT = 45          # seconds: the bridge itself answers in well under a second
-
 MANIFEST = {
     "name": "discord",
     "title": "Discord",
-    "version": "1.0.0",
-    "description": "Post to Discord from the agent, via an isolated bridge process.",
-    # A CONNECTOR: it shows up in the 🔌 panel with its own card and guide.
+    "version": "2.0.0",
+    "description": "Post to a Discord channel from the agent, via a one-paste webhook.",
     "connector": True,
-    # Only the location is asked for. The token stays in the bridge's .env, so a
-    # secret never enters TrioForge's config (or its backups).
+    # Only the webhook URL is asked for. That is the entire secret.
     "credentials": [
-        {"key": "bridge_dir", "label": "Bridge folder (holds bridge.py and .env)",
-         "type": "text", "placeholder": DEFAULT_BRIDGE_DIR},
+        {"key": "webhook_url", "label": "Webhook URL",
+         "type": "text",
+         "placeholder": "https://discord.com/api/webhooks/…"},
     ],
     "guide": [
-        "1. Open the Discord Developer Portal -> New Application -> Bot tab -> Reset "
-        "Token, and copy the token.",
-        "2. Leave 'Privileged Gateway Intents' OFF. The bridge uses plain REST polling, "
-        "so it needs none - and that is also why it can never get your account banned.",
-        "3. OAuth2 -> URL Generator -> scope 'bot', permission 'Send Messages' only -> "
-        "open the URL and add the bot to ONE private server with only you. Give it no "
-        "other permissions.",
-        "4. In the bridge folder: copy .env.example to .env, paste the token as "
-        "DISCORD_TOKEN.",
-        "5. Ask the bot to work out your DM channel: python bridge.py dm-channel "
-        "<your_user_id> (Developer Mode on, right-click your name, Copy User ID).",
-        "6. Put that channel id in DISCORD_ALLOWED_CHANNEL_IDS in .env. The bot can "
-        "post nowhere else.",
-        "7. Test it: python bridge.py send \"hello from TrioForge\".",
-        "Optional: set ALLOW_INBOUND=1 and DISCORD_ALLOWED_USER_IDS=<your id> to also "
-        "let you message the bot from your phone. Only listed user ids are obeyed.",
+        "1. In Discord: Server Settings -> Integrations -> Webhooks -> New Webhook, "
+        "pick a channel, Copy Webhook URL.",
+        "2. Paste that URL here and Save. Done — no bot, no token, no .env.",
+        "3. The webhook can only post to the one channel you created it in; delete "
+        "the webhook in Discord to revoke it at any time.",
     ],
 }
 
@@ -71,18 +52,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "discord_send",
-            "description": "Send a Discord message through the user's own bot. The bot "
-                           "can only post to the channels the user allow-listed, so a "
-                           "channel is optional - leave it out to use the configured "
-                           "one. Use this only when the user actually asks to send "
-                           "something to Discord.",
+            "description": "Post a message to the user's Discord channel (via their configured "
+                           "webhook). Use only when the user actually asks to send something to "
+                           "Discord.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "the message to post"},
-                    "channel_id": {"type": "string",
-                                   "description": "optional target channel id; must "
-                                                  "already be allow-listed"},
                 },
                 "required": ["text"],
                 "additionalProperties": False,
@@ -93,7 +69,8 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "discord_status",
-            "description": "Check whether the Discord bridge is set up and its token works.",
+            "description": "Check whether Discord is installed/running on this machine and "
+                           "whether a webhook is connected.",
             "parameters": {"type": "object", "properties": {},
                            "additionalProperties": False},
         },
@@ -118,104 +95,81 @@ def _save_settings(updates):
         json.dump(data, fh, indent=2)
 
 
-def bridge_dir():
-    """Where bridge.py lives: the saved setting, then the environment, then the default."""
-    saved = (_settings().get("bridge_dir") or "").strip()
-    return saved or (os.environ.get("DISCORD_BRIDGE_DIR") or "").strip() or DEFAULT_BRIDGE_DIR
+def _webhook_url():
+    return (_settings().get("webhook_url") or "").strip()
 
 
-def _bridge_path():
-    return os.path.join(bridge_dir(), "bridge.py")
-
-
-# ── the isolated call ─────────────────────────────────────────────────────────
-def _python():
-    """The interpreter to run the bridge with. Stdlib only, so the app's own works."""
-    return sys.executable or "python"
-
-
-def _run_bridge(args, timeout=CALL_TIMEOUT):
-    """Run the bridge in its OWN process and return (ok, text).
-
-    Everything risky happens out there: no Discord library is imported here, no
-    socket is opened here, and a hang is killed instead of blocking the app. This
-    function is the entire coupling between TrioForge and the bot.
-    """
-    script = _bridge_path()
-    if not os.path.isfile(script):
-        return False, (f"bridge.py not found in {bridge_dir()!r} - put the bridge "
-                       "folder path in this card's settings.")
-    env = dict(os.environ)
-    env["PYTHONIOENCODING"] = "utf-8"
-    kwargs = {}
-    try:                                   # never flash a console window on Windows
-        from proc_util import hidden_flags
-        kwargs["creationflags"] = hidden_flags()
-    except Exception:
-        pass
-    kwargs["stdout"] = subprocess.PIPE
-    kwargs["stderr"] = subprocess.STDOUT
-    kwargs["cwd"] = bridge_dir()
+# ── detection ─────────────────────────────────────────────────────────────────
+def _discord_running():
+    """True when a Discord client process is running right now."""
     try:
-        proc = subprocess.run([_python(), script] + list(args), env=env,
-                              timeout=timeout, **kwargs)
-    except subprocess.TimeoutExpired:
-        return False, (f"the bridge did not answer within {timeout}s and was stopped - "
-                       "TrioForge is unaffected; check the bridge window/log")
-    except Exception as exc:               # noqa: BLE001 - never let a plugin raise
-        return False, f"could not start the bridge: {exc}"
-    out = (proc.stdout or b"").decode("utf-8", "replace").strip()
-    return proc.returncode == 0, out
+        import psutil
+        for p in psutil.process_iter(["name"]):
+            name = (p.info.get("name") or "").lower()
+            if "discord" in name:
+                return True
+    except Exception:  # noqa: BLE001 - detection is best-effort
+        pass
+    return False
 
 
-def _last_line(text):
-    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
-    return lines[-1] if lines else ""
+def _discord_installed():
+    """True when Discord appears to be installed in the user's profile."""
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local and os.path.isdir(os.path.join(local, "Discord")):
+        return True
+    # Discord's stable build also leaves an Update.exe; check a couple of names.
+    for sub in ("Discord", "discord"):
+        if local and os.path.isdir(os.path.join(local, sub)):
+            return True
+    return False
+
+
+# ── webhook ───────────────────────────────────────────────────────────────────
+def _webhook_info():
+    """GET the webhook's own metadata to validate the URL (no message is sent)."""
+    if requests is None:
+        return {"error": "requests is not installed"}
+    url = _webhook_url()
+    if not url:
+        return {"error": "no webhook configured"}
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            d = r.json()
+            return {"name": d.get("name"), "channel_id": d.get("channel_id"),
+                    "guild_id": d.get("guild_id")}
+        return {"error": "HTTP {}: {}".format(r.status_code, (r.text or "")[:160])}
+    except Exception as exc:  # noqa: BLE001 - report anything as not-reachable
+        return {"error": str(exc)}
 
 
 # ── status ────────────────────────────────────────────────────────────────────
 def _status():
-    """What the Connectors card renders. Never raises.
-
-    The generic card reads `connected` / `configured` / `account` / `error` /
-    `needs_setup` and shows the declared fields only while it is not configured -
-    so all of them are always present, not just when something is wrong.
-    """
-    folder = bridge_dir()
+    """What the Connectors card renders. Never raises."""
+    url = _webhook_url()
     st = {
         "connector": "discord",
-        "bridge_dir": folder,
-        "installed": os.path.isfile(_bridge_path()),
-        "env_file": os.path.isfile(os.path.join(folder, ".env")),
-        # Stated on the card itself: the risky half runs in another process.
-        "isolated_from_app": True,
-        "configured": False,
+        "discord_installed": _discord_installed(),
+        "discord_running": _discord_running(),
+        "configured": bool(url),
         "connected": False,
         "account": None,
-        "needs_setup": False,
+        "needs_setup": not bool(url),
     }
-    if not st["installed"]:
-        st.update({"needs_setup": True,
-                   "error": f"bridge.py is not in {folder}. Set the folder above, or "
-                            "copy the bridge there."})
+    if not url:
+        st["error"] = ("No webhook yet. In Discord: Server Settings > Integrations > "
+                       "Webhooks > New Webhook, then paste the URL here.")
         return st
-    ok, out = _run_bridge(["whoami"], timeout=30)
-    st["detail"] = _last_line(out)
-    st["connected"] = bool(ok and "token OK" in out)
-    st["configured"] = bool(st["env_file"])
-    if st["connected"]:
-        # "token OK - bot is NAME#0 (id 123)" -> NAME#0
-        name = ""
-        if "bot is" in st["detail"]:
-            name = st["detail"].split("bot is", 1)[1].split("(", 1)[0].strip()
-        st["account"] = ("discord bot " + name) if name else "discord bot"
-        st["summary"] = ("Discord bridge is ready - " + st["detail"] +
-                         ". The bot can only post to allow-listed channels.")
-    elif not st["env_file"]:
-        st["error"] = ("No .env in the bridge folder yet: copy .env.example to .env "
-                       "and paste DISCORD_TOKEN.")
+    info = _webhook_info()
+    if "channel_id" in info:
+        st["connected"] = True
+        name = (info.get("name") or "").strip()
+        st["account"] = "Discord webhook" + (" — " + name if name else "")
+        st["summary"] = ("Connected to Discord channel {}. Posts go to that one "
+                         "channel only.".format(info.get("channel_id")))
     else:
-        st["error"] = "Bridge found but the token check failed: " + st["detail"]
+        st["error"] = "Webhook failed: " + (info.get("error") or "unknown error")
     return st
 
 
@@ -224,34 +178,22 @@ def _send(text, channel_id=None):
     text = (text or "").strip()
     if not text:
         return {"error": "nothing to send"}
-    if channel_id:
-        # The bridge refuses anything not allow-listed; say so up front so the model
-        # does not read a refusal as a temporary glitch and retry.
-        args = ["send", text] if str(channel_id) in _allowed_channels() else None
-        if args is None:
-            return {"error": f"channel {channel_id} is not in the bridge's "
-                             "DISCORD_ALLOWED_CHANNEL_IDS allow-list"}
-    else:
-        args = ["send", text]
-    ok, out = _run_bridge(args)
-    if ok:
-        return {"ok": True, "summary": "sent to Discord: " + _last_line(out)}
-    return {"error": _last_line(out) or "the bridge did not confirm the send"}
-
-
-def _allowed_channels():
-    """Read the allow-list out of the bridge's .env (ids only - never the token)."""
-    ids = []
-    path = os.path.join(bridge_dir(), ".env")
+    url = _webhook_url()
+    if not url:
+        return {"error": "No Discord webhook is configured — set one in the "
+                         "Connectors panel first."}
+    if requests is None:
+        return {"error": "requests is not installed"}
+    if len(text) > 2000:
+        text = text[:1997] + "…"     # Discord's message cap
     try:
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if line.startswith("DISCORD_ALLOWED_CHANNEL_IDS"):
-                    ids = [p.strip() for p in line.partition("=")[2].split(",") if p.strip()]
-    except Exception:                      # noqa: BLE001 - a missing .env is reported
-        pass                               # by _status(), not here
-    return ids
+        r = requests.post(url, json={"content": text}, timeout=15)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": "Could not reach Discord: {}".format(exc)}
+    if r.status_code in (200, 204):
+        return {"ok": True, "summary": "posted to Discord"}
+    return {"error": "Discord rejected the post (HTTP {}): {}".format(
+        r.status_code, (r.text or "")[:200])}
 
 
 def dispatch(tool_name, args):
@@ -262,16 +204,14 @@ def dispatch(tool_name, args):
         st = _status()
         if st.get("connected"):
             return {"connected": True, "summary": st["summary"]}
-        # Hand back the REASON, not just "not ready": the model repeats this to the
-        # user, and "the token is not set" is actionable where "not ready" is not.
         return {"connected": False,
                 "summary": st.get("error") or st.get("summary")
-                           or "the Discord bridge is not ready"}
+                           or "Discord is not connected"}
     return {"error": "unknown tool " + str(tool_name)}
 
 
 def connect_info():
-    """The TUI's view of this connector (there is no browser sign-in to offer)."""
+    """The TUI's view of this connector (no browser sign-in to offer)."""
     st = _status()
     if st.get("connected"):
         return {"connected": True, "account": st.get("account")}
@@ -289,19 +229,15 @@ def register(app):
 
     @app.route("/api/connectors/discord/credentials", methods=["POST"])
     def _discord_credentials_route():
-        """The card's Save button POSTs the declared fields here.
-
-        Only the folder is stored. There is no Discord secret to save: the token
-        stays in the bridge's own .env, so it never lands in TrioForge's config or
-        in a backup of it.
-        """
+        """The card's Save button POSTs the webhook URL here."""
         data = request.get_json(silent=True) or {}
-        folder = (data.get("bridge_dir") or "").strip()
-        if not folder:
-            return jsonify({"error": "a bridge folder is required"}), 400
-        if not os.path.isdir(folder):
-            return jsonify({"error": f"{folder} is not a folder"}), 400
-        _save_settings({"bridge_dir": folder})
+        url = (data.get("webhook_url") or "").strip()
+        if not url:
+            return jsonify({"error": "a webhook URL is required"}), 400
+        if not (url.startswith("https://discord.com/api/webhooks/")
+                or url.startswith("https://discordapp.com/api/webhooks/")):
+            return jsonify({"error": "that does not look like a Discord webhook URL"}), 400
+        _save_settings({"webhook_url": url})
         return jsonify({"ok": True, "status": _status()})
 
     # Kept as an alias so either name works from a script or the terminal client.
@@ -311,23 +247,18 @@ def register(app):
 
     @app.route("/api/connectors/discord/test", methods=["POST"])
     def _discord_test_route():
-        """Run the token check on demand - the button in the card."""
+        """Validate the webhook on demand - the button in the card."""
         return jsonify(_status())
 
     @app.route("/api/connectors/discord/disconnect", methods=["POST"])
     def _discord_disconnect_route():
-        """Forget the bridge folder.
-
-        There is no token inside TrioForge to revoke, so this clears the setting and
-        says so plainly rather than pretending something was signed out.
-        """
+        """Forget the webhook URL. Delete the webhook in Discord to truly revoke it."""
         try:
             if os.path.isfile(_SETTINGS_PATH):
                 os.remove(_SETTINGS_PATH)
         except OSError as exc:
             return jsonify({"error": "could not clear the setting: {}".format(exc)}), 500
         st = _status()
-        st["note"] = ("TrioForge forgot the bridge folder. The bot token lives in the "
-                      "bridge's own .env - revoke it in the Discord Developer Portal "
-                      "if you want it dead.")
+        st["note"] = ("TrioForge forgot the webhook URL. Delete the webhook in Discord "
+                      "if you want it fully revoked.")
         return jsonify({"ok": True, "status": st})

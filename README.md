@@ -28,9 +28,75 @@
 - **🤖 DeepSeek Harness plugin** — `dsh_run` hands a whole task to the DeepSeek Harness coding agent. Ships disabled by default; enable it in the 🧩 Plugins panel.
 - **Offline tools** — local models can use plugins now: a fenced ```tool {…}``` code-block protocol covers models without native function calling, and no workspace folder is required.
 
-### 1.6.2 — the current release
+### 1.6.3 — the current release
 
-**This is the release to install.** It carries all of 1.6.1 plus what landed since:
+**This is the release to install.** It carries all of 1.6.2 plus:
+
+- **🔌 Gemini can call plugins and connectors.** Gemini was chat-only: it answered,
+  but it could not read your Obsidian vault, list skills, or touch any tool. Its
+  native function calling now runs through the same agent loop as Claude and
+  DeepSeek. Three things had to be right before it worked:
+  - **Thinking models sign their tool calls.** `gemini-3.x-flash` attaches a
+    `thoughtSignature` to every `functionCall`; echo it back or the *next* turn is
+    rejected with `400 INVALID_ARGUMENT`. It lives next to `functionCall` at the
+    part level (camelCase), not inside it.
+  - **One bad tool schema used to kill all of them.** The `mcp__memory__*` tools
+    carry JSON-Schema (`oneOf`/`anyOf`/`additionalProperties`) that Gemini rejects,
+    and because the whole tool list is one object, that silently disabled *every*
+    tool — the model just answered "I don't have access". Schemas are sanitised now.
+  - **Namespaced call names** (`default:list_skills`) are stripped to match ours.
+  - Caveat: `gemini-3.5-flash` is a *thinking* model and is inconsistent about
+    **choosing** a tool — the plumbing is reliable, the tool choice is not. Prefer
+    `gemini-2.5-pro` / `gemini-3.1-pro` for tool work.
+- **👁 DeepSeek can see images.** `deepseek-flash` genuinely reads pictures (verified
+  with shape/count/number tests, not just colours). `DeepSeek-V4-Flash-Vision-Exp`
+  is selectable and **aliased to `deepseek-flash`** on the wire — DeepSeek's public
+  API only serves `deepseek-flash` and `deepseek-v4-pro`, so that catalogue name
+  used to return an empty reply. **`deepseek-v4-pro` is text-only.**
+- **🎮 Discord is one paste, not seven steps.** The old connector wanted a
+  Developer-Portal app, a bot token in a separate `bridge.py`'s `.env`, OAuth2
+  scopes and a DM-channel lookup. It now **auto-detects** whether Discord is
+  installed/running and posts through a **single channel webhook** — no bot, no
+  token, no `.env`, no bridge process. See `plugins/README.md`.
+- **⌨️ Ghost-text autocomplete no longer delays your send.** Every completion was a
+  full non-streaming model call, and none were cancelled — so several were in
+  flight at once. Chrome allows six connections per origin, so the real message
+  *queued behind them* and a send could sit for minutes before it was transmitted.
+  Completions now abort on send and only one runs at a time (debounce 600 → 900 ms).
+- **⏱ The agent loop always ends in an answer.** A thorough turn (a full OS review
+  made 38 tool calls) used to burn every step still investigating and then return
+  `"The model did not finish within the tool-call limit."` The **last** step now
+  withdraws the tools and demands the summary; the budget also went 20 → 30. While a
+  tool turn runs the bubble shows `🔧 working with tools… Ns` (a non-streaming loop
+  used to leave it completely blank).
+- **🔁 One dropped socket no longer ends the turn.** `10053`/`10054`,
+  `RemoteDisconnected` and resets are retried once; real `401`/`429` failures are
+  not. The app previously had **no** retry logic anywhere.
+- **🧠 Prompt fixes** (these changed what every provider receives):
+  - the system prompt is no longer sent **twice** on API providers (it was folded
+    into the user turn *and* sent as `system`), which roughly halved prefill;
+  - the RAG block no longer says "answer from the documents" and "ask a clarifying
+    question" in the same breath;
+  - trimming history can no longer slice the `system` message away in long chats
+    (which is why a long conversation "forgot" the persona and rules);
+  - hosted models keep 40 turns / ~12k tokens of history instead of being cut to
+    10 messages / ~3k, which was sized for a small local `n_ctx`.
+- **⚡ File tools are bounded.** `read_file` takes `offset`/`limit` (+ reports
+  `total_chars`), so a large file is paged instead of shell-sliced; `search_files`
+  is capped (150 files / 5 s) and skips binaries and files over 1 MB; recursive
+  listing stops at 600 entries; `.venv*`, `site-packages`, `dist`, `build` and
+  `node_modules` are excluded. One recursive list over a drive root used to run
+  ~13 minutes, and a search over `site-packages` took 48 s.
+- **Transport errors are no longer blamed on billing.** `Failed to fetch` (the
+  browser's connection dropped) used to be reported as *"this is a paid API; check
+  your account/billing"*. It now says the request never reached the server.
+- **Workspace folder gotcha, documented.** File tools work inside the workspace
+  *folder*. If that folder is a drive root (`C:\`) they scan the whole disk, every
+  `read_file` misses, and the agent flails. Set it to your project folder.
+
+### 1.6.2
+
+**It carries all of 1.6.1 plus what landed since:**
 
 - **`/thinking` picks the reasoning effort** — `low` → `mid` → `high` → `max` (and
   `off`), for API models and local ones alike: DeepSeek's `reasoning_effort`,
@@ -46,10 +112,26 @@
 - **`trioforge-web` on Linux/macOS**, `run.sh` resolves its own symlink so the
   command works from any directory, and the web UI has **`ctrl+r`** to reload and
   re-scan models.
+- **🧹 `clean_disk` — reclaim Windows bloat from chat.** Ask "clean my bloat" and the
+  agent calls a native tool instead of inventing shell commands: `scan` reports the
+  sizes of browser caches, npm/pip caches, temp files and crash dumps (read-only,
+  each folder capped to a few seconds so the answer stays fast); `clean` deletes that
+  fixed whitelist and reports the exact GB freed. It never touches AI models, the
+  pagefile or hibernation. Deleting requires **Full computer access**, like
+  `run_command`. Chrome keeps its cache files open, so close the browser for a full
+  clear — the tool then reports `partial` rather than claiming success.
+- **❓ Interactive clarifying questions.** When the request is genuinely ambiguous the
+  model asks with ONE fenced ` ```ask_user ` block instead of prose, and the chat
+  renders a real picker: a header, the question, checkbox (or radio) options with
+  descriptions, a **Recommended** pill, a *Type your answer* line, and **Submit** /
+  **Skip this question**. The block is stripped before Markdown renders, so the raw
+  JSON never appears; a malformed block is left alone rather than swallowed. The
+  answer is sent as the next message, so it works on every provider (streaming and
+  non-streaming) and needs no server-side pause.
 
 ### 1.6.1
 
-> Superseded by **1.6.2** above. It carries all of 1.6.0 plus:
+> Superseded by **1.6.3** above. It carries all of 1.6.0 plus:
 
 - **`/search` is the web-search switch** — on/off, remembered; when on, the agent's
   live `web_search` tool lets a local llama.cpp model find current articles/docs.
@@ -61,7 +143,7 @@
 
 ### 1.6.0
 
-> Superseded by **1.6.2**. Carries all of 1.5.6 (security, terminal client, image quality, packaging) plus:
+> Superseded by **1.6.3**. Carries all of 1.5.6 (security, terminal client, image quality, packaging) plus:
 
 - **A message box you can resize.** It used to collapse into a 34px-wide sliver on a
   pasted line with no spaces — unreadable, unscrollable, un-resizable. Now it wraps,
@@ -115,7 +197,7 @@
 
 ### 1.5.5 — no console windows, and one command from anywhere
 
-> Superseded by **1.6.2** above — the `v1.5.5` tag was cut before the security and
+> Superseded by **1.6.3** above — the `v1.5.5` tag was cut before the security and
 > performance fixes, so install the newer release.
 
 No console windows, a window that opens, and one command that works from anywhere.
@@ -437,12 +519,12 @@ forge --echo                    # offline demo: no model contacted
 forge --classic                 # plain scroll-back UI, no alternate screen
 forge "explain this repo"       # one-shot
 forge --specs                   # hardware that was detected, and what fits
-forge --version                 # -> forge 1.6.2 (prints the name you typed)
+forge --version                 # -> forge 1.6.3 (prints the name you typed)
 trioforge-web                   # start the web app (same as double-clicking)
 trioforge-web --quit            # stop the running server (clean shutdown)
 ```
 
-Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.6.2**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
+Requires **Python 3.12+** — see `pyproject.toml`. 3.10 reached end-of-life and 3.11 is in security-only maintenance, so neither is supported; 3.12 is also what the Docker image ships and the floor the llama.cpp/ffmpeg installers need (`tarfile.extractall(filter=)` is 3.12+). `run.sh` uses the **newest `python3.X` on your PATH**, so a box with 3.14 builds its venv on 3.14 rather than on whatever `python3` aliases to; `TRIOFORGE_PYTHON=python3.12 ./run.sh` forces a specific interpreter, and anything below 3.12 is refused up front. An existing `.venv-linux` keeps its own interpreter — `rm -rf .venv-linux && ./run.sh` rebuilds it on the newest one. The client tracks the web app's version — **1.6.3**. The rest of the flags — `--provider`, `--model`, `--setup`, `--api-key`, `--system`, `--temperature`, `--timeout`, `--base-url`, `--no-banner`, `--install-llama` — are all in `forge --help`.
 
 **llama.cpp is fetched for you** — the right prebuilt build downloads once on first use and is reused. `TRIOFORGE_NO_AUTO_INSTALL=1` disables it. The first message you send on a local model **starts the server automatically**.
 
@@ -501,8 +583,8 @@ The reply cap takes effect on the very next message; the context window applies 
 
 ## ✨ Features
 
-- **Chat & models** — Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter (one key → hundreds of models); multi-modal vision, file/image/PDF upload, persistent auto-save, personas, per-provider API keys, a local-vs-API badge, classified errors.
-- **Agent & tools** — a folder-scoped coding agent (`list/search/read/write/edit/run` + `web_search`, up to 20 round-trips) with a live diff panel, optional full computer access, multi-agent (6 models) and A/B compare.
+- **Chat & models** — Ollama, llama.cpp, Groq, DeepSeek, Claude, Gemini, OpenRouter (one key → hundreds of models); multi-modal vision, file/image/PDF upload, persistent auto-save, personas, per-provider API keys, a local-vs-API badge, classified errors. **Vision per provider:** Claude, Gemini, OpenRouter and DeepSeek (`deepseek-flash` / `DeepSeek-V4-Flash-Vision-Exp`) read images — `deepseek-v4-pro` is text-only.
+- **Agent & tools** — a folder-scoped coding agent (`list/search/read/write/edit/run` + `web_search`, up to 30 round-trips, and the last one always produces an answer) with a live diff panel, optional full computer access, multi-agent (6 models) and A/B compare.
 - **Knowledge** — Obsidian-style **Notes**, a **Corkboard** knowledge graph, document chat (RAG) over PDF/Word/Markdown/code.
 - **Media** — image/video/audio generation (OpenRouter / Gemini / ComfyUI), video/audio → text, local voice-to-voice.
 - **Find & keep** — FTS5 full-text search, Markdown/JSON export-import, auto titles.
@@ -519,23 +601,32 @@ quality depend on what fits on your hardware:
 |---|---|---|---|
 | **Claude** | ✅ native, excellent | fast | ❌ cloud |
 | **Groq / DeepSeek / OpenRouter** | ✅ native | fast | ❌ cloud |
+| **Gemini** | ✅ native (plumbing reliable; tool *choice* is weak on the `flash` thinking models) | fast | ❌ cloud |
 | **Ollama + qwen2.5:7b** | ✅ native, good | fast (on GPU) | ✅ offline |
 | **llama.cpp (gemma/nemotron 12B)** | ⚠️ weak / text-protocol | ~1 tok/s | ✅ offline |
 
-HuggingFace and Gemini do not forward tools, so plugins are unavailable on those
-two providers.
+**HuggingFace** does not forward tools, so plugins are unavailable on that
+provider. (Gemini used to be in this list too — see 1.6.3.)
 
-#### Obsidian (local) vs Gmail (cloud)
+#### The connectors at a glance
 
-| Connector | Reads | Sign-in | Offline? |
+| Connector | Reads / writes | Sign-in | Offline? |
 |---|---|---|---|
 | **Obsidian** | your local vault folder (`.md` notes) | ❌ just a folder path | ✅ fully offline |
 | **Gmail** | your Google inbox | ✅ OAuth | ❌ needs Google |
+| **Google Calendar** | events (read **and** write) | ✅ OAuth (same Google app) | ❌ needs Google |
+| **Discord** | posts to one channel | ❌ one webhook URL | ❌ needs Discord |
 
 The **Obsidian** connector searches, reads and writes plain `.md` notes inside one
 vault folder. Nothing leaves your machine and no account is needed — just point it
 at the folder that contains `.obsidian`. So with a local model (Ollama or
 llama.cpp), Obsidian is **end-to-end offline**.
+
+The **Discord** connector is deliberately a **webhook**, not a bot: paste one channel
+webhook URL and the agent can post there. No Developer-Portal app, no bot token, no
+`.env`, and no "log in as me" mode (a user token would break Discord's ToS). It also
+reports whether Discord is installed/running on the machine. Full walkthrough:
+`plugins/README.md`.
 
 #### ☀️ Daily briefing (opt-in plugin)
 
@@ -616,6 +707,19 @@ Keys are never written to disk.
 ## 🗂️ Workspaces & folder access
 
 A workspace scopes a model to one folder (read or read/write) with a thinking-effort hint. Tools: `list_files`, `search_files`, `read_file`, `write_file`, `edit_file` (surgical, unique-match), `run_command` (30 s cap). Paths are resolved against the folder and `..` traversal is blocked.
+
+**Point it at a real project folder, not a drive root.** The file tools are scoped to
+this folder and nothing else, so if it is set to `C:\` then:
+
+- every `read_file("py/app.py")` looks in `C:\py\app.py` and reports *file not found*,
+- a recursive `list_files` walks the whole disk (it hit `$Recycle.Bin`, ran ~13
+  minutes, and overflowed the context before it was capped),
+- `search_files` scans every installed package (48 s before it was bounded).
+
+The agent then looks broken — it "cannot find" files sitting in your project and
+starts inventing shell one-liners. Check **⚙ Workspaces → folder** first whenever the
+agent says a file does not exist. Listing and search are now bounded and skip
+`.venv*` / `site-packages` / `node_modules`, but the folder is still the real fix.
 
 **Full computer access** (opt-in): `open_url`, `open_app`, `type_text`, `press_keys`, `screenshot` — needs `pyautogui` for typing/keys/screenshots. Only enable it for a task you trust.
 

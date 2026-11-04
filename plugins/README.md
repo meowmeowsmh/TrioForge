@@ -146,37 +146,47 @@ Credentials and tokens written by a connector are stored in
 
 ---
 
-## The Discord connector — and why its bot lives elsewhere
+## The Discord connector — one webhook, no bot
 
 `plugins/discord.py` adds a **Discord** card to 🔌 Connectors and two tools
-(`discord_send`, `discord_status`). It does **not** talk to Discord itself.
+(`discord_send`, `discord_status`). It posts through a **channel webhook**.
 
-That is deliberate. Plugins run in-process with full permissions, and the line above
-says what that means: a plugin that crashes takes the app with it. A chat bot is the
-one component you should expect to break — a rate limit, a dead token, a stuck
-socket — so the work happens in a **separate process**:
+### Why it changed (v1 → v2)
+
+v1 spawned a separate `bridge.py` process and asked you for a bot token in that
+process's `.env`. That was safe but it was **seven steps**: Developer Portal → new
+application → Bot tab → reset token → OAuth2 URL Generator → add the bot to a
+server → look up a DM channel id. For "post this to Discord", nobody finishes that.
+
+v2 keeps the safety (the webhook is one capability, not an account) and drops the
+chore:
 
 ```
-plugins/discord.py            in the app: a card, two tools, no network code
-        |  spawns, with a hard timeout
-        v
-<bridge folder>\bridge.py     out of process: Discord, rate limits, the token
+plugins/discord.py   in the app: auto-detect + one HTTPS POST to the webhook
 ```
 
-Consequences worth knowing:
+- **Auto-detect.** `discord_status` reports whether Discord is installed
+  (`%LOCALAPPDATA%\Discord`) and/or running right now. No configuration needed.
+- **One secret.** The webhook URL is the only thing stored, in the gitignored
+  `json_configuration/discord_bridge.json`. It can only post to the one channel it
+  was created in, and deleting the webhook in Discord revokes it instantly.
+- **Failures are strings.** A rejected post (revoked webhook, 404, rate limit) comes
+  back as an error the model can repeat — the app never crashes on it.
+- **No bot token anywhere**, so there is no `DISCORD_TOKEN`, no `.env`, and no
+  process to babysit.
 
-- A crash, a hang or a Discord outage in the bridge comes back as an **error string**.
-  The app keeps running; the card says what went wrong.
-- The card asks only for the **bridge folder**. The bot token stays in the bridge's
-  own `.env`, so no Discord secret is stored in TrioForge's config — or in a backup
-  of it. "Disconnect" clears the folder and says the token is yours to revoke.
-- The bridge refuses to post to any channel not listed in
-  `DISCORD_ALLOWED_CHANNEL_IDS`, and inbound is off unless `ALLOW_INBOUND=1` **and**
-  `DISCORD_ALLOWED_USER_IDS` lists you. Without both, anyone who could message the
-  bot could drive the model.
+> There is deliberately no "log in as me" mode. Acting as your Discord *account*
+> needs your user token, which breaks Discord's Terms of Service and risks a ban.
+> A webhook is the supported way to post from another program.
 
-Setup: the card's **guide** (7 steps), or the longer walkthrough in the bridge
-folder's `README.md`.
+### Setup (30 seconds)
+
+1. In Discord: **Server Settings → Integrations → Webhooks → New Webhook**, pick the
+   channel, **Copy Webhook URL**.
+2. In TrioForge: **🔌 Connectors → Discord → paste the URL → Save**.
+3. Ask the agent to "post X to Discord".
+
+`discord_status` then reports `connected` with the channel id.
 
 ---
 

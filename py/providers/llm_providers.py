@@ -1624,6 +1624,19 @@ DEEPSEEK_MODEL_CATALOG = {
         "inputModalities": ["text", "image"],
         "reasoning": None,
     },
+    # The harness catalogue advertises a dedicated vision id. DeepSeek's public API
+    # does not serve it (only deepseek-flash and deepseek-v4-pro exist), but
+    # deepseek-flash DOES accept images — verified. Keeping this entry selectable
+    # and aliasing it to deepseek-flash on the wire means the name works instead of
+    # returning empty replies.
+    "deepseek-v4-flash-vision-exp": {
+        "name": "DeepSeek-V4-Flash-Vision-Exp",
+        "description": "Experimental vision build: image understanding and multimodal "
+                       "chat (runs on the deepseek-flash endpoint).",
+        "contextWindow": 1_000_000,
+        "inputModalities": ["text", "image"],
+        "reasoning": None,
+    },
     "deepseek-v4-pro": {
         "name": "DeepSeek-V4-Pro",
         "description": "Stronger agentic coding, knowledge, and difficult reasoning; suited to "
@@ -1663,6 +1676,20 @@ def deepseek_reasoning_effort(thinking) -> str:
     return DEEPSEEK_REASONING_EFFORT_WIRE.get(str(thinking).strip().lower(), "high")
 
 
+#: Catalogue ids that the public API does not serve, mapped to the id it does.
+#: `deepseek-v4-flash-vision-exp` is a harness name; deepseek-flash is the model
+#: that actually accepts images, so the wire call must use that.
+DEEPSEEK_WIRE_ALIASES = {
+    "deepseek-v4-flash-vision-exp": "deepseek-flash",
+}
+
+
+def deepseek_wire_model(model: Optional[str]) -> str:
+    """The model id to send to api.deepseek.com for a UI/catalogue model id."""
+    m = (model or "").strip()
+    return DEEPSEEK_WIRE_ALIASES.get(m, m or "deepseek-flash")
+
+
 class DeepSeekProvider(LLMProvider):
     # Normal chat keeps a sane ceiling, but the ceiling itself must NOT be 8192:
     # these models are thinkers, and a thinking model spends max_tokens on its
@@ -1681,6 +1708,7 @@ class DeepSeekProvider(LLMProvider):
     _BACKUP_MODELS = [
         "deepseek-flash",
         "deepseek-v4-pro",
+        "deepseek-v4-flash-vision-exp",
     ]
 
     def __init__(self, api_key: Optional[str] = None):
@@ -1837,7 +1865,7 @@ class DeepSeekProvider(LLMProvider):
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = min(kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS), self.MAX_OUTPUT_TOKENS)
         payload = {
-            "model": model,
+            "model": deepseek_wire_model(model),
             "messages": messages,
             "stream": False,
             "max_tokens": max_tokens,
@@ -1882,10 +1910,17 @@ class DeepSeekProvider(LLMProvider):
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:
-        """OpenAI-compatible vision request for the deepseek-v4-flash-vision-exp model."""
+        """OpenAI-compatible vision request for DeepSeek.
+
+        The default used to be ``deepseek-v4-flash-vision-exp``, which is a
+        harness-catalogue name that the public API does not serve (only
+        ``deepseek-flash`` and ``deepseek-v4-pro`` exist, and ``deepseek-flash`` is
+        the one that actually accepts images). Falling back to a non-existent id
+        returned an empty reply.
+        """
         key = self._get_key(kwargs)
         headers = self._get_headers(key)
-        model = kwargs.get("model", "deepseek-v4-flash-vision-exp")
+        model = kwargs.get("model") or "deepseek-flash"
         temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
         max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
 
@@ -1905,7 +1940,7 @@ class DeepSeekProvider(LLMProvider):
         ] + [{"role": "user", "content": content_parts}]
 
         payload = {
-            "model": model,
+            "model": deepseek_wire_model(model),
             "messages": vision_messages,
             "stream": False,
             "max_tokens": max_tokens,
@@ -2082,6 +2117,11 @@ class GeminiProvider(LLMProvider):
     def __init__(self, api_key: Optional[str] = None):
         self._default_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         self._available = bool(self._default_key)
+        # Thinking models (gemini-3.x-flash/pro) attach a thought_signature to every
+        # functionCall. It MUST be echoed back when the tool result is sent, or the
+        # next generateContent returns 400 INVALID_ARGUMENT. Keyed by our synthetic
+        # call id so _to_contents can re-attach it across rounds.
+        self._thought_signatures: Dict[str, str] = {}
         if not self._available:
             logger.warning("GEMINI_API_KEY not set. Provide it via UI or set env var.")
 
@@ -2131,19 +2171,50 @@ class GeminiProvider(LLMProvider):
     def _to_contents(self, messages: List[Dict[str, str]],
                      images: Optional[List[Dict]] = None,
                      videos: Optional[List[Dict]] = None):
-        """Map TrioForge messages -> Gemini contents; media rides on the last user turn."""
+        """Map TrioForge messages -> Gemini contents; media rides on the last user turn.
+
+        Also carries function calls/results for the tool loop: an assistant message
+        with OpenAI-style ``tool_calls`` becomes Gemini ``functionCall`` parts, and a
+        ``tool`` role message becomes a ``functionResponse`` part (the function name is
+        recovered from the preceding assistant turn by ``tool_call_id``).
+        """
         system_parts = []
         contents = []
+        call_names = {}   # OpenAI tool_call_id -> function name
         for m in messages or []:
             role = m.get("role")
             content = m.get("content") or ""
             if role == "system":
                 system_parts.append({"text": content})
-            elif role == "assistant":
-                contents.append({"role": "model", "parts": [{"text": content}]})
+            elif role in ("assistant", "model"):
+                parts = []
+                if content:
+                    parts.append({"text": content})
+                for tc in (m.get("tool_calls") or []):
+                    fn = tc.get("function") or {}
+                    name = fn.get("name") or ""
+                    args = fn.get("arguments") or {}
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except Exception:
+                            args = {}
+                    call_names[tc.get("id")] = name
+                    fc = {"name": name, "args": args}
+                    part = {"functionCall": fc}
+                    sig = self._thought_signatures.get(tc.get("id"))
+                    if sig is not None:
+                        part["thoughtSignature"] = sig
+                    parts.append(part)
+                contents.append({"role": "model", "parts": parts or [{"text": ""}]})
             elif role == "user":
                 contents.append({"role": "user", "parts": [{"text": content}]})
-            # tool / function roles are skipped
+            elif role == "tool":
+                name = call_names.get(m.get("tool_call_id"), "tool")
+                contents.append({"role": "user", "parts": [
+                    {"functionResponse": {"name": name,
+                                          "response": {"result": content}}}]})
+            # any other role is skipped
 
         media_parts = []
         for img in (images or []):
@@ -2206,6 +2277,128 @@ class GeminiProvider(LLMProvider):
 
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         return self._generate_content(messages, **kwargs)
+
+    @staticmethod
+    def _to_gemini_schema(node):
+        """Trim a JSON-Schema node down to the subset Gemini's Schema accepts.
+
+        MCP servers (the ``mcp__memory__*`` tools) routinely emit JSON-Schema with
+        ``oneOf``/``anyOf``/``$ref``/``additionalProperties``, which Gemini rejects
+        with 400 INVALID_ARGUMENT — and because the whole ``tools`` array is one
+        object, ONE bad tool schema invalidated every tool for the model. This
+        drops the unsupported keywords and, for a ``oneOf``/``anyOf`` property,
+        keeps the first branch's type so the declaration is still well-formed.
+        """
+        if isinstance(node, list):
+            return [GeminiProvider._to_gemini_schema(x) for x in node]
+        if not isinstance(node, dict):
+            return node
+        # A oneOf/anyOf/const with no concrete type: reuse the first concrete branch.
+        if ("oneOf" in node or "anyOf" in node) and "type" not in node:
+            for branch in (node.get("oneOf") or node.get("anyOf") or []):
+                if isinstance(branch, dict) and branch.get("type"):
+                    node = {"type": branch["type"]}
+                    break
+        drop = {"oneOf", "anyOf", "allOf", "$ref", "$defs", "const", "additionalProperties"}
+        out = {}
+        for k, v in node.items():
+            if k in drop:
+                continue
+            if k == "properties" and isinstance(v, dict):
+                out[k] = {kk: GeminiProvider._to_gemini_schema(vv) for kk, vv in v.items()}
+            elif k == "items":
+                out[k] = GeminiProvider._to_gemini_schema(v)
+            elif k == "enum" and isinstance(v, list):
+                out[k] = [str(x) for x in v]
+            else:
+                out[k] = v
+        # Every property must have a type, or Gemini rejects the declaration.
+        if isinstance(node, dict) and "type" in node and "type" not in out:
+            out["type"] = "string"
+        return out
+
+    @classmethod
+    def _gemini_function_declarations(cls, tools):
+        """OpenAI tool schemas -> Gemini function_declarations."""
+        decls = []
+        for t in (tools or []):
+            fn = t.get("function") or {}
+            name = fn.get("name")
+            if not name:
+                continue
+            decl = {"name": name, "description": fn.get("description") or ""}
+            params = fn.get("parameters") or {}
+            if params:
+                decl["parameters"] = cls._to_gemini_schema(params)
+            decls.append(decl)
+        return decls
+
+    def generate_raw(self, messages: List[Dict[str, str]], **kwargs) -> dict:
+        """OpenAI-shaped raw call with native Gemini function calling.
+
+        Returns ``{"role": "assistant", "content": str, "tool_calls": [...]}`` where
+        ``tool_calls`` uses the SAME shape the OpenAI-compatible tool loop expects
+        (``id`` / ``type: function`` / ``function.name`` / ``function.arguments`` as a
+        JSON string), so the shared ``_run_chat_with_tools`` loop works unchanged.
+        """
+        key = self._get_key(kwargs)
+        model = kwargs.get("model") or self.DEFAULT_MODEL
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = kwargs.get("max_tokens")
+        tools = kwargs.get("tools")
+
+        contents, system_parts = self._to_contents(messages)
+        payload = {
+            "contents": contents,
+            "generationConfig": {"temperature": temperature},
+        }
+        if max_tokens:
+            payload["generationConfig"]["maxOutputTokens"] = min(int(max_tokens), self.MAX_OUTPUT_TOKENS)
+        if system_parts:
+            payload["system_instruction"] = {"parts": system_parts}
+        decls = self._gemini_function_declarations(tools)
+        if decls:
+            payload["tools"] = [{"function_declarations": decls}]
+
+        url = f"{self.BASE_URL}/models/{model}:generateContent"
+        try:
+            resp = requests.post(url, headers=self._headers(key), json=payload, timeout=180)
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                detail = (e.response.text or "")[:500]
+            except Exception:
+                pass
+            raise ProviderError(f"Gemini API error: {e}" + (f" — {detail}" if detail else ""))
+
+        data = resp.json()
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise ProviderError("Gemini returned no candidates.")
+        parts = candidates[0].get("content", {}).get("parts") or []
+        text = "".join(p.get("text", "") for p in parts if "text" in p)
+        tool_calls = []
+        for p in parts:
+            fc = p.get("functionCall")
+            if fc:
+                cid = "call_%d" % len(tool_calls)
+                # thinking models return the signature at the PART level, next to
+                # functionCall (camelCase: thoughtSignature), not inside it.
+                ts = p.get("thoughtSignature")
+                if ts is not None:
+                    self._thought_signatures[cid] = ts
+                # Gemini sometimes namespaces the call ("default:list_skills",
+                # "default_api:obsidian_list"). Strip it so it matches our tool names.
+                raw_name = fc.get("name", "")
+                name = raw_name.split(":")[-1] if ":" in raw_name else raw_name
+                tool_calls.append({
+                    "id": cid,
+                    "type": "function",
+                    "function": {"name": name,
+                                 "arguments": json.dumps(fc.get("args") or {}, ensure_ascii=False)},
+                })
+        return {"role": "assistant", "content": text, "tool_calls": tool_calls or None}
 
     def generate_with_image(self, messages: List[Dict[str, str]],
                             images: List[Dict], **kwargs) -> str:

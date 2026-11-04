@@ -182,6 +182,30 @@ the scrolling UI's help hides those rather than advertising something it cannot 
 Keys in the UI are only ever shown **masked** — `••••••••a35d` is enough to
 recognise *which* key it is, never enough to use it.
 
+### The system prompt and history window
+
+The agent already opens with its own identity and rules (`SYSTEM_PROMPT`: "You are
+TrioForge, an AI coding assistant…", the critical-rules block, and the tool
+protocol). So `session.system` now defaults to **empty**:
+
+- A fresh session sends **one** system prompt, not two. Before this, the default
+  was a second "You are TrioForge…" block with its own formatting and conciseness
+  rules, so the model received two identities that disagreed.
+- `/system <text>` still prepends whatever you write — it is now purely *your*
+  addition rather than something duplicated by a built-in default.
+
+History is windowed per backend, because the right budget depends on where the model
+runs:
+
+| Backend | Messages kept | Characters kept |
+|---|---|---|
+| Hosted (`base_url` is not loopback — DeepSeek, Claude, Groq, OpenRouter…) | 40 | 60,000 |
+| Local (`127.0.0.1` / `localhost`, llama-server, Ollama) | 12 | 24,000 |
+
+The tight window is right for a local GGUF with a small `n_ctx`; applied to a hosted
+model it made the assistant forget the conversation after about six exchanges. Tune
+either with `TRIOFORGE_CONTEXT_MESSAGES` / `TRIOFORGE_CONTEXT_CHARS`.
+
 ### Keybindings (full-screen UI)
 
 `ctrl+p` commands · `ctrl+l` model · `ctrl+o` provider · `ctrl+t` thinking ·

@@ -89,7 +89,9 @@ def resolve_chat(persona_id, custom_text=None):
         t = (custom_text or "").strip()
         return t or None
     info = PRESETS.get(persona_id)
-    return info["chat"] if info else None
+    # .get, not ["chat"]: a preset added without a "chat" key would raise KeyError
+    # and take the whole request down instead of falling back to the default voice.
+    return info.get("chat") if info else None
 
 
 def resolve_note(persona_id, custom_text=None):
@@ -98,7 +100,7 @@ def resolve_note(persona_id, custom_text=None):
         t = (custom_text or "").strip()
         return t or None
     info = PRESETS.get(persona_id)
-    return info["note"] if info else None
+    return info.get("note") if info else None
 
 
 def chat_block(persona_id, custom_text=None):

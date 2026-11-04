@@ -3463,7 +3463,13 @@ def run(args) -> int:
     session = Session(
         model=model or getattr(backend, "name", "?"),
         where=cfg.base_url if not isinstance(backend, EchoBackend) else backend.where,
-        system=args.system if args.system is not None else DEFAULT_SYSTEM,
+        # Default to NO extra system text. The agent already prefixes its own
+        # SYSTEM_PROMPT ("You are TrioForge, an AI coding assistant…") and the old
+        # default was a second "You are TrioForge…" identity block with its own
+        # conciseness rules, so the model got two identities and two formatting
+        # instructions that disagreed. /system still prepends whatever the user
+        # types; an empty default just stops the built-in duplication.
+        system=args.system if args.system is not None else "",
     )
     # Restore the last conversation, then keep it persisted. This is what makes
     # "it keeps forgetting" stop: the transcript outlives the process.

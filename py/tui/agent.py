@@ -264,7 +264,15 @@ class Agent:
         # answers instead of answering the current message.
         from . import vision
         from .session import window
-        for m in window(self.session.messages):
+        # Hosted models keep a bigger history than a local GGUF can hold. The
+        # fixed 12-message window was sized for a small n_ctx, but on DeepSeek /
+        # Claude / Groq it meant the model forgot the conversation after ~six
+        # exchanges. Local models keep the tight window, because there the
+        # context really is small.
+        hosted = not getattr(self.backend, "is_local", True)
+        for m in window(self.session.messages,
+                        max_messages=(40 if hosted else None),
+                        max_chars=(60000 if hosted else None)):
             d = m.as_dict()
             if m.role == "user":
                 # A path the user named becomes an image part. A terminal has no

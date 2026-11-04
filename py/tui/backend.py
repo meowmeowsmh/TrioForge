@@ -199,6 +199,17 @@ class OpenAICompatBackend(Backend):
         # Set after DeepSeek rejected a request for missing reasoning_content.
         self.thinking_off = False
 
+    @property
+    def is_local(self) -> bool:
+        """True when the endpoint is a local model server (llama-server / Ollama).
+
+        Used to size the history window: a hosted model has a large context and
+        can hold many turns, while a local GGUF usually has a small n_ctx.
+        """
+        u = self.base_url.lower()
+        return ("://127.0.0.1" in u or "://localhost" in u
+                or ":8080" in u or "11434" in u)
+
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
         if self.api_key:

@@ -11,6 +11,12 @@ build/
 dist/
 wheels/
 
+# Ad-hoc backups of the user's own data (e.g. conversations.db.bak-20261105-021102,
+# conversations.json.bak-…). They hold real chats, so they must never be committed —
+# the originals they mirror are ignored just below.
+*.bak-*
+*.bak
+
 # Virtual environments
 .venv/
 .venv-linux/

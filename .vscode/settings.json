@@ -9,22 +9,26 @@
   },
 
   // --- Python interpreter: use TrioForge's own venv, NOT the system Python. ---
-  // The Linux venv is ".venv-linux" (see run.sh). VSCode cannot guess that name,
-  // so without this it fell back to the global system interpreter (Python 3.14),
-  // which has no Flask/psutil/frontmatter -> the import errors.
+  // The Linux venv is ".venv-linux" (see run.sh); the Windows venv is ".venv".
+  // The previous value pointed unconditionally at `.venv-linux/bin/python`, which
+  // does not exist on Windows — so Pylance had NO interpreter, could not load the
+  // stdlib stubs, and reported 648 "problems" that were all Python BUILTINS:
+  // "str is not defined", "dict is not defined", "isinstance is not defined"…
+  // Nothing was wrong with app.py. The override below is platform-specific, so
+  // Windows gets the real venv and Linux/macOS keep the .venv-linux path.
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv-linux/bin/python",
+  "windows": {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe"
+  },
   "python.venvPath": "${workspaceFolder}",
-  "python.venvFolders": [".venv-linux"],
+  "python.venvFolders": [".venv", ".venv-linux"],
   "python-envs.defaultEnvManager": "ms-python.python:venv",
 
   // The NEW "Python Environments" extension (ms-python.vscode-python-envs)
   // ignores defaultInterpreterPath and does its own discovery, searching only
-  // `.venv` and `*/.venv` by default. TrioForge's Linux venv is `.venv-linux`
-  // (see run.sh), so the extension found the STALE `.venv` (Python 3.12) first
-  // and used that instead — the "No Python environment is set for this resource"
-  // warnings, then a second "Active interpreter" line pointing at .venv. Point
-  // its search at the real venv and leave the old one out entirely.
-  "python-envs.workspaceSearchPaths": [".venv-linux", "*/.venv-linux"],
+  // `.venv` and `*/.venv` by default. Search BOTH venvs so whichever exists on
+  // this machine is found (Windows: .venv, Linux: .venv-linux).
+  "python-envs.workspaceSearchPaths": [".venv", ".venv-linux", "*/.venv", "*/.venv-linux"],
 
   // Keep Pylance's analysis pointed at the venv's site-packages.
   "python.analysis.extraPaths": ["${workspaceFolder}/py"]

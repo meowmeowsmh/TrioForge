@@ -677,6 +677,26 @@ def _search_available() -> bool:
     """True when web search can run (the old SEARCH_AVAILABLE flag, resolved lazily)."""
     return _ddgs() is not None
 
+
+def _ddgs_search(query: str, max_results: int = 3) -> list:
+    """One DDGS search, tolerant of the two shipped signatures.
+
+    `duckduckgo_search` declares ``text(self, keywords, …)`` while its renamed
+    successor ``ddgs`` declares ``text(self, query, …)``. Calling it positionally
+    raised ``DDGS.text() missing 1 required positional argument: 'keywords'`` and
+    every single search silently returned nothing — the user got an answer with no
+    web context and an ERROR line in the log. Each call is explicit here, so a
+    signature change surfaces as a real TypeError instead of a wrong-keyword call.
+    """
+    cls = _ddgs()
+    if cls is None:
+        raise RuntimeError("web search unavailable (pip install duckduckgo-search)")
+    client = cls()
+    try:
+        return list(client.text(keywords=query, max_results=max_results))
+    except TypeError:
+        return list(client.text(query=query, max_results=max_results))
+
 os.makedirs(os.path.dirname(CONVERSATIONS_FILE), exist_ok=True)
 os.makedirs(os.path.dirname(MODEL_CONFIG_FILE), exist_ok=True)
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
@@ -1398,7 +1418,13 @@ def trim_conversation_history(messages, max_messages=10, max_tokens=3000, ctx_si
     else:
         budget_chars = max_tokens * 4
         if len(messages) > max_messages:
-            messages = messages[-max_messages:]
+            # Keep the system message when slicing. `messages[-max_messages:]` looks
+            # harmless but drops index 0 in any conversation longer than the cap — and
+            # index 0 is the system prompt. That is why a long chat would suddenly
+            # start ignoring the persona, the skills index and the ask-first rule:
+            # the instructions had been trimmed away, silently.
+            head = [messages[0]] if messages[0].get("role") == "system" else []
+            messages = head + messages[-(max_messages - len(head)):]
     total = sum(len(str(m.get("content", ""))) for m in messages)
     while total > budget_chars and len(messages) > 2:
         idx = 1 if messages[0].get("role") == "system" else 0
@@ -1927,7 +1953,7 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(CACHE);
       try {
         const res = await fetch(req);
-        try { if (res && res.ok) cache.put(req, res.clone()); } catch (e) {}
+        try { if (res && res.status === 200 && res.type === 'basic') cache.put(req, res.clone()); } catch (e) {}
         return res;
       } catch (e) {
         const hit = await cache.match(req);
@@ -3071,6 +3097,39 @@ def generate_audio():
     except Exception as e:
         return jsonify({'error': f'Audio generation failed: {str(e)}'}), 500
 
+@app.route('/api/complete', methods=['POST'])
+def complete():
+    """Ghost-text: return a short continuation for the current message."""
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip()
+    if len(text) < 4:
+        return jsonify({'suggestion': ''})
+    provider_name = (data.get('provider') or 'ollama').lower()
+    if provider_name in ('diffusers', 'voice'):
+        return jsonify({'suggestion': ''})
+    provider = providers.get(provider_name)
+    if not provider:
+        return jsonify({'suggestion': ''})
+    model = data.get('model', None)
+    api_key = sanitize_api_key(data.get('api_key', None))
+    messages = [
+        {"role": "system", "content": (
+            "You are an inline autocomplete. Continue the user's unfinished message "
+            "with a short, natural continuation. Output ONLY the continuation text "
+            "(no quotes, no explanation), under 25 words."
+        )},
+        {"role": "user", "content": text},
+    ]
+    try:
+        out = provider.generate(messages, model=model, api_key=api_key,
+                                max_tokens=48, temperature=0.4)
+        suggestion = (out or '').strip().split("\n")[0].strip()
+        if suggestion.lower().startswith(text.lower()):
+            suggestion = suggestion[len(text):].strip()
+        return jsonify({'suggestion': suggestion[:200]})
+    except Exception:
+        return jsonify({'suggestion': ''})
+
 @app.route('/conversations', methods=['GET'])
 def list_conversations():
     sorted_list = get_sorted_conversations()
@@ -3809,10 +3868,14 @@ WORKSPACE_TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a text file from the workspace folder.",
+            "description": "Read a text file from the workspace folder. Returns up to `limit` characters (default 20000) starting at character `offset` (default 0), so a file longer than the limit is read in a few calls — pass offset=20000, then 40000, and so on — instead of writing helper scripts.",
             "parameters": {
                 "type": "object",
-                "properties": {"path": {"type": "string", "description": "relative path inside the workspace folder"}},
+                "properties": {
+                    "path": {"type": "string", "description": "relative path inside the workspace folder"},
+                    "offset": {"type": "integer", "description": "character index to start reading from (default 0)"},
+                    "limit": {"type": "integer", "description": "max characters to return (default 20000)"},
+                },
                 "required": ["path"], "additionalProperties": False,
             },
         },
@@ -3936,18 +3999,44 @@ WORKSPACE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "clean_disk",
+            "description": "Find and remove Windows disk bloat: browser caches, npm/pip caches, temp files and crash dumps. 'scan' only reports sizes (read-only). 'clean' deletes the safe whitelist and requires Full computer access. It never touches AI models, the pagefile or hibernation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["scan", "clean"],
+                               "description": "scan = report sizes and reclaimable space; clean = delete the safe items and report freed space"},
+                },
+                "required": ["action"], "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
-def _list_files_recursive(base, rel="", depth=0):
+_LIST_FILES_CAP = 600
+
+
+def _list_files_recursive(base, rel="", depth=0, _state=None):
     """Return a sorted list of relative paths (dirs end with '/') under `base`.
 
     Symlink-safe: ``os.path.isdir`` follows a link, so a symlink loop planted in
     the workspace (`loop -> .`) used to recurse forever and die with RecursionError
     on the file-listing tool the agent calls. Symlinked directories are now
     reported-not-descended, and a depth cap guards an absurdly deep tree.
+
+    A file-count cap also bounds the result: with the workspace mistakenly set to a
+    drive root (``C:\\``), one recursive list walked the entire disk, hit every
+    ``Access denied`` under ``$Recycle.Bin`` and took ~13 minutes, and the returned
+    blob overflowed the context. The cap turns that into a bounded list plus a
+    truncation marker.
     """
-    if depth > 32:
+    if _state is None:
+        _state = {"n": 0, "truncated": False}
+    if _state["truncated"] or depth > 32:
         return []
     out = []
     try:
@@ -3955,15 +4044,23 @@ def _list_files_recursive(base, rel="", depth=0):
     except OSError as e:
         return [{"error": str(e)}]
     for name in entries:
-        if name.startswith('.git') or name in ('__pycache__', 'node_modules', '.venv', 'venv'):
+        if _state["n"] >= _LIST_FILES_CAP:
+            _state["truncated"] = True
+            out.append("… (list truncated at %d entries)" % _LIST_FILES_CAP)
+            return out
+        if name.startswith(('.git', '.venv')) or name in (
+                '__pycache__', 'node_modules', 'venv', 'site-packages', 'dist', 'build',
+                '.pytest_cache', '.mypy_cache', '.tox'):
             continue
         p = os.path.join(base, rel, name) if rel else os.path.join(base, name)
         relp = (rel + "/" + name) if rel else name
         if os.path.isdir(p) and not os.path.islink(p):
             out.append(relp + "/")
-            out.extend(_list_files_recursive(base, relp, depth + 1))
+            _state["n"] += 1
+            out.extend(_list_files_recursive(base, relp, depth + 1, _state))
         elif not os.path.isdir(p):
             out.append(relp)
+            _state["n"] += 1
     return out
 
 
@@ -4000,6 +4097,190 @@ def _agent_has_tools() -> bool:
     return bool(plugin_loader.collect_tools()
                 or skills_loader.collect_tools()
                 or mcp_client.collect_tools())
+
+
+# ── Disk cleanup tool ──────────────────────────────────────────────────────
+# The "clean my bloat" feature. It is a native tool (not a prompt that hopes the
+# model composes a safe shell command) so it runs deterministically and fast:
+# a scan is a few short directory walks, and a clean deletes a fixed whitelist
+# and measures the freed bytes with shutil.disk_usage (instant) instead of
+# re-walking the tree. Only Windows paths are known; on other systems it reports
+# unsupported instead of guessing.
+
+_CLEAN_TARGETS = [
+    # (label, path, kind)  kind: 'dir' = remove the whole dir, 'dir_contents' =
+    # delete children only, 'file' = remove one file.
+    ("User TEMP", os.environ.get("TEMP", ""), "dir_contents"),
+    ("Local Temp", os.path.join(os.environ.get("LOCALAPPDATA", ""), "Temp"), "dir_contents"),
+    ("Chrome cache", os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                                  "Google", "Chrome", "User Data", "Default", "Cache"), "dir"),
+    ("Chrome code cache", os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                                       "Google", "Chrome", "User Data", "Default", "Code Cache"), "dir"),
+    ("Chrome service-worker cache", os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                                                 "Google", "Chrome", "User Data", "Default",
+                                                 "Service Worker", "CacheStorage"), "dir"),
+    ("npm cache", os.path.join(os.environ.get("LOCALAPPDATA", ""), "npm-cache"), "dir"),
+    ("pip cache", os.path.join(os.environ.get("LOCALAPPDATA", ""), "pip", "cache"), "dir"),
+    ("Crash dumps", os.path.join(os.environ.get("LOCALAPPDATA", ""), "CrashDumps"), "dir"),
+]
+
+
+def _clean_targets():
+    """Resolve the whitelist to real, existing paths (skip blanks and duplicates).
+
+    TEMP and LOCALAPPDATA\\Temp are usually the SAME directory, so the raw list
+    counted that folder twice and reported double the real reclaimable space.
+    Targets are deduplicated by normalized path, first label wins.
+    """
+    out = []
+    seen = set()
+    for label, path, kind in _CLEAN_TARGETS:
+        if not path or not os.path.isabs(path):
+            continue
+        key = os.path.normcase(os.path.normpath(path))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((label, path, kind))
+    # A leftover download that was already extracted into tools/llama.cpp.
+    cu = os.path.join(root_path("tools", "llama.cpp"),
+                      "cudart-llama-bin-win-cuda-12.4-x64.zip")
+    if os.path.isfile(cu):
+        out.append(("CUDA installer zip", cu, "file"))
+    return out
+
+
+def _dir_size_mb(path, budget=2.5):
+    """Directory size in MB, capped so a huge cache cannot stall the scan.
+
+    Returns ``(mb, partial)``. ``partial`` is True when the walk hit the time
+    budget, which means the number is a floor, not the total - the caller must
+    not present it as exact (a 5.5 GB cache read in 2.5 s reported 1.7 GB).
+    """
+    if not path or not os.path.exists(path):
+        return -1, False
+    if os.path.isfile(path):
+        try:
+            return int(os.path.getsize(path) / 1_000_000), False
+        except OSError:
+            return -1, False
+    import time as _time
+    total = 0
+    start = _time.time()
+    for _root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(_root, f))
+            except OSError:
+                pass
+            if _time.time() - start > budget:
+                return int(total / 1_000_000), True
+    return int(total / 1_000_000), False
+
+
+def _disk_report():
+    import shutil
+    drives = []
+    for d in ("C:\\", "D:\\"):
+        try:
+            u = shutil.disk_usage(d)
+            drives.append({"drive": d, "free_gb": round(u.free / 1e9, 1),
+                           "total_gb": round(u.total / 1e9, 1)})
+        except OSError:
+            pass
+    return drives
+
+
+def _clean_disk_scan():
+    if os.name != "nt":
+        return {"error": "Disk cleanup is currently Windows-only."}
+    targets = []
+    for label, path, kind in _clean_targets():
+        mb, partial = _dir_size_mb(path)
+        targets.append({"label": label, "path": path,
+                        "size_mb": mb, "size_is_partial": partial})
+    reclaimable = sum(t["size_mb"] for t in targets if t["size_mb"] > 0)
+    return {"drives": _disk_report(), "targets": targets,
+            "reclaimable_mb": reclaimable,
+            "note": "size_is_partial=true means that folder is larger than reported: "
+                    "the scan caps each folder to a few seconds so the answer stays fast."}
+
+
+def _remove_tree(path):
+    """Delete a directory tree bottom-up, returning the bytes actually removed.
+
+    Windows keeps the space of a file that is still open by another process (Chrome
+    holds its cache files) until that handle closes, so a ``disk_usage`` before/
+    after comparison can read ZERO even though gigabytes were deleted. Counting
+    the sizes of the files as they are removed gives the honest number at once.
+    """
+    removed = 0
+    for root, dirs, files in os.walk(path, topdown=False):
+        for f in files:
+            p = os.path.join(root, f)
+            try:
+                removed += os.path.getsize(p)
+                os.remove(p)
+            except OSError:
+                pass
+        for dname in dirs:
+            try:
+                os.rmdir(os.path.join(root, dname))
+            except OSError:
+                pass
+    try:
+        os.rmdir(path)
+    except OSError:
+        pass
+    return removed
+
+
+def _clean_disk_execute():
+    if os.name != "nt":
+        return {"error": "Disk cleanup is currently Windows-only."}
+    freed_bytes = 0
+    report = []
+    for label, path, kind in _clean_targets():
+        if not os.path.exists(path):
+            report.append({"label": label, "status": "skip", "detail": "not present"})
+            continue
+        try:
+            if kind == "dir":
+                freed_bytes += _remove_tree(path)
+                partial = os.path.exists(path)
+                report.append({"label": label,
+                               "status": "partial" if partial else "cleared",
+                               "detail": "files were in use (close Chrome for a full clear)"
+                                         if partial else ""})
+            elif kind == "dir_contents":
+                n = 0
+                for child in os.listdir(path):
+                    p = os.path.join(path, child)
+                    try:
+                        if os.path.isdir(p) and not os.path.islink(p):
+                            freed_bytes += _remove_tree(p)
+                        else:
+                            freed_bytes += os.path.getsize(p)
+                            os.remove(p)
+                        n += 1
+                    except OSError:
+                        pass
+                report.append({"label": label, "status": "cleared", "detail": f"{n} items"})
+            elif kind == "file":
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = 0
+                os.remove(path)
+                freed_bytes += size
+                report.append({"label": label, "status": "cleared", "detail": ""})
+        except OSError as e:
+            report.append({"label": label, "status": "error", "detail": str(e)})
+    return {"freed_mb": int(freed_bytes / 1_000_000),
+            "freed_gb": round(freed_bytes / 1e9, 2),
+            "drives": _disk_report(),
+            "items": report}
+
 
 
 def _tool_source(name, args):
@@ -4087,19 +4368,34 @@ def _dispatch_tool(name, args):
         except re.error as e:
             return {"error": "Invalid regex: {}".format(e)}
         matches = []
+        searched = 0
+        t0 = time.time()
         for relp in _list_files_recursive(base):
+            if isinstance(relp, dict):      # error / truncation marker from the walker
+                continue
             if relp.endswith("/"):
                 continue
+            if searched >= 150 or time.time() - t0 > 5.0:
+                matches.append("… (search stopped early — narrow the query)")
+                break
             full = os.path.join(base, relp)
-            hit = False
             if rx:
                 hit = bool(rx.search(relp))
             else:
                 hit = query.lower() in relp.lower()
             if not hit:
                 try:
+                    # Skip binaries and big files: reading a 6 GB GGUF (or every file
+                    # in site-packages) as text is what made a "search_files" call take
+                    # 48 seconds and fill the context with garbage.
+                    if os.path.getsize(full) > 1_000_000:
+                        continue
+                    with open(full, "rb") as f:
+                        if b"\x00" in f.read(4096):
+                            continue
                     with open(full, "r", encoding="utf-8", errors="replace") as f:
                         text = f.read(20000)
+                    searched += 1
                     hit = (bool(rx.search(text)) if rx else (query.lower() in text.lower()))
                 except Exception:
                     hit = False
@@ -4116,8 +4412,20 @@ def _dispatch_tool(name, args):
         if not os.path.isfile(target):
             return {"error": "File not found: {}".format(args.get("path"))}
         try:
+            try:
+                offset = max(0, int(args.get("offset") or 0))
+            except (TypeError, ValueError):
+                offset = 0
+            try:
+                limit = max(1, int(args.get("limit") or 20000))
+            except (TypeError, ValueError):
+                limit = 20000
+            total = os.path.getsize(target)
             with open(target, "r", encoding="utf-8", errors="replace") as f:
-                return {"content": f.read()[:20000]}
+                f.seek(offset)
+                content = f.read(limit)
+            return {"content": content, "path": args.get("path"),
+                    "offset": offset, "total_chars": total}
         except Exception as e:
             return {"error": str(e)}
 
@@ -4201,6 +4509,17 @@ def _dispatch_tool(name, args):
         except Exception as e:
             return {"error": str(e)}
 
+    if name == "clean_disk":
+        action = (args.get("action") or "scan").strip().lower()
+        if action == "scan":
+            return _clean_disk_scan()
+        if action == "clean":
+            if _workspace_setting(wid, "full_access", False) is not True:
+                return {"error": "Deleting files needs 'Full computer access'. Enable it in "
+                                 "Workspace settings (⚙ï¸) to let the model clean up."}
+            return _clean_disk_execute()
+        return {"error": "action must be 'scan' or 'clean'"}
+
     if name == "web_search":
         query = (args.get("query") or "").strip()
         if not query:
@@ -4208,7 +4527,7 @@ def _dispatch_tool(name, args):
         if not _search_available():
             return {"error": "Web search unavailable (install duckduckgo-search)."}
         try:
-            future = _executor.submit(lambda: _ddgs().text(query, max_results=3))
+            future = _executor.submit(lambda: _ddgs_search(query, max_results=3))
             results = future.result(timeout=3)
             snippets = [r.get("body", "") for r in results if r.get("body")]
             return {"results": snippets[:3]}
@@ -4342,6 +4661,25 @@ def _parse_kv_args(s: str) -> dict:
     return out
 
 
+_ASK_USER_PROTOCOL = """## Asking the user a question
+When you need a decision and the answer is a CHOICE, do not ask in prose. Reply with
+ONE fenced block, and nothing else in that reply:
+
+```ask_user
+{"header": "Cleanup", "question": "Which items should I remove?",
+ "multi_select": false,
+ "options": [
+   {"label": "All safe caches", "description": "frees about 12 GB", "recommended": true},
+   {"label": "Browser caches only", "description": "frees about 7 GB"}
+ ]}
+```
+
+Rules: 2-4 options; at most one may carry "recommended": true; set "multi_select": true
+when the user may pick several. The user can always type a free answer instead, so do
+not add an "other"/"something else" option. Ask only when the request is genuinely
+ambiguous - when you can infer the intent, answer or act directly."""
+
+
 def _tools_protocol_text(tools) -> str:
     """A plain-language tool protocol for models that ignore native ``tools``.
 
@@ -4420,11 +4758,86 @@ def _is_local_provider(provider) -> bool:
     return any(h in url for h in ("127.0.0.1", "localhost", "host.docker.internal"))
 
 
-def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
+def _tool_loop_with_heartbeat(work, conv_id, heartbeat=2.0):
+    """Run a blocking tool loop in a worker thread, yielding progress dicts.
+
+    The loop is synchronous (``provider.generate_raw``), so it can only produce its
+    answer at the very end. Running it BEFORE the streaming response was created
+    meant the connection sent nothing at all until it finished — no tokens, no
+    thinking, no sign of life — which is exactly why a tool-enabled turn looked
+    like a hang while a plain one streamed instantly.
+
+    This yields ``{'status': ..., 'elapsed': n}`` every ``heartbeat`` seconds so the
+    client can show progress, then ``{'result': box}`` once the loop is done.
+    ``start_tool_tracking`` is called INSIDE the worker because the collector is
+    thread-local — running the loop elsewhere would silently lose the tool calls.
+    """
+    import queue as _queue
+    box: dict = {}
+    done: "_queue.Queue" = _queue.Queue()
+
+    def _run():
+        try:
+            if conv_id:
+                start_tool_tracking(conv_id)      # thread-local: must start HERE
+            box["text"] = work()
+            box["calls"] = tracked_tool_calls()
+        except Exception as e:                    # noqa: BLE001
+            box["error"] = str(e)
+        finally:
+            done.put(True)
+
+    threading.Thread(target=_run, daemon=True).start()
+    waited = 0.0
+    while True:
+        try:
+            done.get(timeout=heartbeat)
+            break
+        except _queue.Empty:
+            waited += heartbeat
+            yield {"status": "working", "elapsed": round(waited, 1)}
+    yield {"result": box}
+
+
+def _is_transient_transport_error(exc) -> bool:
+    """True for a dropped/reset socket rather than a real API rejection.
+
+    WinError 10053/10054 ("connection aborted" / "forcibly closed"), RemoteDisconnected
+    and ReadTimeout are all things that a retry fixes and that no amount of changing
+    the request would. They are worth one more attempt: the tool loop makes ONE long
+    non-streaming call to the provider, so a single blip on that socket used to end
+    the whole turn with "[tool error] … ConnectionAbortedError(10053 …)".
+    """
+    err = str(exc)
+    marks = ("10053", "10054", "connection aborted", "connection reset",
+             "remote end closed", "remotedisconnected", "connection was forcibly closed",
+             "eof occurred", "broken pipe")
+    low = err.lower()
+    return any(m in low for m in marks)
+
+
+def _call_provider_with_retry(provider, messages, attempts=2, retry_delay=1.5, **kwargs):
+    """``provider.generate_raw`` with one retry on a transport-level failure."""
+    last = None
+    for i in range(max(1, attempts)):
+        try:
+            return provider.generate_raw(messages, **kwargs)
+        except Exception as exc:                # noqa: BLE001
+            last = exc
+            if i + 1 >= attempts or not _is_transient_transport_error(exc):
+                raise
+            logger.warning("transient provider error (%s); retrying once", exc)
+            time.sleep(retry_delay)
+    raise last
+
+
+def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=30):
     """Run an OpenAI-style tool-calling loop against an OpenAI-compatible provider.
 
     max_steps caps the number of model→tool round-trips (a "coding agent" loop:
-    read, edit, run, repeat until done). 20 is enough for a multi-file task.
+    read, edit, run, repeat until done). 30 fits a multi-file task; the LAST step
+    is always forced to produce the final text (tools removed), so a long
+    investigation ends with an answer instead of a step-limit error.
 
     Local providers get ONLY the text protocol in the prompt, never the native
     ``tools`` array: llama.cpp converts that array into a GBNF grammar, and its
@@ -4436,6 +4849,7 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
         return _run_chat_with_tools_claude(provider, messages, extra_kwargs, max_steps)
     messages = list(messages)
     tools = _agent_tools()
+    logger.info("TOOL-LOOP entered: provider=%s native_tools=%d", type(provider).__name__, len(tools))
     local = _is_local_provider(provider)
     if local and tools:
         protocol = _tools_protocol_text(tools)
@@ -4461,19 +4875,35 @@ def _run_chat_with_tools(provider, messages, extra_kwargs, max_steps=20):
     # any model, so a local turn never depends on that conversion. Cloud
     # providers keep the native array, which is reliable there.
     native_tools = None if local else tools
-    for _ in range(max_steps):
+    for step in range(max_steps):
+        # On the LAST step, take the tools away and demand the answer. A thorough
+        # model (a full OS review made 38 tool calls) burnt every step still
+        # investigating, and the turn then returned the useless
+        # "The model did not finish within the tool-call limit." Forcing a final
+        # tool-free call means a long investigation still ends in a real summary.
+        final_push = (step == max_steps - 1)
+        step_messages = messages
+        if final_push:
+            step_messages = list(messages) + [{"role": "user", "content":
+                "Tool budget exhausted. Do NOT call any more tools. "
+                "Write your final answer now, summarising what you already found."}]
         try:
-            resp = provider.generate_raw(messages, tools=native_tools, **extra_kwargs)
+            resp = _call_provider_with_retry(
+                provider, step_messages,
+                tools=(None if final_push else native_tools), **extra_kwargs)
         except Exception as exc:
             # Cloud providers can still 400 on a bad tool schema; retry the turn
             # without the native array so the prompt-text tools keep it alive.
             err = str(exc)
             if native_tools and ("400" in err or "tool" in err.lower()):
-                resp = provider.generate_raw(messages, **extra_kwargs)
+                resp = _call_provider_with_retry(provider, step_messages, **extra_kwargs)
             else:
                 raise
         content = resp.get("content")
         tool_calls = resp.get("tool_calls") or []
+        if final_push:
+            return (content or "").strip() or \
+                "Tool budget exhausted before a summary could be produced."
         if not tool_calls and local:
             # The model wrote its call as text instead of using the tools API.
             text_calls = _parse_text_calls(content)
@@ -4593,38 +5023,61 @@ def _run_web_search(user_message: str, enabled: bool) -> str:
     """Return up to 3 web-search snippets joined into one context string."""
     if not (enabled and _search_available() and user_message.strip()):
         return ""
+    t0 = time.time()
     try:
-        future = _executor.submit(lambda: _ddgs().text(user_message, max_results=3))
-        results = future.result(timeout=3)
+        future = _executor.submit(lambda: _ddgs_search(user_message, max_results=3))
+        results = future.result(timeout=6)
         snippets = [r['body'] for r in results if 'body' in r]
+        logger.info("web search: %d results in %.2fs", len(snippets), time.time() - t0)
         return " ".join(snippets[:3])
     except Exception as e:
-        logger.error("Search error: %s", e)
+        # Log the elapsed time too: a search that burns 100 s of the user's wait and
+        # then fails is a performance bug, not just a log line.
+        logger.error("Search error after %.2fs: %s", time.time() - t0, e)
         return ""
 
 
-def _build_final_prompt(system_prompt: str, user_message: str, files: List[dict], search_context: str) -> str:
-    """Assemble the user-facing prompt: system prompt + search context + message + file text."""
-    final_prompt = system_prompt + "\n\n"
+def _build_final_prompt(system_prompt: str, user_message: str, files: List[dict],
+                        search_context: str, inline_system: bool = False) -> str:
+    """Assemble the user-facing prompt: [system] + search context + message + file text.
+
+    `inline_system` is for providers that cannot take a separate system role
+    (llama.cpp's GGUF chat templates). Everywhere else the system prompt is already
+    sent as its own `system` message — and folding it in here as well sent the ENTIRE
+    system prompt twice: provider prompt + skills index + persona + ask-first rule
+    appeared once as `system` and again as the opening of the user's message. That
+    doubled prefill (i.e. time-to-first-token), doubled the instruction weight, and
+    made the reported input tokens roughly double the truth.
+    """
+    parts = []
+    if inline_system and system_prompt:
+        parts.append(system_prompt)
     if search_context:
-        final_prompt += (
+        parts.append(
             f"Web search results for '{user_message}':\n{search_context}\n\n"
             f"Based on these results, answer the user's question: {user_message}"
         )
     else:
-        final_prompt += user_message
+        parts.append(user_message)
     for f in files:
-        final_prompt += "\n\n" + describe_or_extract_file(
+        parts.append(describe_or_extract_file(
             f.get('name', 'file'), f.get('b64', ''), f.get('mime', '')
-        )
-    return final_prompt
+        ))
+    return "\n\n".join(p for p in parts if p)
 
 
-def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include_system: bool = True, ctx_size=None) -> List[dict]:
+def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include_system: bool = True,
+                    ctx_size=None, api_provider: bool = False) -> List[dict]:
     """Build the full message list for a provider call from stored history.
 
     The new user turn (final_prompt) is appended BEFORE trimming, so the context
     budget covers system + history + prompt, not just history.
+
+    `api_provider` raises the history budget. The old single budget (10 messages /
+    ~3k tokens) was sized for a local GGUF with a small n_ctx, and it was applied to
+    the hosted providers too: after five exchanges a 1M-token model was handed a
+    conversation that had forgotten everything earlier. Local models keep the tight
+    budget, because there the window really is small.
     """
     messages = []
     if include_system and system_prompt:
@@ -4635,6 +5088,9 @@ def _build_messages(conv_id: str, system_prompt: str, final_prompt: str, include
         elif msg['role'] == 'bot':
             messages.append({"role": "assistant", "content": msg['text']})
     messages.append({"role": "user", "content": final_prompt})
+    if api_provider and not ctx_size:
+        return trim_conversation_history(messages, max_messages=40, max_tokens=12000,
+                                         ctx_size=ctx_size)
     return trim_conversation_history(messages, ctx_size=ctx_size)
 
 
@@ -5390,6 +5846,7 @@ def chat():
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
+        ask_first = bool(data.get('ask_first', True))
 
         if not user_message and not images and not files and not videos:
             return jsonify({'error': 'Nothing to send'}), 400
@@ -5440,16 +5897,32 @@ def chat():
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
-        final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context)
+        if ask_first:
+            system_prompt = system_prompt + "\n\n" + (
+                "Clarify before assuming: if the user's request is unclear, ambiguous, "
+                "or missing key details, ask ONE short clarifying question and then STOP. "
+                "Do NOT guess and do NOT give the full answer/plan yet — wait for the "
+                "user's reply. Only if the request is already clear should you answer "
+                "directly without asking."
+            ) + "\n\n" + _ASK_USER_PROTOCOL
+        final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context,
+                                           inline_system=(provider_name == 'llamacpp'))
         if rag_context:
+            # Order matters here. The old text said "give the answer from the content"
+            # and then either "ask a clarifying question" or "do not ask for
+            # confirmation", so with ask-first ON the block both told the model to
+            # answer and told it to stop and ask — and the later instruction won. The
+            # documents rule now comes first and the clarify rule comes last, once.
             final_prompt += (
-                "\n\n[The user's uploaded documents are provided below]\n"
+                "\n\n[The user's uploaded documents]\n"
                 + rag_context
-                + "\n\nThese are documents the user uploaded (RAG). Read them and use them to answer. "
-                  "When the user says 'read it', 'read my rag', 'the material', 'what's in the documents' "
-                  "or asks about the material, READ the content above and answer from it directly — do not "
-                  "search for the question's exact words. Give the answer from the provided content, and "
-                  "do not ask for confirmation or what the user wants."
+                + "\n\n[How to use them] Answer from the documents above when the question "
+                  "is about the material. When the user says 'read it', 'read my rag', 'the "
+                  "material' or 'the documents', read the content above and answer from it "
+                  "directly — do not search for the question's exact words."
+                  + (" If the request is unclear or ambiguous, ask ONE short clarifying "
+                     "question first instead of guessing."
+                     if ask_first else "")
             )
         # Skills: explicit (the user pinned one) first, then the best automatic
         # match. Their bodies are injected into THIS message, so they apply even
@@ -5466,7 +5939,18 @@ def chat():
         # system prompt is already folded into final_prompt by _build_final_prompt).
         messages = _build_messages(conv_id, system_prompt, final_prompt,
                                    include_system=(provider_name != 'llamacpp'),
-                                   ctx_size=ctx_size)
+                                   ctx_size=ctx_size,
+                                   api_provider=(provider_name in API_PROVIDERS))
+        # Same one-line prompt audit as /chat_stream, so both routes can be checked
+        # for duplication/bloat identically.
+        try:
+            logger.info(
+                "prompt: provider=%s model=%s system=%d chars, turns=%d, newest_turn=%d chars, total=%d chars",
+                provider_name, model, len(system_prompt or ''), len(messages),
+                len(final_prompt or ''),
+                sum(len(str(m.get('content', ''))) for m in messages))
+        except Exception:
+            pass
 
         extra_kwargs = {"model": model}
         if api_key:
@@ -5480,7 +5964,7 @@ def chat():
             extra_kwargs['num_gpu'] = mem_settings['num_gpu']
             extra_kwargs['low_vram'] = mem_settings['low_vram']
 
-        use_tools = (not images and not videos and not audio_files) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
+        use_tools = (not images and not videos and not audio_files) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter", "gemini") \
             and _agent_has_tools()
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
@@ -5643,6 +6127,56 @@ def _iter_openai_stream(url, headers, payload):
             yield {"token": content}
 
 
+def _iter_claude_stream(api_key, model, messages, max_tokens=8192):
+    """Yield {'reasoning': …} / {'token': …} from Anthropic's Messages streaming API."""
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+    system = ""
+    claude_msgs = []
+    for m in messages:
+        if m.get("role") == "system":
+            system = (system + "\n\n" + m.get("content", "")).strip()
+        else:
+            claude_msgs.append({"role": m["role"], "content": m.get("content", "")})
+
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "stream": True,
+        "messages": claude_msgs,
+    }
+    if system:
+        payload["system"] = system
+
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers=headers, json=payload, stream=True, timeout=300,
+    )
+    resp.raise_for_status()
+    for raw in resp.iter_lines():
+        if not raw:
+            continue
+        line = raw.decode("utf-8", errors="replace").strip()
+        if not line.startswith("data:"):
+            continue
+        data_str = line[5:].strip()
+        try:
+            obj = std_json.loads(data_str)
+        except Exception:
+            continue
+        if obj.get("type") == "content_block_delta":
+            delta = obj.get("delta") or {}
+            if delta.get("type") == "thinking_delta":
+                yield {"reasoning": delta.get("thinking", "")}
+            elif delta.get("type") == "text_delta":
+                yield {"token": delta.get("text", "")}
+        elif obj.get("type") == "message_stop":
+            break
+
+
 @app.route('/chat_stream', methods=['POST'])
 @rate_limited(max_per_minute=20)
 def chat_stream():
@@ -5662,6 +6196,7 @@ def chat_stream():
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
+        ask_first = bool(data.get('ask_first', True))
         thinking = data.get('thinking') or ''
 
         provider_name = data.get('provider', 'ollama')
@@ -5732,16 +6267,32 @@ def chat_stream():
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
-        final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context)
+        if ask_first:
+            system_prompt = system_prompt + "\n\n" + (
+                "Clarify before assuming: if the user's request is unclear, ambiguous, "
+                "or missing key details, ask ONE short clarifying question and then STOP. "
+                "Do NOT guess and do NOT give the full answer/plan yet — wait for the "
+                "user's reply. Only if the request is already clear should you answer "
+                "directly without asking."
+            ) + "\n\n" + _ASK_USER_PROTOCOL
+        final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context,
+                                           inline_system=(provider_name == 'llamacpp'))
         if rag_context:
+            # Order matters here. The old text said "give the answer from the content"
+            # and then either "ask a clarifying question" or "do not ask for
+            # confirmation", so with ask-first ON the block both told the model to
+            # answer and told it to stop and ask — and the later instruction won. The
+            # documents rule now comes first and the clarify rule comes last, once.
             final_prompt += (
-                "\n\n[The user's uploaded documents are provided below]\n"
+                "\n\n[The user's uploaded documents]\n"
                 + rag_context
-                + "\n\nThese are documents the user uploaded (RAG). Read them and use them to answer. "
-                  "When the user says 'read it', 'read my rag', 'the material', 'what's in the documents' "
-                  "or asks about the material, READ the content above and answer from it directly — do not "
-                  "search for the question's exact words. Give the answer from the provided content, and "
-                  "do not ask for confirmation or what the user wants."
+                + "\n\n[How to use them] Answer from the documents above when the question "
+                  "is about the material. When the user says 'read it', 'read my rag', 'the "
+                  "material' or 'the documents', read the content above and answer from it "
+                  "directly — do not search for the question's exact words."
+                  + (" If the request is unclear or ambiguous, ask ONE short clarifying "
+                     "question first instead of guessing."
+                     if ask_first else "")
             )
         _explicit_skills = [s for s in (data.get('skills') or []) if isinstance(s, str)]
         _applied_skills = skills_loader.select_skills(user_message, explicit=_explicit_skills)
@@ -5751,7 +6302,18 @@ def chat_stream():
         applied_skill_ids = [s["id"] for s in _applied_skills]
         include_system = (provider_name != 'llamacpp')
         messages = _build_messages(conv_id, system_prompt, final_prompt, include_system=include_system,
-                                   ctx_size=ctx_size)
+                                   ctx_size=ctx_size,
+                                   api_provider=(provider_name in API_PROVIDERS))
+        # One line that makes prompt bloat visible instead of theoretical: compare
+        # system/turn sizes across runs and you can see a duplicated block instantly.
+        try:
+            logger.info(
+                "prompt: provider=%s model=%s system=%d chars, turns=%d, newest_turn=%d chars, total=%d chars",
+                provider_name, model, len(system_prompt or ''), len(messages),
+                len(final_prompt or ''),
+                sum(len(str(m.get('content', ''))) for m in messages))
+        except Exception:
+            pass
 
         mem_settings = get_ollama_memory_settings()
         # Transcription sources (llama.cpp): explicit audio clips + the audio track
@@ -5763,7 +6325,7 @@ def chat_stream():
             transcription_sources = [_with_source_path(a) for a in audio_files]
             if videos and _model_has_audio(provider_name, model):
                 transcription_sources.extend(_with_source_path(v) for v in videos)
-        use_tools = (not vision_images and not audio_files and not transcription_sources) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter") \
+        use_tools = (not vision_images and not audio_files and not transcription_sources) and provider_name in ("deepseek", "groq", "ollama", "llamacpp", "claude", "openrouter", "gemini") \
             and _agent_has_tools()
 
         # llama.cpp is auto-started (and kept running) whenever it's the provider,
@@ -5776,22 +6338,16 @@ def chat_stream():
                 yield_error = f"data: {json_dumps({'error': 'llama.cpp failed to start: ' + st['error']})}\n\n"
                 return Response(yield_error, mimetype='text/event-stream')
 
-        # Workspace tools are resolved non-streaming first, then we stream the
-        # final answer so the client keeps its normal token-by-token UI.
+        # Workspace tools are resolved inside generate() below, so the response
+        # starts streaming immediately and the client sees progress. Running the
+        # loop here (as it used to) sent nothing until it finished.
         tool_final_text = None
         tool_reasoning = ""
+        _tool_extra_kwargs = {}
         if use_tools:
-            extra_kwargs = {"model": model or current_model}
+            _tool_extra_kwargs = {"model": model or current_model}
             if api_key:
-                extra_kwargs['api_key'] = api_key
-            try:
-                tool_final_text = _run_chat_with_tools(provider, messages, extra_kwargs)
-                # The tool loop calls provider.generate_raw(...), which populates
-                # provider.last_reasoning with the model's chain-of-thought. Capture
-                # it here so the thinking block is shown even on the tools path.
-                tool_reasoning = getattr(provider, "last_reasoning", "") or ""
-            except Exception as e:
-                tool_final_text = f"[tool error] {e}"
+                _tool_extra_kwargs['api_key'] = api_key
 
         # Audio (llama.cpp universal models): full-length transcription runs
         # non-streaming (chunked into 30 s segments, then stitched), and the result
@@ -5851,6 +6407,38 @@ def chat_stream():
                     return
             full_response = ""
             thinking_acc = ""
+            if use_tools:
+                # Stream the wait: the loop itself cannot emit tokens, but it can
+                # report that it is alive, which is the difference between "slow"
+                # and "hung" from the user's side.
+                yield f"data: {json_dumps({'status': 'tools', 'elapsed': 0})}\n\n"
+                _box = {}
+                for _item in _tool_loop_with_heartbeat(
+                        lambda: _run_chat_with_tools(provider, messages, _tool_extra_kwargs),
+                        conv_id):
+                    if "result" in _item:
+                        _box = _item["result"]
+                        break
+                    yield f"data: {json_dumps(_item)}\n\n"
+                _text = _box.get("text")
+                if _text is None:
+                    _text = "[tool error] " + (_box.get("error") or "the tool loop failed")
+                _reasoning = getattr(provider, "last_reasoning", "") or ""
+                _calls = _box.get("calls") or []
+                if _calls:
+                    yield f"data: {json_dumps({'tool_calls': _calls})}\n\n"
+                if _reasoning:
+                    yield f"data: {json_dumps({'reasoning': _reasoning})}\n\n"
+                yield f"data: {json_dumps({'token': _text})}\n\n"
+                yield f"data: {json_dumps({'done': True, 'full_response': _text, 'usage': {'tokens': _estimate_tokens(_text), 'input_tokens': _estimate_tokens(final_prompt), 'reasoning_tokens': _estimate_tokens(_reasoning), 'duration_sec': 0}, 'reasoning': _reasoning})}\n\n"
+                store_images, store_files = _user_attachments(images, files, videos)
+                add_message(conv_id, "user", user_message, store_images, store_files)
+                add_message(conv_id, "bot", _text, [], [],
+                            meta=_bot_meta(provider_name, model, _reasoning, tools=_calls))
+                record_usage(provider_name, model, conv_id,
+                             _estimate_tokens(user_message), _estimate_tokens(_text))
+                return
+
             if tool_final_text is not None:
                 if tool_reasoning:
                     yield f"data: {json_dumps({'reasoning': tool_reasoning})}\n\n"
@@ -5911,6 +6499,25 @@ def chat_stream():
                 except Exception as e:
                     yield f"data: {json_dumps({'error': str(e)})}\n\n"
 
+            # ── Claude (Anthropic): live thinking + text deltas ──
+            elif provider_name == "claude":
+                try:
+                    got_content = False
+                    for ev in _iter_claude_stream(api_key, model, messages):
+                        if "reasoning" in ev:
+                            thinking_acc += ev["reasoning"]
+                            yield f"data: {json_dumps({'reasoning': ev['reasoning']})}\n\n"
+                        if "token" in ev:
+                            got_content = True
+                            full_response += ev["token"]
+                            yield f"data: {json_dumps({'token': ev['token']})}\n\n"
+                    if not got_content and thinking_acc and not full_response:
+                        full_response = thinking_acc
+                        yield f"data: {json_dumps({'token': full_response})}\n\n"
+                    yield f"data: {json_dumps({'done': True, 'full_response': full_response, 'usage': {'tokens': _estimate_tokens(full_response), 'input_tokens': _estimate_tokens(final_prompt), 'reasoning_tokens': _estimate_tokens(thinking_acc), 'duration_sec': 0}, 'reasoning': thinking_acc})}\n\n"
+                except Exception as e:
+                    yield f"data: {json_dumps({'error': str(e)})}\n\n"
+
             # ── OpenAI-compatible providers: live reasoning_content deltas ──
             else:
                 target = _openai_stream_target(provider_name, api_key)
@@ -5927,6 +6534,11 @@ def chat_stream():
                             stream_model = providers["llamacpp"]._resolve_model_path(model)
                         except Exception:
                             stream_model = model
+                    elif provider_name == "deepseek":
+                        # Catalogue ids the API does not serve (e.g. the vision
+                        # experiment) map to the id it does, or the stream 404s.
+                        from providers.llm_providers import deepseek_wire_model
+                        stream_model = deepseek_wire_model(stream_model)
                     payload = {"model": stream_model, "messages": messages, "stream": True, "temperature": 0.7}
                     # DeepSeek reasoning effort (off/low/high/max -> reasoning_effort).
                     # Only sent when the UI chose an effort, so the workspace default
@@ -5954,7 +6566,22 @@ def chat_stream():
                         payload["messages"] = _build_vision_messages(messages, vision_images)
                     try:
                         got_content = False
+                        # Timing for the provider leg only. "The app feels slow"
+                        # is unanswerable without it: this splits the wait into
+                        # our own work (before the request) and the provider's
+                        # time-to-first-token, which is the number that actually
+                        # matters when the bubble sits at "waiting…".
+                        _t_req = time.time()
+                        _t_first = None
+                        _n_events = 0
                         for ev in _iter_openai_stream(url, headers, payload):
+                            if _t_first is None:
+                                _t_first = time.time()
+                                logger.info(
+                                    "chat_stream first event: provider=%s model=%s "
+                                    "wait=%.2fs (provider time-to-first-token)",
+                                    provider_name, stream_model, _t_first - _t_req)
+                            _n_events += 1
                             if "reasoning" in ev:
                                 thinking_acc += ev["reasoning"]
                                 yield f"data: {json_dumps({'reasoning': ev['reasoning']})}\n\n"
@@ -5962,6 +6589,11 @@ def chat_stream():
                                 got_content = True
                                 full_response += ev["token"]
                                 yield f"data: {json_dumps({'token': ev['token']})}\n\n"
+                        logger.info(
+                            "chat_stream done: provider=%s model=%s events=%d "
+                            "chars=%d stream=%.2fs",
+                            provider_name, stream_model, _n_events, len(full_response),
+                            time.time() - (_t_first or _t_req))
                         # Some reasoning models (e.g. VideoGuard) put the whole answer
                         # in reasoning_content and leave content empty. If we got no
                         # content tokens, surface the reasoning as the answer so the

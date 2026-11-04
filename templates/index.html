@@ -1902,6 +1902,11 @@ video.tf-video {
         <button id="sendBtn">Send</button>
         </div>
       </div>
+      <div id="ghostSuggestion" style="display:none; margin:0 16px 8px; padding:6px 10px; background:rgba(88,166,255,0.12); border:1px solid rgba(88,166,255,0.3); border-radius:8px; font-size:13px; color:#8b949e;">
+        <span style="color:#58a6ff; font-weight:600;">💡 Tab to accept:</span>
+        <span id="ghostSuggestionText"></span>
+        <span style="opacity:0.6; font-size:11px;">(Esc to dismiss)</span>
+      </div>
       <!-- Skill apply picker (pinned skills + auto) -->
       <div id="skillPicker" style="display:none; position:fixed; bottom:130px; left:50%; transform:translateX(-50%); width:min(420px,92vw); max-height:340px; overflow:auto; background:#14141c; border:1px solid #333; border-radius:12px; padding:10px; z-index:11000; box-shadow:0 12px 40px rgba(0,0,0,0.6);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -2271,6 +2276,7 @@ var msgInput    = document.getElementById('msgInput');
     restoreDraft();
 })();
 function clearChatDraft() { try { localStorage.removeItem('tf.chatDraft'); } catch (e) {} }
+function flushChatDraft() { try { localStorage.setItem('tf.chatDraft', msgInput.value); } catch (e) {} }
 
 // ── live RAM/VRAM badge + one-click free ─────────────────────────────────────
 function tfToast(message, kind) {
@@ -2404,6 +2410,93 @@ msgInput.addEventListener('input', function() {
         resizePending = false;
         applyComposerHeight();
     });
+});
+
+// ── Ghost-text inline completion (Tab to accept) ──
+var ghostTimer = null;
+var ghostSuggestion = '';
+// Every autocomplete is a FULL model round-trip (non-streaming, so it holds a
+// browser connection for its whole duration). Chrome allows only 6 connections
+// per origin, so unanswered completions used to stack up and the real message
+// queued behind them — the send would sit there before it was even transmitted.
+// One controller means a new request cancels the previous one, and sending
+// cancels whatever is still in flight.
+var ghostController = null;
+function abortGhostRequest() {
+    if (ghostController) {
+        try { ghostController.abort(); } catch (e) {}
+        ghostController = null;
+    }
+}
+function clearGhost() {
+    ghostSuggestion = '';
+    var el = document.getElementById('ghostSuggestion');
+    if (el) el.style.display = 'none';
+    var t = document.getElementById('ghostSuggestionText');
+    if (t) t.textContent = '';
+}
+function showGhost(text) {
+    ghostSuggestion = text || '';
+    var el = document.getElementById('ghostSuggestion');
+    var t = document.getElementById('ghostSuggestionText');
+    if (!el || !t) return;
+    if (ghostSuggestion) {
+        t.textContent = ghostSuggestion;
+        el.style.display = 'block';
+    } else {
+        el.style.display = 'none';
+    }
+}
+function requestGhost() {
+    if (ghostTimer) clearTimeout(ghostTimer);
+    var text = msgInput.value.trim();
+    if (text.length < 6 || busy) { clearGhost(); return; }
+    var provider = providerSelect.value;
+    if (provider === 'diffusers' || provider === 'voice') { clearGhost(); return; }
+    // Longer debounce than before (600 -> 900ms): a completion on every pause is
+    // what made typing feel laggy and what queued up behind the real send.
+    ghostTimer = setTimeout(function() {
+        abortGhostRequest();                      // never two at once
+        ghostController = new AbortController();
+        var mine = ghostController;
+        fetch('/api/complete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            signal: mine.signal,
+            body: JSON.stringify({
+                text: msgInput.value,
+                provider: providerSelect.value,
+                model: modelSelect.value,
+                api_key: apiKeyInput.value
+            })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (mine.signal.aborted) return;
+            if (msgInput.value.trim() !== text) return;  // stale
+            showGhost(d.suggestion || '');
+        })
+        .catch(function() { clearGhost(); });
+    }, 900);
+}
+function acceptGhost() {
+    if (!ghostSuggestion) return false;
+    msgInput.value = msgInput.value.replace(/\s+$/, '') + ' ' + ghostSuggestion;
+    clearGhost();
+    try { msgInput.dispatchEvent(new Event('input')); } catch (e) {}
+    return true;
+}
+msgInput.addEventListener('input', function() {
+    if (!msgInput.value.trim()) { clearGhost(); return; }
+    requestGhost();
+});
+msgInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' && ghostSuggestion) {
+        e.preventDefault();
+        acceptGhost();
+    } else if (e.key === 'Escape') {
+        clearGhost();
+    }
 });
 
 (function initComposerResize() {
@@ -3545,6 +3638,15 @@ function formatAiError(provider, msg) {
     } else if (/(timeout|timed out)/.test(lower)) {
         category = 'timeout';
         friendly = 'Request timed out — try again or shorten the message.';
+    } else if (/(failed to fetch|networkerror|network error|load failed|failed to load|err_connection|err_network|err_internet|typeerror|the user aborted|aborted)/.test(lower)) {
+        // A browser-side transport failure: fetch() rejects with "Failed to fetch"
+        // when the request never completed at all — the server was restarting,
+        // stopped, or the socket dropped. This used to fall through to the generic
+        // "this is a paid API; check your account/billing" line, which sent you to
+        // your DeepSeek invoice for a dead LOCAL connection.
+        category = 'network';
+        friendly = 'The request never reached the app server — the connection dropped '
+                 + '(the server may have restarted or stopped). Wait a moment and send again.';
     } else if (/(connect|unreachable|refused|not running|not available|not installed|no models)/.test(lower)) {
         category = 'network';
         friendly = 'Could not reach the service — check connection, or start the local service / install the dependency.';
@@ -5975,13 +6077,20 @@ function renderMsg(role, entry, msgIndex) {
     }
     var body = document.createElement('div');
     body.className = 'body';
+    var storedAskSpecs = [];
     if (role === 'bot') {
-        body.innerHTML = renderMarkdown(entry.text || '');
+        // A STORED reply can carry a ```ask_user block too — the database keeps the
+        // model's raw text, so without this a reload (or switching conversation)
+        // rendered the picker's JSON as a code block. Fresh replies handled it in
+        // the stream handler; the history path was the gap.
+        var storedText = extractAskUserBlocks(entry.text || '', storedAskSpecs);
+        body.innerHTML = renderMarkdown(storedText || '');
         renderMermaidDiagrams(body);
     } else {
         body.textContent = entry.text || '';
     }
     div.appendChild(body);
+    if (storedAskSpecs.length) renderAskUserCards(div, storedAskSpecs);
     var ts = document.createElement('div');
     ts.className = 'ts';
     ts.textContent = formatTs(entry.ts);
@@ -6838,6 +6947,11 @@ function closeRestore() {
 function doSend() {
     var text = msgInput.value.trim();
     if ((!text && pending.length === 0) || busy) return;
+    // Free the connection NOW. An in-flight autocomplete holds one of the six
+    // browser connections, so the send would queue behind it and the prompt would
+    // appear to "take forever to even start".
+    if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
+    abortGhostRequest();
     clearChatDraft();       // the message is leaving the box, so the draft is spent
     // 🎨 Design generator: brief → live HTML prototype (any chat provider/model).
     if (design_mode) {
@@ -6923,11 +7037,56 @@ function actuallySend(text) {
     var model = modelSelect.value;
     var apiKey = apiKeyInput.value;
     applyBotBadge(botDiv, provider);
+    // A bare spinner tells you nothing: not whether the request even left the
+    // browser, not how long you have been waiting, not whether the model is
+    // already thinking. A ticking line under it makes a slow provider look slow
+    // instead of looking dead — and switches to the live thinking size as soon
+    // as reasoning arrives. It removes itself once the bubble is written.
+    var waitStart = Date.now();
+    var waitNote = document.createElement('div');
+    waitNote.className = 'wait-note';
+    waitNote.style.cssText = 'color:#8b949e;font-size:12px;margin-top:8px;';
+    waitNote.textContent = '⏳ Sending to ' + provider + '…';
+    // Attach to the MESSAGE, not to .body. Starting an SSE reply does
+    // `botBody.innerHTML = ''`, which destroyed this element — so during a
+    // tool-loop turn (where no tokens arrive for many seconds) the bubble was
+    // completely blank with no spinner and no status. Being a sibling of .body
+    // means clearing the body cannot remove it.
+    botDiv.appendChild(waitNote);
+    if (window.__tfWaitTimer) clearInterval(window.__tfWaitTimer);
+    window.__tfWaitTimer = setInterval(function() {
+        if (!waitNote.isConnected) { clearInterval(window.__tfWaitTimer); return; }
+        var s = Math.floor((Date.now() - waitStart) / 1000);
+        // A tool-enabled turn is resolved with a non-streaming loop on the server,
+        // so no tokens arrive until it finishes. Say what is happening instead of
+        // looking like the provider never answered.
+        if (botDiv.dataset.toolMode === '1') {
+            waitNote.textContent = '🔧 working with tools… ' + s + 's';
+            return;
+        }
+        if (liveReasoningChars > 0) {
+            waitNote.textContent = '🧠 thinking… ' + liveReasoningChars.toLocaleString() + ' chars · ' + s + 's';
+        } else if (s >= 20) {
+            // Past 20 s with no token at all: say whose clock is ticking. The
+            // request is out (otherwise it would still read "Sending to…") and
+            // nothing has come back, which is the provider, not this page.
+            waitNote.textContent = '⏳ ' + provider + ' has sent nothing yet · ' + s + 's'
+                + ' — provider-side wait, the app cannot speed it up';
+        } else {
+            waitNote.textContent = '⏳ Waiting for ' + provider + '… ' + s + 's';
+        }
+    }, 500);
     if (provider === 'groq' || provider === 'huggingface' || provider === 'deepseek' || provider === 'claude' || provider === 'gemini' || provider === 'openrouter') {
         saveApiKey(provider, apiKey);
     }
-    var streamingProviders = ['ollama', 'llamacpp', 'deepseek', 'groq', 'openrouter', 'huggingface'];
+    var streamingProviders = ['ollama', 'llamacpp', 'deepseek', 'groq', 'openrouter', 'huggingface', 'claude'];
     var endpoint = (streamingProviders.indexOf(provider) !== -1) ? '/chat_stream' : '/chat';
+    // Reads the persona once, defensively: it is evaluated while building the
+    // request, so a throw here would abandon the message with a live spinner and
+    // no request sent — the exact "stuck forever" symptom.
+    var personaSel;
+    try { personaSel = personaPayload(); }
+    catch (e) { personaSel = { persona: '', persona_custom: '' }; }
     tokenCount = 0;
     firstTokenMs = null;
     liveReasoningChars = 0;
@@ -6990,8 +7149,8 @@ function actuallySend(text) {
             model: model,
             ctx_size: parseInt(ctxSelect.value, 10) || null,
             api_key: apiKey,
-            persona: personaPayload().persona,
-            persona_custom: personaPayload().persona_custom,
+            persona: personaSel.persona,
+            persona_custom: personaSel.persona_custom,
             thinking: (provider === 'deepseek' && reasoningEffortSelect.style.display !== 'none')
                 ? (reasoningEffortSelect.value || '')
                 : ''
@@ -7027,6 +7186,9 @@ function actuallySend(text) {
                 tokenQueue.length = 0;
                 textNode.textContent = fullText;
                 botBody.classList.remove('thinking-dots');
+                // The answer has started: the wait line has done its job.
+                var _wnGone = botDiv.querySelector('.wait-note');
+                if (_wnGone) _wnGone.remove();
                 var threshold = 80;
                 var atBottom = chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < threshold;
                 if (atBottom) {
@@ -7056,10 +7218,15 @@ function actuallySend(text) {
                         // show the reasoning as the answer (avoids a bare empty bubble).
                         var displayText = fullText;
                         if (!displayText && reasoningAcc) displayText = reasoningAcc;
+                        // Pull ```ask_user blocks out before markdown, then render
+                        // them as pickers below the answer.
+                        var askSpecs = [];
+                        displayText = extractAskUserBlocks(displayText, askSpecs);
                         botBody.innerHTML = renderMarkdown(displayText || '(empty response)');
                         botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                         processCodeBlocks(botDiv);
                         renderMermaidDiagrams(botDiv);
+                        renderAskUserCards(botDiv, askSpecs);
                         captureLiveCodeFromReply(displayText);
                         status.textContent = '✅ Done';
                         busy = false;
@@ -7092,6 +7259,22 @@ function actuallySend(text) {
                                 if (data.done && data.usage) {
                                     finalizeStats(data.usage);
                                 }
+                                if (data.status) {
+                                    // Server-side progress: the tool loop is running
+                                    // (non-streaming), so tokens may be seconds away.
+                                    // The note is a sibling of .body, which is cleared
+                                    // when the stream opens — recreate it if needed.
+                                    botDiv.dataset.toolMode = '1';
+                                    var _wn = botDiv.querySelector('.wait-note');
+                                    if (!_wn) {
+                                        _wn = document.createElement('div');
+                                        _wn.className = 'wait-note';
+                                        _wn.style.cssText = 'color:#8b949e;font-size:12px;margin-top:8px;';
+                                        botDiv.appendChild(_wn);
+                                    }
+                                    _wn.textContent = '🔧 working with tools… '
+                                        + (data.elapsed ? data.elapsed + 's' : '');
+                                }
                                 if (data.reasoning) {
                                     reasoningAcc += data.reasoning;
                                     liveReasoningChars = reasoningAcc.length;
@@ -7107,6 +7290,11 @@ function actuallySend(text) {
                         }
                     }
                     readStream();
+                }).catch(function(e) {
+                    // Before this, a failed read ended the loop silently: the
+                    // spinner stayed forever and the console said nothing. Any
+                    // break in the stream is now reported in the bubble.
+                    handleSendError((e && e.message) || 'Stream interrupted');
                 });
             }
             readStream();
@@ -7119,11 +7307,14 @@ function actuallySend(text) {
                     if (data.reasoning) renderThinkingBlock(botDiv, data.reasoning);
                     if (data.applied_skills) showAppliedSkills(botDiv, data.applied_skills);
                     if (data.tool_calls) showToolCalls(botDiv, data.tool_calls);
+                    var askSpecs = [];
+                    text = extractAskUserBlocks(text, askSpecs);
                     botDiv.querySelector('.body').classList.remove('thinking-dots');
                     botDiv.querySelector('.body').innerHTML = renderMarkdown(text);
                     botDiv.querySelector('.ts').textContent = new Date().toLocaleTimeString();
                     processCodeBlocks(botDiv);
                     renderMermaidDiagrams(botDiv);
+                    renderAskUserCards(botDiv, askSpecs);
                     captureLiveCodeFromReply(text);
                     status.textContent = '✅ Done';
                     loadConversations();
@@ -7132,6 +7323,8 @@ function actuallySend(text) {
                     else finalizeStats({tokens: text.split(' ').length, duration_sec: 1});
                     busy = false; sendBtn.disabled = false;
                 }
+            }).catch(function(e) {
+                handleSendError((e && e.message) || 'Unreadable response from server');
             });
         }
     })
@@ -9654,6 +9847,11 @@ function openEmbeddedView(url, view) {
     if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
     host.style.display = 'block';
     chat.style.display = 'none';
+    // The chat panel is only hidden here, never destroyed — but a WebView reload or
+    // an aggressive re-render can still blank the composer, and 'input' events may
+    // not have fired for the very last keystroke. Persist it explicitly before the
+    // view switches so nothing the frame does can lose a half-typed prompt.
+    if (typeof flushChatDraft === 'function') flushChatDraft();
     document.documentElement.classList.add('view-embed');   // hides chat-only chrome
     if (typeof hideScrollBtn === 'function') { hideScrollBtn(); }
     setActiveTab(view);
@@ -9666,6 +9864,14 @@ function showChatView() {
     var chat = document.getElementById('chatPanel');
     if (host) host.style.display = 'none';
     if (chat) chat.style.display = 'flex';
+    // Restore a half-typed prompt if returning to an empty composer (e.g. the
+    // embedded view or a reload cleared it). Never overwrite text already there.
+    try {
+        if (msgInput && !msgInput.value.trim()) {
+            var d = localStorage.getItem('tf.chatDraft');
+            if (d && d.trim()) { msgInput.value = d; if (typeof applyComposerHeight === 'function') applyComposerHeight(); }
+        }
+    } catch (e) {}
     document.documentElement.classList.remove('view-embed');   // chat chrome back
     if (typeof updateScrollBtn === 'function') { updateScrollBtn(); }
     setActiveTab('chat');
@@ -10163,6 +10369,15 @@ function reconnectMcp() {
 
 // ── Skill apply picker (pin a skill so it applies to every message) ──
 var pinnedSkills = [];
+(function loadPinnedSkills() {
+    try {
+        var raw = localStorage.getItem('tf.pinnedSkills');
+        pinnedSkills = raw ? (JSON.parse(raw) || []) : [];
+    } catch (e) { pinnedSkills = []; }
+    // A pin used to live only in memory: reloading the page silently forgot every
+    // pinned skill, so "Apply a skill" looked broken across a restart.
+    if (pinnedSkills.length) renderSkillChips();
+})();
 function toggleSkillPicker() {
     var p = document.getElementById('skillPicker');
     if (!p) return;
@@ -10210,6 +10425,7 @@ function renderSkillPickerRow(list, s) {
 function togglePinnedSkill(id) {
     var i = pinnedSkills.indexOf(id);
     if (i === -1) pinnedSkills.push(id); else pinnedSkills.splice(i, 1);
+    try { localStorage.setItem('tf.pinnedSkills', JSON.stringify(pinnedSkills)); } catch (e) {}
     renderSkillChips();
     refreshSkillPickerList();
 }
@@ -10249,6 +10465,173 @@ function showAppliedSkills(botDiv, ids) {
     var body = botDiv.querySelector('.body');
     if (body) botDiv.insertBefore(bar, body); else botDiv.appendChild(bar);
 }
+// ── Interactive clarifying-question cards ────────────────────────────────
+// The model asks for a decision with ONE fenced ```ask_user block instead of a
+// sentence of prose, and that block becomes a real picker: checkboxes (or radios),
+// descriptions, a "Recommended" pill, a free-text line, and Submit / Skip — the
+// same shape the DeepSeek Harness uses. The block is pulled out BEFORE markdown
+// runs, so the raw JSON never shows up in the transcript.
+var ASK_USER_RE = /```ask_user\s*\n?([\s\S]*?)```/g;
+
+function extractAskUserBlocks(text, out) {
+    if (!text) return text;
+    var cleaned = String(text).replace(ASK_USER_RE, function(_m, body) {
+        try {
+            var spec = JSON.parse(String(body).trim());
+            if (spec && (spec.question || (spec.options && spec.options.length))) out.push(spec);
+            return '';
+        } catch (e) {
+            return _m;      // malformed: leave the text alone rather than eat it
+        }
+    });
+    return cleaned.trim();
+}
+
+function renderAskUserCards(container, specs) {
+    if (!container || !specs || !specs.length) return;
+    var body = container.querySelector('.body');
+    specs.forEach(function(spec) {
+        var card = buildAskUserCard(spec);
+        // Below the answer, because it is the next thing the user must do.
+        if (body && body.parentNode === container && body.nextSibling) {
+            container.insertBefore(card, body.nextSibling);
+        } else {
+            container.appendChild(card);
+        }
+    });
+}
+
+function buildAskUserCard(spec) {
+    spec = spec || {};
+    var multi = !!spec.multi_select;
+    var card = document.createElement('div');
+    card.className = 'ask-user-card';
+    card.style.cssText = 'margin:10px 0 0; padding:14px 16px; border:1px solid #2a2a34; '
+        + 'border-radius:12px; background:#111118; max-width:640px;';
+
+    if (spec.header) {
+        var h = document.createElement('div');
+        h.textContent = String(spec.header);
+        h.style.cssText = 'font-size:11px; letter-spacing:0.08em; text-transform:uppercase; '
+            + 'color:#8b949e; margin-bottom:6px;';
+        card.appendChild(h);
+    }
+    var q = document.createElement('div');
+    q.textContent = String(spec.question || 'Choose an option');
+    q.style.cssText = 'font-size:15px; font-weight:600; color:#e6edf3; margin-bottom:12px; line-height:1.35;';
+    card.appendChild(q);
+
+    var group = 'askuser_' + Math.random().toString(36).slice(2);
+    var opts = Array.isArray(spec.options) ? spec.options : [];
+    opts.forEach(function(opt, i) {
+        if (!opt) return;
+        var label = String(opt.label || (typeof opt === 'string' ? opt : 'Option ' + (i + 1)));
+        var row = document.createElement('label');
+        row.style.cssText = 'display:flex; gap:10px; align-items:flex-start; padding:8px 10px; '
+            + 'border-radius:8px; cursor:pointer;';
+        row.onmouseenter = function() { row.style.background = 'rgba(255,255,255,0.04)'; };
+        row.onmouseleave = function() { row.style.background = 'transparent'; };
+        var input = document.createElement('input');
+        input.type = multi ? 'checkbox' : 'radio';
+        if (!multi) input.name = group;
+        input.value = label;
+        input.style.cssText = 'margin-top:3px; accent-color:#2f81f7; flex:none;';
+        row.appendChild(input);
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'flex:1; min-width:0;';
+        var nameEl = document.createElement('span');
+        nameEl.textContent = label;
+        nameEl.style.cssText = 'font-size:14px; color:#e6edf3;';
+        wrap.appendChild(nameEl);
+        if (opt.recommended) {
+            var pill = document.createElement('span');
+            pill.textContent = 'Recommended';
+            pill.style.cssText = 'margin-left:8px; font-size:11px; color:#2f81f7;';
+            wrap.appendChild(pill);
+        }
+        if (opt.description) {
+            var d = document.createElement('div');
+            d.textContent = String(opt.description);
+            d.style.cssText = 'font-size:12px; color:#8b949e; margin-top:3px; line-height:1.35;';
+            wrap.appendChild(d);
+        }
+        row.appendChild(wrap);
+        card.appendChild(row);
+    });
+
+    if (spec.allow_free_text !== false) {
+        var freeRow = document.createElement('label');
+        freeRow.style.cssText = 'display:flex; gap:10px; align-items:center; padding:8px 10px;';
+        var icon = document.createElement('span');
+        icon.textContent = '✎';
+        icon.style.cssText = 'width:14px; color:#8b949e; flex:none; font-size:13px;';
+        freeRow.appendChild(icon);
+        var free = document.createElement('input');
+        free.type = 'text';
+        free.className = 'ask-user-input';
+        free.placeholder = 'Type your answer';
+        free.style.cssText = 'flex:1; background:transparent; border:none; border-bottom:1px solid '
+            + '#2a2a34; color:#e6edf3; font-size:14px; padding:4px 0; outline:none;';
+        freeRow.appendChild(free);
+        card.appendChild(freeRow);
+    }
+
+    var footer = document.createElement('div');
+    footer.style.cssText = 'display:flex; justify-content:space-between; align-items:center; '
+        + 'gap:10px; margin-top:12px; border-top:1px solid #1e1e28; padding-top:10px;';
+    var skip = document.createElement('button');
+    skip.type = 'button';
+    skip.textContent = 'Skip this question';
+    skip.style.cssText = 'background:transparent; border:1px solid #333; color:#c9d1d9; '
+        + 'border-radius:999px; padding:7px 16px; font-size:13px; cursor:pointer;';
+    var submit = document.createElement('button');
+    submit.type = 'button';
+    submit.textContent = 'Submit';
+    submit.style.cssText = 'background:#2f81f7; border:none; color:#fff; border-radius:999px; '
+        + 'padding:7px 20px; font-size:13px; font-weight:600; cursor:pointer;';
+    footer.appendChild(skip);
+    footer.appendChild(submit);
+    card.appendChild(footer);
+
+    function finish(answer) {
+        card.style.opacity = '0.6';
+        Array.prototype.forEach.call(card.querySelectorAll('input, button'), function(el) {
+            el.disabled = true;
+        });
+        var note = document.createElement('div');
+        note.textContent = '✓ ' + answer;
+        note.style.cssText = 'margin-top:8px; font-size:12px; color:#8b949e;';
+        card.appendChild(note);
+        // Answer by sending it as the next message: the model's turn already
+        // finished when it emitted the block, so there is nothing to resume.
+        msgInput.value = answer;
+        if (typeof applyComposerHeight === 'function') applyComposerHeight();
+        // doSend() no-ops while another reply is streaming. Say so instead of
+        // silently dropping the choice: the answer is still in the composer.
+        if (typeof busy !== 'undefined' && busy) {
+            note.textContent = '✓ ' + answer + ' — waiting for the current reply to finish';
+            return;
+        }
+        doSend();
+    }
+
+    submit.onclick = function() {
+        var picked = [];
+        Array.prototype.forEach.call(card.querySelectorAll('input'), function(el) {
+            if ((el.type === 'checkbox' || el.type === 'radio') && el.checked) picked.push(el.value);
+        });
+        var free = card.querySelector('.ask-user-input');
+        var custom = free ? free.value.trim() : '';
+        var parts = [];
+        if (picked.length) parts.push(picked.join(', '));
+        if (custom) parts.push(custom);
+        finish(parts.length ? parts.join(' — ') : '(no answer)');
+    };
+    skip.onclick = function() { finish('Skip this question — use your best judgement.'); };
+
+    return card;
+}
+
 // Which tools produced this reply - a connector's use should be visible, not
 // inferred. Saved in conversations.db too, so it survives a reload.
 function showToolCalls(botDiv, calls) {

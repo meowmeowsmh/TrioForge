@@ -1722,12 +1722,14 @@ def test_window_ready_means_visible() -> None:
 def test_deepseek_catalog() -> None:
     _title("deepseek model catalogue")
     from providers.llm_providers import (
-        DeepSeekProvider, deepseek_reasoning_effort, model_supports_vision,
+        DeepSeekProvider, deepseek_reasoning_effort, deepseek_wire_model,
+        model_supports_vision,
     )
 
     # The harness's advisory catalogue: named, metadata-rich entries, not bare ids.
     cat = {m["id"]: m for m in DeepSeekProvider().model_catalog()}
-    assert set(cat) == {"deepseek-flash", "deepseek-v4-pro"}, set(cat)
+    assert set(cat) == {"deepseek-flash", "deepseek-v4-pro",
+                        "deepseek-v4-flash-vision-exp"}, set(cat)
     assert cat["deepseek-flash"]["name"] == "DeepSeek-V41-Flash"
     assert cat["deepseek-flash"]["contextWindow"] == 1_000_000
     assert "image" in cat["deepseek-flash"]["inputModalities"], \
@@ -1736,6 +1738,17 @@ def test_deepseek_catalog() -> None:
     assert cat["deepseek-v4-pro"]["reasoning"]["defaultEffort"] == "high"
     efforts = [e["id"] for e in cat["deepseek-v4-pro"]["reasoning"]["efforts"]]
     assert efforts == ["off", "low", "high", "max"], efforts
+
+    # The dedicated vision id is a catalogue name the public API does not serve, so it
+    # must be selectable AND aliased onto the model that really accepts images.
+    assert cat["deepseek-v4-flash-vision-exp"]["name"] == "DeepSeek-V4-Flash-Vision-Exp"
+    assert "image" in cat["deepseek-v4-flash-vision-exp"]["inputModalities"]
+    assert deepseek_wire_model("deepseek-v4-flash-vision-exp") == "deepseek-flash", \
+        "the vision id has to resolve to a model the API actually serves"
+    assert deepseek_wire_model("deepseek-v4-pro") == "deepseek-v4-pro"
+    assert deepseek_wire_model(None) == "deepseek-flash"
+    assert "deepseek-v4-flash-vision-exp" in DeepSeekProvider._BACKUP_MODELS, \
+        "it must be offered in the dropdown, not just recognised"
 
     # UI effort ids map onto the /v1 reasoning_effort the endpoint accepts.
     assert deepseek_reasoning_effort("off") is None
@@ -1748,7 +1761,8 @@ def test_deepseek_catalog() -> None:
     # Capability (vision badge / image routing) comes from the catalogue.
     assert model_supports_vision("deepseek", "deepseek-flash") is True
     assert model_supports_vision("deepseek", "deepseek-v4-pro") is False
-    print("  named entries, 1M context, image flag, effort map -> OK")
+    assert model_supports_vision("deepseek", "deepseek-v4-flash-vision-exp") is True
+    print("  named entries, 1M context, image flag, effort map, vision alias -> OK")
 
 
 def test_design_feature() -> None:
@@ -3160,21 +3174,20 @@ def test_auto_detect_prefers_the_users_own_workflow() -> None:
 
 
 # ---------------------------------------------------------------------------
-def test_discord_plugin_stays_isolated() -> None:
-    """The Discord plugin must never do Discord's work inside the app.
+def test_discord_plugin_uses_a_webhook() -> None:
+    """The Discord connector posts through ONE channel webhook — no bot, no token.
 
-    Plugins run in-process with full permissions, so a bot that hangs, loops or
-    crashes there takes TrioForge with it. The plugin is therefore a shim: the bot
-    lives in its own process and this file only spawns it with a timeout. Each
-    assertion below is one of the properties that keeps that true, because losing
-    any single one silently removes the isolation:
+    v1 spawned an isolated ``bridge.py`` and asked for a bot token in that process's
+    ``.env``. It was safe but it was seven setup steps for "post this to Discord", so
+    v2 posts with a single webhook URL. These assertions pin the properties that keep
+    it both simple and safe:
 
-      * no network client is imported here at all
-      * the child call is bounded by a timeout
-      * the bot token is never asked for, stored, or read by the app
-      * a broken/missing bridge comes back as an error string, not an exception
+      * the ONLY credential is the webhook URL (no bot token is ever collected)
+      * the URL is validated to be a Discord webhook before it is stored
+      * a missing/bad webhook is a REPORTED error string, never a raised exception
+      * it auto-detects whether Discord is installed / running
     """
-    _title("discord plugin is an isolated shim")
+    _title("discord connector posts via one webhook")
     import os
     import tempfile
 
@@ -3185,45 +3198,48 @@ def test_discord_plugin_stays_isolated() -> None:
     mod = plugin_loader._mods["discord"]
     src = open(mod.__file__, encoding="utf-8").read()
 
-    for banned in ("import requests", "import socket", "import discord",
-                   "urllib.request", "http.client"):
-        assert banned not in src, f"the plugin must not {banned} - that is the bridge's job"
-    assert "subprocess.run" in src and "timeout=timeout" in src, \
-        "the child call must be a bounded subprocess.run"
-    print("  no network client in-process; the child call is timeout-bounded -> OK")
-
-    # The token belongs to the bridge's own .env. If the app ever starts collecting
-    # it, it would land in TrioForge's config (and therefore in its backups).
+    # The only thing the app ever collects is the webhook URL.
     keys = {f["key"] for f in mod.MANIFEST.get("credentials", [])}
-    assert keys == {"bridge_dir"}, f"unexpected credential fields: {keys}"
-    # It may NAME the variable in the setup guide - that is how the user is told
-    # what to call it in .env - but it must never read or store it.
-    token_lines = [ln.strip() for ln in src.splitlines() if "DISCORD_TOKEN" in ln]
-    assert token_lines, "the guide should tell the user the variable name"
-    for line in token_lines:
-        assert "environ" not in line and "get(" not in line, \
-            f"the plugin must not read the bot token: {line}"
-    print("  the app stores a folder path, never the bot token -> OK")
+    assert keys == {"webhook_url"}, f"unexpected credential fields: {keys}"
+    # No bot token, and therefore nothing to leak into TrioForge's config/backups.
+    assert "DISCORD_TOKEN" not in src, "a bot token must not appear at all in v2"
+    # No child process either: the old shim spawned bridge.py, this one is one POST.
+    # (The comment explaining that history may still *name* bridge.py — assert on the
+    # mechanism, not the word.)
+    assert "import subprocess" not in src and "_run_bridge" not in src, \
+        "there must be no bridge child process any more"
+    # One bounded HTTPS POST, in-process.
+    assert "requests.post" in src and "timeout=15" in src, \
+        "the send must be a timeout-bounded HTTPS POST"
+    for fn in ("_discord_installed", "_discord_running"):
+        assert f"def {fn}" in src, f"missing auto-detect helper {fn}"
+    print("  one webhook credential, no bot token, bounded POST, auto-detect -> OK")
 
-    # A missing or broken bridge is a REPORTED string, not a raised exception.
+    # A missing or rejected webhook is a REPORTED string, not a raised exception.
     real_path = mod._SETTINGS_PATH
     tmp = tempfile.mkdtemp(prefix="discord-plugin-test-")
     mod._SETTINGS_PATH = os.path.join(tmp, "discord_bridge.json")
     try:
-        mod._save_settings({"bridge_dir": os.path.join(tmp, "nowhere")})
+        # No webhook configured at all.
         st = mod._status()
-        assert st["connected"] is False and st.get("error"), st
+        assert st["connected"] is False and st.get("needs_setup") is True, st
+        assert st.get("error"), st
         assert mod.dispatch("discord_send", {"text": "hi"}).get("error")
         assert mod.dispatch("discord_status", {}).get("connected") is False
         assert mod.connect_info().get("error")
-        # An unset folder must not raise either.
-        mod._save_settings({"bridge_dir": ""})
-        assert mod._status()["connected"] is False
+
+        # A stored but bogus URL must fail closed, with an error string.
+        mod._save_settings({"webhook_url": "https://discord.com/api/webhooks/0/nope"})
+        st2 = mod._status()
+        assert st2["configured"] is True and st2["connected"] is False, st2
+        assert mod.dispatch("discord_send", {"text": "hi"}).get("error")
+        # Never raises on any of the three tools.
+        assert isinstance(mod.dispatch("discord_status", {}), dict)
     finally:
         mod._SETTINGS_PATH = real_path
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
-    print("  a missing bridge is reported, never raised -> OK")
+    print("  an unset/bogus webhook is reported, never raised -> OK")
 
 
 # ---------------------------------------------------------------------------
@@ -5045,7 +5061,7 @@ def main() -> int:
              test_inject_preserves_workflow_prompts,
              test_image_panel_choices,
              test_auto_detect_prefers_the_users_own_workflow,
-             test_discord_plugin_stays_isolated,
+             test_discord_plugin_uses_a_webhook,
              test_restore_list_supports_bulk_cleanup,
              test_daily_briefing_plugin, test_briefing_panel_is_wired, test_human_text_fields_are_spellcheckable, test_memory_panel_and_free_are_honest, test_comfyui_idle_unload_wiring, test_chat_draft_and_copy_wiring, test_local_timeout_and_output_cap_knobs, test_local_request_has_a_hard_deadline, test_ai_voice_dropdown_is_wired,
                test_neural_voices_are_offered,

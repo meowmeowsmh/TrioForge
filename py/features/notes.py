@@ -824,8 +824,17 @@ def ai_assist():
     # Cap the text sent to the model so a huge note can't blow up the prompt.
     content_snip = content[:4000]
     prompts = {
-        "summarise": f"Summarise the following note in one short paragraph (max 50 words):\n\nTitle: {title}\nContent: {content_snip}\n\nSummary:",
-        "suggest_tags": f"Suggest up to 5 short tags (comma separated) for this note:\n\nTitle: {title}\nContent: {content_snip}\n\nTags:",
+        "summarise": f"Summarise the following note in one short paragraph (max 50 words).\n"
+                     f"Output only the summary, no preamble.\n\nTitle: {title}\nContent: {content_snip}\n\nSummary:",
+        # The old prompt asked for "up to 5 short tags (comma separated)" and said
+        # nothing about the rest of the reply, so models answered "Here are 5 tags:
+        # a, b, c" and the comma-split stored "Here are 5 tags" as a tag. The
+        # instruction now constrains the whole reply, and the parser strips a prefix
+        # if one appears anyway.
+        "suggest_tags": f"Suggest up to 5 short tags for this note.\n"
+                        f"Output ONLY the tags, separated by commas, on a single line. "
+                        f"Do not write an introduction, a label, quotes, or any other text.\n\n"
+                        f"Title: {title}\nContent: {content_snip}\n\nTags:",
         "improve": f"Rewrite the following note to improve clarity, grammar, and flow. Keep the same meaning but make it more concise and professional:\n\n{content_snip}\n\nImproved version:"
     }
     user_prompt = prompts.get(action)
@@ -842,7 +851,11 @@ def ai_assist():
             user_prompt = user_prompt + "\n\n" + _note
 
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that helps improve notes."},
+        # Action-neutral on purpose: the previous prompt announced "improve notes"
+        # for every action, including tag suggestion, which pulled replies toward
+        # prose even when the task asked for a bare comma list.
+        {"role": "system", "content": "You are a helpful assistant. Follow the user's "
+                                      "instruction exactly, and output only what was asked for."},
         {"role": "user", "content": user_prompt}
     ]
 
@@ -854,7 +867,18 @@ def ai_assist():
         return jsonify({"error": f"AI service error: {str(e)}"}), 503
 
     if action == 'suggest_tags' and result:
-        tags = [t.strip() for t in result.split(',') if t.strip()]
+        # Defensive parse: even with a strict prompt a model can answer
+        # "Tags: a, b" or bullet the list, and a bare comma-split then stores
+        # "Tags: a" as a tag. Drop a leading label, bullets, quotes and code ticks,
+        # and ignore anything that is obviously a sentence rather than a tag.
+        raw = result.strip()
+        if ':' in raw:
+            raw = raw.split(':', 1)[1]
+        tags = []
+        for chunk in raw.replace('\n', ',').split(','):
+            t = chunk.strip().strip('`"\'*•-–—# ').strip().rstrip('.')
+            if t and t.lower() not in {'tags', 'tag'} and len(t) <= 40 and len(t.split()) <= 4:
+                tags.append(t)
         if tags:
             existing = set(note.get('tags', []))
             new_tags = [t for t in tags if t not in existing]
