@@ -2242,38 +2242,13 @@ class GeminiProvider(LLMProvider):
         max_tokens = kwargs.get("max_tokens", self.DEFAULT_MAX_TOKENS)
 
         contents, system_parts = self._to_contents(messages, images, videos)
-        payload = {
-            "contents": contents,
-            "generationConfig": {
-                "temperature": temperature,
-            },
-        }
-        if max_tokens:
-            payload["generationConfig"]["maxOutputTokens"] = min(int(max_tokens), self.MAX_OUTPUT_TOKENS)
-        if system_parts:
-            payload["system_instruction"] = {"parts": system_parts}
-
-        url = f"{self.BASE_URL}/models/{model}:generateContent"
-        try:
-            resp = requests.post(url, headers=self._headers(key), json=payload, timeout=180)
-            resp.raise_for_status()
-            data = resp.json()
-            candidates = data.get("candidates") or []
-            if not candidates:
-                raise ProviderError("Gemini returned no candidates.")
-            parts = candidates[0].get("content", {}).get("parts") or []
-            text = "".join(p.get("text", "") for p in parts if "text" in p)
-            if not text:
-                finish = candidates[0].get("finishReason")
-                raise ProviderError(f"Gemini returned no text (finishReason={finish}).")
-            return text
-        except requests.exceptions.HTTPError as e:
-            detail = ""
-            try:
-                detail = (e.response.text or "")[:500]
-            except Exception:
-                pass
-            raise ProviderError(f"Gemini API error: {e}" + (f" — {detail}" if detail else ""))
+        candidate, parts = self._post_generate(key, model, contents, system_parts,
+                                               temperature, max_tokens)
+        text = "".join(p.get("text", "") for p in parts if "text" in p)
+        if not text:
+            finish = candidate.get("finishReason")
+            raise ProviderError(f"Gemini returned no text (finishReason={finish}).")
+        return text
 
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         return self._generate_content(messages, **kwargs)
@@ -2333,30 +2308,23 @@ class GeminiProvider(LLMProvider):
             decls.append(decl)
         return decls
 
-    def generate_raw(self, messages: List[Dict[str, str]], **kwargs) -> dict:
-        """OpenAI-shaped raw call with native Gemini function calling.
+    def _post_generate(self, key, model, contents, system_parts, temperature,
+                       max_tokens=None, tools=None):
+        """Build the generateContent payload, POST it, return (candidate, parts).
 
-        Returns ``{"role": "assistant", "content": str, "tool_calls": [...]}`` where
-        ``tool_calls`` uses the SAME shape the OpenAI-compatible tool loop expects
-        (``id`` / ``type: function`` / ``function.name`` / ``function.arguments`` as a
-        JSON string), so the shared ``_run_chat_with_tools`` loop works unchanged.
+        One request builder for BOTH the plain and the tool-calling path. They used
+        to duplicate the payload, the URL and the error handling, which is exactly
+        how the two drift apart — and a 400 from a missing ``thoughtSignature`` only
+        showed up on the tool path, so the duplication was hiding the bug.
         """
-        key = self._get_key(kwargs)
-        model = kwargs.get("model") or self.DEFAULT_MODEL
-        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
-        max_tokens = kwargs.get("max_tokens")
-        tools = kwargs.get("tools")
-
-        contents, system_parts = self._to_contents(messages)
-        payload = {
-            "contents": contents,
-            "generationConfig": {"temperature": temperature},
-        }
+        payload = {"contents": contents,
+                   "generationConfig": {"temperature": temperature}}
         if max_tokens:
-            payload["generationConfig"]["maxOutputTokens"] = min(int(max_tokens), self.MAX_OUTPUT_TOKENS)
+            payload["generationConfig"]["maxOutputTokens"] = min(int(max_tokens),
+                                                                 self.MAX_OUTPUT_TOKENS)
         if system_parts:
             payload["system_instruction"] = {"parts": system_parts}
-        decls = self._gemini_function_declarations(tools)
+        decls = self._gemini_function_declarations(tools) if tools else []
         if decls:
             payload["tools"] = [{"function_declarations": decls}]
 
@@ -2372,11 +2340,28 @@ class GeminiProvider(LLMProvider):
                 pass
             raise ProviderError(f"Gemini API error: {e}" + (f" — {detail}" if detail else ""))
 
-        data = resp.json()
-        candidates = data.get("candidates") or []
+        candidates = (resp.json() or {}).get("candidates") or []
         if not candidates:
             raise ProviderError("Gemini returned no candidates.")
-        parts = candidates[0].get("content", {}).get("parts") or []
+        return candidates[0], (candidates[0].get("content", {}).get("parts") or [])
+
+    def generate_raw(self, messages: List[Dict[str, str]], **kwargs) -> dict:
+        """OpenAI-shaped raw call with native Gemini function calling.
+
+        Returns ``{"role": "assistant", "content": str, "tool_calls": [...]}`` where
+        ``tool_calls`` uses the SAME shape the OpenAI-compatible tool loop expects
+        (``id`` / ``type: function`` / ``function.name`` / ``function.arguments`` as a
+        JSON string), so the shared ``_run_chat_with_tools`` loop works unchanged.
+        """
+        key = self._get_key(kwargs)
+        model = kwargs.get("model") or self.DEFAULT_MODEL
+        temperature = kwargs.get("temperature", self.DEFAULT_TEMPERATURE)
+        max_tokens = kwargs.get("max_tokens")      # left None on purpose: no cap
+        tools = kwargs.get("tools")
+
+        contents, system_parts = self._to_contents(messages)
+        _cand, parts = self._post_generate(key, model, contents, system_parts,
+                                           temperature, max_tokens, tools=tools)
         text = "".join(p.get("text", "") for p in parts if "text" in p)
         tool_calls = []
         for p in parts:

@@ -4046,7 +4046,11 @@ def _list_files_recursive(base, rel="", depth=0, _state=None):
     for name in entries:
         if _state["n"] >= _LIST_FILES_CAP:
             _state["truncated"] = True
-            out.append("… (list truncated at %d entries)" % _LIST_FILES_CAP)
+            # A dict, like the error entries above, NOT a marker string: consumers
+            # iterate this list as paths, and a string sentinel would be handed to
+            # open() as a filename. search_files already skips dicts.
+            out.append({"truncated": True,
+                        "note": "list truncated at %d entries" % _LIST_FILES_CAP})
             return out
         if name.startswith(('.git', '.venv')) or name in (
                 '__pycache__', 'node_modules', 'venv', 'site-packages', 'dist', 'build',
