@@ -2177,11 +2177,17 @@ video.tf-video {
       <div id="restorePickerList" style="flex:1; overflow-y:auto; padding:12px 14px; font-size:12px;">
         <div style="color:#8b949e;">Loading…</div>
       </div>
-      <div style="border-top:1px solid #222; padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
-        <div style="font-size:11px; color:#8b949e;">Tick the outputs you want, then load them.</div>
-        <div style="display:flex; gap:8px;">
-          <button onclick="closeRestore()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Cancel</button>
-          <button onclick="applyRestore()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Load selected ▸</button>
+      <div style="border-top:1px solid #222; padding:10px 14px; display:flex; flex-direction:column; gap:8px;">
+        <div style="font-size:11px; color:#8b949e;">Tick the outputs you want, then load or delete them.</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div style="display:flex; gap:8px;">
+            <button onclick="deleteRestoreSelected()" style="background:#2d1518; border:1px solid #f85149; color:#f85149; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;" title="Permanently delete the ticked outputs">🗑 Delete</button>
+            <button onclick="deleteRestoreAll()" style="background:#2d1518; border:1px solid #f85149; color:#f85149; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;" title="Permanently delete every saved output">🗑 Delete all</button>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button onclick="closeRestore()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Cancel</button>
+            <button onclick="applyRestore()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">Load selected ▸</button>
+          </div>
         </div>
       </div>
     </div>
@@ -6880,17 +6886,81 @@ function deleteLiveCodeIds(ids) {
     })
     .then(function(r) { return r.json(); })
     .then(function() {
-        var body = document.getElementById('liveCodeBody');
-        if (body) {
-            ids.forEach(function(id) {
-                var card = body.querySelector('div[data-edit-id="' + id + '"]');
-                if (card) card.remove();
-            });
-            if (body.querySelectorAll('div[data-edit-id]').length === 0 &&
-                !body.querySelector('div[data-placeholder]')) {
-                body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">No edits. New edits appear here as the agent makes them.</div>';
-            }
+        removeLiveCodeCards(ids);
+        // Drop deleted ids from the "restored" list too, so a page reload can't
+        // try to re-render something that no longer exists in the database.
+        try {
+            var restored = JSON.parse(localStorage.getItem('liveCodeRestoredIds') || '[]');
+            var keep = restored.filter(function(x) { return ids.indexOf(String(x)) === -1; });
+            localStorage.setItem('liveCodeRestoredIds', JSON.stringify(keep));
+        } catch (e) {}
+        if (typeof refreshRestorePickerIfOpen === 'function') refreshRestorePickerIfOpen();
+    })
+    .catch(function() { alert('Delete failed.'); });
+}
+function removeLiveCodeCards(ids) {
+    var body = document.getElementById('liveCodeBody');
+    if (!body) return;
+    ids.forEach(function(id) {
+        var card = body.querySelector('div[data-edit-id="' + id + '"]');
+        if (card) card.remove();
+    });
+    if (body.querySelectorAll('div[data-edit-id]').length === 0 &&
+        !body.querySelector('div[data-placeholder]')) {
+        body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">No edits. New edits appear here as the agent makes them.</div>';
+    }
+}
+function refreshRestorePickerIfOpen() {
+    var picker = document.getElementById('restorePicker');
+    if (picker && picker.style.display === 'flex') restoreLiveCode();
+}
+function collectCheckedRestoreIds() {
+    var list = document.getElementById('restorePickerList');
+    if (!list) return [];
+    var ids = [];
+    list.querySelectorAll('input:checked').forEach(function(cb) {
+        var idx = parseInt(cb.dataset.idx, 10);
+        if (!isNaN(idx) && restoreEditsCache[idx] && restoreEditsCache[idx].id !== undefined &&
+            restoreEditsCache[idx].id !== null) {
+            ids.push(String(restoreEditsCache[idx].id));
         }
+    });
+    return ids;
+}
+function deleteRestoreSelected() {
+    var ids = collectCheckedRestoreIds();
+    if (!ids.length) { alert('Tick the outputs you want to delete.'); return; }
+    if (!confirm('Delete ' + ids.length + ' selected output(s) permanently?')) return;
+    deleteRestoreIds(ids);
+}
+function deleteRestoreAll() {
+    if (!confirm('Delete ALL saved outputs permanently?')) return;
+    fetch('/api/agent/edits/clear', { method: 'POST' })
+        .then(function() {
+            var body = document.getElementById('liveCodeBody');
+            if (body) body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">All edits deleted. New edits appear here as the agent makes them.</div>';
+            try { localStorage.removeItem('liveCodeRestoredIds'); } catch (e) {}
+            clearLiveCodeNotify();
+            if (typeof seedLiveCodeCursor === 'function') seedLiveCodeCursor();
+            restoreLiveCode();   // refresh the picker list (now empty)
+        })
+        .catch(function() { alert('Delete all failed.'); });
+}
+function deleteRestoreIds(ids) {
+    fetch('/api/agent/edits', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ids: ids })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function() {
+        removeLiveCodeCards(ids);
+        try {
+            var restored = JSON.parse(localStorage.getItem('liveCodeRestoredIds') || '[]');
+            var keep = restored.filter(function(x) { return ids.indexOf(String(x)) === -1; });
+            localStorage.setItem('liveCodeRestoredIds', JSON.stringify(keep));
+        } catch (e) {}
+        restoreLiveCode();   // rebuild the picker list from the now-updated database
     })
     .catch(function() { alert('Delete failed.'); });
 }
@@ -6923,6 +6993,7 @@ function restoreLiveCode() {
             list.innerHTML = '';
             if (!restoreEditsCache.length) {
                 list.innerHTML = '<div style="color:#8b949e;">No saved edits in the database.</div>';
+                picker.style.display = 'flex';
                 return;
             }
             // newest first (the API returns newest-first); show timestamp + path
