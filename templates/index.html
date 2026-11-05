@@ -2095,9 +2095,11 @@ video.tf-video {
     <div id="liveCodePanel" style="display:none; position:fixed; top:60px; right:0; width:min(440px, 92vw); bottom:60px; z-index:5000; background:#0d0d13; border-left:1px solid #333; box-shadow:-4px 0 20px rgba(0,0,0,0.5); flex-direction:column;">
       <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222;">
         <strong style="font-size:14px; color:#a371f7;">📝 Live coding — agent edits</strong>
-        <div style="display:flex; gap:6px;">
+        <div style="display:flex; gap:6px; align-items:center;">
           <button onclick="restoreLiveCode()" style="background:#1f6feb; border:1px solid #1f6feb; color:#fff; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;" title="Pick saved edits to restore from the database">↺ Restore</button>
-          <button onclick="clearLiveCode()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">Clear</button>
+          <button onclick="clearLiveCode()" style="background:#1c1c26; border:1px solid #333; color:#e1e4e8; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;" title="Clear the on-screen list only (the database keeps the edits)">Clear</button>
+          <button onclick="deleteLiveCodeSelected()" style="background:#2d1518; border:1px solid #f85149; color:#f85149; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;" title="Permanently delete the ticked edits">🗑 Delete</button>
+          <button onclick="deleteLiveCodeAll()" style="background:#2d1518; border:1px solid #f85149; color:#f85149; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;" title="Permanently delete every saved edit">🗑 Delete all</button>
           <button onclick="toggleLiveCodePanel()" style="background:transparent; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
         </div>
       </div>
@@ -6799,11 +6801,30 @@ function clearLiveCodeNotify() {
 function renderLiveCodeEdit(e) {
     var card = document.createElement('div');
     card.style.cssText = 'border:1px solid #333; border-radius:10px; padding:10px; margin-bottom:10px; background:#101018;';
+    if (e.id !== undefined && e.id !== null) card.dataset.editId = String(e.id);
+
+    // Header row: checkbox (for bulk delete) + path + per-edit delete button.
+    var top = document.createElement('div');
+    top.style.cssText = 'display:flex; align-items:flex-start; gap:8px; margin-bottom:6px;';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'liveCodeEditCheck';
+    cb.style.cssText = 'flex-shrink:0; margin-top:2px;';
+    cb.title = 'Select to delete';
     var head = document.createElement('div');
-    head.style.cssText = 'font-size:12px; font-weight:700; margin-bottom:6px;';
+    head.style.cssText = 'font-size:12px; font-weight:700; flex:1; min-width:0; overflow-wrap:anywhere;';
     head.textContent = (e.tool === 'edit_file' ? '✏️ ' : '📄 ') + (e.path || '(file)');
     head.style.color = e.tool === 'edit_file' ? '#a371f7' : '#3fb950';
-    card.appendChild(head);
+    var del = document.createElement('button');
+    del.textContent = '🗑';
+    del.title = 'Delete this edit permanently';
+    del.style.cssText = 'flex-shrink:0; background:#2d1518; border:1px solid #f85149; color:#f85149; border-radius:6px; padding:2px 7px; font-size:12px; line-height:1.4; cursor:pointer;';
+    del.onclick = function(ev) { ev.stopPropagation(); deleteLiveCodeById(e.id); };
+    top.appendChild(cb);
+    top.appendChild(head);
+    top.appendChild(del);
+    card.appendChild(top);
+
     if (e.detail) {
         var det = document.createElement('div');
         det.style.cssText = 'font-size:11px; color:#8b949e; margin-bottom:6px;';
@@ -6817,6 +6838,61 @@ function renderLiveCodeEdit(e) {
         card.appendChild(pre);
     }
     return card;
+}
+function collectCheckedLiveCodeIds() {
+    var body = document.getElementById('liveCodeBody');
+    if (!body) return [];
+    var ids = [];
+    body.querySelectorAll('.liveCodeEditCheck:checked').forEach(function(cb) {
+        var card = cb.closest('div[data-edit-id]');
+        if (card && card.dataset.editId) ids.push(card.dataset.editId);
+    });
+    return ids;
+}
+function deleteLiveCodeById(id) {
+    if (id === undefined || id === null) return;
+    if (!confirm('Delete this edit permanently?')) return;
+    deleteLiveCodeIds([String(id)]);
+}
+function deleteLiveCodeSelected() {
+    var ids = collectCheckedLiveCodeIds();
+    if (!ids.length) { alert('Tick the checkbox on the edits you want to delete.'); return; }
+    if (!confirm('Delete ' + ids.length + ' selected edit(s) permanently?')) return;
+    deleteLiveCodeIds(ids);
+}
+function deleteLiveCodeAll() {
+    if (!confirm('Delete ALL saved agent edits permanently?')) return;
+    fetch('/api/agent/edits/clear', { method: 'POST' })
+        .then(function() {
+            var body = document.getElementById('liveCodeBody');
+            if (body) body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">All edits deleted. New edits appear here as the agent makes them.</div>';
+            try { localStorage.removeItem('liveCodeRestoredIds'); } catch (e) {}
+            clearLiveCodeNotify();
+            if (typeof seedLiveCodeCursor === 'function') seedLiveCodeCursor();
+        })
+        .catch(function() { alert('Delete all failed.'); });
+}
+function deleteLiveCodeIds(ids) {
+    fetch('/api/agent/edits', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ids: ids })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function() {
+        var body = document.getElementById('liveCodeBody');
+        if (body) {
+            ids.forEach(function(id) {
+                var card = body.querySelector('div[data-edit-id="' + id + '"]');
+                if (card) card.remove();
+            });
+            if (body.querySelectorAll('div[data-edit-id]').length === 0 &&
+                !body.querySelector('div[data-placeholder]')) {
+                body.innerHTML = '<div style="color:#8b949e;" data-placeholder="1">No edits. New edits appear here as the agent makes them.</div>';
+            }
+        }
+    })
+    .catch(function() { alert('Delete failed.'); });
 }
 function clearLiveCode() {
     // Clear ONLY the on-screen panel display. The DB backup is left intact so

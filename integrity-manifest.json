@@ -16,11 +16,11 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "43925b6fadced62226979ee7975955edf3e729ddae2f591453bf91cd1da9207d",
+  "py/app.py": "37c6b40b770c2409cb79fee84c4d24b46f5ae15cd9688170aac147db034688f2",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "ca95b117fa566c3eb6f9dc32af32ae23b0f544f00ca55f5a52989934d5f84050",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
-  "py/edits_store.py": "89501fb5e17bb855fecc084b0c0470905f07633b9b95472f5fe03fcbc511bd53",
+  "py/edits_store.py": "c237dee34e37dfa6e56fb452fb5538d9d10b07d57042330d4330724670ba8db3",
   "py/extensions.py": "3bc2c33a57b997c36a76ef0b695cc2ed4f4a886096cc232fc442e7f744a8f90a",
   "py/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "py/features/browser_choice.py": "0a2c73532070aabf1eabf64933a89ddc5376af03035e917abdd768b8e527fc59",
@@ -119,9 +119,9 @@
   "static/vendor/purify.min.js": "f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5",
   "static/vendor/vis-network.min.css": "d48591a10ca5e5501920ad0d6722c72bd7d64b029038bd3af293c75cf0d31ee7",
   "static/vendor/vis-network.min.js": "fd730e304a5b877a937a896be9536e7974dc473d8ac87fa66644bce52cb5f8e4",
-  "templates/index.html": "ec71fa295464c4b142b2f33d8c742a48d3243755a972af885965b9cff7a092ae",
+  "templates/index.html": "ae4d81a2863e882ccbb178394b3f5847e3bef38892abaedabeaea2d13d1a335c",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-11-05T04:05:37",
+ "generated": "2026-11-05T14:51:39",
  "note": ""
 }

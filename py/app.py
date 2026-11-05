@@ -5722,6 +5722,23 @@ def agent_edits_clear():
     return jsonify({"ok": True})
 
 
+@app.route('/api/agent/edits', methods=['DELETE'])
+def agent_edits_delete():
+    """Delete specific agent edits by id (the live-coding panel's delete button)."""
+    data = request.get_json(silent=True) or {}
+    raw = data.get('ids') or []
+    ids = []
+    for i in raw:
+        try:
+            ids.append(int(i))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return jsonify({"ok": False, "error": "no valid ids"}), 400
+    deleted = edits_store.delete_ids(ids)
+    return jsonify({"ok": True, "deleted": deleted})
+
+
 @app.route('/api/livecode/capture', methods=['POST'])
 def livecode_capture():
     """Frontend-side capture of code blocks the model printed. The backend

@@ -130,6 +130,23 @@ def clear() -> None:
         _edits.clear()
 
 
+def delete_ids(ids) -> int:
+    """Remove the edits with the given ids (SQLite + mirror). Returns count removed."""
+    _ensure()
+    ids = [int(i) for i in (ids or []) if str(i).isdigit()]
+    if not ids:
+        return 0
+    with _lock:
+        c = get_conn(_DB_PATH)
+        marks = ",".join("?" for _ in ids)
+        c.execute("DELETE FROM agent_edits WHERE id IN (%s)" % marks, ids)
+        c.commit()
+        id_set = set(ids)
+        before = len(_edits)
+        _edits[:] = [e for e in _edits if e.get("id") not in id_set]
+        return before - len(_edits)
+
+
 def count() -> int:
     _ensure()
     with _lock:
