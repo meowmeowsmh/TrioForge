@@ -3,9 +3,38 @@
 All notable changes to TrioForge, newest first. This file is also the body of each
 GitHub release (a workflow publishes it whenever a `v*` tag is pushed).
 
+## [1.9.9] — the current release
+
+**The release to install.** A jump from 1.6.2, carrying everything below plus:
+
+- **Gemini native tool calling.** Gemini models call the agent's tools
+  (workspace, plugins, skills, MCP) natively, with thinking signatures carried at
+  the part level so thinking models no longer 400 on follow-up turns.
+- **DeepSeek vision.** `deepseek-v4-flash-vision-exp` (and `deepseek-flash`) can
+  read images; the wire model name is mapped so the harness never rejects it.
+- **The agent finishes the job.** A final push on the last tool step withdraws
+  the tools and demands a summary, and the budget went from 20 to 30 steps, so
+  long reviews stop dying with "tool-call limit".
+- **`clean_disk` tool.** Scans and removes Windows bloat (browser caches,
+  npm/pip caches, temp files, crash dumps) behind a strict whitelist; `clean`
+  needs Full computer access and never touches models, the pagefile or
+  hibernation.
+- **Interactive clarifying questions.** When a request is genuinely ambiguous
+  the model can hand back a picker card (`ask_user`) instead of guessing.
+- **Live thinking.** Reasoning tokens stream into the chat as they happen.
+- **Clearer errors.** 401/402/429/5xx and timeouts are explained in plain
+  English, and transient transport errors (e.g. 10053) are retried once.
+- **Live-coding delete.** Each agent edit can be deleted individually, in bulk
+  (checkboxes), or all at once — from the live panel and the Restore picker.
+- **Safety hardening.** Host-header/DNS-rebinding validation, a CSRF token on
+  every state-changing request, secret redaction in logs, workspace
+  path-traversal confinement, and a SHA-256 integrity baseline (0% risk).
+- **Ghost-text autocomplete** with cancellation, so a pending completion never
+  starves the six browser connections.
+
 ## [1.6.2] — `/thinking`: pick how hard the model reasons
 
-**The current release, and the one to install.** It carries all of 1.6.1 plus:
+> Superseded by **1.9.9** above. It carries all of 1.6.1 plus:
 
 - **`/thinking` sets the reasoning effort** — `low` → `mid` → `high` → `max` (and
   `off`), for **API models and local ones alike**. On DeepSeek it sets
