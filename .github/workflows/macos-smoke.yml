@@ -1,7 +1,8 @@
 name: macOS smoke test
 
 # Actually runs the app on macOS (Apple Silicon) so you don't need a Mac to verify
-# it works. macos-14 / macos-latest runners are arm64 (M-series).
+# it works. macos-15 runners are arm64 (M-series). GitHub retired macos-14 (and
+# macos-14-large/-xlarge) on 2026-11-02, hence the jump to 15.
 #
 # Run it from GitHub → Actions → "macOS smoke test" → Run workflow.
 # It is free for public repos.
@@ -14,7 +15,7 @@ on:
 
 jobs:
   macos-arm64:
-    runs-on: macos-14          # Apple Silicon (arm64) — the real Apple case
+    runs-on: macos-15          # Apple Silicon (arm64) — the real Apple case
     timeout-minutes: 30
 
     steps:
