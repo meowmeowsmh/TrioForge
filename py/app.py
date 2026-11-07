@@ -592,7 +592,15 @@ def _refuse_cross_site_requests():
     and the app's own fetch keep working - but when the browser tells us where it came
     from (Sec-Fetch-Site, sent by every modern browser) a cross-site value is refused
     even without Origin.
+
+    Skipped in host mode (TRIOFORGE_PASSWORD): there the app is deliberately reached
+    under whatever name the user chose (a LAN IP, a tunnel domain), and a reverse
+    proxy (cloudflared, nginx) rewrites the Host header to its own upstream - so
+    comparing Origin to Host refuses every same-origin browser request through the
+    tunnel. The password gate + CSRF token are the real defenses in host mode.
     """
+    if _host_gate_on():
+        return None
     if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
         return None
     origin = (request.headers.get("Origin") or "").strip()
@@ -5867,7 +5875,7 @@ def chat():
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
-        ask_first = bool(data.get('ask_first', True))
+        ask_first = bool(data.get('ask_first', False))
 
         if not user_message and not images and not files and not videos:
             return jsonify({'error': 'Nothing to send'}), 400
@@ -5918,6 +5926,11 @@ def chat():
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
+        # Only API-key providers get the ```ask_user card format, and only so the
+        # model can ask a genuine clarifying question when it truly cannot infer
+        # intent — never as a default. Local models (llamacpp/ollama) skip it.
+        if provider_name in API_PROVIDERS:
+            system_prompt = system_prompt + "\n\n" + _ASK_USER_PROTOCOL
         if ask_first:
             system_prompt = system_prompt + "\n\n" + (
                 "Clarify before assuming: if the user's request is unclear, ambiguous, "
@@ -5925,7 +5938,7 @@ def chat():
                 "Do NOT guess and do NOT give the full answer/plan yet — wait for the "
                 "user's reply. Only if the request is already clear should you answer "
                 "directly without asking."
-            ) + "\n\n" + _ASK_USER_PROTOCOL
+            )
         final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context,
                                            inline_system=(provider_name == 'llamacpp'))
         if rag_context:
@@ -6217,7 +6230,7 @@ def chat_stream():
         api_key = sanitize_api_key(data.get('api_key', None))
         persona = data.get('persona') or ''
         persona_custom = data.get('persona_custom') or ''
-        ask_first = bool(data.get('ask_first', True))
+        ask_first = bool(data.get('ask_first', False))
         thinking = data.get('thinking') or ''
 
         provider_name = data.get('provider', 'ollama')
@@ -6288,6 +6301,11 @@ def chat_stream():
         _persona = personas.chat_block(persona, persona_custom) if provider_name in API_PROVIDERS else None
         if _persona:
             system_prompt = _persona + "\n\n" + system_prompt
+        # Only API-key providers get the ```ask_user card format, and only so the
+        # model can ask a genuine clarifying question when it truly cannot infer
+        # intent — never as a default. Local models (llamacpp/ollama) skip it.
+        if provider_name in API_PROVIDERS:
+            system_prompt = system_prompt + "\n\n" + _ASK_USER_PROTOCOL
         if ask_first:
             system_prompt = system_prompt + "\n\n" + (
                 "Clarify before assuming: if the user's request is unclear, ambiguous, "
@@ -6295,7 +6313,7 @@ def chat_stream():
                 "Do NOT guess and do NOT give the full answer/plan yet — wait for the "
                 "user's reply. Only if the request is already clear should you answer "
                 "directly without asking."
-            ) + "\n\n" + _ASK_USER_PROTOCOL
+            )
         final_prompt = _build_final_prompt(system_prompt, user_message, non_audio_files, search_context,
                                            inline_system=(provider_name == 'llamacpp'))
         if rag_context:
