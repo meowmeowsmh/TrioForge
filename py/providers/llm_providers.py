@@ -719,6 +719,19 @@ def _local_output_cap(max_tokens: int) -> int:
     return min(max_tokens, cap) if cap > 0 else max_tokens
 
 
+def _ignore_eos() -> bool:
+    """If set, tell llama.cpp to ignore the model's end-of-text token.
+
+    Some heavily-quantized "uncensored" finetunes emit EOS at random points, so
+    the reply stops mid-word. ``ignore_eos`` makes generation run to the token
+    cap instead of trusting the model's stop token. It is a blunt tool - pair it
+    with TRIOFORGE_MAX_TOKENS so a reply neither rambles forever nor outruns the
+    request timeout on a slow split GPU/CPU load.
+    """
+    return os.environ.get("TRIOFORGE_IGNORE_EOS", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 def _local_timeout(default: int = 300) -> int:
     """The local request timeout, tunable with TRIOFORGE_LLAMA_TIMEOUT.
 
@@ -1032,6 +1045,8 @@ class LlamaCppProvider(LLMProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if _ignore_eos():
+            payload["ignore_eos"] = True
         try:
             # A HARD budget, not a per-read timeout: see _local_post_json.
             data = _local_post_json(f"{self.server_url}/chat/completions", payload,
@@ -1102,6 +1117,8 @@ class LlamaCppProvider(LLMProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if _ignore_eos():
+            payload["ignore_eos"] = True
         try:
             data = _local_post_json(f"{self.server_url}/chat/completions", payload,
                                     _local_timeout())
@@ -1329,6 +1346,8 @@ class LlamaCppProvider(LLMProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if _ignore_eos():
+            payload["ignore_eos"] = True
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"

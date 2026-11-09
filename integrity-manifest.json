@@ -16,7 +16,7 @@
   "install.ps1": "876d84adf86b6224ae24187f09335906a9db222bd71f47696276f84b3aa32250",
   "install.sh": "691e10977980d89f66d713e9dfd34fcb6f7b9614d671eef5e8f8085d51a4407c",
   "py/__init__.py": "c12d9140df7911d82384caa228fb187cebdcc1d63985fa43a3125692cb4bb7c6",
-  "py/app.py": "e373af296b1a07842b767076df0ee6771b6ffc21a1ebf788078e9493e3f39b67",
+  "py/app.py": "17ca857df2d82c93fdd695d2bb5824c817c4db3790bf38ce39bad5ed1d131295",
   "py/backup_store.py": "10273d03fcb721baadf32bf8cd324687d33ddf2c63b198efc6e1c81b139ab033",
   "py/comfyui_service.py": "ca95b117fa566c3eb6f9dc32af32ae23b0f544f00ca55f5a52989934d5f84050",
   "py/common.py": "5b36ac50a65880a4e22b81bd282fdf33c809176032555b6e340b0795a4d653a2",
@@ -51,7 +51,7 @@
   "py/port_util.py": "1b5ef482907dfd6a9af216da522bb71b74c2bee66c8344f5d120b74e9781a59c",
   "py/proc_util.py": "e579829d6c84b5af08a117b81bc5d69083554a6a589dc8b71ecf3412908dd09f",
   "py/providers/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "py/providers/llm_providers.py": "b20a491c7129ec65788b1746803b984e663d0682918d226f7b8ff2990df592d3",
+  "py/providers/llm_providers.py": "3e0f4db1ac30d32973371abb7affb9eaf01bce3f8b4ce0cc08fd8f92289eea87",
   "py/python_support.py": "c5350837040736b1e509a0ddbda84a8dc0c68678265abd953c1dfca0cc5b5bde",
   "py/rag.py": "efd12fa967fc264245fc38f38a78759d45d5207a3aabb26cabf5e0672ddc5595",
   "py/setup_check.py": "759dd1bfcb2c7c391d407a1911592262f31972ace41b3607291298b3d67594c0",
@@ -122,6 +122,6 @@
   "templates/index.html": "d6eedcc2f2c1d6d2e05c58cd086facfc3eafd56ded3cbf01160411061171f3c9",
   "voice_agent.bat": "8333e5c79befc31b241a003e26bb7cf18a6123e0e3546b9e2ed9e681f0a8ae02"
  },
- "generated": "2026-11-07T23:33:02",
+ "generated": "2026-11-10T01:54:53",
  "note": ""
 }

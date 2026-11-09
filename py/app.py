@@ -6596,6 +6596,16 @@ def chat_stream():
                         max_out = getattr(prov, "DEFAULT_MAX_TOKENS", 4096)
                     except Exception:
                         max_out = 4096
+                    # A quantized/uncensored finetune can stop mid-word by emitting
+                    # its end-of-text token early; honor the same ignore_eos switch
+                    # the non-streaming path uses so streaming replies finish too.
+                    # Also apply TRIOFORGE_MAX_TOKENS here, otherwise ignore_eos
+                    # would drive every reply to the full 4096-token budget.
+                    if provider_name == "llamacpp":
+                        from providers.llm_providers import _ignore_eos, _local_output_cap
+                        max_out = _local_output_cap(max_out)
+                        if _ignore_eos():
+                            payload["ignore_eos"] = True
                     payload["max_tokens"] = int(max_out)
                     # Vision: when images (or extracted video frames) are attached,
                     # rebuild the last user message as an OpenAI multimodal content
